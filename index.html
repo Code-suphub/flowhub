@@ -1,0 +1,2426 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Iframe Workspace</title>
+    <style>
+      :root {
+        --pcolor: #0aa9db;
+        --pcolor1: rgba(10, 169, 219, 0.08);
+        --pcolor2: rgba(10, 169, 219, 0.12);
+        --pcolor3: rgba(10, 169, 219, 0.16);
+        --pcolor8: #099bc9;
+        --scolor: #1fb4a2;
+        --scolor1: rgba(31, 180, 162, 0.08);
+        --wcolor: #ffaa1a;
+        --ecolor: #de3030;
+        --gray: #0b1926;
+        --gray1: rgba(11, 25, 38, 0.08);
+        --gray2: rgba(11, 25, 38, 0.12);
+        --gray3: rgba(11, 25, 38, 0.16);
+        --gray5: rgba(11, 25, 38, 0.32);
+        --gray6: rgba(11, 25, 38, 0.48);
+        --gray7: rgba(11, 25, 38, 0.64);
+        --gray8: rgba(11, 25, 38, 0.72);
+        --bg1: #f4f2ec;
+        --bg2: #ffffff;
+        --bg3: #f8f8f6;
+        --bg4: #efefef;
+        --shadow: 0 16px 40px rgba(11, 25, 38, 0.08);
+        --radius: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--gray);
+        background:
+          radial-gradient(circle at 16% 8%, rgba(10, 169, 219, 0.08), transparent 28%),
+          radial-gradient(circle at 92% 18%, rgba(31, 180, 162, 0.1), transparent 25%),
+          var(--bg1);
+        font-family: Inter, "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 14px;
+        letter-spacing: 0;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(300px, 1fr) minmax(240px, 360px) auto;
+        gap: 20px;
+        align-items: center;
+        padding: 18px 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 14px;
+      }
+
+      .mark {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        color: #fff;
+        background: linear-gradient(135deg, var(--pcolor), var(--scolor));
+        box-shadow: 0 10px 24px rgba(10, 169, 219, 0.22);
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .subtitle {
+        margin-top: 5px;
+        color: var(--gray7);
+        font-size: 13px;
+      }
+
+      .search {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 0 14px;
+        border: 1px solid var(--gray1);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 8px 24px rgba(11, 25, 38, 0.04);
+      }
+
+      .search span {
+        color: var(--pcolor);
+        font-size: 18px;
+      }
+
+      .search input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--gray);
+      }
+
+      .search-results {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        z-index: 40;
+        display: none;
+        max-height: 320px;
+        overflow: auto;
+        padding: 6px;
+        border: 1px solid var(--gray1);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 18px 42px rgba(11, 25, 38, 0.14);
+      }
+
+      .search-results.open {
+        display: grid;
+        gap: 4px;
+      }
+
+      .search-result {
+        width: 100%;
+        min-height: 46px;
+        display: grid;
+        gap: 3px;
+        padding: 8px 10px;
+        border-radius: 9px;
+        color: var(--gray8);
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .search-result:hover,
+      .search-result.active {
+        color: var(--gray);
+        background: var(--pcolor1);
+      }
+
+      .search-result b,
+      .search-result small {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .search-result b {
+        font-weight: 700;
+      }
+
+      .search-result small {
+        color: var(--gray6);
+        font-size: 12px;
+      }
+
+      .search-empty {
+        padding: 10px;
+        color: var(--gray6);
+        font-size: 12px;
+      }
+
+      .top-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      main {
+        min-height: 0;
+        padding: 0 24px 24px;
+      }
+
+      .shell {
+        min-height: calc(100vh - 112px);
+        display: grid;
+        grid-template-columns: 198px minmax(0, 1fr);
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.76);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.68);
+        box-shadow: var(--shadow);
+      }
+
+      .side {
+        min-width: 0;
+        overflow: auto;
+        padding: 14px 12px;
+        border-right: 1px solid var(--gray1);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 250, 248, 0.62));
+      }
+
+      .side-title,
+      .level-label {
+        margin: 3px 4px 10px;
+        color: var(--gray6);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .side-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .side-node,
+      .tab,
+      .tool-btn {
+        min-height: 36px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--gray8);
+        cursor: pointer;
+        line-height: 1;
+        transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+      }
+
+      .side-node {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 46px;
+        padding: 8px;
+        border-radius: 10px;
+        text-align: left;
+      }
+
+      .side-node:hover,
+      .tab:hover,
+      .tool-btn:hover {
+        color: var(--gray);
+        background: var(--pcolor1);
+        transform: translateY(-1px);
+      }
+
+      .side-node.active {
+        color: var(--gray);
+        border-color: var(--pcolor2);
+        background: #fff;
+        box-shadow: 0 8px 18px rgba(11, 25, 38, 0.06);
+      }
+
+      .side-icon {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--pcolor);
+        background: var(--pcolor1);
+        font-size: 15px;
+      }
+
+      .side-node.active .side-icon {
+        color: #fff;
+        background: linear-gradient(135deg, var(--pcolor), var(--scolor));
+      }
+
+      .side-node b {
+        display: inline-flex;
+        align-items: center;
+        min-width: 0;
+        gap: 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+
+      .side-page-dot,
+      .tab-page-dot,
+      .option-page-dot {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: var(--scolor);
+        box-shadow: 0 0 0 3px var(--scolor1);
+      }
+
+      .side-node small {
+        color: var(--gray6);
+        line-height: 1;
+      }
+
+      .stage {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        background: var(--bg2);
+      }
+
+      .path-picker {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 30;
+        min-width: 0;
+        width: min(520px, calc(100vw - 230px));
+        display: none;
+      }
+
+      .path-picker.hidden {
+        display: none;
+      }
+
+      .path-picker.open {
+        display: block;
+      }
+
+      .path-picker-menu {
+        position: relative;
+        z-index: 20;
+        display: none;
+        grid-template-columns: minmax(138px, 0.8fr) minmax(190px, 1.2fr);
+        width: 100%;
+        padding: 8px;
+        border: 1px solid var(--gray1);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 18px 42px rgba(11, 25, 38, 0.14);
+      }
+
+      .path-picker.open .path-picker-menu {
+        display: grid;
+      }
+
+      .picker-column {
+        min-width: 0;
+        padding: 7px;
+      }
+
+      .picker-column + .picker-column {
+        border-left: 1px solid var(--gray1);
+      }
+
+      .picker-column-title {
+        margin: 0 4px 7px;
+        color: var(--gray6);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .picker-options {
+        display: grid;
+        gap: 3px;
+        max-height: 248px;
+        overflow: auto;
+      }
+
+      .picker-option {
+        width: 100%;
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border-radius: 8px;
+        color: var(--gray8);
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+        line-height: 1.2;
+      }
+
+      .picker-option:hover,
+      .picker-option.active {
+        color: var(--gray);
+        background: var(--pcolor1);
+      }
+
+      .picker-option.active {
+        color: var(--pcolor8);
+        font-weight: 700;
+      }
+
+      .picker-empty {
+        padding: 8px 4px;
+        color: var(--gray6);
+        font-size: 12px;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
+
+      .tool-btn {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-color: var(--gray1);
+        background: #fff;
+        color: var(--gray7);
+      }
+
+      .hierarchy-nav {
+        min-width: 0;
+        overflow: visible;
+        border-bottom: 1px solid var(--gray1);
+        background: var(--bg2);
+      }
+
+      .level2-tab-area {
+        position: relative;
+        min-width: 0;
+      }
+
+      .hierarchy-row.level-2 {
+        position: relative;
+        z-index: 11;
+      }
+
+      .hierarchy-row {
+        display: grid;
+        grid-template-columns: 100px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+        min-width: 0;
+        padding: 9px 16px;
+        border-top: 1px solid var(--gray1);
+      }
+
+      .hierarchy-row.level-2 {
+        background: var(--bg3);
+      }
+
+      .hierarchy-row.level-3 {
+        background: #fff;
+      }
+
+      .hierarchy-row.level-4 {
+        background: linear-gradient(90deg, var(--pcolor1), transparent 58%), var(--bg2);
+      }
+
+      .hierarchy-row .level-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        color: var(--gray7);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .level-number {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--pcolor8);
+        background: var(--pcolor1);
+        font-size: 11px;
+      }
+
+      .hierarchy-row.level-2 .level-number {
+        color: var(--scolor);
+        background: var(--scolor1);
+      }
+
+      .hierarchy-row.level-3 .level-number {
+        color: var(--wcolor);
+        background: rgba(255, 170, 26, 0.12);
+      }
+
+      .hierarchy-row.level-4 .level-number {
+        color: var(--gray7);
+        background: var(--gray1);
+      }
+
+      .tabs {
+        display: flex;
+        min-width: 0;
+        overflow: auto;
+        gap: 8px;
+        scrollbar-width: thin;
+      }
+
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        flex: 0 0 auto;
+        padding: 8px 13px;
+        white-space: nowrap;
+      }
+
+      .tab-with-menu {
+        gap: 8px;
+      }
+
+      .tab-menu-chevron {
+        position: relative;
+        width: 14px;
+        height: 14px;
+        display: inline-block;
+        flex: 0 0 auto;
+        color: var(--gray6);
+        font-size: 0;
+        line-height: 1;
+      }
+
+      .tab-menu-chevron::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 7px;
+        height: 7px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: translate(-50%, -62%) rotate(45deg);
+      }
+
+      .tab.active .tab-menu-chevron {
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      .tab.active {
+        color: #fff;
+        border-color: var(--pcolor);
+        background: var(--pcolor);
+        box-shadow: 0 8px 18px rgba(10, 169, 219, 0.2);
+      }
+
+      .hierarchy-row.level-3 .tab.active {
+        border-color: var(--scolor);
+        background: var(--scolor);
+        box-shadow: 0 8px 18px rgba(31, 180, 162, 0.18);
+      }
+
+      .hierarchy-row.level-4 .tab.active {
+        color: var(--gray);
+        border-color: var(--pcolor2);
+        background: #fff;
+      }
+
+      .frame-wrap {
+        min-height: 0;
+        background: #eef6f7;
+      }
+
+      .frame-state {
+        height: 100%;
+        min-height: 360px;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        background:
+          radial-gradient(circle at 20% 18%, var(--pcolor1), transparent 32%),
+          radial-gradient(circle at 80% 24%, var(--scolor1), transparent 28%),
+          #fff;
+      }
+
+      .state-card {
+        width: min(520px, 100%);
+        padding: 28px;
+        border: 1px solid var(--gray1);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 18px 42px rgba(11, 25, 38, 0.08);
+      }
+
+      .state-card h2 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.35;
+      }
+
+      .state-card p {
+        margin: 10px 0 0;
+        color: var(--gray7);
+        line-height: 1.7;
+      }
+
+      .state-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .primary-link,
+      .ghost-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 9px 14px;
+        border-radius: 12px;
+        text-decoration: none;
+        cursor: pointer;
+        line-height: 1;
+      }
+
+      .primary-link {
+        color: #fff;
+        background: var(--pcolor);
+        box-shadow: 0 10px 22px rgba(10, 169, 219, 0.2);
+      }
+
+      .ghost-btn {
+        border: 1px solid var(--gray1);
+        color: var(--gray8);
+        background: #fff;
+      }
+
+      .config-panel {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: none;
+      }
+
+      body.config-open .config-panel {
+        display: block;
+      }
+
+      .config-mask {
+        position: absolute;
+        inset: 0;
+        background: rgba(11, 25, 38, 0.22);
+        backdrop-filter: blur(4px);
+      }
+
+      .config-drawer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: min(980px, 100vw);
+        height: 100%;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        background: var(--bg2);
+        box-shadow: -18px 0 48px rgba(11, 25, 38, 0.14);
+      }
+
+      .config-head,
+      .config-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px;
+        border-bottom: 1px solid var(--gray1);
+      }
+
+      .config-head h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .config-head p {
+        margin: 4px 0 0;
+        color: var(--gray7);
+        font-size: 13px;
+      }
+
+      .config-foot {
+        border-top: 1px solid var(--gray1);
+        border-bottom: 0;
+      }
+
+      .config-tabs {
+        display: flex;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--gray1);
+        background: var(--bg3);
+      }
+
+      .config-tab {
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 12px;
+        border-radius: 12px;
+        color: var(--gray8);
+        background: transparent;
+        cursor: pointer;
+        line-height: 1.2;
+      }
+
+      .config-tab.active {
+        color: #fff;
+        background: var(--pcolor);
+      }
+
+      .config-body {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+      }
+
+      .config-module {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        overflow: auto;
+      }
+
+      .config-module.hidden,
+      .config-json.hidden {
+        display: none;
+      }
+
+      .module-tabs {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--gray1);
+      }
+
+      .module-tab {
+        flex: 0 0 auto;
+        height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        border-radius: 12px;
+        color: var(--gray8);
+        background: #fff;
+        cursor: pointer;
+        line-height: 1.2;
+      }
+
+      .module-tab.active {
+        color: #fff;
+        background: var(--scolor);
+      }
+
+      .config-overview {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        padding: 16px;
+        border-bottom: 1px solid var(--gray1);
+      }
+
+      .config-card {
+        padding: 14px;
+        border: 1px solid var(--gray1);
+        border-radius: 14px;
+        background: #fff;
+      }
+
+      .config-card span {
+        display: block;
+        color: var(--gray6);
+        font-size: 12px;
+      }
+
+      .config-card b {
+        display: block;
+        margin-top: 6px;
+        font-size: 22px;
+      }
+
+      .module-grid {
+        display: grid;
+        grid-template-columns: 420px minmax(0, 1fr);
+        gap: 0;
+        min-height: 0;
+      }
+
+      .module-list {
+        padding: 16px;
+        border-right: 1px solid var(--gray1);
+        background: var(--bg3);
+        overflow: auto;
+      }
+
+      .module-list-title {
+        margin: 0 0 12px;
+        color: var(--gray6);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .category-columns {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .category-column {
+        min-width: 0;
+        padding: 9px;
+        border: 1px solid var(--gray1);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.68);
+      }
+
+      .category-column.active {
+        border-color: var(--pcolor2);
+        background: #fff;
+        box-shadow: 0 8px 18px rgba(11, 25, 38, 0.05);
+      }
+
+      .category-column-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+
+      .category-column-title {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--gray7);
+        font-size: 11px;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .icon-btn {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        border: 1px solid var(--gray1);
+        border-radius: 8px;
+        color: var(--pcolor8);
+        background: #fff;
+        cursor: pointer;
+      }
+
+      .icon-btn:hover {
+        border-color: var(--pcolor2);
+        background: var(--pcolor1);
+      }
+
+      .icon-btn:disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+
+      .category-column .list-buttons {
+        max-height: 300px;
+        overflow: auto;
+      }
+
+      .list-buttons {
+        display: grid;
+        gap: 8px;
+      }
+
+      .list-button {
+        width: 100%;
+        min-height: 38px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 10px;
+        border-radius: 12px;
+        color: var(--gray8);
+        background: #fff;
+        text-align: left;
+        cursor: pointer;
+        line-height: 1;
+      }
+
+      .list-button.active {
+        color: #fff;
+        background: var(--pcolor);
+      }
+
+      .list-button small {
+        color: inherit;
+        opacity: 0.68;
+      }
+
+      .list-button span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 1.2;
+      }
+
+      .config-select-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .config-select-row label {
+        min-width: 0;
+      }
+
+      .config-select-row label + label {
+        margin-top: 0;
+      }
+
+      .config-select-row select {
+        min-width: 0;
+        text-overflow: ellipsis;
+      }
+
+      .config-list-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 10px;
+        color: var(--gray6);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .module-list label,
+      .field label {
+        display: grid;
+        gap: 7px;
+        color: var(--gray7);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .module-list select,
+      .field input,
+      .field select {
+        width: 100%;
+        height: 38px;
+        border: 1px solid var(--gray1);
+        border-radius: 12px;
+        padding: 8px 10px;
+        outline: 0;
+        color: var(--gray);
+        background: #fff;
+      }
+
+      .module-list select,
+      .field select {
+        appearance: none;
+        padding: 0 38px 0 10px;
+        line-height: 1.2;
+        background:
+          #fff
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25L7 8.75L10.5 5.25' stroke='%23515D68' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+          right 12px center / 14px 14px no-repeat;
+      }
+
+      .module-list label + label {
+        margin-top: 12px;
+      }
+
+      .module-form {
+        padding: 16px;
+        overflow: auto;
+      }
+
+      .form-section {
+        margin-bottom: 16px;
+        padding: 16px;
+        border: 1px solid var(--gray1);
+        border-radius: 16px;
+        background: #fff;
+      }
+
+      .form-section h3 {
+        margin: 0 0 12px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .side-icon-section {
+        background: var(--bg3);
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      .field input[type="color"] {
+        padding: 4px;
+      }
+
+      .switch-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--gray8);
+      }
+
+      .module-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .empty-note {
+        padding: 16px;
+        border: 1px dashed var(--gray2);
+        border-radius: 14px;
+        color: var(--gray7);
+        background: var(--bg3);
+      }
+
+      .danger-btn {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 14px;
+        border: 1px solid rgba(222, 48, 48, 0.16);
+        border-radius: 12px;
+        color: var(--ecolor);
+        background: rgba(222, 48, 48, 0.06);
+        cursor: pointer;
+        line-height: 1;
+      }
+
+      .config-json {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: 1fr;
+      }
+
+      .config-editor {
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        resize: none;
+        border: 0;
+        outline: 0;
+        padding: 16px;
+        color: var(--gray);
+        background: #fbfbfa;
+        font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        tab-size: 2;
+      }
+
+      .config-message {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--gray7);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      .primary-btn {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 16px;
+        border-radius: 12px;
+        color: #fff;
+        background: var(--pcolor);
+        cursor: pointer;
+        line-height: 1;
+      }
+
+      @media (max-width: 760px) {
+        .config-overview,
+        .module-grid,
+        .field-grid,
+        .category-columns,
+        .config-select-row {
+          grid-template-columns: 1fr;
+        }
+
+        .module-list {
+          border-right: 0;
+          border-bottom: 1px solid var(--gray1);
+        }
+      }
+
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        display: inline-block;
+        margin-right: 8px;
+        border-radius: 999px;
+        background: var(--pcolor);
+        box-shadow: 0 0 0 6px var(--pcolor1);
+      }
+
+      .status-dot.blocked {
+        background: var(--wcolor);
+        box-shadow: 0 0 0 6px rgba(255, 170, 26, 0.14);
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        display: block;
+        border: 0;
+        background: #fff;
+      }
+
+      .immersive-bar {
+        display: none;
+      }
+
+      body.is-immersive {
+        overflow: hidden;
+        background: #fff;
+      }
+
+      body.is-immersive .app {
+        display: block;
+        min-height: 100vh;
+      }
+
+      body.is-immersive .topbar,
+      body.is-immersive .side,
+      body.is-immersive .hierarchy-nav {
+        display: none;
+      }
+
+      body.is-immersive main {
+        width: 100vw;
+        height: 100vh;
+        padding: 0;
+      }
+
+      body.is-immersive .shell,
+      body.is-immersive .stage,
+      body.is-immersive .frame-wrap {
+        width: 100vw;
+        height: 100vh;
+        min-height: 0;
+        display: block;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: #fff;
+      }
+
+      body.is-immersive .immersive-bar {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        z-index: 30;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100vw - 28px);
+        padding: 8px;
+        border: 1px solid var(--gray1);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.86);
+        box-shadow: 0 12px 30px rgba(11, 25, 38, 0.12);
+        backdrop-filter: blur(16px);
+      }
+
+      .immersive-title {
+        max-width: min(44vw, 360px);
+        overflow: hidden;
+        padding: 0 8px;
+        color: var(--gray8);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+      }
+
+      body.is-immersive .tool-btn[data-action="immersive"] {
+        color: #fff;
+        border-color: var(--pcolor);
+        background: var(--pcolor);
+      }
+
+      @media (max-width: 920px) {
+        .topbar {
+          grid-template-columns: 1fr;
+        }
+
+        .top-actions {
+          justify-content: flex-start;
+        }
+
+        h1 {
+          white-space: normal;
+        }
+
+        main {
+          padding: 0 12px 12px;
+        }
+
+        .shell {
+          grid-template-columns: 1fr;
+          min-height: auto;
+        }
+
+        .side {
+          max-height: 210px;
+          border-right: 0;
+          border-bottom: 1px solid var(--gray1);
+        }
+
+        .side-list {
+          display: flex;
+          overflow: auto;
+        }
+
+        .side-node {
+          min-width: 150px;
+        }
+
+        .stage {
+          min-height: 680px;
+        }
+
+        .hierarchy-row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark">IF</div>
+          <div>
+            <h1 id="appTitle">Iframe 管理工作台</h1>
+            <div class="subtitle" id="appSubtitle">任意层级节点都可以配置为页面</div>
+          </div>
+        </div>
+        <label class="search" aria-label="搜索页面">
+          <span>⌕</span>
+          <input id="searchInput" placeholder="搜索页面、目录、平台" autocomplete="off" />
+          <div class="search-results" id="searchResults" role="listbox"></div>
+        </label>
+        <div class="top-actions">
+          <button class="tool-btn" data-action="refresh" title="刷新当前 iframe">↻</button>
+          <button class="tool-btn" data-action="open" title="新窗口打开">↗</button>
+          <button class="tool-btn" data-action="immersive" title="沉浸式查看">⛶</button>
+          <button class="tool-btn" data-action="config" title="配置管理">⚙</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="shell">
+          <aside class="side">
+            <div class="side-title">一级分类</div>
+            <div class="side-list" id="rootList"></div>
+          </aside>
+
+          <section class="stage">
+            <nav class="hierarchy-nav" aria-label="层级导航">
+              <div class="hierarchy-row level-2">
+                <div class="level-label"><span class="level-number">2</span>二级目录</div>
+                <div class="level2-tab-area" id="level2TabArea">
+                  <div class="tabs" id="level2Tabs"></div>
+                  <div class="path-picker" id="pathPicker">
+                    <div class="path-picker-menu" role="menu">
+                      <section class="picker-column">
+                        <div class="picker-column-title">三级目录</div>
+                        <div class="picker-options" id="level3Menu"></div>
+                      </section>
+                      <section class="picker-column">
+                        <div class="picker-column-title">下级页面</div>
+                        <div class="picker-options" id="pageMenu"></div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </nav>
+
+            <div class="frame-wrap" id="frameWrap"></div>
+            <div class="immersive-bar" aria-label="沉浸式控制条">
+              <span class="immersive-title" id="immersiveTitle"></span>
+              <button class="tool-btn" data-action="refresh" title="刷新当前 iframe">↻</button>
+              <button class="tool-btn" data-action="open" title="新窗口打开">↗</button>
+              <button class="tool-btn" data-action="immersive" title="退出沉浸式">×</button>
+            </div>
+          </section>
+        </section>
+      </main>
+
+      <section class="config-panel" aria-label="配置管理">
+        <div class="config-mask" data-action="close-config"></div>
+        <aside class="config-drawer">
+          <header class="config-head">
+            <div>
+              <h2>配置管理</h2>
+              <p>模块化编辑分类和页面链接，保存后立即刷新工作台。</p>
+            </div>
+            <button class="tool-btn" data-action="close-config" title="关闭">×</button>
+          </header>
+          <div class="config-body">
+            <nav class="config-tabs" aria-label="配置模式">
+              <button class="config-tab active" data-action="config-mode" data-mode="module">模块编辑</button>
+              <button class="config-tab" data-action="config-mode" data-mode="json">高级 JSON</button>
+            </nav>
+            <section class="config-module" id="configModule">
+              <div class="config-overview">
+                <div class="config-card"><span>一级分类</span><b id="rootCount">0</b></div>
+                <div class="config-card"><span>页面数量</span><b id="pageTotal">0</b></div>
+                <div class="config-card"><span>链接探测</span><b id="probeState">开启</b></div>
+              </div>
+              <nav class="module-tabs" aria-label="模块类型">
+                <button class="module-tab active" data-action="module-section" data-section="app">应用设置</button>
+                <button class="module-tab" data-action="module-section" data-section="category">分类结构</button>
+                <button class="module-tab" data-action="module-section" data-section="page">下级页面</button>
+              </nav>
+              <div class="module-grid">
+                <aside class="module-list">
+                  <div id="moduleNavigator"></div>
+                </aside>
+                <section class="module-form" id="moduleForm"></section>
+              </div>
+            </section>
+            <section class="config-json hidden" id="configJson">
+              <textarea class="config-editor" id="configEditor" spellcheck="false"></textarea>
+            </section>
+          </div>
+          <footer class="config-foot">
+            <div class="config-message" id="configMessage">配置来自 config.json</div>
+            <div class="actions">
+              <button class="ghost-btn" data-action="format-config">格式化</button>
+              <button class="ghost-btn" data-action="reload-config">重新读取</button>
+              <button class="primary-btn" data-action="save-config">保存并生效</button>
+            </div>
+          </footer>
+        </aside>
+      </section>
+    </div>
+
+    <script>
+      let appConfig = { app: {}, probe: { enabled: true }, items: [] };
+      let draftConfig = null;
+      let workspaceConfig = [];
+      let pages = [];
+      let activeProbeToken = 0;
+      let searchActiveIndex = 0;
+
+      const probeCache = new Map();
+      const state = {
+        root: "",
+        level2: "",
+        level3: "",
+        page: "",
+        immersive: false,
+        pickerOpen: false
+      };
+
+      const configUi = {
+        mode: "module",
+        section: "category",
+        categoryLevel: "root",
+        root: "",
+        level2: "",
+        level3: "",
+        page: ""
+      };
+
+      const escapeHtml = (value) =>
+        String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+
+      const cloneConfig = (config) => JSON.parse(JSON.stringify(config));
+
+      function makeId(prefix, title = "") {
+        const slug = String(title)
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        return `${prefix}-${slug || Date.now().toString(36)}`;
+      }
+
+      function flatten(nodes, path = []) {
+        return nodes.flatMap((node) => {
+          const nextPath = [...path, { id: node.id, title: node.title }];
+          const current = node.url ? [{ accent: "#0AA9DB", ...node, path: nextPath }] : [];
+          return [...current, ...flatten(node.children || [], nextPath)];
+        });
+      }
+
+      function firstPageIn(nodes) {
+        return flatten(nodes || [])[0] || null;
+      }
+
+      function rootNode() {
+        return workspaceConfig.find((item) => item.id === state.root) || workspaceConfig[0] || { children: [] };
+      }
+
+      function level2Node() {
+        return (rootNode().children || []).find((item) => item.id === state.level2) || (rootNode().children || [])[0] || { children: [] };
+      }
+
+      function level3Node() {
+        return (level2Node().children || []).find((item) => item.id === state.level3) || (level2Node().children || [])[0] || { children: [] };
+      }
+
+      function pageNode() {
+        return pages.find((item) => item.id === state.page) || null;
+      }
+
+      function selectNodeOrFirstPage(node, fallbackToChild = true) {
+        const page = node?.url ? node : fallbackToChild ? firstPageIn(node?.children || []) : null;
+        state.page = page?.id || "";
+      }
+
+      function syncToDefaults() {
+        const root = rootNode();
+        const l2 = level2Node();
+        state.level2 = l2?.id || "";
+        const l3 = (l2.children || [])[0];
+        state.level3 = l3?.id || "";
+        selectNodeOrFirstPage(root, false);
+      }
+
+      function selectPage(id) {
+        const found = pages.find((item) => item.id === id);
+        if (!found) return;
+        state.root = found.path[0]?.id || "";
+        state.level2 = found.path[1]?.id || "";
+        state.level3 = found.path[2]?.id || "";
+        state.page = found.id;
+      }
+
+      function syncInitialSelection() {
+        const first = pages[0];
+        if (!first) return;
+        state.root = first.path[0]?.id || "";
+        state.level2 = first.path[1]?.id || "";
+        state.level3 = first.path[2]?.id || "";
+        state.page = first.id;
+      }
+
+      function normalizeExternalUrl(value) {
+        const url = String(value || "").trim();
+        if (/^https?:\/\//i.test(url)) return url;
+        if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(url)) return `https://${url}`;
+        return "";
+      }
+
+      function isMockUrl(url) {
+        return !normalizeExternalUrl(url);
+      }
+
+      function mockSrcDoc(page) {
+        const hash = [...page.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+        const cpu = 18 + (hash % 62);
+        const mem = 25 + (hash % 58);
+        const req = 1000 + hash * 7;
+        const path = page.path.map((item) => item.title).join(" / ");
+        return `
+          <!doctype html>
+          <html lang="zh-CN">
+            <head>
+              <meta charset="utf-8" />
+              <style>
+                :root { --accent: ${page.accent}; --pcolor: #0AA9DB; --scolor: #1FB4A2; --gray: #0B1926; --gray1: rgba(11,25,38,.08); --gray7: rgba(11,25,38,.64); --bg1: #F4F2EC; }
+                * { box-sizing: border-box; }
+                body { margin: 0; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--gray); background: #fff; }
+                .page { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+                .hero { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; padding: 28px; border-bottom: 1px solid var(--gray1); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%), var(--bg1); }
+                h2 { margin: 0; font-size: 28px; line-height: 1.25; }
+                p { margin: 8px 0 0; color: var(--gray7); }
+                .badge { width: 88px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 22px; color: #fff; background: linear-gradient(135deg, var(--accent), var(--scolor)); font-size: 26px; font-weight: 800; box-shadow: 0 14px 32px color-mix(in srgb, var(--accent) 22%, transparent); }
+                .content { padding: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-content: start; background: #fff; }
+                .metric { min-height: 116px; padding: 16px; border: 1px solid var(--gray1); border-radius: 14px; background: #fff; }
+                .metric span { color: var(--gray7); font-size: 13px; }
+                .metric b { display: block; margin-top: 12px; font-size: 30px; }
+                .bars { grid-column: 1 / -1; display: grid; gap: 10px; margin-top: 4px; }
+                .bar { height: 14px; border-radius: 999px; background: linear-gradient(90deg, var(--c) var(--w), rgba(11,25,38,.08) var(--w)); }
+                @media (max-width: 720px) { .content { grid-template-columns: 1fr; } .badge { width: 64px; } }
+              </style>
+            </head>
+            <body>
+              <div class="page">
+                <section class="hero">
+                  <div>
+                    <h2>${escapeHtml(page.title)}</h2>
+                    <p>${escapeHtml(path)} / ${escapeHtml(page.url)}</p>
+                  </div>
+                  <div class="badge">${escapeHtml(page.title.slice(0, 2))}</div>
+                </section>
+                <section class="content">
+                  <div class="metric"><span>运行状态</span><b>${hash % 3 === 0 ? "巡检中" : "正常"}</b></div>
+                  <div class="metric"><span>CPU 峰值</span><b>${cpu}%</b></div>
+                  <div class="metric"><span>请求量</span><b>${req}</b></div>
+                  <div class="bars">
+                    <div class="bar" style="--c:${page.accent};--w:${cpu}%"></div>
+                    <div class="bar" style="--c:#1FB4A2;--w:${mem}%"></div>
+                    <div class="bar" style="--c:#FFAA1A;--w:${Math.min(96, cpu + 13)}%"></div>
+                  </div>
+                </section>
+              </div>
+            </body>
+          </html>`;
+      }
+
+      function renderTabs(containerId, items, activeId, dataName) {
+        document.querySelector(containerId).innerHTML = items
+          .map((item) => {
+            const hasMenu = dataName === "level2" && (item.children || []).length > 0;
+            const pageMark = item.url ? '<span class="tab-page-dot" title="此节点已配置页面"></span>' : "";
+            return `<button class="tab ${hasMenu ? "tab-with-menu" : ""} ${item.id === activeId ? "active" : ""}" data-${dataName}="${escapeHtml(item.id)}" aria-current="${item.id === activeId ? "page" : "false"}" aria-haspopup="${hasMenu ? "menu" : "false"}" aria-expanded="${hasMenu && item.id === activeId && state.pickerOpen ? "true" : "false"}">${pageMark}${escapeHtml(item.title)}${hasMenu ? '<span class="tab-menu-chevron">⌄</span>' : ""}</button>`;
+          })
+          .join("");
+      }
+
+      function pickerOptionHtml(items, activeId, dataName) {
+        if (!(items || []).length) return `<div class="picker-empty">当前没有可选项</div>`;
+        return items
+          .map((item) => `<button class="picker-option ${item.id === activeId ? "active" : ""}" data-${dataName}="${escapeHtml(item.id)}" role="menuitem">${item.url ? '<span class="option-page-dot"></span>' : ""}${escapeHtml(item.title || item.id)}</button>`)
+          .join("");
+      }
+
+      function setPickerOpen(enabled) {
+        state.pickerOpen = enabled;
+        const picker = document.querySelector("#pathPicker");
+        if (picker) picker.classList.toggle("open", state.pickerOpen);
+        document.querySelectorAll("[data-level2]").forEach((button) => {
+          if (button.dataset.level2 === state.level2) button.setAttribute("aria-expanded", String(state.pickerOpen));
+        });
+      }
+
+      function renderPathPicker(level2, level3, page) {
+        const picker = document.querySelector("#pathPicker");
+        if (!picker) return;
+        const level3Items = level2?.children || [];
+        if (!level3Items.length) {
+          picker.classList.add("hidden");
+          setPickerOpen(false);
+          return;
+        }
+        picker.classList.remove("hidden");
+        document.querySelector("#level3Menu").innerHTML = pickerOptionHtml(level3Items, state.level3, "level3");
+        document.querySelector("#pageMenu").innerHTML = pickerOptionHtml(level3?.children || [], state.page, "page");
+        setPickerOpen(state.pickerOpen);
+      }
+
+      function renderRootList() {
+        document.querySelector("#rootList").innerHTML = workspaceConfig
+          .map((item) => `
+            <button class="side-node ${item.id === state.root ? "active" : ""}" data-root="${escapeHtml(item.id)}" aria-current="${item.id === state.root ? "page" : "false"}">
+              <span class="side-icon">${escapeHtml(item.icon || "□")}</span>
+              <b>${item.url ? '<span class="side-page-dot" title="此节点已配置页面"></span>' : ""}${escapeHtml(item.title)}</b>
+              <small>${item.children?.length || 0}</small>
+            </button>`)
+          .join("");
+      }
+
+      function searchText(page) {
+        return [
+          page.title,
+          page.url,
+          ...(page.path || []).map((item) => item.title)
+        ].join(" ").toLowerCase();
+      }
+
+      function searchMatches(keyword) {
+        const normalized = keyword.trim().toLowerCase();
+        if (!normalized) return [];
+        return pages
+          .filter((page) => searchText(page).includes(normalized))
+          .slice(0, 8);
+      }
+
+      function setSearchResults(matches, keyword = "") {
+        const results = document.querySelector("#searchResults");
+        if (!results) return;
+        if (!keyword.trim()) {
+          searchActiveIndex = 0;
+          results.classList.remove("open");
+          results.innerHTML = "";
+          return;
+        }
+        searchActiveIndex = 0;
+        results.classList.add("open");
+        results.innerHTML = matches.length
+          ? matches.map((page, index) => `
+              <button class="search-result ${index === searchActiveIndex ? "active" : ""}" data-search-page="${escapeHtml(page.id)}" role="option" aria-selected="${index === searchActiveIndex ? "true" : "false"}">
+                <b>${escapeHtml(page.title || page.id)}</b>
+                <small>${escapeHtml((page.path || []).map((item) => item.title).join(" / "))}</small>
+              </button>`)
+            .join("")
+          : `<div class="search-empty">没有匹配结果</div>`;
+      }
+
+      function closeSearchResults() {
+        setSearchResults([], "");
+      }
+
+      function searchResultButtons() {
+        return [...document.querySelectorAll("#searchResults [data-search-page]")];
+      }
+
+      function setSearchActiveIndex(index) {
+        const buttons = searchResultButtons();
+        if (!buttons.length) return;
+        searchActiveIndex = (index + buttons.length) % buttons.length;
+        buttons.forEach((button, buttonIndex) => {
+          const active = buttonIndex === searchActiveIndex;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-selected", String(active));
+        });
+        buttons[searchActiveIndex].scrollIntoView({ block: "nearest" });
+      }
+
+      function chooseSearchResult(button) {
+        if (!button) return;
+        selectPage(button.dataset.searchPage);
+        document.querySelector("#searchInput").value = "";
+        closeSearchResults();
+        render();
+      }
+
+      function setImmersive(enabled) {
+        state.immersive = enabled;
+        document.body.classList.toggle("is-immersive", state.immersive);
+      }
+
+      function setConfigMessage(message, isError = false) {
+        const target = document.querySelector("#configMessage");
+        target.textContent = message;
+        target.style.color = isError ? "var(--ecolor)" : "var(--gray7)";
+      }
+
+      function draftItems() {
+        if (!draftConfig) draftConfig = cloneConfig(appConfig);
+        if (!Array.isArray(draftConfig.items)) draftConfig.items = [];
+        return draftConfig.items;
+      }
+
+      function configRootNode() {
+        return draftItems().find((item) => item.id === configUi.root) || draftItems()[0];
+      }
+
+      function configLevel2Node() {
+        const root = configRootNode();
+        return (root?.children || []).find((item) => item.id === configUi.level2) || (root?.children || [])[0];
+      }
+
+      function configLevel3Node() {
+        const level2 = configLevel2Node();
+        return (level2?.children || []).find((item) => item.id === configUi.level3) || (level2?.children || [])[0];
+      }
+
+      function configPageNode() {
+        const level3 = configLevel3Node();
+        return (level3?.children || []).find((item) => item.id === configUi.page) || (level3?.children || [])[0];
+      }
+
+      function ensureConfigSelection() {
+        const root = configRootNode();
+        configUi.root = root?.id || "";
+        const level2 = configLevel2Node();
+        configUi.level2 = level2?.id || "";
+        const level3 = configLevel3Node();
+        configUi.level3 = level3?.id || "";
+        const page = configPageNode();
+        configUi.page = page?.id || "";
+      }
+
+      function countDraftPages() {
+        return flatten(draftItems()).length;
+      }
+
+      function setConfigMode(mode) {
+        configUi.mode = mode;
+        document.querySelectorAll(".config-tab").forEach((button) => {
+          button.classList.toggle("active", button.dataset.mode === mode);
+        });
+        document.querySelector("#configModule").classList.toggle("hidden", mode !== "module");
+        document.querySelector("#configJson").classList.toggle("hidden", mode !== "json");
+        if (mode === "json") syncConfigEditor();
+      }
+
+      function syncConfigEditor() {
+        document.querySelector("#configEditor").value = JSON.stringify(draftConfig || appConfig, null, 2);
+      }
+
+      function listButtonHtml(items, activeId, selectKey) {
+        if (!(items || []).length) return `<div class="empty-note">当前没有可选项</div>`;
+        return `<div class="list-buttons">${items
+          .map((item) => `
+            <button class="list-button ${item.id === activeId ? "active" : ""}" data-action="select-config-node" data-key="${selectKey}" data-id="${escapeHtml(item.id)}">
+              <span>${escapeHtml(item.title || item.id)}</span>
+              <small>${escapeHtml(item.children ? item.children.length : "")}</small>
+            </button>`)
+          .join("")}</div>`;
+      }
+
+      function categoryLevelTitle(level) {
+        return ({ root: "一级分类", level2: "二级目录", level3: "三级目录" })[level] || "分类";
+      }
+
+      function categoryItems(level) {
+        if (level === "root") return draftItems();
+        if (level === "level2") return configRootNode()?.children || [];
+        if (level === "level3") return configLevel2Node()?.children || [];
+        return [];
+      }
+
+      function renderCategoryColumn(level) {
+        const items = categoryItems(level);
+        const canAdd = level === "root" || (level === "level2" ? Boolean(configRootNode()) : Boolean(configLevel2Node()));
+        return `
+          <section class="category-column ${configUi.categoryLevel === level ? "active" : ""}">
+            <div class="category-column-head">
+              <span class="category-column-title">${categoryLevelTitle(level)}</span>
+              <button class="icon-btn" data-action="add-node" data-level="${level}" title="新增${categoryLevelTitle(level)}" ${canAdd ? "" : "disabled"}>+</button>
+            </div>
+            ${listButtonHtml(items, configUi[level], level)}
+          </section>`;
+      }
+
+      function renderCategoryNavigator() {
+        document.querySelector("#moduleNavigator").innerHTML = `
+          <p class="module-list-title">选择要编辑的分类</p>
+          <div class="category-columns">
+            ${renderCategoryColumn("root")}
+            ${renderCategoryColumn("level2")}
+            ${renderCategoryColumn("level3")}
+          </div>`;
+      }
+
+      function renderPageNavigator() {
+        const root = configRootNode();
+        const level2 = configLevel2Node();
+        const level3 = configLevel3Node();
+        document.querySelector("#moduleNavigator").innerHTML = `
+          <p class="module-list-title">选择四级页面所属分类</p>
+          <div class="config-select-row">
+            <label>一级分类<select data-config-select="root">${(draftItems() || []).map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === configUi.root ? "selected" : ""}>${escapeHtml(item.title || item.id)}</option>`).join("")}</select></label>
+            <label>二级目录<select data-config-select="level2">${(root?.children || []).map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === configUi.level2 ? "selected" : ""}>${escapeHtml(item.title || item.id)}</option>`).join("")}</select></label>
+            <label>三级目录<select data-config-select="level3">${(level2?.children || []).map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === configUi.level3 ? "selected" : ""}>${escapeHtml(item.title || item.id)}</option>`).join("")}</select></label>
+          </div>
+          <div class="config-list-heading"><span>当前三级目录下的四级页面</span><span>${level3?.children?.length || 0} 个</span></div>
+          ${listButtonHtml(level3?.children || [], configUi.page, "page")}
+          <div class="module-actions"><button class="ghost-btn" data-action="add-node" data-level="page">新增四级页面</button></div>`;
+      }
+
+      function renderAppSettingsForm() {
+        document.querySelector("#moduleForm").innerHTML = `
+          <section class="form-section">
+            <h3>应用设置</h3>
+            <div class="field-grid">
+              <div class="field"><label>标题<input data-app-field="title" value="${escapeHtml(draftConfig.app?.title || "")}" /></label></div>
+              <div class="field"><label>副标题<input data-app-field="subtitle" value="${escapeHtml(draftConfig.app?.subtitle || "")}" /></label></div>
+              <label class="switch-field"><input type="checkbox" data-app-field="probeEnabled" ${draftConfig.probe?.enabled !== false ? "checked" : ""} /> 启用链接 iframe 探测</label>
+            </div>
+          </section>`;
+      }
+
+      function renderAppSettingsNavigator() {
+        document.querySelector("#moduleNavigator").innerHTML = `
+          <p class="module-list-title">全局设置</p>
+          <div class="empty-note">这里的配置会影响整个工作台。</div>`;
+      }
+
+      function renderCategoryForm() {
+        const level = configUi.categoryLevel;
+        const node = selectedNode(level);
+        if (!node) {
+          document.querySelector("#moduleForm").innerHTML = `<div class="empty-note">请先新增${categoryLevelTitle(level)}。</div>`;
+          return;
+        }
+        const iconSection = level === "root"
+          ? `<section class="form-section side-icon-section">
+              <h3>侧栏图标</h3>
+              <div class="field-grid">
+                <div class="field"><label>图标<input data-node-level="root" data-node-field="icon" value="${escapeHtml(node.icon || "")}" /></label></div>
+              </div>
+            </section>`
+          : "";
+        document.querySelector("#moduleForm").innerHTML = `
+          <section class="form-section">
+            <h3>${categoryLevelTitle(level)}</h3>
+            <div class="field-grid">
+              <div class="field"><label>名称<input data-node-level="${level}" data-node-field="title" value="${escapeHtml(node.title || "")}" /></label></div>
+              <div class="field"><label>强调色<input type="color" data-node-level="${level}" data-node-field="accent" value="${escapeHtml(node.accent || "#0AA9DB")}" /></label></div>
+              <div class="field full"><label>页面链接（可选）<input data-node-level="${level}" data-node-field="url" value="${escapeHtml(node.url || "")}" placeholder="留空时只作为目录；填写后此节点也是页面" /></label></div>
+              <div class="field full"><label>ID<input value="${escapeHtml(node.id || "")}" readonly /></label></div>
+            </div>
+          </section>
+          ${iconSection}
+          <div class="module-actions">
+            <button class="danger-btn" data-action="delete-node" data-level="${level}">删除当前${categoryLevelTitle(level)}</button>
+          </div>`;
+      }
+
+      function renderPageForm() {
+        const page = configPageNode();
+        if (!page) {
+          document.querySelector("#moduleForm").innerHTML = `<div class="empty-note">当前三级目录下还没有四级页面。一级、二级、三级节点也可以直接在“分类结构”里填写页面链接。</div>`;
+          return;
+        }
+        document.querySelector("#moduleForm").innerHTML = `
+          <section class="form-section">
+            <h3>四级页面</h3>
+            <div class="field-grid">
+              <div class="field"><label>名称<input data-node-level="page" data-node-field="title" value="${escapeHtml(page.title || "")}" /></label></div>
+              <div class="field"><label>强调色<input type="color" data-node-level="page" data-node-field="accent" value="${escapeHtml(page.accent || "#0AA9DB")}" /></label></div>
+              <div class="field full"><label>链接<input data-node-level="page" data-node-field="url" value="${escapeHtml(page.url || "")}" /></label></div>
+              <div class="field full"><label>ID<input value="${escapeHtml(page.id || "")}" readonly /></label></div>
+            </div>
+            <div class="module-actions">
+              <button class="danger-btn" data-action="delete-node" data-level="page">删除当前四级页面</button>
+            </div>
+          </section>`;
+      }
+
+      function renderConfigModule() {
+        if (!draftConfig) return;
+        ensureConfigSelection();
+        document.querySelector("#rootCount").textContent = draftItems().length;
+        document.querySelector("#pageTotal").textContent = countDraftPages();
+        document.querySelector("#probeState").textContent = draftConfig.probe?.enabled === false ? "关闭" : "开启";
+        document.querySelectorAll(".module-tab").forEach((button) => {
+          button.classList.toggle("active", button.dataset.section === configUi.section);
+        });
+        if (configUi.section === "app") {
+          renderAppSettingsNavigator();
+          renderAppSettingsForm();
+        } else if (configUi.section === "page") {
+          renderPageNavigator();
+          renderPageForm();
+        } else {
+          renderCategoryNavigator();
+          renderCategoryForm();
+        }
+        syncConfigEditor();
+      }
+
+      function openConfigPanel() {
+        draftConfig = cloneConfig(appConfig);
+        configUi.root = state.root;
+        configUi.level2 = state.level2;
+        configUi.level3 = state.level3;
+        configUi.page = state.page;
+        configUi.section = "app";
+        configUi.categoryLevel = "root";
+        ensureConfigSelection();
+        setConfigMode("module");
+        renderConfigModule();
+        document.body.classList.add("config-open");
+        setConfigMessage("配置来自 config.json");
+      }
+
+      function closeConfigPanel() {
+        document.body.classList.remove("config-open");
+      }
+
+      function readEditorConfig() {
+        const text = document.querySelector("#configEditor").value;
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("配置必须是 JSON 对象");
+        if (!Array.isArray(parsed.items)) throw new Error("配置缺少 items 数组");
+        return parsed;
+      }
+
+      function selectedNode(level) {
+        if (level === "root") return configRootNode();
+        if (level === "level2") return configLevel2Node();
+        if (level === "level3") return configLevel3Node();
+        if (level === "page") return configPageNode();
+        return null;
+      }
+
+      function addNode(level) {
+        if (level !== "page") configUi.categoryLevel = level;
+        if (level === "root") {
+          const node = { id: makeId("root", "new"), title: "新一级分类", icon: "□", children: [] };
+          draftItems().push(node);
+          configUi.root = node.id;
+          configUi.level2 = "";
+          configUi.level3 = "";
+          configUi.page = "";
+        }
+        if (level === "level2") {
+          const root = configRootNode();
+          if (!root) return;
+          root.children ||= [];
+          const node = { id: makeId("level2", "new"), title: "新二级目录", children: [] };
+          root.children.push(node);
+          configUi.level2 = node.id;
+          configUi.level3 = "";
+          configUi.page = "";
+        }
+        if (level === "level3") {
+          const level2 = configLevel2Node();
+          if (!level2) return;
+          level2.children ||= [];
+          const node = { id: makeId("level3", "new"), title: "新三级目录", children: [] };
+          level2.children.push(node);
+          configUi.level3 = node.id;
+          configUi.page = "";
+        }
+        if (level === "page") {
+          const level3 = configLevel3Node();
+          if (!level3) return;
+          level3.children ||= [];
+          const node = { id: makeId("page", "new"), title: "新页面", url: "https://example.com/", accent: "#0AA9DB" };
+          level3.children.push(node);
+          configUi.page = node.id;
+        }
+        renderConfigModule();
+        setConfigMessage("已添加，请保存后生效");
+      }
+
+      function removeById(items, id) {
+        const index = (items || []).findIndex((item) => item.id === id);
+        if (index >= 0) items.splice(index, 1);
+      }
+
+      function deleteNode(level) {
+        if (level === "root") removeById(draftItems(), configUi.root);
+        if (level === "level2") removeById(configRootNode()?.children || [], configUi.level2);
+        if (level === "level3") removeById(configLevel2Node()?.children || [], configUi.level3);
+        if (level === "page") removeById(configLevel3Node()?.children || [], configUi.page);
+        if (level !== "page") {
+          configUi.level2 = level === "root" ? "" : configUi.level2;
+          configUi.level3 = ["root", "level2"].includes(level) ? "" : configUi.level3;
+          configUi.page = "";
+        }
+        ensureConfigSelection();
+        renderConfigModule();
+        setConfigMessage("已删除，请保存后生效");
+      }
+
+      function applyConfig(nextConfig, preferredPageId = state.page) {
+        appConfig = nextConfig;
+        workspaceConfig = appConfig.items || [];
+        pages = flatten(workspaceConfig);
+        probeCache.clear();
+        activeProbeToken += 1;
+        document.querySelector("#appTitle").textContent = appConfig.app?.title || "Iframe 管理工作台";
+        document.querySelector("#appSubtitle").textContent = appConfig.app?.subtitle || "配置驱动 iframe 工作台";
+        if (preferredPageId && pages.some((page) => page.id === preferredPageId)) selectPage(preferredPageId);
+        else syncInitialSelection();
+        render();
+      }
+
+      async function saveConfigFromEditor() {
+        try {
+          const nextConfig = configUi.mode === "json" ? readEditorConfig() : cloneConfig(draftConfig || appConfig);
+          const response = await fetch("/api/config", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(nextConfig)
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.reason || `保存失败：${response.status}`);
+          draftConfig = cloneConfig(nextConfig);
+          applyConfig(nextConfig);
+          document.querySelector("#configEditor").value = JSON.stringify(nextConfig, null, 2);
+          renderConfigModule();
+          setConfigMessage("已保存并生效");
+        } catch (error) {
+          setConfigMessage(error.message, true);
+        }
+      }
+
+      function probeKey(page) {
+        return normalizeExternalUrl(page?.url) || page?.url || "";
+      }
+
+      function probeStatus(page) {
+        if (!page) return { status: "empty", embeddable: false, reason: "没有可展示页面" };
+        if (isMockUrl(page.url)) return { status: "mock", embeddable: true, reason: "内部模拟页面" };
+        if (appConfig.probe?.enabled === false) return { status: "disabled", embeddable: true, reason: "配置已关闭链接探测" };
+        return probeCache.get(probeKey(page)) || { status: "pending", embeddable: null, reason: "正在探测链接是否允许 iframe 嵌入" };
+      }
+
+      async function ensureProbe(page, force = false) {
+        if (!page || isMockUrl(page.url) || appConfig.probe?.enabled === false) return;
+        const key = probeKey(page);
+        if (!force && probeCache.has(key)) return;
+        const token = ++activeProbeToken;
+        probeCache.set(key, { status: "pending", embeddable: null, reason: "正在探测链接是否允许 iframe 嵌入" });
+        renderFrame();
+        try {
+          const response = await fetch(`/api/probe?url=${encodeURIComponent(normalizeExternalUrl(page.url))}`, { cache: "no-store" });
+          const result = await response.json();
+          probeCache.set(key, result);
+        } catch (error) {
+          probeCache.set(key, {
+            url: page.url,
+            status: "probe-error",
+            embeddable: false,
+            reason: `链接探测失败：${error.message}`
+          });
+        }
+        if (token === activeProbeToken && pageNode()?.id === page.id) renderFrame();
+      }
+
+      function openCurrentPage() {
+        const page = pageNode();
+        if (!page) return;
+        const externalUrl = normalizeExternalUrl(page.url);
+        if (!externalUrl) {
+          const win = window.open("", "_blank");
+          if (win) {
+            win.document.write(mockSrcDoc(page));
+            win.document.close();
+          }
+          return;
+        }
+        window.open(externalUrl, "_blank", "noopener,noreferrer");
+      }
+
+      function stateCard({ dot = "", title, body, actionLabel, retry = false }) {
+        const page = pageNode();
+        const externalUrl = normalizeExternalUrl(page?.url);
+        const action = page && externalUrl
+          ? `<a class="primary-link" href="${escapeHtml(externalUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(actionLabel || "打开页面")}</a>`
+          : "";
+        const retryButton = retry ? `<button class="ghost-btn" data-action="reprobe">重新探测</button>` : "";
+        return `
+          <div class="frame-state">
+            <section class="state-card">
+              <h2><span class="status-dot ${dot}"></span>${escapeHtml(title)}</h2>
+              <p>${escapeHtml(body)}</p>
+              <div class="state-actions">${action}${retryButton}</div>
+            </section>
+          </div>`;
+      }
+
+      function frameRenderKey(page, status = null) {
+        if (!page) return `empty:${pages.length}`;
+        const externalUrl = normalizeExternalUrl(page.url);
+        return JSON.stringify({
+          id: page.id,
+          title: page.title || "",
+          accent: page.accent || "",
+          path: (page.path || []).map((item) => item.id).join("/"),
+          url: externalUrl || page.url || "",
+          status: status?.status || "",
+          embeddable: status?.embeddable ?? "",
+          finalUrl: status?.finalUrl || ""
+        });
+      }
+
+      function renderFrame() {
+        const page = pageNode();
+        const frameWrap = document.querySelector("#frameWrap");
+        if (!frameWrap) return;
+        if (!page) {
+          const key = frameRenderKey(page);
+          if (frameWrap.dataset.frameKey === key) return;
+          frameWrap.dataset.frameKey = key;
+          frameWrap.innerHTML = stateCard({
+            title: pages.length ? "请选择页面" : "配置中没有页面",
+            body: pages.length
+              ? "当前选中的是目录，请在下级列表中选择具体页面，或给这个目录配置页面链接。"
+              : "请在配置中至少给一个节点填写页面链接。一级、二级、三级、四级都可以。"
+          });
+          return;
+        }
+
+        const status = probeStatus(page);
+        const key = frameRenderKey(page, status);
+        if (frameWrap.dataset.frameKey === key) return;
+        frameWrap.dataset.frameKey = key;
+
+        if (status.status === "pending") {
+          frameWrap.innerHTML = stateCard({
+            title: "正在探测链接",
+            body: "工作台正在检查目标页面的 X-Frame-Options 与 CSP frame-ancestors 策略。"
+          });
+          return;
+        }
+
+        if (!status.embeddable) {
+          frameWrap.innerHTML = stateCard({
+            dot: "blocked",
+            title: "当前页面不允许 iframe 嵌入",
+            body: status.reason || "目标页面设置了安全策略，浏览器会阻止它在 iframe 中展示。请使用跳转按钮在新窗口打开。",
+            actionLabel: "跳转打开",
+            retry: true
+          });
+          return;
+        }
+
+        const externalUrl = normalizeExternalUrl(page.url);
+        if (!externalUrl) {
+          frameWrap.innerHTML = `<iframe title="${escapeHtml(page.title)}" srcdoc="${escapeHtml(mockSrcDoc(page))}"></iframe>`;
+          return;
+        }
+
+        frameWrap.innerHTML = `<iframe title="${escapeHtml(page.title)}" src="${escapeHtml(status.finalUrl || externalUrl)}" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
+      }
+
+      function render() {
+        const root = rootNode();
+        const l2 = level2Node();
+        const l3 = level3Node();
+        const page = pageNode();
+
+        renderRootList();
+        renderTabs("#level2Tabs", root.children || [], state.level2, "level2");
+        renderPathPicker(l2, l3, page);
+
+        document.querySelector("#immersiveTitle").textContent = page ? page.path.map((item) => item.title).join(" / ") : "未选择页面";
+        renderFrame();
+        setImmersive(state.immersive);
+        ensureProbe(page);
+      }
+
+      document.addEventListener("click", (event) => {
+        if (state.pickerOpen && !event.target.closest("#level2TabArea")) setPickerOpen(false);
+        if (!event.target.closest(".search")) closeSearchResults();
+        const target = event.target.closest("[data-action], button");
+        if (!target) return;
+
+        if (target.dataset.searchPage) {
+          chooseSearchResult(target);
+          return;
+        }
+
+        if (target.dataset.root) {
+          state.root = target.dataset.root;
+          state.pickerOpen = false;
+          syncToDefaults();
+          render();
+          return;
+        }
+
+        if (target.dataset.level2) {
+          const sameLevel2 = state.level2 === target.dataset.level2;
+          state.level2 = target.dataset.level2;
+          const selectedLevel2 = level2Node();
+          if (!sameLevel2) {
+            const l3 = selectedLevel2.children?.[0];
+            state.level3 = l3?.id || "";
+          }
+          if (selectedLevel2.url) state.page = selectedLevel2.id;
+          const hasChildren = Boolean(selectedLevel2.children?.length);
+          state.pickerOpen = hasChildren && (sameLevel2 ? !state.pickerOpen : true);
+          render();
+          return;
+        }
+
+        if (target.dataset.level3) {
+          state.level3 = target.dataset.level3;
+          state.pickerOpen = true;
+          const selectedLevel3 = level3Node();
+          if (selectedLevel3.url) state.page = selectedLevel3.id;
+          render();
+          return;
+        }
+
+        if (target.dataset.page) {
+          state.page = target.dataset.page;
+          state.pickerOpen = false;
+          render();
+          return;
+        }
+
+        if (target.dataset.action === "toggle-picker") {
+          setPickerOpen(!state.pickerOpen);
+          return;
+        }
+
+        if (target.dataset.action === "refresh") {
+          const iframe = document.querySelector("iframe");
+          if (iframe?.srcdoc) iframe.srcdoc = iframe.srcdoc;
+          else if (iframe?.src) iframe.src = iframe.src;
+          else ensureProbe(pageNode(), true);
+        }
+
+        if (target.dataset.action === "immersive") {
+          setImmersive(!state.immersive);
+        }
+
+        if (target.dataset.action === "open") {
+          openCurrentPage();
+        }
+
+        if (target.dataset.action === "reprobe") {
+          ensureProbe(pageNode(), true);
+        }
+
+        if (target.dataset.action === "config") {
+          openConfigPanel();
+        }
+
+        if (target.dataset.action === "config-mode") {
+          if (target.dataset.mode === "module" && configUi.mode === "json") {
+            try {
+              draftConfig = cloneConfig(readEditorConfig());
+            } catch (error) {
+              setConfigMessage(error.message, true);
+              return;
+            }
+          }
+          setConfigMode(target.dataset.mode);
+          renderConfigModule();
+        }
+
+        if (target.dataset.action === "module-section") {
+          configUi.section = target.dataset.section;
+          renderConfigModule();
+        }
+
+        if (target.dataset.action === "category-level") {
+          configUi.categoryLevel = target.dataset.level;
+          renderConfigModule();
+        }
+
+        if (target.dataset.action === "select-config-node") {
+          configUi[target.dataset.key] = target.dataset.id;
+          if (configUi.section === "category" && ["root", "level2", "level3"].includes(target.dataset.key)) {
+            configUi.categoryLevel = target.dataset.key;
+          }
+          if (target.dataset.key === "root") {
+            configUi.level2 = "";
+            configUi.level3 = "";
+            configUi.page = "";
+          }
+          if (target.dataset.key === "level2") {
+            configUi.level3 = "";
+            configUi.page = "";
+          }
+          if (target.dataset.key === "level3") configUi.page = "";
+          renderConfigModule();
+        }
+
+        if (target.dataset.action === "close-config") {
+          closeConfigPanel();
+        }
+
+        if (target.dataset.action === "format-config") {
+          try {
+            const parsed = configUi.mode === "json" ? readEditorConfig() : cloneConfig(draftConfig || appConfig);
+            if (configUi.mode === "json") draftConfig = cloneConfig(parsed);
+            document.querySelector("#configEditor").value = JSON.stringify(parsed, null, 2);
+            if (configUi.mode === "module") renderConfigModule();
+            setConfigMessage("格式化完成");
+          } catch (error) {
+            setConfigMessage(error.message, true);
+          }
+        }
+
+        if (target.dataset.action === "reload-config") {
+          loadConfig()
+            .then((config) => {
+              draftConfig = cloneConfig(config);
+              document.querySelector("#configEditor").value = JSON.stringify(config, null, 2);
+              renderConfigModule();
+              setConfigMessage("已重新读取 config.json");
+            })
+            .catch((error) => setConfigMessage(error.message, true));
+        }
+
+        if (target.dataset.action === "save-config") {
+          saveConfigFromEditor();
+        }
+
+        if (target.dataset.action === "add-node") {
+          addNode(target.dataset.level);
+        }
+
+        if (target.dataset.action === "delete-node") {
+          deleteNode(target.dataset.level);
+        }
+      });
+
+      document.addEventListener("change", (event) => {
+        const target = event.target;
+        if (target.dataset.configSelect) {
+          const key = target.dataset.configSelect;
+          configUi[key] = target.value;
+          if (key === "root") {
+            configUi.level2 = "";
+            configUi.level3 = "";
+            configUi.page = "";
+          }
+          if (key === "level2") {
+            configUi.level3 = "";
+            configUi.page = "";
+          }
+          if (key === "level3") configUi.page = "";
+          renderConfigModule();
+          return;
+        }
+
+        if (target.dataset.appField === "probeEnabled") {
+          draftConfig.probe ||= {};
+          draftConfig.probe.enabled = target.checked;
+          renderConfigModule();
+          setConfigMessage("已修改，请保存后生效");
+        }
+      });
+
+      document.addEventListener("input", (event) => {
+        const target = event.target;
+        if (target.dataset.appField && target.dataset.appField !== "probeEnabled") {
+          draftConfig.app ||= {};
+          draftConfig.app[target.dataset.appField] = target.value;
+          syncConfigEditor();
+          setConfigMessage("已修改，请保存后生效");
+          return;
+        }
+
+        if (target.dataset.nodeLevel && target.dataset.nodeField) {
+          const node = selectedNode(target.dataset.nodeLevel);
+          if (!node) return;
+          node[target.dataset.nodeField] = target.value;
+          syncConfigEditor();
+          if (target.dataset.nodeField === "title") {
+            const option = document.querySelector(`[data-config-select="${target.dataset.nodeLevel}"] option[value="${CSS.escape(node.id)}"]`);
+            if (option) option.textContent = target.value || node.id;
+          }
+          setConfigMessage("已修改，请保存后生效");
+        }
+      });
+
+      document.querySelector("#searchInput").addEventListener("input", (event) => {
+        const keyword = event.target.value;
+        setSearchResults(searchMatches(keyword), keyword);
+      });
+
+      document.addEventListener("keydown", (event) => {
+        const searchResults = document.querySelector("#searchResults");
+        const searchOpen = searchResults?.classList.contains("open");
+        const searchFocused = document.activeElement?.id === "searchInput";
+        if (["ArrowDown", "ArrowUp"].includes(event.key) && searchFocused && searchOpen) {
+          setSearchActiveIndex(searchActiveIndex + (event.key === "ArrowDown" ? 1 : -1));
+          event.preventDefault();
+        } else if (event.key === "Enter" && searchFocused && searchOpen) {
+          chooseSearchResult(searchResultButtons()[searchActiveIndex]);
+          event.preventDefault();
+        } else if (event.key === "Escape" && searchOpen) {
+          closeSearchResults();
+        } else if (event.key === "Escape" && state.immersive) {
+          setImmersive(false);
+        } else if (event.key === "Escape" && document.body.classList.contains("config-open")) {
+          closeConfigPanel();
+        } else if (event.key === "Escape" && state.pickerOpen) {
+          setPickerOpen(false);
+        }
+      });
+
+      async function loadConfig() {
+        const response = await fetch("/api/config", { cache: "no-store" });
+        if (!response.ok) throw new Error(`读取 config.json 失败：${response.status}`);
+        return response.json();
+      }
+
+      async function init() {
+        try {
+          appConfig = await loadConfig();
+          applyConfig(appConfig, "");
+        } catch (error) {
+          document.querySelector("#frameWrap").innerHTML = stateCard({
+            dot: "blocked",
+            title: "配置加载失败",
+            body: error.message
+          });
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>
