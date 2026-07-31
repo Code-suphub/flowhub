@@ -746,40 +746,13 @@
       .config-module {
         min-height: 0;
         display: grid;
-        grid-template-rows: auto auto minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
         overflow: auto;
       }
 
       .config-module.hidden,
       .config-json.hidden {
         display: none;
-      }
-
-      .module-tabs {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--gray1);
-      }
-
-      .module-tab {
-        flex: 0 0 auto;
-        height: 40px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0 14px;
-        border-radius: 12px;
-        color: var(--gray8);
-        background: #fff;
-        cursor: pointer;
-        line-height: 1.2;
-      }
-
-      .module-tab.active {
-        color: #fff;
-        background: var(--scolor);
       }
 
       .config-overview {
@@ -811,7 +784,7 @@
 
       .module-grid {
         display: grid;
-        grid-template-columns: 420px minmax(0, 1fr);
+        grid-template-columns: 360px minmax(0, 1fr);
         gap: 0;
         min-height: 0;
       }
@@ -830,43 +803,152 @@
         font-weight: 700;
       }
 
-      .category-columns {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-        min-width: 0;
-      }
-
-      .category-column {
-        min-width: 0;
-        padding: 9px;
-        border: 1px solid var(--gray1);
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.68);
-      }
-
-      .category-column.active {
-        border-color: var(--pcolor2);
-        background: #fff;
-        box-shadow: 0 8px 18px rgba(11, 25, 38, 0.05);
-      }
-
-      .category-column-head {
+      .module-list-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 6px;
-        margin-bottom: 8px;
+        gap: 10px;
+        margin-bottom: 12px;
       }
 
-      .category-column-title {
+      .module-list-head .module-list-title {
+        margin: 0;
+      }
+
+      .structure-tree {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .tree-node {
+        width: 100%;
+        min-height: 34px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        color: var(--gray8);
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        line-height: 1;
+      }
+
+      .tree-node[draggable="true"] {
+        cursor: grab;
+      }
+
+      .tree-node.dragging {
+        opacity: 0.48;
+        cursor: grabbing;
+      }
+
+      .tree-node.drop-before {
+        box-shadow: inset 0 2px 0 var(--scolor);
+      }
+
+      .tree-node.drop-after {
+        box-shadow: inset 0 -2px 0 var(--scolor);
+      }
+
+      .tree-node:hover {
+        color: var(--gray);
+        background: var(--pcolor1);
+      }
+
+      .tree-node.active {
+        color: #fff;
+        border-color: var(--pcolor);
+        background: var(--pcolor);
+      }
+
+      .tree-node-main {
+        min-width: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .tree-toggle {
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        border-radius: 6px;
+        color: inherit;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .tree-toggle:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      .tree-toggle-placeholder {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+      }
+
+      .tree-toggle-icon {
+        width: 7px;
+        height: 7px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(-45deg);
+        transition: transform 0.16s ease;
+      }
+
+      .tree-toggle.expanded .tree-toggle-icon {
+        transform: rotate(45deg);
+      }
+
+      .tree-indent {
+        flex: 0 0 auto;
+        width: calc(var(--depth, 0) * 16px);
+        height: 1px;
+      }
+
+      .tree-label {
         min-width: 0;
         overflow: hidden;
-        color: var(--gray7);
-        font-size: 11px;
-        font-weight: 700;
         text-overflow: ellipsis;
         white-space: nowrap;
+        line-height: 1.2;
+      }
+
+      .tree-page-dot {
+        width: 7px;
+        height: 7px;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: var(--scolor);
+        box-shadow: 0 0 0 3px var(--scolor1);
+      }
+
+      .tree-node.active .tree-page-dot {
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
+      }
+
+      .tree-count {
+        color: inherit;
+        opacity: 0.68;
+      }
+
+      .node-path {
+        margin: -2px 0 14px;
+        overflow: hidden;
+        color: var(--gray7);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
       }
 
       .icon-btn {
@@ -1353,7 +1435,8 @@
           </header>
           <div class="config-body">
             <nav class="config-tabs" aria-label="配置模式">
-              <button class="config-tab active" data-action="config-mode" data-mode="module">模块编辑</button>
+              <button class="config-tab active" data-action="config-mode" data-mode="structure">结构编辑</button>
+              <button class="config-tab" data-action="config-mode" data-mode="app">应用设置</button>
               <button class="config-tab" data-action="config-mode" data-mode="json">高级 JSON</button>
             </nav>
             <section class="config-module" id="configModule">
@@ -1362,11 +1445,6 @@
                 <div class="config-card"><span>页面数量</span><b id="pageTotal">0</b></div>
                 <div class="config-card"><span>链接探测</span><b id="probeState">开启</b></div>
               </div>
-              <nav class="module-tabs" aria-label="模块类型">
-                <button class="module-tab active" data-action="module-section" data-section="app">应用设置</button>
-                <button class="module-tab" data-action="module-section" data-section="category">分类结构</button>
-                <button class="module-tab" data-action="module-section" data-section="page">下级页面</button>
-              </nav>
               <div class="module-grid">
                 <aside class="module-list">
                   <div id="moduleNavigator"></div>
@@ -1409,13 +1487,11 @@
       };
 
       const configUi = {
-        mode: "module",
-        section: "category",
-        categoryLevel: "root",
-        root: "",
-        level2: "",
-        level3: "",
-        page: ""
+        mode: "structure",
+        nodeId: "",
+        expanded: new Set(),
+        collapsed: new Set(),
+        dragNodeId: ""
       };
 
       const escapeHtml = (value) =>
@@ -1690,34 +1766,28 @@
         return draftConfig.items;
       }
 
-      function configRootNode() {
-        return draftItems().find((item) => item.id === configUi.root) || draftItems()[0];
+      function walkConfigNodes(nodes, visitor, path = [], parent = null, siblings = nodes) {
+        (nodes || []).forEach((node, index) => {
+          const nextPath = [...path, node];
+          visitor({ node, parent, siblings, index, path: nextPath, level: nextPath.length });
+          walkConfigNodes(node.children || [], visitor, nextPath, node, node.children || []);
+        });
       }
 
-      function configLevel2Node() {
-        const root = configRootNode();
-        return (root?.children || []).find((item) => item.id === configUi.level2) || (root?.children || [])[0];
-      }
-
-      function configLevel3Node() {
-        const level2 = configLevel2Node();
-        return (level2?.children || []).find((item) => item.id === configUi.level3) || (level2?.children || [])[0];
-      }
-
-      function configPageNode() {
-        const level3 = configLevel3Node();
-        return (level3?.children || []).find((item) => item.id === configUi.page) || (level3?.children || [])[0];
+      function configNodeInfo(id = configUi.nodeId) {
+        let found = null;
+        walkConfigNodes(draftItems(), (info) => {
+          if (info.node.id === id) found = info;
+        });
+        return found;
       }
 
       function ensureConfigSelection() {
-        const root = configRootNode();
-        configUi.root = root?.id || "";
-        const level2 = configLevel2Node();
-        configUi.level2 = level2?.id || "";
-        const level3 = configLevel3Node();
-        configUi.level3 = level3?.id || "";
-        const page = configPageNode();
-        configUi.page = page?.id || "";
+        const selected = configNodeInfo(configUi.nodeId);
+        if (selected) return selected;
+        const fallback = draftItems()[0];
+        configUi.nodeId = fallback?.id || "";
+        return fallback ? configNodeInfo(fallback.id) : null;
       }
 
       function countDraftPages() {
@@ -1729,7 +1799,7 @@
         document.querySelectorAll(".config-tab").forEach((button) => {
           button.classList.toggle("active", button.dataset.mode === mode);
         });
-        document.querySelector("#configModule").classList.toggle("hidden", mode !== "module");
+        document.querySelector("#configModule").classList.toggle("hidden", mode === "json");
         document.querySelector("#configJson").classList.toggle("hidden", mode !== "json");
         if (mode === "json") syncConfigEditor();
       }
@@ -1738,65 +1808,97 @@
         document.querySelector("#configEditor").value = JSON.stringify(draftConfig || appConfig, null, 2);
       }
 
-      function listButtonHtml(items, activeId, selectKey) {
-        if (!(items || []).length) return `<div class="empty-note">当前没有可选项</div>`;
-        return `<div class="list-buttons">${items
-          .map((item) => `
-            <button class="list-button ${item.id === activeId ? "active" : ""}" data-action="select-config-node" data-key="${selectKey}" data-id="${escapeHtml(item.id)}">
-              <span>${escapeHtml(item.title || item.id)}</span>
-              <small>${escapeHtml(item.children ? item.children.length : "")}</small>
-            </button>`)
-          .join("")}</div>`;
+      function nodeLevelTitle(level) {
+        return ["一级分类", "二级目录", "三级目录", "四级页面"][level - 1] || `${level}级节点`;
       }
 
-      function categoryLevelTitle(level) {
-        return ({ root: "一级分类", level2: "二级目录", level3: "三级目录" })[level] || "分类";
+      function nodePathText(info) {
+        return (info?.path || []).map((item) => item.title || item.id).join(" / ");
       }
 
-      function categoryItems(level) {
-        if (level === "root") return draftItems();
-        if (level === "level2") return configRootNode()?.children || [];
-        if (level === "level3") return configLevel2Node()?.children || [];
-        return [];
+      function isConfigExpanded(node) {
+        return !configUi.collapsed.has(node.id);
       }
 
-      function renderCategoryColumn(level) {
-        const items = categoryItems(level);
-        const canAdd = level === "root" || (level === "level2" ? Boolean(configRootNode()) : Boolean(configLevel2Node()));
-        return `
-          <section class="category-column ${configUi.categoryLevel === level ? "active" : ""}">
-            <div class="category-column-head">
-              <span class="category-column-title">${categoryLevelTitle(level)}</span>
-              <button class="icon-btn" data-action="add-node" data-level="${level}" title="新增${categoryLevelTitle(level)}" ${canAdd ? "" : "disabled"}>+</button>
-            </div>
-            ${listButtonHtml(items, configUi[level], level)}
-          </section>`;
+      function isDescendantOf(descendantId, ancestorId) {
+        const info = configNodeInfo(descendantId);
+        return Boolean(info?.path.slice(0, -1).some((item) => item.id === ancestorId));
       }
 
-      function renderCategoryNavigator() {
+      function visibleConfigNodes(nodes = draftItems(), path = [], parent = null, siblings = nodes) {
+        return (nodes || []).flatMap((node, index) => {
+          const nextPath = [...path, node];
+          const info = { node, parent, siblings, index, path: nextPath, level: nextPath.length };
+          const childRows = node.children?.length && isConfigExpanded(node)
+            ? visibleConfigNodes(node.children, nextPath, node, node.children)
+            : [];
+          return [info, ...childRows];
+        });
+      }
+
+      function renderStructureNavigator() {
+        const rows = visibleConfigNodes().map(({ node, parent, level, index }) => {
+          const hasChildren = Boolean(node.children?.length);
+          return `
+            <div class="tree-node ${node.id === configUi.nodeId ? "active" : ""}" data-action="select-config-node" data-node-id="${escapeHtml(node.id)}" data-parent-id="${escapeHtml(parent?.id || "")}" data-index="${index}" draggable="true" role="button" tabindex="0" style="--depth: ${level - 1}">
+              <span class="tree-node-main">
+                <span class="tree-indent"></span>
+                ${hasChildren
+                  ? `<button class="tree-toggle ${isConfigExpanded(node) ? "expanded" : ""}" data-action="toggle-config-node" data-node-id="${escapeHtml(node.id)}" title="${isConfigExpanded(node) ? "收起" : "展开"}"><span class="tree-toggle-icon"></span></button>`
+                  : `<span class="tree-toggle-placeholder"></span>`}
+                ${node.url ? `<span class="tree-page-dot" title="已配置页面链接"></span>` : ""}
+                <span class="tree-label">${escapeHtml(node.title || node.id)}</span>
+              </span>
+              <span class="tree-count">${escapeHtml(node.children?.length || "")}</span>
+            </div>`;
+        });
         document.querySelector("#moduleNavigator").innerHTML = `
-          <p class="module-list-title">选择要编辑的分类</p>
-          <div class="category-columns">
-            ${renderCategoryColumn("root")}
-            ${renderCategoryColumn("level2")}
-            ${renderCategoryColumn("level3")}
-          </div>`;
-      }
-
-      function renderPageNavigator() {
-        const root = configRootNode();
-        const level2 = configLevel2Node();
-        const level3 = configLevel3Node();
-        document.querySelector("#moduleNavigator").innerHTML = `
-          <p class="module-list-title">选择四级页面所属分类</p>
-          <div class="config-select-row">
-            <label>一级分类<select data-config-select="root">${(draftItems() || []).map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === configUi.root ? "selected" : ""}>${escapeHtml(item.title || item.id)}</option>`).join("")}</select></label>
-            <label>二级目录<select data-config-select="level2">${(root?.children || []).map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === configUi.level2 ? "selected" : ""}>${escapeHtml(item.title || item.id)}</option>`).join("")}</select></label>
-            <label>三级目录<select data-config-select="level3">${(level2?.children || []).map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === configUi.level3 ? "selected" : ""}>${escapeHtml(item.title || item.id)}</option>`).join("")}</select></label>
+          <div class="module-list-head">
+            <p class="module-list-title">结构树</p>
+            <button class="icon-btn" data-action="add-node" data-placement="root" title="新增一级节点">+</button>
           </div>
-          <div class="config-list-heading"><span>当前三级目录下的四级页面</span><span>${level3?.children?.length || 0} 个</span></div>
-          ${listButtonHtml(level3?.children || [], configUi.page, "page")}
-          <div class="module-actions"><button class="ghost-btn" data-action="add-node" data-level="page">新增四级页面</button></div>`;
+          <div class="structure-tree">${rows.join("") || `<div class="empty-note">还没有节点。</div>`}</div>`;
+      }
+
+      function toggleConfigNode(id) {
+        const info = configNodeInfo(id);
+        if (!info?.node.children?.length) return;
+        if (configUi.collapsed.has(id)) {
+          configUi.collapsed.delete(id);
+        } else {
+          configUi.collapsed.add(id);
+          if (isDescendantOf(configUi.nodeId, id)) configUi.nodeId = id;
+        }
+        renderConfigModule();
+      }
+
+      function clearTreeDropState() {
+        document.querySelectorAll(".tree-node.dragging, .tree-node.drop-before, .tree-node.drop-after").forEach((node) => {
+          node.classList.remove("dragging", "drop-before", "drop-after");
+        });
+      }
+
+      function sameParentNodeInfo(sourceId, targetId) {
+        const source = configNodeInfo(sourceId);
+        const target = configNodeInfo(targetId);
+        if (!source || !target) return null;
+        if ((source.parent?.id || "") !== (target.parent?.id || "")) return null;
+        return { source, target };
+      }
+
+      function moveConfigNode(sourceId, targetId, placement) {
+        const pair = sameParentNodeInfo(sourceId, targetId);
+        if (!pair || sourceId === targetId) return false;
+        const { source, target } = pair;
+        const [moved] = source.siblings.splice(source.index, 1);
+        let targetIndex = target.siblings.findIndex((item) => item.id === targetId);
+        if (placement === "after") targetIndex += 1;
+        source.siblings.splice(targetIndex, 0, moved);
+        configUi.nodeId = sourceId;
+        syncConfigEditor();
+        renderConfigModule();
+        setConfigMessage("排序已调整，请保存后生效");
+        return true;
       }
 
       function renderAppSettingsForm() {
@@ -1817,56 +1919,39 @@
           <div class="empty-note">这里的配置会影响整个工作台。</div>`;
       }
 
-      function renderCategoryForm() {
-        const level = configUi.categoryLevel;
-        const node = selectedNode(level);
-        if (!node) {
-          document.querySelector("#moduleForm").innerHTML = `<div class="empty-note">请先新增${categoryLevelTitle(level)}。</div>`;
+      function renderNodeForm() {
+        const info = ensureConfigSelection();
+        if (!info) {
+          document.querySelector("#moduleForm").innerHTML = `<div class="empty-note">请先新增一级节点。</div>`;
           return;
         }
-        const iconSection = level === "root"
+        const { node, level } = info;
+        const iconSection = level === 1
           ? `<section class="form-section side-icon-section">
               <h3>侧栏图标</h3>
-              <div class="field-grid">
-                <div class="field"><label>图标<input data-node-level="root" data-node-field="icon" value="${escapeHtml(node.icon || "")}" /></label></div>
+              <div class="field-grid compact-field-grid">
+                <div class="field"><label>图标<input data-node-field="icon" value="${escapeHtml(node.icon || "")}" /></label></div>
               </div>
             </section>`
           : "";
         document.querySelector("#moduleForm").innerHTML = `
           <section class="form-section">
-            <h3>${categoryLevelTitle(level)}</h3>
+            <h3>节点属性</h3>
+            <div class="node-path">路径：${escapeHtml(nodePathText(info))}</div>
             <div class="field-grid">
-              <div class="field"><label>名称<input data-node-level="${level}" data-node-field="title" value="${escapeHtml(node.title || "")}" /></label></div>
-              <div class="field"><label>强调色<input type="color" data-node-level="${level}" data-node-field="accent" value="${escapeHtml(node.accent || "#0AA9DB")}" /></label></div>
-              <div class="field full"><label>页面链接（可选）<input data-node-level="${level}" data-node-field="url" value="${escapeHtml(node.url || "")}" placeholder="留空时只作为目录；填写后此节点也是页面" /></label></div>
-              <div class="field full"><label>ID<input value="${escapeHtml(node.id || "")}" readonly /></label></div>
-            </div>
-          </section>
-          ${iconSection}
-          <div class="module-actions">
-            <button class="danger-btn" data-action="delete-node" data-level="${level}">删除当前${categoryLevelTitle(level)}</button>
-          </div>`;
-      }
-
-      function renderPageForm() {
-        const page = configPageNode();
-        if (!page) {
-          document.querySelector("#moduleForm").innerHTML = `<div class="empty-note">当前三级目录下还没有四级页面。一级、二级、三级节点也可以直接在“分类结构”里填写页面链接。</div>`;
-          return;
-        }
-        document.querySelector("#moduleForm").innerHTML = `
-          <section class="form-section">
-            <h3>四级页面</h3>
-            <div class="field-grid">
-              <div class="field"><label>名称<input data-node-level="page" data-node-field="title" value="${escapeHtml(page.title || "")}" /></label></div>
-              <div class="field"><label>强调色<input type="color" data-node-level="page" data-node-field="accent" value="${escapeHtml(page.accent || "#0AA9DB")}" /></label></div>
-              <div class="field full"><label>链接<input data-node-level="page" data-node-field="url" value="${escapeHtml(page.url || "")}" /></label></div>
-              <div class="field full"><label>ID<input value="${escapeHtml(page.id || "")}" readonly /></label></div>
+              <div class="field"><label>层级<input value="${escapeHtml(nodeLevelTitle(level))}" readonly /></label></div>
+              <div class="field"><label>名称<input data-node-field="title" value="${escapeHtml(node.title || "")}" /></label></div>
+              <div class="field"><label>强调色<input type="color" data-node-field="accent" value="${escapeHtml(node.accent || "#0AA9DB")}" /></label></div>
+              <div class="field"><label>ID<input value="${escapeHtml(node.id || "")}" readonly /></label></div>
+              <div class="field full"><label>页面链接（可选）<input data-node-field="url" value="${escapeHtml(node.url || "")}" placeholder="留空时作为目录；填写后这个节点也会成为页面" /></label></div>
             </div>
             <div class="module-actions">
-              <button class="danger-btn" data-action="delete-node" data-level="page">删除当前四级页面</button>
+              <button class="ghost-btn" data-action="add-node" data-placement="sibling">新增同级</button>
+              <button class="ghost-btn" data-action="add-node" data-placement="child">新增下级</button>
+              <button class="danger-btn" data-action="delete-node">删除当前节点</button>
             </div>
-          </section>`;
+          </section>
+          ${iconSection}`;
       }
 
       function renderConfigModule() {
@@ -1875,32 +1960,23 @@
         document.querySelector("#rootCount").textContent = draftItems().length;
         document.querySelector("#pageTotal").textContent = countDraftPages();
         document.querySelector("#probeState").textContent = draftConfig.probe?.enabled === false ? "关闭" : "开启";
-        document.querySelectorAll(".module-tab").forEach((button) => {
-          button.classList.toggle("active", button.dataset.section === configUi.section);
-        });
-        if (configUi.section === "app") {
+        if (configUi.mode === "app") {
           renderAppSettingsNavigator();
           renderAppSettingsForm();
-        } else if (configUi.section === "page") {
-          renderPageNavigator();
-          renderPageForm();
         } else {
-          renderCategoryNavigator();
-          renderCategoryForm();
+          renderStructureNavigator();
+          renderNodeForm();
         }
         syncConfigEditor();
       }
 
       function openConfigPanel() {
         draftConfig = cloneConfig(appConfig);
-        configUi.root = state.root;
-        configUi.level2 = state.level2;
-        configUi.level3 = state.level3;
-        configUi.page = state.page;
-        configUi.section = "app";
-        configUi.categoryLevel = "root";
+        configUi.nodeId = state.page || state.level3 || state.level2 || state.root || draftItems()[0]?.id || "";
+        configUi.mode = "structure";
+        configUi.collapsed.clear();
         ensureConfigSelection();
-        setConfigMode("module");
+        setConfigMode("structure");
         renderConfigModule();
         document.body.classList.add("config-open");
         setConfigMessage("配置来自 config.json");
@@ -1918,70 +1994,54 @@
         return parsed;
       }
 
-      function selectedNode(level) {
-        if (level === "root") return configRootNode();
-        if (level === "level2") return configLevel2Node();
-        if (level === "level3") return configLevel3Node();
-        if (level === "page") return configPageNode();
-        return null;
+      function uniqueNodeId(prefix = "node") {
+        let id = makeId(prefix, "new");
+        let index = 2;
+        while (configNodeInfo(id)) {
+          id = `${makeId(prefix, "new")}-${index}`;
+          index += 1;
+        }
+        return id;
       }
 
-      function addNode(level) {
-        if (level !== "page") configUi.categoryLevel = level;
-        if (level === "root") {
-          const node = { id: makeId("root", "new"), title: "新一级分类", icon: "□", children: [] };
+      function createDraftNode(level) {
+        const node = { id: uniqueNodeId("node"), title: `新${nodeLevelTitle(level)}`, children: [] };
+        if (level === 1) node.icon = "□";
+        if (level >= 4) node.url = "https://example.com/";
+        return node;
+      }
+
+      function addNode(placement) {
+        if (placement === "root") {
+          const node = createDraftNode(1);
           draftItems().push(node);
-          configUi.root = node.id;
-          configUi.level2 = "";
-          configUi.level3 = "";
-          configUi.page = "";
+          configUi.nodeId = node.id;
+          renderConfigModule();
+          setConfigMessage("已添加，请保存后生效");
+          return;
         }
-        if (level === "level2") {
-          const root = configRootNode();
-          if (!root) return;
-          root.children ||= [];
-          const node = { id: makeId("level2", "new"), title: "新二级目录", children: [] };
-          root.children.push(node);
-          configUi.level2 = node.id;
-          configUi.level3 = "";
-          configUi.page = "";
+        const info = ensureConfigSelection();
+        if (!info) return;
+        const level = placement === "child" ? info.level + 1 : info.level;
+        const node = createDraftNode(level);
+        if (placement === "child") {
+          info.node.children ||= [];
+          info.node.children.push(node);
+          configUi.collapsed.delete(info.node.id);
+        } else {
+          info.siblings.splice(info.index + 1, 0, node);
         }
-        if (level === "level3") {
-          const level2 = configLevel2Node();
-          if (!level2) return;
-          level2.children ||= [];
-          const node = { id: makeId("level3", "new"), title: "新三级目录", children: [] };
-          level2.children.push(node);
-          configUi.level3 = node.id;
-          configUi.page = "";
-        }
-        if (level === "page") {
-          const level3 = configLevel3Node();
-          if (!level3) return;
-          level3.children ||= [];
-          const node = { id: makeId("page", "new"), title: "新页面", url: "https://example.com/", accent: "#0AA9DB" };
-          level3.children.push(node);
-          configUi.page = node.id;
-        }
+        configUi.nodeId = node.id;
         renderConfigModule();
         setConfigMessage("已添加，请保存后生效");
       }
 
-      function removeById(items, id) {
-        const index = (items || []).findIndex((item) => item.id === id);
-        if (index >= 0) items.splice(index, 1);
-      }
-
-      function deleteNode(level) {
-        if (level === "root") removeById(draftItems(), configUi.root);
-        if (level === "level2") removeById(configRootNode()?.children || [], configUi.level2);
-        if (level === "level3") removeById(configLevel2Node()?.children || [], configUi.level3);
-        if (level === "page") removeById(configLevel3Node()?.children || [], configUi.page);
-        if (level !== "page") {
-          configUi.level2 = level === "root" ? "" : configUi.level2;
-          configUi.level3 = ["root", "level2"].includes(level) ? "" : configUi.level3;
-          configUi.page = "";
-        }
+      function deleteNode() {
+        const info = configNodeInfo();
+        if (!info) return;
+        info.siblings.splice(info.index, 1);
+        const next = info.siblings[info.index] || info.siblings[info.index - 1] || info.parent || draftItems()[0];
+        configUi.nodeId = next?.id || "";
         ensureConfigSelection();
         renderConfigModule();
         setConfigMessage("已删除，请保存后生效");
@@ -2245,9 +2305,10 @@
         }
 
         if (target.dataset.action === "config-mode") {
-          if (target.dataset.mode === "module" && configUi.mode === "json") {
+          if (target.dataset.mode !== "json" && configUi.mode === "json") {
             try {
               draftConfig = cloneConfig(readEditorConfig());
+              ensureConfigSelection();
             } catch (error) {
               setConfigMessage(error.message, true);
               return;
@@ -2257,31 +2318,14 @@
           renderConfigModule();
         }
 
-        if (target.dataset.action === "module-section") {
-          configUi.section = target.dataset.section;
-          renderConfigModule();
-        }
-
-        if (target.dataset.action === "category-level") {
-          configUi.categoryLevel = target.dataset.level;
-          renderConfigModule();
+        if (target.dataset.action === "toggle-config-node") {
+          event.stopPropagation();
+          toggleConfigNode(target.dataset.nodeId);
+          return;
         }
 
         if (target.dataset.action === "select-config-node") {
-          configUi[target.dataset.key] = target.dataset.id;
-          if (configUi.section === "category" && ["root", "level2", "level3"].includes(target.dataset.key)) {
-            configUi.categoryLevel = target.dataset.key;
-          }
-          if (target.dataset.key === "root") {
-            configUi.level2 = "";
-            configUi.level3 = "";
-            configUi.page = "";
-          }
-          if (target.dataset.key === "level2") {
-            configUi.level3 = "";
-            configUi.page = "";
-          }
-          if (target.dataset.key === "level3") configUi.page = "";
+          configUi.nodeId = target.dataset.nodeId;
           renderConfigModule();
         }
 
@@ -2294,7 +2338,7 @@
             const parsed = configUi.mode === "json" ? readEditorConfig() : cloneConfig(draftConfig || appConfig);
             if (configUi.mode === "json") draftConfig = cloneConfig(parsed);
             document.querySelector("#configEditor").value = JSON.stringify(parsed, null, 2);
-            if (configUi.mode === "module") renderConfigModule();
+            if (configUi.mode !== "json") renderConfigModule();
             setConfigMessage("格式化完成");
           } catch (error) {
             setConfigMessage(error.message, true);
@@ -2306,6 +2350,8 @@
             .then((config) => {
               draftConfig = cloneConfig(config);
               document.querySelector("#configEditor").value = JSON.stringify(config, null, 2);
+              configUi.collapsed.clear();
+              ensureConfigSelection();
               renderConfigModule();
               setConfigMessage("已重新读取 config.json");
             })
@@ -2317,33 +2363,16 @@
         }
 
         if (target.dataset.action === "add-node") {
-          addNode(target.dataset.level);
+          addNode(target.dataset.placement);
         }
 
         if (target.dataset.action === "delete-node") {
-          deleteNode(target.dataset.level);
+          deleteNode();
         }
       });
 
       document.addEventListener("change", (event) => {
         const target = event.target;
-        if (target.dataset.configSelect) {
-          const key = target.dataset.configSelect;
-          configUi[key] = target.value;
-          if (key === "root") {
-            configUi.level2 = "";
-            configUi.level3 = "";
-            configUi.page = "";
-          }
-          if (key === "level2") {
-            configUi.level3 = "";
-            configUi.page = "";
-          }
-          if (key === "level3") configUi.page = "";
-          renderConfigModule();
-          return;
-        }
-
         if (target.dataset.appField === "probeEnabled") {
           draftConfig.probe ||= {};
           draftConfig.probe.enabled = target.checked;
@@ -2362,17 +2391,55 @@
           return;
         }
 
-        if (target.dataset.nodeLevel && target.dataset.nodeField) {
-          const node = selectedNode(target.dataset.nodeLevel);
+        if (target.dataset.nodeField) {
+          const info = ensureConfigSelection();
+          const node = info?.node;
           if (!node) return;
           node[target.dataset.nodeField] = target.value;
           syncConfigEditor();
           if (target.dataset.nodeField === "title") {
-            const option = document.querySelector(`[data-config-select="${target.dataset.nodeLevel}"] option[value="${CSS.escape(node.id)}"]`);
-            if (option) option.textContent = target.value || node.id;
+            const label = document.querySelector(`[data-node-id="${CSS.escape(node.id)}"] .tree-label`);
+            if (label) label.textContent = target.value || node.id;
           }
           setConfigMessage("已修改，请保存后生效");
         }
+      });
+
+      document.addEventListener("dragstart", (event) => {
+        const row = event.target.closest(".tree-node");
+        if (!row || configUi.mode !== "structure") return;
+        configUi.dragNodeId = row.dataset.nodeId;
+        row.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", configUi.dragNodeId);
+      });
+
+      document.addEventListener("dragover", (event) => {
+        const row = event.target.closest(".tree-node");
+        if (!row || !configUi.dragNodeId || row.dataset.nodeId === configUi.dragNodeId) return;
+        const pair = sameParentNodeInfo(configUi.dragNodeId, row.dataset.nodeId);
+        if (!pair) return;
+        event.preventDefault();
+        clearTreeDropState();
+        const rect = row.getBoundingClientRect();
+        row.classList.add(event.clientY < rect.top + rect.height / 2 ? "drop-before" : "drop-after");
+        event.dataTransfer.dropEffect = "move";
+      });
+
+      document.addEventListener("drop", (event) => {
+        const row = event.target.closest(".tree-node");
+        if (!row || !configUi.dragNodeId) return;
+        const rect = row.getBoundingClientRect();
+        const placement = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+        event.preventDefault();
+        moveConfigNode(configUi.dragNodeId, row.dataset.nodeId, placement);
+        configUi.dragNodeId = "";
+        clearTreeDropState();
+      });
+
+      document.addEventListener("dragend", () => {
+        configUi.dragNodeId = "";
+        clearTreeDropState();
       });
 
       document.querySelector("#searchInput").addEventListener("input", (event) => {
@@ -2384,11 +2451,24 @@
         const searchResults = document.querySelector("#searchResults");
         const searchOpen = searchResults?.classList.contains("open");
         const searchFocused = document.activeElement?.id === "searchInput";
+        const focusedTreeNode = document.activeElement?.classList.contains("tree-node") ? document.activeElement : null;
         if (["ArrowDown", "ArrowUp"].includes(event.key) && searchFocused && searchOpen) {
           setSearchActiveIndex(searchActiveIndex + (event.key === "ArrowDown" ? 1 : -1));
           event.preventDefault();
         } else if (event.key === "Enter" && searchFocused && searchOpen) {
           chooseSearchResult(searchResultButtons()[searchActiveIndex]);
+          event.preventDefault();
+        } else if (focusedTreeNode && ["Enter", " "].includes(event.key)) {
+          configUi.nodeId = focusedTreeNode.dataset.nodeId;
+          renderConfigModule();
+          event.preventDefault();
+        } else if (focusedTreeNode && event.key === "ArrowLeft") {
+          const info = configNodeInfo(focusedTreeNode.dataset.nodeId);
+          if (info?.node.children?.length && isConfigExpanded(info.node)) toggleConfigNode(info.node.id);
+          event.preventDefault();
+        } else if (focusedTreeNode && event.key === "ArrowRight") {
+          const info = configNodeInfo(focusedTreeNode.dataset.nodeId);
+          if (info?.node.children?.length && !isConfigExpanded(info.node)) toggleConfigNode(info.node.id);
           event.preventDefault();
         } else if (event.key === "Escape" && searchOpen) {
           closeSearchResults();
