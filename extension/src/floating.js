@@ -127,6 +127,23 @@
       border-radius: 10px;
     }
     .close:hover, .open-link:hover { color: #058bb5; background: #eef8fb; }
+    .head-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+    .web-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid #d7e8ee;
+      border-radius: 10px;
+      color: #058bb5;
+      background: #f2fbfe;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .web-btn:hover { color: #058bb5; background: #def3fa; border-color: #a9d6e6; }
     .search-wrap { padding: 12px 14px; border-bottom: 1px solid #e5eaee; }
     .preference-row {
       display: flex;
@@ -487,6 +504,30 @@
     window.location.href = destination;
   }
 
+  const WEB_CONSOLE_URL = "http://localhost:4173/";
+  async function openWebConsole() {
+    const online = await probeLocalServer();
+    if (!online) {
+      state.status = "Web 管理台未启动：请双击项目的 start.command 一键启动";
+      logDebug("error", "打开 Web 管理台失败：服务未在运行", { url: WEB_CONSOLE_URL });
+      render();
+      return;
+    }
+    logDebug("info", "打开 Web 管理台", { url: WEB_CONSOLE_URL });
+    window.open(WEB_CONSOLE_URL, "_blank", "noopener");
+  }
+  async function probeLocalServer() {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch("http://localhost:4173/api/config", { cache: "no-store", signal: controller.signal }).catch(() => null);
+      clearTimeout(t);
+      return Boolean(res && res.ok);
+    } catch {
+      return false;
+    }
+  }
+
   function httpOrigin(url) {
     try {
       const parsed = new URL(url);
@@ -554,7 +595,10 @@
             <strong>${escapeHtml(state.config?.app?.title || "Web Organization")}</strong>
             <span>${escapeHtml(state.status || "悬浮导航 · 当前页打开")} · 最小化后${state.hoverMode === "hover" ? "悬停展开" : "点击展开"}</span>
           </div>
-          <button class="close" data-action="minimize" title="最小化">-</button>
+          <div class="head-actions">
+            <button class="web-btn" data-action="open-web" title="打开 Web 管理台">⚙ Web</button>
+            <button class="close" data-action="minimize" title="最小化">-</button>
+          </div>
         </header>
         <div class="search-wrap">
           <input class="search" value="${escapeHtml(state.query)}" placeholder="查询目录、页面或网址" autocomplete="off" aria-label="查询目录、页面或网址" />
@@ -650,6 +694,10 @@
     }
     if (target.dataset.action === "minimize") {
       setMode("minimized");
+      return;
+    }
+    if (target.dataset.action === "open-web") {
+      openWebConsole().catch(() => {});
       return;
     }
     if (target.dataset.hoverMode) {
