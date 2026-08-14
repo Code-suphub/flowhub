@@ -382,6 +382,7 @@
     state.hoverSession = nextMode === "open" ? Boolean(options.hover) : false;
     clearHoverTimers();
     chrome.runtime.sendMessage({ type: "weborg:set-floating-state", mode: nextMode }).catch(() => {});
+    persistFloatingUI();
     render();
   }
 
@@ -726,6 +727,7 @@
     host.classList.remove("dragging");
     if (didDrag) state.suppressClick = true;
     chrome.storage.local.set({ "weborg.floating-position": state.position }).catch(() => {});
+    persistFloatingUI();
   });
 
   shadow.addEventListener("input", (event) => {
@@ -764,6 +766,35 @@
   // ---- 全局、与 URL 无关的目录浏览状态（展开层级 + 选中节点）----
   // 悬浮窗视为独立组件：无论在哪个页面、跳到哪个 URL，都还原到上次展开/选中的层级。
   const GLOBAL_NAV_KEY = "weborg.global-nav";
+
+  // ---- 全局、与 URL 无关的悬浮窗自身 UI 状态（开关 + 位置）----
+  const GLOBAL_FLOATING_KEY = "weborg.global-floating";
+  function persistFloatingUI() {
+    const payload = { mode: state.mode, position: state.position || null, ts: Date.now() };
+    try {
+      if (globalThis.chrome?.storage?.local) {
+        chrome.storage.local.set({ [GLOBAL_FLOATING_KEY]: payload }).catch(() => {});
+      }
+    } catch {}
+  }
+  async function restoreFloatingUI() {
+    let saved;
+    try {
+      const r = await chrome.storage.local.get({ [GLOBAL_FLOATING_KEY]: null });
+      saved = r[GLOBAL_FLOATING_KEY];
+    } catch {}
+    if (!saved || typeof saved !== "object") return;
+    if (saved.mode === "open" || saved.mode === "minimized") {
+      state.mode = saved.mode;
+    }
+    if (saved.position && Number.isFinite(saved.position.left) && Number.isFinite(saved.position.top)) {
+      state.position = { left: saved.position.left, top: saved.position.top };
+      applyPosition(state.position);
+    }
+    logDebug("info", "已还原悬浮窗状态", { mode: state.mode, position: state.position });
+    render();
+  }
+
   function navSnapshot() {
     return {
       root: state.root || "",
@@ -899,6 +930,7 @@
       logDebug("info", "配置加载成功", { items: state.config.items?.length ?? 0, sources: "background->localhost:4173" });
       render();
       restoreNav();
+      restoreFloatingUI();
     })
     .catch((error) => {
       state.status = error.message;
@@ -910,8 +942,8 @@
   loadPreferences()
     .catch(() => {})
     .finally(() => render());
-  loadPosition().catch(() => {});
-  restoreFloatingState().catch(() => {});
+  // 开关(mode)和位置(position)统一由 config 加载后的 restoreFloatingUI() 还原，
+  // 以消除与 loadPosition/restoreFloatingState 之间的异步竞态。
   restoreLocation().finally(() => setTimeout(rememberLocation, 600));
   render();
 })();
