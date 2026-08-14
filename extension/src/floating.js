@@ -1,0 +1,778 @@
+(() => {
+  const hostId = "weborg-floating-host";
+  if (document.getElementById(hostId)) return;
+
+  const state = {
+    config: null,
+    mode: "minimized",
+    query: "",
+    searchIndex: 0,
+    root: "",
+    selected: "",
+    expanded: {},
+    status: "加载中",
+    position: null,
+    dragging: null,
+    hoverMode: "manual",
+    hoverSession: false,
+    hoverOpenTimer: 0,
+    hoverCloseTimer: 0,
+    debug: []
+  };
+
+  // ---- 调试日志 ----
+  let debugConsoleVisible = false;
+  let logSeq = 0;
+  function logDebug(level, message, extra) {
+    const entry = { t: Date.now(), n: ++logSeq, level, message: String(message), extra };
+    state.debug.push(entry);
+    if (state.debug.length > 200) state.debug.shift();
+    try { console[level === "error" ? "error" : "log"](`[weborg] ${message}`, extra ?? ""); } catch {}
+    if (debugConsoleVisible) renderDebugConsole();
+  }
+  // 暴露给页面，便于从原生 DevTools 直接查询
+  try {
+    const g = window.__weborgDebug || (window.__weborgDebug = {});
+    g.getState = () => JSON.parse(JSON.stringify({
+      mode: state.mode, root: state.root, selected: state.selected,
+      hoverMode: state.hoverMode, configLoaded: Boolean(state.config),
+      configItems: state.config?.items?.length ?? 0, status: state.status
+    }));
+    g.getLog = () => state.debug.slice();
+    g.toggle = () => toggleDebugConsole();
+  } catch {}
+  logDebug("info", "floating.js 已注入", { href: location.href });
+
+  const host = document.createElement("div");
+  host.id = hostId;
+  document.documentElement.dataset.weborgFloating = "ready";
+  document.documentElement.appendChild(host);
+  const shadow = host.attachShadow({ mode: "open" });
+
+  const css = `
+    :host {
+      all: initial;
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 2147483647;
+      color: #10202f;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+    * { box-sizing: border-box; }
+    button, input { font: inherit; }
+    button { border: 0; }
+    .bubble {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      color: #fff;
+      background: #12a9d4;
+      box-shadow: 0 18px 40px rgba(16, 32, 47, 0.22);
+      cursor: pointer;
+      font-weight: 800;
+      user-select: none;
+    }
+    .panel {
+      width: min(408px, calc(100vw - 34px));
+      max-height: min(680px, calc(100vh - 34px));
+      display: none;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid #dfe8eb;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 22px 52px rgba(16, 32, 47, 0.22);
+    }
+    :host(.open) .bubble { display: none; }
+    :host(.open) .panel { display: grid; }
+    .head {
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #e5eaee;
+      background: #fbffff;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    :host(.dragging) .head { cursor: grabbing; }
+    .brand { min-width: 0; }
+    .brand strong, .brand span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .brand strong { font-size: 15px; line-height: 1.2; }
+    .brand span { margin-top: 3px; color: #66727f; font-size: 12px; }
+    .close, .open-link {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #66727f;
+      background: #fff;
+      cursor: pointer;
+    }
+    .close {
+      width: 32px;
+      height: 32px;
+      border: 1px solid #e5eaee;
+      border-radius: 10px;
+    }
+    .close:hover, .open-link:hover { color: #058bb5; background: #eef8fb; }
+    .search-wrap { padding: 12px 14px; border-bottom: 1px solid #e5eaee; }
+    .preference-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .preference-label {
+      color: #66727f;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .preference-chips {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pref-chip {
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      color: #66727f;
+      background: #fff;
+      cursor: pointer;
+    }
+    .pref-chip.active {
+      color: #fff;
+      background: #12a9d4;
+    }
+    .search {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid #dfe7eb;
+      border-radius: 12px;
+      color: #10202f;
+      background: #fff;
+      outline: 0;
+    }
+    .search:focus { border-color: rgba(18, 169, 212, 0.65); box-shadow: 0 0 0 3px rgba(18, 169, 212, 0.12); }
+    .body { min-height: 0; overflow: auto; padding: 12px 14px 14px; background: #f7fbfb; }
+    .roots { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 11px; }
+    .root-control { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+    .root {
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex: 0 0 auto;
+      padding: 0 11px;
+      border-radius: 11px;
+      color: #66727f;
+      background: #fff;
+      cursor: pointer;
+    }
+    .root.active { color: #fff; background: #12a9d4; }
+    .root-open {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      color: #66727f;
+      background: #fff;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .root-open:hover { color: #058bb5; background: #eef8fb; }
+    .section-label { margin: 2px 0 8px; color: #66727f; font-size: 12px; font-weight: 700; }
+    .tree, .results { display: grid; gap: 4px; }
+    .tree-group { display: grid; gap: 4px; }
+    .tree-row {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr) 30px;
+      align-items: center;
+      min-height: 40px;
+      gap: 4px;
+      padding: 3px 4px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+    }
+    .tree-row:hover, .tree-row.selected { border-color: #d8edf3; background: #edf9fc; }
+    .toggle, .node-select {
+      min-width: 0;
+      color: #10202f;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .toggle { width: 26px; height: 26px; display: grid; place-items: center; color: #7a8792; }
+    .toggle-spacer { width: 26px; height: 26px; display: block; }
+    .chevron { width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 140ms ease; }
+    .chevron.open { transform: rotate(45deg); }
+    .node-select { padding: 3px 0; }
+    .node-title, .node-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .node-title { font-weight: 700; }
+    .node-meta { margin-top: 1px; color: #7a8792; font-size: 11px; }
+    .node-meta.note { color: #058bb5; }
+    .directory .node-title::before { content: "目录 · "; color: #7a8792; font-weight: 500; }
+    .page .node-title::before { content: "网页 · "; color: #058bb5; font-weight: 500; }
+    .open-link { width: 28px; height: 28px; border-radius: 8px; font-size: 17px; line-height: 1; }
+    .branch { display: grid; gap: 4px; margin-left: 12px; padding-left: 10px; border-left: 1px solid #dce7ea; }
+    .result {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 30px;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: #fff;
+    }
+    .result.active, .result:hover { border-color: #d8edf3; background: #eef8fb; }
+    .result-select { min-width: 0; color: #10202f; background: transparent; text-align: left; cursor: pointer; }
+    .result-kind { color: #058bb5; font-size: 11px; font-weight: 700; }
+    .result-title, .result-path, .result-url, .result-note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .result-title { margin-top: 2px; font-weight: 700; }
+    .result-path, .result-url, .result-note { margin-top: 2px; color: #66727f; font-size: 11px; }
+    .result-url, .result-note { color: #058bb5; }
+    .empty { padding: 16px; border: 1px dashed #d7dee4; border-radius: 12px; color: #66727f; background: #fff; }
+    .debug-console {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 2147483646;
+      margin: 12px;
+      padding: 12px 14px;
+      border: 1px solid #333;
+      border-radius: 12px;
+      background: rgba(18, 22, 28, 0.97);
+      color: #d7e2ea;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      max-height: 46vh;
+      overflow: auto;
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.4);
+    }
+    .debug-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: #fff; font-weight: 700; }
+    .debug-hint { color: #8fa3b3; font-weight: 400; font-size: 11px; }
+    .debug-stats { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px; margin-bottom: 8px; border-radius: 8px; background: rgba(255,255,255,0.05); font-weight: 400; }
+    .debug-stats b.ok { color: #3ddc84; }
+    .debug-stats b.bad { color: #ff5a5a; }
+    .debug-stats .cycle-warn { color: #ffc24b; width: 100%; }
+    .debug-log { display: grid; gap: 2px; min-height: 40px; max-height: 24vh; overflow: auto; }
+    .dbg-row { display: flex; gap: 8px; padding: 2px 4px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; }
+    .dbg-row:nth-child(odd) { background: rgba(255,255,255,0.03); }
+    .dbg-time { color: #8fa3b3; flex: 0 0 auto; }
+    .dbg-row code { color: #7fd0ff; }
+    .dbg-error { color: #ffb3b3; }
+  `;
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+
+  function normalizeUrl(url) {
+    const value = String(url || "").trim();
+    if (/^https?:\/\//i.test(value)) return value;
+    if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(value)) return `https://${value}`;
+    return "";
+  }
+
+  function pathText(path) {
+    return (path || []).map((item) => item.title).join(" / ");
+  }
+
+  function noteText(node) {
+    return String(node?.note || "").trim();
+  }
+
+  function rootItems() {
+    return state.config?.items || [];
+  }
+
+  function activeRoot() {
+    return rootItems().find((item) => item.id === state.root) || rootItems()[0] || null;
+  }
+
+  function collectNodes(nodes, path = []) {
+    const result = [];
+    const visited = new WeakSet();
+    const walk = (list, currentPath) => {
+      for (const node of list || []) {
+        if (!node || typeof node !== "object" || visited.has(node)) continue;
+        visited.add(node);
+        const nextPath = [...currentPath, { id: node.id, title: node.title }];
+        result.push({ ...node, path: nextPath });
+        if (node.children && node.children.length) walk(node.children, nextPath);
+      }
+    };
+    walk(nodes, path);
+    return result;
+  }
+
+  // 如果配置里出现循环引用，递归会无限深入。用一次性对象标记避免重复进入同一节点，
+  // 并设定最大深度兜底，保证永远不会栈溢出。
+  function findNode(id, nodes = rootItems(), ancestors = []) {
+    const maxDepth = 256;
+    const stack = [{ nodes, ancestors, depth: 0 }];
+    const visited = new WeakSet();
+
+    while (stack.length) {
+      const { nodes: current, ancestors: currentAncestors, depth } = stack.pop();
+      for (const node of current || []) {
+        if (depth >= maxDepth || !node || typeof node !== "object") continue;
+        if (!visited.has(node)) {
+          visited.add(node);
+        } else {
+          // 出现环：跳过该节点，避免重复展开后再陷入自身子树。
+          continue;
+        }
+        const nextAncestors = [...currentAncestors, node];
+        if (node.id === id) return { node, ancestors: nextAncestors };
+        if (node.children && node.children.length) {
+          stack.push({ nodes: node.children, ancestors: nextAncestors, depth: depth + 1 });
+        }
+      }
+    }
+    return null;
+  }
+
+  function searchMatches() {
+    const keyword = state.query.trim().toLowerCase();
+    if (!keyword) return [];
+    return collectNodes(rootItems())
+      .filter((node) => `${node.title || ""} ${node.url || ""} ${pathText(node.path)} ${noteText(node)}`.toLowerCase().includes(keyword))
+      .slice(0, 12);
+  }
+
+  function selectNode(id) {
+    const found = findNode(id);
+    if (!found) return;
+    state.selected = id;
+    state.root = found.ancestors[0]?.id || state.root;
+    found.ancestors.forEach((node) => { state.expanded[node.id] = true; });
+    state.query = "";
+    state.searchIndex = 0;
+    render();
+  }
+
+  function clearHoverTimers() {
+    clearTimeout(state.hoverOpenTimer);
+    clearTimeout(state.hoverCloseTimer);
+    state.hoverOpenTimer = 0;
+    state.hoverCloseTimer = 0;
+  }
+
+  function setMode(mode, options = {}) {
+    const nextMode = mode === "open" ? "open" : "minimized";
+    state.mode = nextMode;
+    state.hoverSession = nextMode === "open" ? Boolean(options.hover) : false;
+    clearHoverTimers();
+    chrome.runtime.sendMessage({ type: "weborg:set-floating-state", mode: nextMode }).catch(() => {});
+    render();
+  }
+
+  function scheduleHoverOpen() {
+    if (state.hoverMode !== "hover" || state.mode === "open") return;
+    clearTimeout(state.hoverCloseTimer);
+    if (state.hoverOpenTimer) return;
+    state.hoverOpenTimer = setTimeout(() => {
+      state.hoverOpenTimer = 0;
+      setMode("open", { hover: true });
+    }, 140);
+  }
+
+  function scheduleHoverClose() {
+    if (!state.hoverSession || state.mode !== "open") return;
+    clearTimeout(state.hoverOpenTimer);
+    clearTimeout(state.hoverCloseTimer);
+    state.hoverCloseTimer = setTimeout(() => {
+      state.hoverCloseTimer = 0;
+      setMode("minimized");
+    }, 180);
+  }
+
+  async function loadPreferences() {
+    const result = await chrome.storage.local.get({ "weborg.floating-hover-mode": "manual" });
+    state.hoverMode = result["weborg.floating-hover-mode"] === "hover" ? "hover" : "manual";
+  }
+
+  function saveHoverMode(mode) {
+    state.hoverMode = mode === "hover" ? "hover" : "manual";
+    chrome.storage.local.set({ "weborg.floating-hover-mode": state.hoverMode }).catch(() => {});
+    if (state.hoverMode !== "hover" && state.hoverSession) {
+      setMode("minimized");
+      return;
+    }
+    render();
+  }
+
+  function applyPosition(position) {
+    if (!position) return;
+    host.style.right = "auto";
+    host.style.bottom = "auto";
+    host.style.left = `${position.left}px`;
+    host.style.top = `${position.top}px`;
+  }
+
+  function boundedPosition(left, top) {
+    const rect = host.getBoundingClientRect();
+    return {
+      left: Math.round(Math.max(8, Math.min(left, window.innerWidth - rect.width - 8))),
+      top: Math.round(Math.max(8, Math.min(top, window.innerHeight - rect.height - 8)))
+    };
+  }
+
+  async function loadPosition() {
+    const result = await chrome.storage.local.get({ "weborg.floating-position": null });
+    const position = result["weborg.floating-position"];
+    if (!position || !Number.isFinite(position.left) || !Number.isFinite(position.top)) return;
+    state.position = boundedPosition(position.left, position.top);
+    applyPosition(state.position);
+  }
+
+  async function openPage(url, nodeId) {
+    const normalized = normalizeUrl(url);
+    if (!normalized) {
+      state.status = "此节点没有可打开的 HTTP 网页";
+      render();
+      return;
+    }
+    let destination = normalized;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "weborg:get-last-location", nodeId });
+      if (response?.location && httpOrigin(response.location.url) === httpOrigin(normalized)) destination = response.location.url;
+      await chrome.runtime.sendMessage({
+        type: "weborg:activate-page",
+        nodeId,
+        url: destination,
+        fallbackUrl: normalized
+      });
+    } catch {
+      // Navigation still works when browser storage is temporarily unavailable.
+    }
+    window.location.href = destination;
+  }
+
+  function httpOrigin(url) {
+    try {
+      const parsed = new URL(url);
+      return /^https?:$/.test(parsed.protocol) ? parsed.origin : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function renderTree(nodes) {
+    return (nodes || []).map((node) => {
+      const hasChildren = Boolean(node.children?.length);
+      const expanded = Boolean(state.expanded[node.id]);
+      const selected = node.id === state.selected;
+      const baseMeta = node.url ? normalizeUrl(node.url) || node.url : hasChildren ? `${node.children.length} 个下级节点` : "目录节点";
+      const note = noteText(node);
+      return `
+        <div class="tree-group">
+          <div class="tree-row ${node.url ? "page" : "directory"} ${selected ? "selected" : ""}">
+            ${hasChildren
+              ? `<button class="toggle" data-toggle="${escapeHtml(node.id)}" title="${expanded ? "收起下级" : "展开下级"}"><span class="chevron ${expanded ? "open" : ""}"></span></button>`
+              : `<span class="toggle-spacer" aria-hidden="true"></span>`}
+            <button class="node-select" data-select="${escapeHtml(node.id)}" title="选择 ${escapeHtml(node.title || node.id)}">
+              <span class="node-title">${escapeHtml(node.title || node.id)}</span>
+              <span class="node-meta">${escapeHtml(baseMeta)}</span>
+              ${note ? `<span class="node-meta note">${escapeHtml(note)}</span>` : ""}
+            </button>
+            ${node.url ? `<button class="open-link" data-open="${escapeHtml(node.url)}" data-node-id="${escapeHtml(node.id)}" title="打开 ${escapeHtml(node.title || node.id)}">↗</button>` : "<span></span>"}
+          </div>
+          ${hasChildren && expanded ? `<div class="branch">${renderTree(node.children)}</div>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderResults() {
+    const results = searchMatches();
+    if (!results.length) return `<div class="empty">没有匹配的目录或网页</div>`;
+    return `<div class="results">${results.map((node, index) => `
+      <div class="result ${index === state.searchIndex ? "active" : ""}">
+        <button class="result-select" data-select="${escapeHtml(node.id)}">
+          <span class="result-kind">${node.url ? "网页" : "目录"}</span>
+          <span class="result-title">${escapeHtml(node.title || node.id)}</span>
+          <span class="result-path">${escapeHtml(pathText(node.path))}</span>
+          ${noteText(node) ? `<span class="result-note">${escapeHtml(noteText(node))}</span>` : ""}
+          ${node.url ? `<span class="result-url">${escapeHtml(normalizeUrl(node.url) || node.url)}</span>` : ""}
+        </button>
+        ${node.url ? `<button class="open-link" data-open="${escapeHtml(node.url)}" data-node-id="${escapeHtml(node.id)}" title="打开网页">↗</button>` : "<span></span>"}
+      </div>
+    `).join("")}</div>`;
+  }
+
+  function render() {
+    host.classList.toggle("open", state.mode === "open");
+    const roots = rootItems();
+    if (!state.root && roots[0]) state.root = roots[0].id;
+    const root = activeRoot();
+    const isSearching = Boolean(state.query.trim());
+    shadow.innerHTML = `
+      <style>${css}</style>
+      <button class="bubble" data-action="open" title="${state.hoverMode === "hover" ? "悬停或点击展开导航" : "点击展开导航"}">W</button>
+      <section class="panel">
+        <header class="head">
+          <div class="brand">
+            <strong>${escapeHtml(state.config?.app?.title || "Web Organization")}</strong>
+            <span>${escapeHtml(state.status || "悬浮导航 · 当前页打开")} · 最小化后${state.hoverMode === "hover" ? "悬停展开" : "点击展开"}</span>
+          </div>
+          <button class="close" data-action="minimize" title="最小化">-</button>
+        </header>
+        <div class="search-wrap">
+          <input class="search" value="${escapeHtml(state.query)}" placeholder="查询目录、页面或网址" autocomplete="off" aria-label="查询目录、页面或网址" />
+          <div class="preference-row">
+            <span class="preference-label">最小化后</span>
+            <div class="preference-chips" role="group" aria-label="最小化后展开方式">
+              <button class="pref-chip ${state.hoverMode === "manual" ? "active" : ""}" data-hover-mode="manual">点击展开</button>
+              <button class="pref-chip ${state.hoverMode === "hover" ? "active" : ""}" data-hover-mode="hover">悬停展开</button>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="roots">
+            ${roots.map((item) => `
+              <div class="root-control">
+                <button class="root ${item.id === state.root ? "active" : ""}" data-root="${escapeHtml(item.id)}"><span>${escapeHtml(item.icon || "□")}</span><strong>${escapeHtml(item.title || item.id)}</strong></button>
+                ${item.url ? `<button class="root-open" data-open="${escapeHtml(item.url)}" data-node-id="${escapeHtml(item.id)}" title="打开 ${escapeHtml(item.title || item.id)}">↗</button>` : ""}
+              </div>
+            `).join("")}
+          </div>
+          <div class="section-label">${isSearching ? "查询结果" : `${escapeHtml(root?.title || "分类")}的目录结构`}</div>
+          ${isSearching ? renderResults() : `<div class="tree">${root ? renderTree(root.children || []) : `<div class="empty">暂无分类</div>`}</div>`}
+        </div>
+      </section>
+      ${debugConsoleVisible ? renderDebugConsole() : ""}
+    `;
+    const input = shadow.querySelector(".search");
+    if (input && state.mode === "open") input.selectionStart = input.selectionEnd = input.value.length;
+  }
+
+  function renderDebugConsole() {
+    const cfgOk = Boolean(state.config);
+    const chromeOk = Boolean(globalThis.chrome?.runtime?.sendMessage);
+    const tree = collectNodes(rootItems());
+    let cycleWarn = "";
+    for (const node of tree) {
+      if (node.children && node.children.length && node.children.some((c) => c && tree.some((t) => t.id === c.id && t !== c))) {
+        cycleWarn = "（已在 findNode/collectNodes 中应用环检测）";
+        break;
+      }
+    }
+    const rows = state.debug.slice(-60).reverse().map((e) => `
+      <div class="dbg-row dbg-${e.level}" data-seq="${e.n}">
+        <span class="dbg-time">${new Date(e.t).toTimeString().slice(0,8)}</span>
+        <span>${escapeHtml(e.message)}</span>
+        ${e.extra ? `<code>${escapeHtml(JSON.stringify(e.extra))}</code>` : ""}
+      </div>
+    `).join("");
+    return `
+      <aside class="debug-console">
+        <div class="debug-head">
+          <strong>Web Organization · 调试控制台</strong>
+          <span class="debug-hint">按 F12 关闭</span>
+        </div>
+        <div class="debug-stats">
+          <span>注入状态：<b class="ok">已注入</b></span>
+          <span>chrome.runtime：<b class="${chromeOk ? "ok" : "bad"}">${chromeOk ? "可用" : "不可用"}</b></span>
+          <span>配置：<b class="${cfgOk ? "ok" : "bad"}">${cfgOk ? `已加载（${state.config?.items?.length ?? 0} 个根分类）` : "未加载"}</b></span>
+          <span>模式：<b>${state.mode}</b> / 悬停：<b>${state.hoverMode}</b></span>
+          <span>状态：<b>${escapeHtml(state.status)}</b></span>
+          ${cycleWarn ? `<span class="cycle-warn">${cycleWarn}</span>` : ""}
+        </div>
+        <div class="debug-log">${rows || `<div class="dbg-row">（暂无日志）</div>`}</div>
+      </aside>
+    `;
+  }
+
+  function toggleDebugConsole() {
+    debugConsoleVisible = !debugConsoleVisible;
+    logDebug("info", "调试控制台 " + (debugConsoleVisible ? "打开" : "关闭"));
+    render();
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "F12") {
+      event.preventDefault();
+      toggleDebugConsole();
+    }
+  });
+
+  shadow.addEventListener("click", (event) => {
+    const target = event.target.closest("button");
+    if (!target) return;
+    logDebug("info", "点击事件已到达 shadow-root 监听器", { targetId: target.id, action: target.dataset.action || target.dataset.select || target.dataset.open || target.dataset.root || null });
+    if (target.dataset.action === "open") {
+      setMode("open");
+      shadow.querySelector(".search")?.focus();
+      return;
+    }
+    if (target.dataset.action === "minimize") {
+      setMode("minimized");
+      return;
+    }
+    if (target.dataset.hoverMode) {
+      saveHoverMode(target.dataset.hoverMode);
+      return;
+    }
+    if (target.dataset.root) {
+      state.root = target.dataset.root;
+      state.query = "";
+      state.searchIndex = 0;
+      render();
+      return;
+    }
+    if (target.dataset.toggle) {
+      state.expanded[target.dataset.toggle] = !state.expanded[target.dataset.toggle];
+      render();
+      return;
+    }
+    if (target.dataset.select) {
+      selectNode(target.dataset.select);
+      return;
+    }
+    if (target.dataset.open !== undefined) openPage(target.dataset.open, target.dataset.nodeId).catch(() => {});
+  });
+
+  host.addEventListener("pointerenter", () => {
+    clearTimeout(state.hoverCloseTimer);
+    state.hoverCloseTimer = 0;
+    if (state.hoverMode === "hover" && state.mode === "minimized") scheduleHoverOpen();
+  });
+
+  host.addEventListener("pointerleave", () => {
+    clearTimeout(state.hoverOpenTimer);
+    state.hoverOpenTimer = 0;
+    scheduleHoverClose();
+  });
+
+  shadow.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !event.target.closest(".head") || event.target.closest("button")) return;
+    const rect = host.getBoundingClientRect();
+    state.dragging = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    state.position = { left: rect.left, top: rect.top };
+    applyPosition(state.position);
+    host.classList.add("dragging");
+    event.preventDefault();
+  });
+
+  window.addEventListener("pointermove", (event) => {
+    if (!state.dragging) return;
+    state.position = boundedPosition(event.clientX - state.dragging.offsetX, event.clientY - state.dragging.offsetY);
+    applyPosition(state.position);
+  });
+
+  window.addEventListener("pointerup", () => {
+    if (!state.dragging) return;
+    state.dragging = null;
+    host.classList.remove("dragging");
+    chrome.storage.local.set({ "weborg.floating-position": state.position }).catch(() => {});
+  });
+
+  shadow.addEventListener("input", (event) => {
+    if (!event.target.classList.contains("search")) return;
+    state.query = event.target.value;
+    state.searchIndex = 0;
+    render();
+    shadow.querySelector(".search")?.focus();
+  });
+
+  shadow.addEventListener("keydown", (event) => {
+    if (!event.target.classList.contains("search") || !state.query.trim()) return;
+    const results = searchMatches();
+    if (!results.length) return;
+    if (event.key === "ArrowDown") {
+      state.searchIndex = Math.min(state.searchIndex + 1, results.length - 1);
+      render();
+      shadow.querySelector(".search")?.focus();
+      event.preventDefault();
+    } else if (event.key === "ArrowUp") {
+      state.searchIndex = Math.max(state.searchIndex - 1, 0);
+      render();
+      shadow.querySelector(".search")?.focus();
+      event.preventDefault();
+    } else if (event.key === "Enter") {
+      selectNode(results[state.searchIndex].id);
+      event.preventDefault();
+    }
+  });
+
+  let lastRemembered = "";
+  function rememberLocation() {
+    const snapshot = `${location.href}|${Math.round(window.scrollY)}`;
+    if (snapshot === lastRemembered) return;
+    lastRemembered = snapshot;
+    chrome.runtime.sendMessage({ type: "weborg:remember-location", url: location.href, scrollY: window.scrollY }).catch(() => {});
+  }
+
+  async function restoreLocation() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "weborg:get-restore-location", url: location.href });
+      if (!response?.location?.scrollY) return;
+      const restore = () => window.scrollTo({ top: response.location.scrollY, behavior: "instant" });
+      requestAnimationFrame(restore);
+      setTimeout(restore, 450);
+    } catch {
+      // The page itself remains usable if restoration is unavailable.
+    }
+  }
+
+  async function restoreFloatingState() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "weborg:get-floating-state" });
+      const mode = response?.state?.mode || (response?.open ? "open" : "minimized");
+      if (response?.ok) {
+        state.mode = mode === "open" ? "open" : "minimized";
+        render();
+      }
+    } catch {
+      // The navigation remains available even when session state is unavailable.
+    }
+  }
+
+  window.addEventListener("scroll", () => {
+    clearTimeout(rememberLocation.timer);
+    rememberLocation.timer = setTimeout(rememberLocation, 180);
+  }, { passive: true });
+  window.addEventListener("pagehide", rememberLocation);
+  window.addEventListener("hashchange", rememberLocation);
+  window.addEventListener("popstate", rememberLocation);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") rememberLocation();
+  });
+  setInterval(rememberLocation, 4000);
+
+  chrome.runtime.sendMessage({ type: "weborg:get-config" })
+    .then((response) => {
+      if (!response?.ok) throw new Error(response?.reason || "配置加载失败");
+      state.config = response.config;
+      state.status = "悬浮导航 · 当前页打开";
+      logDebug("info", "配置加载成功", { items: state.config.items?.length ?? 0, sources: "background->localhost:4173" });
+      render();
+    })
+    .catch((error) => {
+      state.status = error.message;
+      state.config = { app: { title: "Web Organization" }, items: [] };
+      logDebug("error", "配置加载失败", { reason: error.message });
+      render();
+    });
+
+  loadPreferences()
+    .catch(() => {})
+    .finally(() => render());
+  loadPosition().catch(() => {});
+  restoreFloatingState().catch(() => {});
+  restoreLocation().finally(() => setTimeout(rememberLocation, 600));
+  render();
+})();

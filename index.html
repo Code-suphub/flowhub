@@ -188,6 +188,10 @@
         font-size: 12px;
       }
 
+      .search-result .search-note {
+        color: var(--pcolor8);
+      }
+
       .search-empty {
         padding: 10px;
         color: var(--gray6);
@@ -1082,6 +1086,20 @@
           right 12px center / 14px 14px no-repeat;
       }
 
+      .field textarea {
+        width: 100%;
+        min-height: 88px;
+        resize: vertical;
+        border: 1px solid var(--gray1);
+        border-radius: 12px;
+        padding: 10px;
+        outline: 0;
+        color: var(--gray);
+        background: #fff;
+        font: inherit;
+        line-height: 1.5;
+      }
+
       .module-list label + label {
         margin-top: 12px;
       }
@@ -1579,6 +1597,10 @@
         return !normalizeExternalUrl(url);
       }
 
+      function noteText(node) {
+        return String(node?.note || "").trim();
+      }
+
       function mockSrcDoc(page) {
         const hash = [...page.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
         const cpu = 18 + (hash % 62);
@@ -1614,6 +1636,7 @@
                   <div>
                     <h2>${escapeHtml(page.title)}</h2>
                     <p>${escapeHtml(path)} / ${escapeHtml(page.url)}</p>
+                    ${noteText(page) ? `<p>${escapeHtml(noteText(page))}</p>` : ""}
                   </div>
                   <div class="badge">${escapeHtml(page.title.slice(0, 2))}</div>
                 </section>
@@ -1688,6 +1711,7 @@
         return [
           page.title,
           page.url,
+          page.note,
           ...(page.path || []).map((item) => item.title)
         ].join(" ").toLowerCase();
       }
@@ -1716,6 +1740,7 @@
               <button class="search-result ${index === searchActiveIndex ? "active" : ""}" data-search-page="${escapeHtml(page.id)}" role="option" aria-selected="${index === searchActiveIndex ? "true" : "false"}">
                 <b>${escapeHtml(page.title || page.id)}</b>
                 <small>${escapeHtml((page.path || []).map((item) => item.title).join(" / "))}</small>
+                ${noteText(page) ? `<small class="search-note">${escapeHtml(noteText(page))}</small>` : ""}
               </button>`)
             .join("")
           : `<div class="search-empty">没有匹配结果</div>`;
@@ -1944,6 +1969,7 @@
               <div class="field"><label>强调色<input type="color" data-node-field="accent" value="${escapeHtml(node.accent || "#0AA9DB")}" /></label></div>
               <div class="field"><label>ID<input value="${escapeHtml(node.id || "")}" readonly /></label></div>
               <div class="field full"><label>页面链接（可选）<input data-node-field="url" value="${escapeHtml(node.url || "")}" placeholder="留空时作为目录；填写后这个节点也会成为页面" /></label></div>
+              <div class="field full"><label>备注<textarea data-node-field="note" placeholder="给当前节点补充说明、使用建议、账号信息提示等">${escapeHtml(node.note || "")}</textarea></label></div>
             </div>
             <div class="module-actions">
               <button class="ghost-btn" data-action="add-node" data-placement="sibling">新增同级</button>

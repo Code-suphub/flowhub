@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Web Organization",
+  "description": "Multi-surface navigation workspace for internal web systems.",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Web Organization"
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "side_panel": {
+    "default_path": "side_panel.html"
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/floating.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["sidePanel", "storage", "tabs", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*", "http://localhost:4173/*", "http://127.0.0.1:4173/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["config.json"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}
