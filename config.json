@@ -373,6 +373,103 @@
               ]
             }
           ]
+        },
+        {
+          "id": "serverless",
+          "title": "Serverless / 现代平台",
+          "icon": "⚡",
+          "children": [
+            {
+              "id": "db-serverless",
+              "title": "托管数据库",
+              "children": [
+                {
+                  "id": "neon",
+                  "title": "Neon (Serverless Postgres)",
+                  "url": "https://neon.tech/",
+                  "accent": "#0AB6FF"
+                },
+                {
+                  "id": "planetscale",
+                  "title": "PlanetScale",
+                  "url": "https://planetscale.com/",
+                  "accent": "#1FB4A2"
+                },
+                {
+                  "id": "supabase-db",
+                  "title": "Supabase",
+                  "url": "https://supabase.com/",
+                  "accent": "#3ECF8E"
+                },
+                {
+                  "id": "mongodb-atlas",
+                  "title": "MongoDB Atlas",
+                  "url": "https://www.mongodb.com/atlas",
+                  "accent": "#00684A"
+                }
+              ]
+            },
+            {
+              "id": "frontend-hosting",
+              "title": "前端托管 / PaaS",
+              "children": [
+                {
+                  "id": "vercel",
+                  "title": "Vercel",
+                  "url": "https://vercel.com/",
+                  "accent": "#000000"
+                },
+                {
+                  "id": "netlify",
+                  "title": "Netlify",
+                  "url": "https://www.netlify.com/",
+                  "accent": "#00C7B7"
+                },
+                {
+                  "id": "render",
+                  "title": "Render",
+                  "url": "https://render.com/",
+                  "accent": "#46E3B7"
+                },
+                {
+                  "id": "railway",
+                  "title": "Railway",
+                  "url": "https://railway.com/",
+                  "accent": "#0B080A"
+                },
+                {
+                  "id": "flyio",
+                  "title": "Fly.io",
+                  "url": "https://fly.io/",
+                  "accent": "#7B19C9"
+                }
+              ]
+            },
+            {
+              "id": "edge-platform",
+              "title": "边缘 / Serverless",
+              "children": [
+                {
+                  "id": "cloudflare",
+                  "title": "Cloudflare",
+                  "url": "https://www.cloudflare.com/",
+                  "accent": "#F6821F"
+                },
+                {
+                  "id": "cloudflare-workers",
+                  "title": "Cloudflare Workers",
+                  "url": "https://workers.cloudflare.com/",
+                  "accent": "#F38020"
+                },
+                {
+                  "id": "cloudflare-pages",
+                  "title": "Cloudflare Pages",
+                  "url": "https://pages.cloudflare.com/",
+                  "accent": "#F38020"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
