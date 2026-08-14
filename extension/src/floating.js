@@ -20,6 +20,7 @@
     hoverSession: false,
     hoverOpenTimer: 0,
     hoverCloseTimer: 0,
+    f12Hijack: false,
     debug: []
   };
 
@@ -286,6 +287,19 @@
     }
     .debug-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: #fff; font-weight: 700; }
     .debug-hint { color: #8fa3b3; font-weight: 400; font-size: 11px; }
+    .debug-head-actions { display: flex; align-items: center; gap: 8px; }
+    .debug-f12-toggle {
+      padding: 4px 10px;
+      border: 1px solid #3a4a58;
+      border-radius: 999px;
+      background: #1f2933;
+      color: #8fa3b3;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .debug-f12-toggle.on { color: #0e0e0e; background: #3ddc84; border-color: #3ddc84; }
+    .debug-f12-toggle:hover { border-color: #7fd0ff; }
     .debug-stats { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px; margin-bottom: 8px; border-radius: 8px; background: rgba(255,255,255,0.05); font-weight: 400; }
     .debug-stats b.ok { color: #3ddc84; }
     .debug-stats b.bad { color: #ff5a5a; }
@@ -424,8 +438,17 @@
   }
 
   async function loadPreferences() {
-    const result = await chrome.storage.local.get({ "weborg.floating-hover-mode": "manual" });
+    const result = await chrome.storage.local.get({ "weborg.floating-hover-mode": "manual", "weborg.f12-hijack": false });
     state.hoverMode = result["weborg.floating-hover-mode"] === "hover" ? "hover" : "manual";
+    state.f12Hijack = result["weborg.f12-hijack"] === true;
+  }
+
+  function saveF12Hijack(value) {
+    state.f12Hijack = value === true;
+    chrome.storage.local.set({ "weborg.f12-hijack": state.f12Hijack }).catch(() => {});
+    if (state.f12Hijack) logDebug("info", "已开启 F12 劫持（F12 打开插件调试面板）");
+    else { debugConsoleVisible = false; logDebug("info", "已关闭 F12 劫持（F12 恢复为浏览器原生 DevTools）"); }
+    render();
   }
 
   function saveHoverMode(mode) {
@@ -600,6 +623,7 @@
           </div>
           <div class="head-actions">
             <button class="web-btn" data-action="open-web" title="打开 Web 管理台">⚙ Web</button>
+            <button class="web-btn" data-action="open-debug" title="打开调试控制台（也可在设置里开启 F12 劫持）">🐞</button>
             <button class="close" data-action="minimize" title="最小化">-</button>
           </div>
         </header>
@@ -662,7 +686,12 @@
       <aside class="debug-console">
         <div class="debug-head">
           <strong>Web Organization · 调试控制台</strong>
-          <span class="debug-hint">按 F12 关闭</span>
+          <div class="debug-head-actions">
+            <button class="debug-f12-toggle ${state.f12Hijack ? "on" : ""}" data-f12-toggle title="开启后按 F12 打开本调试面板；关闭后 F12 恢复为浏览器原生 DevTools">
+              F12 劫持：${state.f12Hijack ? "开" : "关"}
+            </button>
+            <span class="debug-hint">${state.f12Hijack ? "按 F12 关闭" : "点下方 F12 开关开启劫持"}</span>
+          </div>
         </div>
         <div class="debug-stats">
           <span>注入状态：<b class="ok">已注入</b></span>
@@ -684,7 +713,9 @@
   }
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "F12") {
+    // 只有开启 F12 劫持开关时才拦截 F12 打开插件调试面板；
+    // 默认关，F12 保持浏览器原生 DevTools。
+    if (event.key === "F12" && state.f12Hijack) {
       event.preventDefault();
       toggleDebugConsole();
     }
@@ -709,6 +740,16 @@
     }
     if (target.dataset.action === "open-web") {
       openWebConsole().catch(() => {});
+      return;
+    }
+    if (target.dataset.action === "open-debug") {
+      debugConsoleVisible = !debugConsoleVisible;
+      logDebug("info", "调试控制台 " + (debugConsoleVisible ? "打开" : "关闭"));
+      render();
+      return;
+    }
+    if (target.dataset.f12Toggle !== undefined) {
+      saveF12Hijack(!state.f12Hijack);
       return;
     }
     if (target.dataset.hoverMode) {
