@@ -582,6 +582,9 @@
 
   function render() {
     host.classList.toggle("open", state.mode === "open");
+    // 记住面板正文(.body)当前的滚动位置，避免全量重绘后"跳到顶部"。
+    const prevBody = shadow.querySelector(".body");
+    const prevScrollTop = prevBody ? prevBody.scrollTop : 0;
     const roots = rootItems();
     if (!state.root && roots[0]) state.root = roots[0].id;
     const root = activeRoot();
@@ -627,6 +630,14 @@
     `;
     const input = shadow.querySelector(".search");
     if (input && state.mode === "open") input.selectionStart = input.selectionEnd = input.value.length;
+    // 恢复面板正文的滚动位置（若内容条数变化导致超界则钳制到最大）。
+    const newBody = shadow.querySelector(".body");
+    if (newBody && prevScrollTop > 0) {
+      requestAnimationFrame(() => {
+        const max = newBody.scrollHeight - newBody.clientHeight;
+        newBody.scrollTop = Math.min(prevScrollTop, Math.max(0, max));
+      });
+    }
   }
 
   function renderDebugConsole() {
