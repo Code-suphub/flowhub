@@ -59,6 +59,42 @@
                   "accent": "#1FB4A2"
                 }
               ]
+            },
+            {
+              "id": "baidu",
+              "title": "百度云",
+              "children": [
+                {
+                  "id": "baidu-console",
+                  "title": "百度智能云官网",
+                  "url": "https://cloud.baidu.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "baidu-bce",
+                  "title": "百度云控制台",
+                  "url": "https://console.bce.baidu.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "aws",
+              "title": "AWS",
+              "children": [
+                {
+                  "id": "aws-home",
+                  "title": "AWS 官网",
+                  "url": "https://aws.amazon.com/",
+                  "accent": "#FFAA1A"
+                },
+                {
+                  "id": "aws-console",
+                  "title": "AWS 控制台",
+                  "url": "https://console.aws.amazon.com/",
+                  "accent": "#0AA9DB"
+                }
+              ]
             }
           ]
         },
