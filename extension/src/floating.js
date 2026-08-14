@@ -362,6 +362,7 @@
     found.ancestors.forEach((node) => { state.expanded[node.id] = true; });
     state.query = "";
     state.searchIndex = 0;
+    persistNav();
     render();
   }
 
@@ -655,11 +656,13 @@
       state.root = target.dataset.root;
       state.query = "";
       state.searchIndex = 0;
+      persistNav();
       render();
       return;
     }
     if (target.dataset.toggle) {
       state.expanded[target.dataset.toggle] = !state.expanded[target.dataset.toggle];
+      persistNav();
       render();
       return;
     }
@@ -754,6 +757,61 @@
   // 无论页面跳到哪个 URL / 是否刷新，都尽量停在"上一次的位置"。
   const GLOBAL_SCROLL_KEY = "weborg.global-scroll";
   let lastRememberedScroll = null;
+
+  // ---- 全局、与 URL 无关的目录浏览状态（展开层级 + 选中节点）----
+  // 悬浮窗视为独立组件：无论在哪个页面、跳到哪个 URL，都还原到上次展开/选中的层级。
+  const GLOBAL_NAV_KEY = "weborg.global-nav";
+  function navSnapshot() {
+    return {
+      root: state.root || "",
+      selected: state.selected || "",
+      expanded: Object.keys(state.expanded).filter((k) => state.expanded[k]),
+      ts: Date.now()
+    };
+  }
+  function persistNav() {
+    let payload;
+    try { payload = navSnapshot(); } catch { return; }
+    try {
+      if (globalThis.chrome?.storage?.local) {
+        chrome.storage.local.set({ [GLOBAL_NAV_KEY]: payload }).catch(() => {
+          try { localStorage.setItem(GLOBAL_NAV_KEY, JSON.stringify(payload)); } catch {}
+        });
+      } else {
+        localStorage.setItem(GLOBAL_NAV_KEY, JSON.stringify(payload));
+      }
+    } catch {
+      try { localStorage.setItem(GLOBAL_NAV_KEY, JSON.stringify(payload)); } catch {}
+    }
+  }
+  async function restoreNav() {
+    let saved;
+    try {
+      if (globalThis.chrome?.storage?.local) {
+        const r = await chrome.storage.local.get({ [GLOBAL_NAV_KEY]: null });
+        saved = r[GLOBAL_NAV_KEY];
+      }
+      if (!saved) { const s = localStorage.getItem(GLOBAL_NAV_KEY); if (s) { try { saved = JSON.parse(s); } catch {} } }
+    } catch {
+      try { const s = localStorage.getItem(GLOBAL_NAV_KEY); if (s) saved = JSON.parse(s); } catch {}
+    }
+    if (!saved || typeof saved !== "object") return;
+    const items = rootItems();
+    const validIds = new Set(collectNodes(items).map((n) => n.id));
+    // 校验保存的节点仍存在于当前配置，避免还原出已经不存在的节点。
+    let changed = false;
+    if (typeof saved.root === "string" && validIds.has(saved.root)) { if (state.root !== saved.root) changed = true; state.root = saved.root; }
+    if (typeof saved.selected === "string" && validIds.has(saved.selected)) { state.selected = saved.selected; }
+    const expandedObj = state.expanded || (state.expanded = {});
+    for (const key of Array.isArray(saved.expanded) ? saved.expanded : []) {
+      if (!expandedObj[key] && validIds.has(key)) { expandedObj[key] = true; changed = true; }
+    }
+    state.query = "";
+    state.searchIndex = 0;
+    if (changed || state.selected) logDebug("info", "已还原目录浏览状态", { root: state.root, selected: state.selected, expanded: Object.keys(expandedObj).length });
+    render();
+  }
+
   function rememberScrollNow() {
     const y = Math.max(0, Math.round(window.scrollY || 0));
     const payload = { scrollY: y, href: location.href, ts: Date.now() };
@@ -837,6 +895,7 @@
       state.status = "悬浮导航 · 当前页打开";
       logDebug("info", "配置加载成功", { items: state.config.items?.length ?? 0, sources: "background->localhost:4173" });
       render();
+      restoreNav();
     })
     .catch((error) => {
       state.status = error.message;
