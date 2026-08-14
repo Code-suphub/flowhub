@@ -769,6 +769,7 @@
 
   // ---- 全局、与 URL 无关的悬浮窗自身 UI 状态（开关 + 位置）----
   const GLOBAL_FLOATING_KEY = "weborg.global-floating";
+  const CONFIG_CACHE_KEY = "weborg.config-cache";
   function persistFloatingUI() {
     const payload = { mode: state.mode, position: state.position || null, ts: Date.now() };
     try {
@@ -793,6 +794,68 @@
     }
     logDebug("info", "已还原悬浮窗状态", { mode: state.mode, position: state.position });
     render();
+  }
+
+  // ---- 跨页面实时同步：任一页面的悬浮窗状态或配置变化，其他已打开页面不刷新即同步 ----
+  function setupStorageSync() {
+    if (!globalThis.chrome?.storage?.onChanged) return;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      try {
+        const navChange = changes[GLOBAL_NAV_KEY];
+        if (navChange) {
+          const saved = navChange.newValue;
+          if (saved && typeof saved === "object") {
+            const items = rootItems();
+            const validIds = new Set(collectNodes(items).map((n) => n.id));
+            if (typeof saved.root === "string" && validIds.has(saved.root)) state.root = saved.root;
+            if (typeof saved.selected === "string" && validIds.has(saved.selected)) state.selected = saved.selected;
+            const expandedObj = state.expanded || (state.expanded = {});
+            if (Array.isArray(saved.expanded)) {
+              for (const k of Object.keys(expandedObj)) if (!saved.expanded.includes(k)) delete expandedObj[k];
+              for (const k of saved.expanded) if (validIds.has(k)) expandedObj[k] = true;
+            }
+            state.query = "";
+            state.searchIndex = 0;
+            logDebug("info", "收到其他页面的目录状态同步", { root: state.root, selected: state.selected });
+            render();
+          }
+        }
+        const floatChange = changes[GLOBAL_FLOATING_KEY];
+        if (floatChange) {
+          const saved = floatChange.newValue;
+          if (saved && typeof saved === "object") {
+            if (saved.mode === "open" || saved.mode === "minimized") {
+              state.mode = saved.mode;
+              state.hoverSession = false;
+            }
+            if (saved.position && Number.isFinite(saved.position.left) && Number.isFinite(saved.position.top)) {
+              state.position = { left: saved.position.left, top: saved.position.top };
+              applyPosition(state.position);
+            }
+            logDebug("info", "收到其他页面的悬浮窗状态同步", { mode: state.mode });
+            render();
+          }
+        }
+        const configChange = changes[CONFIG_CACHE_KEY];
+        if (configChange && configChange.newValue?.config) {
+          const incoming = configChange.newValue.config;
+          try {
+            if (!state.config || JSON.stringify(state.config) !== JSON.stringify(incoming)) {
+              state.config = incoming;
+              state.status = "悬浮导航 · 当前页打开";
+              logDebug("info", "已实时同步最新配置", { items: state.config.items?.length ?? 0 });
+              render();
+              restoreNav();
+              restoreFloatingUI();
+            }
+          } catch {}
+        }
+      } catch (error) {
+        logDebug("error", "storage 同步处理出错", { reason: String(error) });
+      }
+    });
+    logDebug("info", "已启用跨页面实时同步（storage.onChanged）");
   }
 
   function navSnapshot() {
@@ -945,5 +1008,6 @@
   // 开关(mode)和位置(position)统一由 config 加载后的 restoreFloatingUI() 还原，
   // 以消除与 loadPosition/restoreFloatingState 之间的异步竞态。
   restoreLocation().finally(() => setTimeout(rememberLocation, 600));
+  setupStorageSync();
   render();
 })();

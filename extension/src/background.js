@@ -1,6 +1,7 @@
 const ACTIVE_TABS_KEY = "weborg.active-tabs";
 const PAGE_HISTORY_KEY = "weborg.page-history";
 const FLOATING_STATE_KEY = "weborg.floating-state";
+const CONFIG_CACHE_KEY = "weborg.config-cache";
 
 async function readConfig() {
   const sources = [
@@ -91,7 +92,12 @@ async function rememberTabLocation(tabId, url, scrollY) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "weborg:get-config") {
     readConfig()
-      .then((config) => sendResponse({ ok: true, config }))
+      .then(async (config) => {
+        // 把配置缓存进 storage，已打开的其他页面可通过 chrome.storage.onChanged
+        // 实时感知配置变化而无需刷新页面。
+        try { await chrome.storage.local.set({ [CONFIG_CACHE_KEY]: { config, ts: Date.now() } }); } catch {}
+        sendResponse({ ok: true, config });
+      })
       .catch((error) => sendResponse({ ok: false, reason: error.message }));
     return true;
   }
