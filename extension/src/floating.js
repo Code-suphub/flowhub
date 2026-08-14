@@ -13,6 +13,8 @@
     status: "加载中",
     position: null,
     dragging: null,
+    dragMoved: false,
+    suppressClick: false,
     hoverMode: "manual",
     hoverSession: false,
     hoverOpenTimer: 0,
@@ -629,6 +631,10 @@
   });
 
   shadow.addEventListener("click", (event) => {
+    if (state.suppressClick) {
+      state.suppressClick = false;
+      return;
+    }
     const target = event.target.closest("button");
     if (!target) return;
     logDebug("info", "点击事件已到达 shadow-root 监听器", { targetId: target.id, action: target.dataset.action || target.dataset.select || target.dataset.open || target.dataset.root || null });
@@ -677,9 +683,19 @@
   });
 
   shadow.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || !event.target.closest(".head") || event.target.closest("button")) return;
+    if (event.button !== 0) return;
+    const target = event.target;
+    const nearBubble = target.closest?.(".bubble");
+    const nearHead = target.closest?.(".head");
+    const nearButton = target.closest?.("button");
+    // 可拖区域：整个 W 泡泡(.bubble)；或面板头部(.head) 的空白区域（不在头部内按钮上）。
+    const onBubble = Boolean(nearBubble);
+    const onHeadEmpty = Boolean(nearHead) && !Boolean(nearButton);
+    if (!(onBubble || onHeadEmpty)) return;
+
     const rect = host.getBoundingClientRect();
-    state.dragging = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    state.dragging = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, startX: event.clientX, startY: event.clientY };
+    state.dragMoved = false;
     state.position = { left: rect.left, top: rect.top };
     applyPosition(state.position);
     host.classList.add("dragging");
@@ -688,14 +704,21 @@
 
   window.addEventListener("pointermove", (event) => {
     if (!state.dragging) return;
+    const dx = event.clientX - state.dragging.startX;
+    const dy = event.clientY - state.dragging.startY;
+    if (!state.dragMoved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+    state.dragMoved = true;
     state.position = boundedPosition(event.clientX - state.dragging.offsetX, event.clientY - state.dragging.offsetY);
     applyPosition(state.position);
   });
 
   window.addEventListener("pointerup", () => {
     if (!state.dragging) return;
+    const didDrag = state.dragMoved;
     state.dragging = null;
+    state.dragMoved = false;
     host.classList.remove("dragging");
+    if (didDrag) state.suppressClick = true;
     chrome.storage.local.set({ "weborg.floating-position": state.position }).catch(() => {});
   });
 
