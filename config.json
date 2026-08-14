@@ -95,6 +95,240 @@
                   "accent": "#0AA9DB"
                 }
               ]
+            },
+            {
+              "id": "huawei",
+              "title": "华为云",
+              "children": [
+                {
+                  "id": "huawei-home",
+                  "title": "华为云官网",
+                  "url": "https://www.huaweicloud.com/",
+                  "accent": "#DE3030"
+                },
+                {
+                  "id": "huawei-console",
+                  "title": "华为云控制台",
+                  "url": "https://console.huaweicloud.com/",
+                  "accent": "#0AA9DB"
+                }
+              ]
+            },
+            {
+              "id": "ctyun",
+              "title": "天翼云",
+              "children": [
+                {
+                  "id": "ctyun-home",
+                  "title": "天翼云官网",
+                  "url": "https://www.ctyun.cn/",
+                  "accent": "#005BAC"
+                },
+                {
+                  "id": "ctyun-console",
+                  "title": "天翼云控制台",
+                  "url": "https://www.ctyun.cn/console/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "cmcc-cloud",
+              "title": "移动云",
+              "children": [
+                {
+                  "id": "cmcc-home",
+                  "title": "移动云官网",
+                  "url": "https://ecloud.10086.cn/",
+                  "accent": "#00A6E0"
+                },
+                {
+                  "id": "cmcc-console",
+                  "title": "移动云控制台",
+                  "url": "https://ecloud.10086.cn/api/pc/login",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "cucloud",
+              "title": "联通云",
+              "children": [
+                {
+                  "id": "cucloud-home",
+                  "title": "联通云官网",
+                  "url": "https://www.cucloud.cn/",
+                  "accent": "#DE3030"
+                },
+                {
+                  "id": "cucloud-console",
+                  "title": "联通云控制台",
+                  "url": "https://www.cucloud.cn/shop/login",
+                  "accent": "#0AA9DB"
+                }
+              ]
+            },
+            {
+              "id": "jdcloud",
+              "title": "京东云",
+              "children": [
+                {
+                  "id": "jdcloud-home",
+                  "title": "京东云官网",
+                  "url": "https://www.jdcloud.com/",
+                  "accent": "#DE3030"
+                },
+                {
+                  "id": "jdcloud-console",
+                  "title": "京东云控制台",
+                  "url": "https://console.jdcloud.com/",
+                  "accent": "#0AA9DB"
+                }
+              ]
+            },
+            {
+              "id": "ksyun",
+              "title": "金山云",
+              "children": [
+                {
+                  "id": "ksyun-home",
+                  "title": "金山云官网",
+                  "url": "https://www.ksyun.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "ksyun-console",
+                  "title": "金山云控制台",
+                  "url": "https://console.ksyun.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "ucloud",
+              "title": "UCloud",
+              "children": [
+                {
+                  "id": "ucloud-home",
+                  "title": "UCloud 官网",
+                  "url": "https://www.ucloud.cn/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "ucloud-console",
+                  "title": "UCloud 控制台",
+                  "url": "https://console.ucloud.cn/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "volcengine",
+              "title": "火山引擎",
+              "children": [
+                {
+                  "id": "volcengine-home",
+                  "title": "火山引擎官网",
+                  "url": "https://www.volcengine.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "volcengine-console",
+                  "title": "火山引擎控制台",
+                  "url": "https://console.volcengine.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "qingcloud",
+              "title": "青云",
+              "children": [
+                {
+                  "id": "qingcloud-home",
+                  "title": "青云官网",
+                  "url": "https://www.qingcloud.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "qingcloud-console",
+                  "title": "青云控制台",
+                  "url": "https://console.qingcloud.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "qiniu",
+              "title": "七牛云",
+              "children": [
+                {
+                  "id": "qiniu-home",
+                  "title": "七牛云官网",
+                  "url": "https://www.qiniu.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "qiniu-console",
+                  "title": "七牛云控制台",
+                  "url": "https://portal.qiniu.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "azure",
+              "title": "微软云 Azure",
+              "children": [
+                {
+                  "id": "azure-home",
+                  "title": "Azure 官网",
+                  "url": "https://azure.microsoft.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "azure-console",
+                  "title": "Azure 门户",
+                  "url": "https://portal.azure.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "gcp",
+              "title": "谷歌云",
+              "children": [
+                {
+                  "id": "gcp-home",
+                  "title": "Google Cloud 官网",
+                  "url": "https://cloud.google.com/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "gcp-console",
+                  "title": "Google Cloud 控制台",
+                  "url": "https://console.cloud.google.com/",
+                  "accent": "#1FB4A2"
+                }
+              ]
+            },
+            {
+              "id": "oracle-cloud",
+              "title": "甲骨文云 OCI",
+              "children": [
+                {
+                  "id": "oracle-home",
+                  "title": "Oracle Cloud 官网",
+                  "url": "https://www.oracle.com/cn/cloud/",
+                  "accent": "#DE3030"
+                },
+                {
+                  "id": "oracle-console",
+                  "title": "Oracle Cloud 控制台",
+                  "url": "https://cloud.oracle.com/",
+                  "accent": "#0AA9DB"
+                }
+              ]
             }
           ]
         },
