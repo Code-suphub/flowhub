@@ -1,5 +1,6 @@
 (() => {
   const hostId = "weborg-floating-host";
+  const FLOATING_VERSION = "floating.js v0.3.0"; // 提交 9604828 之后
   if (document.getElementById(hostId)) return;
 
   const state = {
@@ -36,14 +37,16 @@
   try {
     const g = window.__weborgDebug || (window.__weborgDebug = {});
     g.getState = () => JSON.parse(JSON.stringify({
+      version: FLOATING_VERSION,
       mode: state.mode, root: state.root, selected: state.selected,
+      expanded: Object.keys(state.expanded).filter((k) => state.expanded[k]),
       hoverMode: state.hoverMode, configLoaded: Boolean(state.config),
       configItems: state.config?.items?.length ?? 0, status: state.status
     }));
     g.getLog = () => state.debug.slice();
     g.toggle = () => toggleDebugConsole();
   } catch {}
-  logDebug("info", "floating.js 已注入", { href: location.href });
+  logDebug("info", `${FLOATING_VERSION} 已注入`, { href: location.href });
 
   const host = document.createElement("div");
   host.id = hostId;
@@ -808,7 +811,7 @@
     }
     state.query = "";
     state.searchIndex = 0;
-    if (changed || state.selected) logDebug("info", "已还原目录浏览状态", { root: state.root, selected: state.selected, expanded: Object.keys(expandedObj).length });
+    if (changed || state.selected) logDebug("info", "已还原目录浏览状态", { fromStorage: saved, root: state.root, selected: state.selected, expanded: Object.keys(expandedObj).length });
     render();
   }
 
