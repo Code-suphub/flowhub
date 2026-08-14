@@ -458,6 +458,25 @@
     } catch {
       // Navigation still works when browser storage is temporarily unavailable.
     }
+
+    // 先保存当前滚动，作为"全局组件状态"，供目标页还原。
+    rememberScrollNow();
+
+    // 同 URL（含 hash/query 差异抵消后基础相同）时，避免整页 reload 丢位置。
+    // 用 history.replaceState 更新地址但不刷新页面，保持当前滚动不被扰动。
+    try {
+      if (destination.split("#")[0] === location.href.split("#")[0] && httpOrigin(destination) === httpOrigin(location.href)) {
+        if (location.href !== destination) {
+          history.replaceState(null, "", destination);
+        }
+        state.status = "已在当前页面";
+        render();
+        return;
+      }
+    } catch {
+      // 历史 API 不可用时退化为正常跳转。
+    }
+    logDebug("info", "跳转到页面", { url: destination, from: location.href });
     window.location.href = destination;
   }
 
@@ -708,23 +727,58 @@
     }
   });
 
-  let lastRemembered = "";
+  // 全局、与 URL 无关的滚动记忆：把悬浮窗视为一个独立组件，
+  // 无论页面跳到哪个 URL / 是否刷新，都尽量停在"上一次的位置"。
+  const GLOBAL_SCROLL_KEY = "weborg.global-scroll";
+  let lastRememberedScroll = null;
+  function rememberScrollNow() {
+    const y = Math.max(0, Math.round(window.scrollY || 0));
+    const payload = { scrollY: y, href: location.href, ts: Date.now() };
+    try {
+      if (globalThis.chrome?.storage?.local) {
+        chrome.storage.local.set({ [GLOBAL_SCROLL_KEY]: payload }).catch(() => {
+          try { localStorage.setItem(GLOBAL_SCROLL_KEY, JSON.stringify(payload)); } catch {}
+        });
+      } else {
+        localStorage.setItem(GLOBAL_SCROLL_KEY, JSON.stringify(payload));
+      }
+    } catch {
+      try { localStorage.setItem(GLOBAL_SCROLL_KEY, JSON.stringify(payload)); } catch {}
+    }
+  }
   function rememberLocation() {
-    const snapshot = `${location.href}|${Math.round(window.scrollY)}`;
-    if (snapshot === lastRemembered) return;
-    lastRemembered = snapshot;
-    chrome.runtime.sendMessage({ type: "weborg:remember-location", url: location.href, scrollY: window.scrollY }).catch(() => {});
+    const y = Math.max(0, Math.round(window.scrollY || 0));
+    if (y === lastRememberedScroll) return;
+    lastRememberedScroll = y;
+    rememberScrollNow();
   }
 
   async function restoreLocation() {
+    let saved;
     try {
-      const response = await chrome.runtime.sendMessage({ type: "weborg:get-restore-location", url: location.href });
-      if (!response?.location?.scrollY) return;
-      const restore = () => window.scrollTo({ top: response.location.scrollY, behavior: "instant" });
-      requestAnimationFrame(restore);
-      setTimeout(restore, 450);
+      if (globalThis.chrome?.storage?.local) {
+        const r = await chrome.storage.local.get({ [GLOBAL_SCROLL_KEY]: null });
+        saved = r[GLOBAL_SCROLL_KEY];
+      }
+      if (!saved) {
+        const s = localStorage.getItem(GLOBAL_SCROLL_KEY);
+        if (s) { try { saved = JSON.parse(s); } catch {} }
+      }
     } catch {
-      // The page itself remains usable if restoration is unavailable.
+      try { const s = localStorage.getItem(GLOBAL_SCROLL_KEY); if (s) saved = JSON.parse(s); } catch {}
+    }
+    // 还原到此前的位置。storedHref 仅用于诊断/日志，不参与是否还原的判断。
+    const storedHref = saved?.href || "";
+    const targetY = Math.max(0, Number(saved?.scrollY) || 0);
+    if (Number.isFinite(targetY) && targetY > 0) {
+      const maxScroll = Math.max(0, (document.documentElement.scrollHeight || 0) - (window.innerHeight || 0));
+      const clampY = Math.min(targetY, maxScroll);
+      const restore = () => { try { window.scrollTo({ top: clampY, behavior: "instant" }); } catch {} };
+      restore();
+      requestAnimationFrame(restore);
+      setTimeout(restore, 120);
+      setTimeout(restore, 450);
+      logDebug("info", "已还原全局滚动位置", { from: storedHref, targetY: clampY });
     }
   }
 
