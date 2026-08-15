@@ -567,13 +567,16 @@
       const selected = node.id === state.selected;
       const baseMeta = node.url ? normalizeUrl(node.url) || node.url : hasChildren ? `${node.children.length} 个下级节点` : "目录节点";
       const note = noteText(node);
+      const selectTitle = note
+        ? `${escapeHtml(node.title || node.id)}\n${escapeHtml(note)}`
+        : `选择 ${escapeHtml(node.title || node.id)}`;
       return `
         <div class="tree-group">
           <div class="tree-row ${node.url ? "page" : "directory"} ${selected ? "selected" : ""}">
             ${hasChildren
               ? `<button class="toggle" data-toggle="${escapeHtml(node.id)}" title="${expanded ? "收起下级" : "展开下级"}"><span class="chevron ${expanded ? "open" : ""}"></span></button>`
               : `<span class="toggle-spacer" aria-hidden="true"></span>`}
-            <button class="node-select" data-select="${escapeHtml(node.id)}" title="选择 ${escapeHtml(node.title || node.id)}">
+            <button class="node-select" data-select="${escapeHtml(node.id)}" title="${selectTitle}">
               <span class="node-title">${escapeHtml(node.title || node.id)}</span>
               <span class="node-meta">${escapeHtml(baseMeta)}</span>
               ${note ? `<span class="node-meta note">${escapeHtml(note)}</span>` : ""}
@@ -591,7 +594,7 @@
     if (!results.length) return `<div class="empty">没有匹配的目录或网页</div>`;
     return `<div class="results">${results.map((node, index) => `
       <div class="result ${index === state.searchIndex ? "active" : ""}">
-        <button class="result-select" data-select="${escapeHtml(node.id)}">
+        <button class="result-select" data-select="${escapeHtml(node.id)}" title="${noteText(node) ? `${escapeHtml(node.title || node.id)}\n${escapeHtml(noteText(node))}` : escapeHtml(node.title || node.id)}">
           <span class="result-kind">${node.url ? "网页" : "目录"}</span>
           <span class="result-title">${escapeHtml(node.title || node.id)}</span>
           <span class="result-path">${escapeHtml(pathText(node.path))}</span>
