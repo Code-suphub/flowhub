@@ -240,11 +240,18 @@
     .toggle-spacer { width: 26px; height: 26px; display: block; }
     .chevron { width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 140ms ease; }
     .chevron.open { transform: rotate(45deg); }
-    .node-select { padding: 3px 0; }
+    .node-select { padding: 3px 0; display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+    .node-inner { min-width: 0; }
     .node-title, .node-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .node-title { font-weight: 700; }
     .node-meta { margin-top: 1px; color: #7a8792; font-size: 11px; }
     .node-meta.note { color: #058bb5; }
+    .icon { flex: 0 0 auto; display: inline-grid; place-items: center; }
+    .icon.in-root { line-height: 0; }
+    .icon.in-select { width: 22px; height: 22px; margin-top: 2px; border-radius: 6px; overflow: hidden; font-size: 15px; }
+    .icon-img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; display: block; background: #fff; }
+    .in-root .icon-img { width: 18px; height: 18px; }
+    .node-icon-char { line-height: 1; }
     .directory .node-title::before { content: "目录 · "; color: #7a8792; font-weight: 500; }
     .page .node-title::before { content: "网页 · "; color: #058bb5; font-weight: 500; }
     .open-link { width: 28px; height: 28px; border-radius: 8px; font-size: 17px; line-height: 1; }
@@ -261,7 +268,8 @@
       background: #fff;
     }
     .result.active, .result:hover { border-color: #d8edf3; background: #eef8fb; }
-    .result-select { min-width: 0; color: #10202f; background: transparent; text-align: left; cursor: pointer; }
+    .result-select { min-width: 0; color: #10202f; background: transparent; text-align: left; cursor: pointer; display: flex; align-items: flex-start; gap: 8px; }
+    .result-inner { min-width: 0; }
     .result-kind { color: #058bb5; font-size: 11px; font-weight: 700; }
     .result-title, .result-path, .result-url, .result-note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .result-title { margin-top: 2px; font-weight: 700; }
@@ -327,6 +335,16 @@
 
   function noteText(node) {
     return String(node?.note || "").trim();
+  }
+
+  // 图标 HTML：icon 值若是 http(s) 链接则渲染为图片，否则作为 emoji/字符渲染。
+  function iconHtml(obj, fallback = "□", extraClass = "") {
+    const raw = String(obj?.icon || "").trim();
+    const cls = extraClass ? `icon ${extraClass}` : "icon";
+    if (/^https?:\/\//i.test(raw)) {
+      return `<span class="${cls}"><img class="icon-img" src="${escapeHtml(raw)}" alt="${escapeHtml(obj?.title || obj?.id || "icon")}" loading="lazy" /></span>`;
+    }
+    return `<span class="${cls} node-icon-char">${escapeHtml(raw || fallback)}</span>`;
   }
 
   function rootItems() {
@@ -577,9 +595,12 @@
               ? `<button class="toggle" data-toggle="${escapeHtml(node.id)}" title="${expanded ? "收起下级" : "展开下级"}"><span class="chevron ${expanded ? "open" : ""}"></span></button>`
               : `<span class="toggle-spacer" aria-hidden="true"></span>`}
             <button class="node-select" data-select="${escapeHtml(node.id)}" title="${selectTitle}">
-              <span class="node-title">${escapeHtml(node.title || node.id)}</span>
-              <span class="node-meta">${escapeHtml(baseMeta)}</span>
-              ${note ? `<span class="node-meta note">${escapeHtml(note)}</span>` : ""}
+              ${iconHtml(node, "□", "in-select")}
+              <span class="node-inner">
+                <span class="node-title">${escapeHtml(node.title || node.id)}</span>
+                <span class="node-meta">${escapeHtml(baseMeta)}</span>
+                ${note ? `<span class="node-meta note">${escapeHtml(note)}</span>` : ""}
+              </span>
             </button>
             ${node.url ? `<button class="open-link" data-open="${escapeHtml(node.url)}" data-node-id="${escapeHtml(node.id)}" title="打开 ${escapeHtml(node.title || node.id)}">↗</button>` : "<span></span>"}
           </div>
@@ -595,11 +616,14 @@
     return `<div class="results">${results.map((node, index) => `
       <div class="result ${index === state.searchIndex ? "active" : ""}">
         <button class="result-select" data-select="${escapeHtml(node.id)}" title="${noteText(node) ? `${escapeHtml(node.title || node.id)}\n${escapeHtml(noteText(node))}` : escapeHtml(node.title || node.id)}">
-          <span class="result-kind">${node.url ? "网页" : "目录"}</span>
-          <span class="result-title">${escapeHtml(node.title || node.id)}</span>
-          <span class="result-path">${escapeHtml(pathText(node.path))}</span>
-          ${noteText(node) ? `<span class="result-note">${escapeHtml(noteText(node))}</span>` : ""}
-          ${node.url ? `<span class="result-url">${escapeHtml(normalizeUrl(node.url) || node.url)}</span>` : ""}
+          ${iconHtml(node, "□", "in-select")}
+          <span class="result-inner">
+            <span class="result-kind">${node.url ? "网页" : "目录"}</span>
+            <span class="result-title">${escapeHtml(node.title || node.id)}</span>
+            <span class="result-path">${escapeHtml(pathText(node.path))}</span>
+            ${noteText(node) ? `<span class="result-note">${escapeHtml(noteText(node))}</span>` : ""}
+            ${node.url ? `<span class="result-url">${escapeHtml(normalizeUrl(node.url) || node.url)}</span>` : ""}
+          </span>
         </button>
         ${node.url ? `<button class="open-link" data-open="${escapeHtml(node.url)}" data-node-id="${escapeHtml(node.id)}" title="打开网页">↗</button>` : "<span></span>"}
       </div>
@@ -644,7 +668,7 @@
           <div class="roots">
             ${roots.map((item) => `
               <div class="root-control">
-                <button class="root ${item.id === state.root ? "active" : ""}" data-root="${escapeHtml(item.id)}"><span>${escapeHtml(item.icon || "□")}</span><strong>${escapeHtml(item.title || item.id)}</strong></button>
+                <button class="root ${item.id === state.root ? "active" : ""}" data-root="${escapeHtml(item.id)}">${iconHtml(item, "□", "in-root")}<strong>${escapeHtml(item.title || item.id)}</strong></button>
                 ${item.url ? `<button class="root-open" data-open="${escapeHtml(item.url)}" data-node-id="${escapeHtml(item.id)}" title="打开 ${escapeHtml(item.title || item.id)}">↗</button>` : ""}
               </div>
             `).join("")}
