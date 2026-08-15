@@ -470,6 +470,85 @@
               ]
             }
           ]
+        },
+        {
+          "id": "vps",
+          "title": "VPS / 独立服务器",
+          "icon": "🖥",
+          "children": [
+            {
+              "id": "vps-hosts",
+              "title": "VPS 主机商",
+              "children": [
+                {
+                  "id": "dmit",
+                  "title": "DMIT",
+                  "url": "https://www.dmit.io/",
+                  "accent": "#0AA9DB"
+                },
+                {
+                  "id": "vultr",
+                  "title": "Vultr",
+                  "url": "https://www.vultr.com/",
+                  "accent": "#007BFC"
+                },
+                {
+                  "id": "linode",
+                  "title": "Linode (Akamai)",
+                  "url": "https://www.linode.com/",
+                  "accent": "#00A95C"
+                },
+                {
+                  "id": "digitalocean",
+                  "title": "DigitalOcean",
+                  "url": "https://www.digitalocean.com/",
+                  "accent": "#0080FF"
+                },
+                {
+                  "id": "hetzner",
+                  "title": "Hetzner",
+                  "url": "https://www.hetzner.com/",
+                  "accent": "#D50F2D"
+                },
+                {
+                  "id": "ovh",
+                  "title": "OVHcloud",
+                  "url": "https://www.ovhcloud.com/",
+                  "accent": "#123F6D"
+                },
+                {
+                  "id": "scaleway",
+                  "title": "Scaleway",
+                  "url": "https://www.scaleway.com/",
+                  "accent": "#D30235"
+                }
+              ]
+            },
+            {
+              "id": "vps-managed",
+              "title": "管理型 / 云实例",
+              "children": [
+                {
+                  "id": "contabo",
+                  "title": "Contabo",
+                  "url": "https://contabo.com/",
+                  "accent": "#FF5A00"
+                },
+                {
+                  "id": "ionos",
+                  "title": "IONOS",
+                  "url": "https://www.ionos.com/",
+                  "accent": "#003D8D"
+                },
+                {
+                  "id": "hostinger-vps",
+                  "title": "Hostinger",
+                  "url": "https://www.hostinger.com/",
+                  "accent": "#673DE6"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
