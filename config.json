@@ -40,7 +40,8 @@
                   "accent": "#FFAA1A"
                 }
               ],
-              "url": "http://wave.bilibiligame.co/wave/application/create-publish?cmdb_app_id=game.tzd.tts&page_size=10&page_num=1"
+              "url": "http://wave.bilibiligame.co/wave/application/create-publish?cmdb_app_id=game.tzd.tts&page_size=10&page_num=1",
+              "icon": "https://www.aliyun.com/favicon.ico"
             },
             {
               "id": "tencent",
@@ -58,7 +59,8 @@
                   "url": "https://cloud.tencent.com/",
                   "accent": "#1FB4A2"
                 }
-              ]
+              ],
+              "icon": "https://cloud.tencent.com/favicon.ico"
             },
             {
               "id": "baidu",
@@ -94,7 +96,8 @@
                   "url": "https://console.aws.amazon.com/",
                   "accent": "#0AA9DB"
                 }
-              ]
+              ],
+              "icon": "https://aws.amazon.com/favicon.ico"
             },
             {
               "id": "huawei",
@@ -112,7 +115,8 @@
                   "url": "https://console.huaweicloud.com/",
                   "accent": "#0AA9DB"
                 }
-              ]
+              ],
+              "icon": "https://www.huaweicloud.com/favicon.ico"
             },
             {
               "id": "ctyun",
@@ -130,7 +134,8 @@
                   "url": "https://www.ctyun.cn/console/",
                   "accent": "#1FB4A2"
                 }
-              ]
+              ],
+              "icon": "https://www.ctyun.cn/favicon.ico"
             },
             {
               "id": "cmcc-cloud",
@@ -238,7 +243,8 @@
                   "url": "https://console.volcengine.com/",
                   "accent": "#1FB4A2"
                 }
-              ]
+              ],
+              "icon": "https://www.volcengine.com/favicon.ico"
             },
             {
               "id": "qingcloud",
@@ -387,7 +393,8 @@
                   "id": "neon",
                   "title": "Neon (Serverless Postgres)",
                   "url": "https://neon.tech/",
-                  "accent": "#0AB6FF"
+                  "accent": "#0AB6FF",
+                  "icon": "https://neon.tech/favicon.ico"
                 },
                 {
                   "id": "planetscale",
@@ -417,7 +424,8 @@
                   "id": "vercel",
                   "title": "Vercel",
                   "url": "https://vercel.com/",
-                  "accent": "#000000"
+                  "accent": "#000000",
+                  "icon": "https://vercel.com/favicon.ico"
                 },
                 {
                   "id": "netlify",
@@ -490,7 +498,8 @@
                   "id": "vultr",
                   "title": "Vultr",
                   "url": "https://www.vultr.com/",
-                  "accent": "#007BFC"
+                  "accent": "#007BFC",
+                  "icon": "https://www.vultr.com/favicon.ico"
                 },
                 {
                   "id": "linode",
@@ -502,7 +511,8 @@
                   "id": "digitalocean",
                   "title": "DigitalOcean",
                   "url": "https://www.digitalocean.com/",
-                  "accent": "#0080FF"
+                  "accent": "#0080FF",
+                  "icon": "https://www.digitalocean.com/favicon.ico"
                 },
                 {
                   "id": "hetzner",
