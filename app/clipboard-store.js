@@ -8,6 +8,7 @@ let db = null;
 let dataDir = "";
 let imageDir = "";
 let dbPath = "";
+const searchCache = new Map();
 
 function rows(sql, params = []) {
   const statement = db.prepare(sql);
@@ -84,34 +85,40 @@ function isReady() {
   return Boolean(db);
 }
 
-function touchExisting(row, now) {
+function invalidateSearchCache() {
+  searchCache.clear();
+}
+
+function touchExisting(row, now, shouldPersist = true) {
   db.run(
     "UPDATE clipboard_records SET last_seen_at = ?, copy_count = copy_count + 1 WHERE id = ?",
     [now, row.id]
   );
-  persist();
+  invalidateSearchCache();
+  if (shouldPersist) persist();
   return toPublicRecord(first("SELECT * FROM clipboard_records WHERE id = ?", [row.id]));
 }
 
-function addText(text, hash) {
+function addText(text, hash, shouldPersist = true) {
   if (!db || !String(text || "")) return null;
   const now = new Date().toISOString();
   const existing = first("SELECT * FROM clipboard_records WHERE kind = 'text' AND hash = ?", [hash]);
-  if (existing) return touchExisting(existing, now);
+  if (existing) return touchExisting(existing, now, shouldPersist);
   db.run(
     `INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at)
      VALUES ('text', ?, ?, ?, ?, ?)`,
     [hash, text, Buffer.byteLength(text, "utf8"), now, now]
   );
-  persist();
+  invalidateSearchCache();
+  if (shouldPersist) persist();
   return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'text' AND hash = ?", [hash]));
 }
 
-function addImage(buffer, hash) {
+function addImage(buffer, hash, shouldPersist = true) {
   if (!db || !buffer?.length) return null;
   const now = new Date().toISOString();
   const existing = first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]);
-  if (existing) return touchExisting(existing, now);
+  if (existing) return touchExisting(existing, now, shouldPersist);
 
   const fileName = `${hash}.png`;
   fs.writeFileSync(imagePath(fileName), buffer);
@@ -120,27 +127,51 @@ function addImage(buffer, hash) {
      VALUES ('image', ?, ?, ?, ?, ?)`,
     [hash, fileName, buffer.length, now, now]
   );
-  persist();
+  invalidateSearchCache();
+  if (shouldPersist) persist();
   return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]));
+}
+
+function addBatch(payloads = []) {
+  if (!db || !payloads.length) return [];
+  db.run("BEGIN");
+  try {
+    const records = payloads.map((payload) => payload.kind === "image"
+      ? addImage(payload.value, payload.hash, false)
+      : addText(payload.value, payload.hash, false));
+    db.run("COMMIT");
+    persist();
+    return records;
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
 }
 
 function search(query = "", limit = 12) {
   if (!db) return [];
   const keyword = String(query || "").trim();
+  const normalizedKeyword = keyword.toLowerCase();
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const cacheKey = `${normalizedKeyword}\u0000${safeLimit}`;
+  if (searchCache.has(cacheKey)) return searchCache.get(cacheKey);
   let result;
   if (!keyword) {
-    result = rows("SELECT * FROM clipboard_records ORDER BY last_seen_at DESC LIMIT ?", [limit]);
+    result = rows("SELECT * FROM clipboard_records ORDER BY last_seen_at DESC LIMIT ?", [safeLimit]);
   } else {
     const like = `%${keyword}%`;
-    const imageKeyword = ["图片", "图像", "image"].includes(keyword.toLowerCase()) ? keyword : "";
+    const imageKeyword = ["图片", "图像", "image"].includes(normalizedKeyword) ? keyword : "";
     result = rows(
       `SELECT * FROM clipboard_records
        WHERE content LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> '')
        ORDER BY last_seen_at DESC LIMIT ?`,
-      [like, like, imageKeyword, limit]
+      [like, like, imageKeyword, safeLimit]
     );
   }
-  return result.map(toPublicRecord);
+  const publicRecords = result.map(toPublicRecord);
+  searchCache.set(cacheKey, publicRecords);
+  if (searchCache.size > 32) searchCache.delete(searchCache.keys().next().value);
+  return publicRecords;
 }
 
 function get(id) {
@@ -167,6 +198,7 @@ function cleanup(retentionDays) {
     }
   }
   db.run("DELETE FROM clipboard_records WHERE last_seen_at < ?", [cutoff]);
+  invalidateSearchCache();
   persist();
   return expired.length;
 }
@@ -177,9 +209,11 @@ function close() {
     db.close();
   }
   db = null;
+  invalidateSearchCache();
 }
 
 module.exports = {
+  addBatch,
   addImage,
   addText,
   cleanup,

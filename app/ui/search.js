@@ -4,8 +4,9 @@ const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 
-const state = { config: null, query: "", index: 0, scope: "all", clipboardResults: [] };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardResults: [] };
 let clipboardSearchToken = 0;
+let clipboardSearchTimer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -23,20 +24,29 @@ function iconHtml(n) {
   return esc(raw || "□");
 }
 function flatten(nodes, path = []) {
-  return (nodes || []).flatMap((n) => {
+  const pages = [];
+  (nodes || []).forEach((n) => {
     const p = [...path, { title: n.title, id: n.id, icon: n.icon }];
-    const self = n.url ? [{ ...n, path: p }] : [];
-    return [...self, ...flatten(n.children || [], p)];
+    if (n.url) {
+      const page = { ...n, path: p };
+      page.hay = `${page.title || ""} ${page.url || ""} ${pathText(page)} ${noteOf(page)}`.toLowerCase();
+      pages.push(page);
+    }
+    pages.push(...flatten(n.children || [], p));
   });
+  return pages;
 }
-function allPages() { return flatten(state.config?.items || []); }
+function setConfig(config) {
+  state.config = config;
+  state.pageIndex = flatten(config?.items || []);
+}
+function allPages() { return state.pageIndex; }
 function pathText(page) { return (page.path || []).map((x) => x.title).join(" / "); }
 function pageMatches() {
   const kw = state.query.trim().toLowerCase();
   let pages = allPages();
   if (!kw) return pages.slice(0, 12);
   return pages
-    .map((p) => ({ ...p, hay: `${p.title || ""} ${p.url || ""} ${pathText(p)} ${noteOf(p)}`.toLowerCase() }))
     .filter((p) => p.hay.includes(kw))
     .slice(0, 12);
 }
@@ -63,13 +73,13 @@ function matches() {
   const clips = clipboardMatches();
   if (state.scope === "web") return pages;
   if (state.scope === "clipboard") return clips;
-  return [...pages.slice(0, 6), ...clips.slice(0, 6)].slice(0, 12);
+  return [...clips.slice(0, 6), ...pages.slice(0, 6)].slice(0, 12);
 }
 
 function renderResult(item, index) {
   if (item.type === "clipboard") {
     const image = item.kind === "image" && item.imageUrl
-      ? `<img src="${esc(item.imageUrl)}" alt="" />`
+      ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
       : "▤";
     const preview = item.kind === "image"
       ? `图片 · ${formatBytes(item.size)}`
@@ -126,7 +136,7 @@ function choose(page) {
 }
 
 // 更新配置（主进程每次呼出都会推送）
-window.weborg.onConfig((cfg) => { state.config = cfg; render(); });
+window.weborg.onConfig((cfg) => { setConfig(cfg); render(); });
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); window.close(); }
@@ -138,6 +148,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 async function refreshClipboard() {
+  if (state.scope === "web") return;
   const token = ++clipboardSearchToken;
   try {
     const records = await window.weborg?.searchClipboard(state.query);
@@ -147,11 +158,16 @@ async function refreshClipboard() {
   } catch {}
 }
 
+function queueClipboardRefresh(delay = 180) {
+  clearTimeout(clipboardSearchTimer);
+  clipboardSearchTimer = setTimeout(() => { void refreshClipboard(); }, delay);
+}
+
 q.addEventListener("input", () => {
   state.query = q.value;
   state.index = 0;
   render();
-  void refreshClipboard();
+  queueClipboardRefresh();
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => {
@@ -161,7 +177,7 @@ document.querySelectorAll("[data-scope]").forEach((button) => button.addEventLis
   render();
   void refreshClipboard();
 }));
-window.weborg.onClipboardUpdated(() => { void refreshClipboard(); });
+window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
 resultsEl.addEventListener("click", (e) => { const row = e.target.closest(".result"); if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); } });
 resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { state.index = i; render(); } } });
 
@@ -170,7 +186,7 @@ window.focusSearch = focusSearch;
 
 // 初始加载
 Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard("")]).then(([cfg, records]) => {
-  state.config = cfg;
+  setConfig(cfg);
   state.clipboardResults = records || [];
   render();
   focusSearch();

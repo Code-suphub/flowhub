@@ -16,6 +16,13 @@ let clipboardTimer = null;
 let clipboardPollInFlight = false;
 let lastClipboardSignature = "";
 let lastClipboardCleanupAt = 0;
+let clipboardSettingsCache = null;
+let clipboardSettingsMtime = 0;
+let lastClipboardText = null;
+let lastClipboardTextHash = "";
+let lastClipboardImageFormats = "";
+let lastClipboardImageCheckAt = 0;
+let cachedClipboardImage = null;
 
 function readConfig() {
   try {
@@ -65,9 +72,22 @@ function writeConfig(config) {
   const tempPath = `${CONFIG_PATH}.tmp-${process.pid}`;
   fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   fs.renameSync(tempPath, CONFIG_PATH);
+  clipboardSettingsCache = null;
+  clipboardSettingsMtime = 0;
 }
 
 function clipboardSettings() {
+  try {
+    const mtime = fs.statSync(CONFIG_PATH).mtimeMs;
+    if (clipboardSettingsCache && clipboardSettingsMtime === mtime) return clipboardSettingsCache;
+    const config = readConfig();
+    clipboardSettingsCache = {
+      enabled: config.clipboard?.enabled !== false,
+      retentionDays: Number(config.clipboard?.retentionDays ?? 30)
+    };
+    clipboardSettingsMtime = mtime;
+    return clipboardSettingsCache;
+  } catch {}
   const config = readConfig();
   return {
     enabled: config.clipboard?.enabled !== false,
@@ -79,19 +99,45 @@ function hashBuffer(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-function readClipboardPayloads() {
+function isImageClipboardFormat(format) {
+  return /(^image\/|image|png|jpe?g|gif|tiff)/i.test(String(format || ""));
+}
+
+function resetClipboardSnapshot() {
+  lastClipboardSignature = "";
+  lastClipboardText = null;
+  lastClipboardTextHash = "";
+  lastClipboardImageFormats = "";
+  lastClipboardImageCheckAt = 0;
+  cachedClipboardImage = null;
+}
+
+function readClipboardPayloads(now = Date.now()) {
   const payloads = [];
-  const image = clipboard.readImage();
-  if (!image.isEmpty()) {
-    const buffer = image.toPNG();
-    payloads.push({ kind: "image", value: buffer, hash: hashBuffer(buffer) });
+  const formats = clipboard.availableFormats();
+  const imageFormats = formats.filter(isImageClipboardFormat).sort().join("|");
+  if (!imageFormats) {
+    cachedClipboardImage = null;
+    lastClipboardImageFormats = "";
+  } else if (imageFormats !== lastClipboardImageFormats || now - lastClipboardImageCheckAt >= 1000) {
+    const image = clipboard.readImage();
+    if (image.isEmpty()) {
+      cachedClipboardImage = null;
+    } else {
+      const buffer = image.toPNG();
+      cachedClipboardImage = { kind: "image", value: buffer, hash: hashBuffer(buffer) };
+    }
+    lastClipboardImageFormats = imageFormats;
+    lastClipboardImageCheckAt = now;
   }
 
   const text = clipboard.readText();
-  if (text) {
-    const buffer = Buffer.from(text, "utf8");
-    payloads.push({ kind: "text", value: text, hash: hashBuffer(buffer) });
+  if (text !== lastClipboardText) {
+    lastClipboardText = text;
+    lastClipboardTextHash = text ? hashBuffer(Buffer.from(text, "utf8")) : "";
   }
+  if (cachedClipboardImage) payloads.push(cachedClipboardImage);
+  if (text && lastClipboardTextHash) payloads.push({ kind: "text", value: text, hash: lastClipboardTextHash });
   return payloads;
 }
 
@@ -101,21 +147,18 @@ async function pollClipboard() {
   try {
     const settings = clipboardSettings();
     if (!settings.enabled) {
-      lastClipboardSignature = "";
+      resetClipboardSnapshot();
       return;
     }
 
     const payloads = readClipboardPayloads();
     const signature = payloads.map((payload) => `${payload.kind}:${payload.hash}`).join("|");
     if (signature && signature !== lastClipboardSignature) {
-      for (const payload of payloads) {
-        if (payload.kind === "image") clipboardStore.addImage(payload.value, payload.hash);
-        else clipboardStore.addText(payload.value, payload.hash);
-      }
+      clipboardStore.addBatch(payloads);
       lastClipboardSignature = signature;
       if (win && !win.isDestroyed()) win.webContents.send("weborg:clipboard-updated");
     } else if (!signature) {
-      lastClipboardSignature = "";
+      resetClipboardSnapshot();
     }
 
     const now = Date.now();
