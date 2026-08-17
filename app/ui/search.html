@@ -25,8 +25,10 @@
         border-radius: 14px;
       }
       .shell { height: 100%; display: flex; flex-direction: column; background: var(--bg); border-radius: 14px; }
-      .drag-bar { height: 22px; -webkit-app-region: drag; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
-      .pin { -webkit-app-region: no-drag; }
+      .drag-bar { height: 28px; -webkit-app-region: drag; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+      .window-actions { display: flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; }
+      .window-action { width: 24px; height: 22px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; cursor: pointer; }
+      .window-action:hover { color: var(--text); background: #2b3a48; }
       .input-wrap { padding: 10px 14px 14px; }
       #q {
         width: 100%;
@@ -56,7 +58,12 @@
   </head>
   <body>
     <div class="shell">
-      <div class="drag-bar"><span class="pin" id="pinBtn" title="固定/取消固定">📌</span></div>
+      <div class="drag-bar">
+        <div class="window-actions">
+          <button class="window-action" id="settingsBtn" title="打开配置管理">⚙</button>
+          <button class="window-action" id="pinBtn" title="固定/取消固定">📌</button>
+        </div>
+      </div>
       <div class="input-wrap">
         <input id="q" autocomplete="off" placeholder="搜索目录、网页或启动命令…" />
       </div>

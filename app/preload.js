@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("weborg", {
   getConfig: (query) => ipcRenderer.invoke("weborg:get-config", query || ""),
+  openSettings: () => ipcRenderer.invoke("weborg:open-settings"),
+  saveConfig: (config) => ipcRenderer.invoke("weborg:save-config", config),
   openUrl: (url) => ipcRenderer.invoke("weborg:open-url", url),
   openLocal: (action) => ipcRenderer.invoke("weborg:open-local", action),
   onConfig: (cb) => {

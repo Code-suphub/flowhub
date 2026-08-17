@@ -8,6 +8,7 @@ const fs = require("fs");
 const CONFIG_PATH = path.join(__dirname, "..", "config.json");
 
 let win = null;
+let settingsWin = null;
 let lastQuery = "";
 
 function readConfig() {
@@ -18,6 +19,46 @@ function readConfig() {
     console.error("[weborg] 读取配置失败:", e.message);
     return { app: { title: "Web Organization" }, items: [] };
   }
+}
+
+function validateConfig(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("配置必须是 JSON 对象");
+  }
+  if (!Array.isArray(config.items)) {
+    throw new Error("配置缺少 items 数组");
+  }
+
+  const ids = new Set();
+  function visit(nodes) {
+    for (const node of nodes) {
+      if (!node || typeof node !== "object" || Array.isArray(node)) {
+        throw new Error("目录节点必须是对象");
+      }
+      if (!String(node.id || "").trim()) {
+        throw new Error("每个目录节点都需要 id");
+      }
+      if (ids.has(node.id)) {
+        throw new Error(`目录 id 重复：${node.id}`);
+      }
+      ids.add(node.id);
+      if (node.children !== undefined && !Array.isArray(node.children)) {
+        throw new Error(`节点 ${node.id} 的 children 必须是数组`);
+      }
+      visit(node.children || []);
+    }
+  }
+
+  visit(config.items);
+  return config;
+}
+
+function writeConfig(config) {
+  validateConfig(config);
+  // 先写临时文件再替换，避免 app 与 Web 端同时保存时留下半个 JSON 文件。
+  const tempPath = `${CONFIG_PATH}.tmp-${process.pid}`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  fs.renameSync(tempPath, CONFIG_PATH);
 }
 
 function isDev() {
@@ -56,6 +97,33 @@ function createWindow() {
     if (win && !win.isDestroyed()) win.hide();
   });
   return win;
+}
+
+function createSettingsWindow() {
+  settingsWin = new BrowserWindow({
+    width: 980,
+    height: 720,
+    minWidth: 820,
+    minHeight: 600,
+    title: "Web Organization 配置管理",
+    backgroundColor: "#101820",
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js")
+    }
+  });
+
+  settingsWin.loadFile(path.join(__dirname, "ui", "settings.html"));
+  settingsWin.on("closed", () => { settingsWin = null; });
+  return settingsWin;
+}
+
+function showSettingsWindow() {
+  if (!settingsWin || settingsWin.isDestroyed()) createSettingsWindow();
+  settingsWin.show();
+  settingsWin.focus();
 }
 
 function showWindow() {
@@ -98,6 +166,25 @@ app.whenReady().then(() => {
 ipcMain.handle("weborg:get-config", (event, query) => {
   lastQuery = query || "";
   return readConfig();
+});
+
+ipcMain.handle("weborg:open-settings", () => {
+  showSettingsWindow();
+  return { ok: true };
+});
+
+ipcMain.handle("weborg:save-config", (event, config) => {
+  try {
+    writeConfig(config);
+    const savedConfig = readConfig();
+    // 搜索浮窗下次呼出会重新读取；如果它当前仍在显示，也立即刷新结果。
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("weborg:config", savedConfig, lastQuery);
+    }
+    return { ok: true, config: savedConfig };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
 });
 
 // 用系统浏览器/默认应用打开

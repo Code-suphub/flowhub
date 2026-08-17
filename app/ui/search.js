@@ -2,6 +2,7 @@
 const q = document.getElementById("q");
 const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
+const settingsBtn = document.getElementById("settingsBtn");
 
 const state = { config: null, query: "", index: 0 };
 
@@ -85,6 +86,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 q.addEventListener("input", () => { state.query = q.value; state.index = 0; render(); });
+settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 resultsEl.addEventListener("click", (e) => { const row = e.target.closest(".result"); if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); } });
 resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { state.index = i; render(); } } });
 
