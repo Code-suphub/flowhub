@@ -349,6 +349,13 @@ function handleAction(action) {
 }
 
 document.addEventListener("click", (event) => {
+  const module = event.target.closest("[data-module]")?.dataset.module;
+  if (module) {
+    document.querySelectorAll("[data-module]").forEach((item) => item.classList.toggle("active", item.dataset.module === module));
+    if (module === "clipboard") $("#clipboardSettings")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    else $("#tree")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
   const toggleId = event.target.closest("[data-toggle-node]")?.dataset.toggleNode;
   if (toggleId) return toggleNode(toggleId);
   const action = event.target.closest("[data-action]")?.dataset.action;

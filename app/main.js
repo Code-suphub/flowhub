@@ -340,6 +340,9 @@ ipcMain.handle("weborg:save-config", (event, config) => {
   try {
     writeConfig(config);
     const savedConfig = readConfig();
+    if (clipboardStore.isReady()) {
+      clipboardStore.cleanup(savedConfig.clipboard?.retentionDays ?? 30);
+    }
     // 搜索浮窗下次呼出会重新读取；如果它当前仍在显示，也立即刷新结果。
     if (win && !win.isDestroyed()) {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
