@@ -23,6 +23,7 @@ let lastClipboardTextHash = "";
 let lastClipboardImageFormats = "";
 let lastClipboardImageCheckAt = 0;
 let cachedClipboardImage = null;
+let blurHideTimer = null;
 
 function readConfig() {
   try {
@@ -190,7 +191,8 @@ function isDev() {
 
 // 构建搜索窗（无边框、置顶、不抢焦点的浮层）
 function createWindow() {
-  const { workArea } = screen.getPrimaryDisplay();
+  const cursorPoint = screen.getCursorScreenPoint();
+  const { workArea } = screen.getDisplayNearestPoint(cursorPoint);
   const W = 620;
   const H = 520;
   win = new BrowserWindow({
@@ -202,6 +204,8 @@ function createWindow() {
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
+    // macOS 面板可以跨 Spaces，并浮在其他应用的原生全屏窗口上方。
+    ...(process.platform === "darwin" ? { type: "panel" } : {}),
     skipTaskbar: true,
     show: false,
     webPreferences: {
@@ -212,22 +216,32 @@ function createWindow() {
   });
 
   if (process.platform === "darwin") {
-    // 全局搜索浮层需要跨 macOS Spaces 显示，尤其是正在使用其他 app 的全屏窗口时。
-    // skipTransformProcessType 避免设置跨工作区时将后台应用临时切到前台/当前桌面。
-    win.setAlwaysOnTop(true, "floating");
-    win.setVisibleOnAllWorkspaces(true, {
-      visibleOnFullScreen: true,
-      skipTransformProcessType: true
-    });
+    // panel 已经具备跨工作区/全屏显示能力，这里只提升窗口层级，不再调用
+    // setVisibleOnAllWorkspaces，避免首次唤出时触发 macOS 应用类型切换。
+    win.setAlwaysOnTop(true, "pop-up-menu");
   }
 
   win.loadFile(path.join(__dirname, "ui", "search.html"));
   win.hide();
-  win.on("closed", () => { win = null; });
+  win.on("closed", () => {
+    if (blurHideTimer) clearTimeout(blurHideTimer);
+    blurHideTimer = null;
+    win = null;
+  });
 
-  // 失焦时（点击外部）自动隐藏 —— 类似 uTools 点外面关闭
+  win.on("focus", () => {
+    if (blurHideTimer) clearTimeout(blurHideTimer);
+    blurHideTimer = null;
+  });
+
+  // 失焦时（点击外部）自动隐藏。macOS 全屏空间切换可能产生一次短暂 blur，
+  // 延迟判断避免首次唤出时被误隐藏。
   win.on("blur", () => {
-    if (win && !win.isDestroyed()) win.hide();
+    if (blurHideTimer) clearTimeout(blurHideTimer);
+    blurHideTimer = setTimeout(() => {
+      if (win && !win.isDestroyed() && !win.isFocused()) win.hide();
+      blurHideTimer = null;
+    }, 120);
   });
   return win;
 }
@@ -265,6 +279,7 @@ function showWindow() {
   // 每次呼出把最新配置同步给渲染层
   win?.webContents.send("weborg:config", cfg, lastQuery);
   win.show();
+  win.moveTop();
   win.focus();
   win.webContents.executeJavaScript("try{window.focusSearch&&window.focusSearch()}catch(e){}");
 }
@@ -278,6 +293,11 @@ function toggleWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === "darwin") {
+    // 启动器不是普通 Dock 应用；使用 accessory 可避免唤出时切换到应用自己的 Space。
+    app.setActivationPolicy("accessory");
+  }
+
   try {
     await clipboardStore.open(app.getPath("userData"));
     startClipboardMonitor();
