@@ -348,12 +348,27 @@ function handleAction(action) {
   }
 }
 
+function switchModule(module) {
+  document.querySelectorAll("[data-module]").forEach((item) => {
+    const active = item.dataset.module === module;
+    item.classList.toggle("active", active);
+    const hint = item.querySelector("small");
+    if (hint && item.dataset.module === "clipboard") hint.textContent = active ? "当前模块" : "记录中";
+    if (hint && item.dataset.module === "web") hint.textContent = active ? "当前模块" : "网页入口";
+  });
+
+  if (module === "clipboard") {
+    $("#clipboardSettings")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => $("#clipboardRetentionDays")?.focus({ preventScroll: true }), 180);
+  } else {
+    $("#tree")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
 document.addEventListener("click", (event) => {
   const module = event.target.closest("[data-module]")?.dataset.module;
   if (module) {
-    document.querySelectorAll("[data-module]").forEach((item) => item.classList.toggle("active", item.dataset.module === module));
-    if (module === "clipboard") $("#clipboardSettings")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    else $("#tree")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    switchModule(module);
     return;
   }
   const toggleId = event.target.closest("[data-toggle-node]")?.dataset.toggleNode;
