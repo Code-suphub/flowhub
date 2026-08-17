@@ -211,6 +211,16 @@ function createWindow() {
     }
   });
 
+  if (process.platform === "darwin") {
+    // 全局搜索浮层需要跨 macOS Spaces 显示，尤其是正在使用其他 app 的全屏窗口时。
+    // skipTransformProcessType 避免设置跨工作区时将后台应用临时切到前台/当前桌面。
+    win.setAlwaysOnTop(true, "floating");
+    win.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true
+    });
+  }
+
   win.loadFile(path.join(__dirname, "ui", "search.html"));
   win.hide();
   win.on("closed", () => { win = null; });
