@@ -1,0 +1,16 @@
+{
+  "name": "weborg-app",
+  "productName": "Web Organization",
+  "version": "0.1.0",
+  "description": "uTools 风格的桌面启动器：全局搜索目录/网页，回车打开；可配置启动本地应用。",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:dev": "electron . --dev"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
