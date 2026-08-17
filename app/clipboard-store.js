@@ -1,0 +1,192 @@
+const fs = require("fs");
+const path = require("path");
+const { pathToFileURL } = require("url");
+const initSqlJs = require("sql.js");
+
+let SQL = null;
+let db = null;
+let dataDir = "";
+let imageDir = "";
+let dbPath = "";
+
+function rows(sql, params = []) {
+  const statement = db.prepare(sql);
+  statement.bind(params);
+  const result = [];
+  while (statement.step()) result.push(statement.getAsObject());
+  statement.free();
+  return result;
+}
+
+function first(sql, params = []) {
+  return rows(sql, params)[0] || null;
+}
+
+function persist() {
+  const tempPath = `${dbPath}.tmp-${process.pid}`;
+  fs.writeFileSync(tempPath, Buffer.from(db.export()));
+  fs.renameSync(tempPath, dbPath);
+}
+
+function imagePath(fileName) {
+  return path.join(imageDir, fileName);
+}
+
+function toPublicRecord(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    kind: row.kind,
+    hash: row.hash,
+    content: row.content || "",
+    imageUrl: row.file_name ? pathToFileURL(imagePath(row.file_name)).href : "",
+    size: Number(row.size || 0),
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+    copyCount: Number(row.copy_count || 1)
+  };
+}
+
+async function open(baseDir) {
+  dataDir = path.join(baseDir, "clipboard");
+  imageDir = path.join(dataDir, "images");
+  dbPath = path.join(dataDir, "weborg.db");
+  fs.mkdirSync(imageDir, { recursive: true });
+
+  SQL = await initSqlJs({
+    locateFile: (file) => path.join(path.dirname(require.resolve("sql.js")), file)
+  });
+
+  const existing = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null;
+  db = existing ? new SQL.Database(existing) : new SQL.Database();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS clipboard_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      content TEXT,
+      file_name TEXT,
+      size INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      copy_count INTEGER NOT NULL DEFAULT 1,
+      UNIQUE(kind, hash)
+    );
+    CREATE INDEX IF NOT EXISTS clipboard_records_recent
+      ON clipboard_records(last_seen_at DESC);
+    CREATE INDEX IF NOT EXISTS clipboard_records_hash
+      ON clipboard_records(hash);
+  `);
+  persist();
+}
+
+function isReady() {
+  return Boolean(db);
+}
+
+function touchExisting(row, now) {
+  db.run(
+    "UPDATE clipboard_records SET last_seen_at = ?, copy_count = copy_count + 1 WHERE id = ?",
+    [now, row.id]
+  );
+  persist();
+  return toPublicRecord(first("SELECT * FROM clipboard_records WHERE id = ?", [row.id]));
+}
+
+function addText(text, hash) {
+  if (!db || !String(text || "")) return null;
+  const now = new Date().toISOString();
+  const existing = first("SELECT * FROM clipboard_records WHERE kind = 'text' AND hash = ?", [hash]);
+  if (existing) return touchExisting(existing, now);
+  db.run(
+    `INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at)
+     VALUES ('text', ?, ?, ?, ?, ?)`,
+    [hash, text, Buffer.byteLength(text, "utf8"), now, now]
+  );
+  persist();
+  return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'text' AND hash = ?", [hash]));
+}
+
+function addImage(buffer, hash) {
+  if (!db || !buffer?.length) return null;
+  const now = new Date().toISOString();
+  const existing = first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]);
+  if (existing) return touchExisting(existing, now);
+
+  const fileName = `${hash}.png`;
+  fs.writeFileSync(imagePath(fileName), buffer);
+  db.run(
+    `INSERT INTO clipboard_records(kind, hash, file_name, size, created_at, last_seen_at)
+     VALUES ('image', ?, ?, ?, ?, ?)`,
+    [hash, fileName, buffer.length, now, now]
+  );
+  persist();
+  return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]));
+}
+
+function search(query = "", limit = 12) {
+  if (!db) return [];
+  const keyword = String(query || "").trim();
+  let result;
+  if (!keyword) {
+    result = rows("SELECT * FROM clipboard_records ORDER BY last_seen_at DESC LIMIT ?", [limit]);
+  } else {
+    const like = `%${keyword}%`;
+    const imageKeyword = ["图片", "图像", "image"].includes(keyword.toLowerCase()) ? keyword : "";
+    result = rows(
+      `SELECT * FROM clipboard_records
+       WHERE content LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> '')
+       ORDER BY last_seen_at DESC LIMIT ?`,
+      [like, like, imageKeyword, limit]
+    );
+  }
+  return result.map(toPublicRecord);
+}
+
+function get(id) {
+  return db ? toPublicRecord(first("SELECT * FROM clipboard_records WHERE id = ?", [id])) : null;
+}
+
+function getImageBuffer(id) {
+  if (!db) return null;
+  const row = first("SELECT file_name FROM clipboard_records WHERE id = ? AND kind = 'image'", [id]);
+  if (!row?.file_name) return null;
+  try { return fs.readFileSync(imagePath(row.file_name)); } catch { return null; }
+}
+
+function cleanup(retentionDays) {
+  if (!db) return 0;
+  const days = Number(retentionDays);
+  if (!Number.isFinite(days) || days <= 0) return 0;
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const expired = rows("SELECT id, file_name FROM clipboard_records WHERE last_seen_at < ?", [cutoff]);
+  if (!expired.length) return 0;
+  for (const row of expired) {
+    if (row.file_name) {
+      try { fs.unlinkSync(imagePath(row.file_name)); } catch {}
+    }
+  }
+  db.run("DELETE FROM clipboard_records WHERE last_seen_at < ?", [cutoff]);
+  persist();
+  return expired.length;
+}
+
+function close() {
+  if (db) {
+    persist();
+    db.close();
+  }
+  db = null;
+}
+
+module.exports = {
+  addImage,
+  addText,
+  cleanup,
+  close,
+  get,
+  getImageBuffer,
+  isReady,
+  open,
+  search
+};

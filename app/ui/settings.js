@@ -203,6 +203,8 @@ function renderAppFields() {
   $("#appTitle").value = state.config?.app?.title || "";
   $("#appSubtitle").value = state.config?.app?.subtitle || "";
   $("#probeEnabled").checked = state.config?.probe?.enabled !== false;
+  $("#clipboardRetentionDays").value = Number(state.config?.clipboard?.retentionDays ?? 30);
+  $("#clipboardEnabled").checked = state.config?.clipboard?.enabled !== false;
 }
 
 function syncJson() {
@@ -387,6 +389,13 @@ document.addEventListener("input", (event) => {
     if (configField === "probeEnabled") {
       state.config.probe ||= {};
       state.config.probe.enabled = event.target.checked;
+    } else if (configField === "clipboardEnabled") {
+      state.config.clipboard ||= {};
+      state.config.clipboard.enabled = event.target.checked;
+    } else if (configField === "clipboardRetentionDays") {
+      state.config.clipboard ||= {};
+      const days = Number(event.target.value);
+      state.config.clipboard.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
     } else {
       state.config.app[configField] = event.target.value;
     }

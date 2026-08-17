@@ -1,15 +1,21 @@
 // Web Organization 桌面启动器 - 主进程
 // 类 uTools：Alt+空格 呼出全局搜索浮窗；搜索目录/网页/备注；回车用系统浏览器打开；
 // 可配置"打开本地应用/命令"。不依赖浏览器扩展。
-const { app, BrowserWindow, globalShortcut, ipcMain, shell, screen } = require("electron");
+const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeImage, shell, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
+const clipboardStore = require("./clipboard-store");
 
 const CONFIG_PATH = path.join(__dirname, "..", "config.json");
 
 let win = null;
 let settingsWin = null;
 let lastQuery = "";
+let clipboardTimer = null;
+let clipboardPollInFlight = false;
+let lastClipboardSignature = "";
+let lastClipboardCleanupAt = 0;
 
 function readConfig() {
   try {
@@ -59,6 +65,80 @@ function writeConfig(config) {
   const tempPath = `${CONFIG_PATH}.tmp-${process.pid}`;
   fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   fs.renameSync(tempPath, CONFIG_PATH);
+}
+
+function clipboardSettings() {
+  const config = readConfig();
+  return {
+    enabled: config.clipboard?.enabled !== false,
+    retentionDays: Number(config.clipboard?.retentionDays ?? 30)
+  };
+}
+
+function hashBuffer(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function readClipboardPayloads() {
+  const payloads = [];
+  const image = clipboard.readImage();
+  if (!image.isEmpty()) {
+    const buffer = image.toPNG();
+    payloads.push({ kind: "image", value: buffer, hash: hashBuffer(buffer) });
+  }
+
+  const text = clipboard.readText();
+  if (text) {
+    const buffer = Buffer.from(text, "utf8");
+    payloads.push({ kind: "text", value: text, hash: hashBuffer(buffer) });
+  }
+  return payloads;
+}
+
+async function pollClipboard() {
+  if (clipboardPollInFlight || !clipboardStore.isReady()) return;
+  clipboardPollInFlight = true;
+  try {
+    const settings = clipboardSettings();
+    if (!settings.enabled) {
+      lastClipboardSignature = "";
+      return;
+    }
+
+    const payloads = readClipboardPayloads();
+    const signature = payloads.map((payload) => `${payload.kind}:${payload.hash}`).join("|");
+    if (signature && signature !== lastClipboardSignature) {
+      for (const payload of payloads) {
+        if (payload.kind === "image") clipboardStore.addImage(payload.value, payload.hash);
+        else clipboardStore.addText(payload.value, payload.hash);
+      }
+      lastClipboardSignature = signature;
+      if (win && !win.isDestroyed()) win.webContents.send("weborg:clipboard-updated");
+    } else if (!signature) {
+      lastClipboardSignature = "";
+    }
+
+    const now = Date.now();
+    if (now - lastClipboardCleanupAt > 60 * 1000) {
+      clipboardStore.cleanup(settings.retentionDays);
+      lastClipboardCleanupAt = now;
+    }
+  } catch (error) {
+    console.error("[weborg] 剪切板读取失败:", error.message);
+  } finally {
+    clipboardPollInFlight = false;
+  }
+}
+
+function startClipboardMonitor() {
+  if (clipboardTimer || !clipboardStore.isReady()) return;
+  clipboardTimer = setInterval(() => { void pollClipboard(); }, 500);
+  void pollClipboard();
+}
+
+function stopClipboardMonitor() {
+  if (clipboardTimer) clearInterval(clipboardTimer);
+  clipboardTimer = null;
 }
 
 function isDev() {
@@ -144,7 +224,13 @@ function toggleWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  try {
+    await clipboardStore.open(app.getPath("userData"));
+    startClipboardMonitor();
+  } catch (error) {
+    console.error("[weborg] 剪切板数据库初始化失败:", error.message);
+  }
   createWindow();
 
   // 全局快捷键：Alt+空格（系统级，不依赖浏览器）
@@ -159,7 +245,11 @@ app.whenReady().then(() => {
     setTimeout(() => app.quit(), 500);
   }
 
-  app.on("will-quit", () => globalShortcut.unregisterAll());
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+    stopClipboardMonitor();
+    clipboardStore.close();
+  });
 });
 
 // 渲染层请求最新配置
@@ -182,6 +272,28 @@ ipcMain.handle("weborg:save-config", (event, config) => {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
     }
     return { ok: true, config: savedConfig };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+});
+
+ipcMain.handle("weborg:search-clipboard", (event, query) => {
+  return clipboardStore.search(query || "", 12);
+});
+
+ipcMain.handle("weborg:copy-clipboard", (event, id) => {
+  try {
+    const record = clipboardStore.get(id);
+    if (!record) return { ok: false, reason: "剪切板记录不存在或已过期" };
+    if (record.kind === "text") {
+      clipboard.writeText(record.content);
+    } else {
+      const imageBuffer = clipboardStore.getImageBuffer(id);
+      if (!imageBuffer) return { ok: false, reason: "图片文件不存在或已损坏" };
+      clipboard.writeImage(nativeImage.createFromBuffer(imageBuffer));
+    }
+    hideWindow();
+    return { ok: true };
   } catch (error) {
     return { ok: false, reason: error.message };
   }

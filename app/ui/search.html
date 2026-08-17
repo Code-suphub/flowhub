@@ -41,12 +41,18 @@
         outline: none;
       }
       #q:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(18,169,212,0.15); }
+      .scope-row { display: flex; align-items: center; gap: 5px; padding: 0 14px 10px; color: var(--muted); font-size: 11px; }
+      .scope-button { padding: 4px 9px; border: 1px solid transparent; border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; }
+      .scope-button:hover { color: var(--text); background: #2b3a48; }
+      .scope-button.active { color: var(--text); border-color: rgba(18, 169, 212, .4); background: var(--sel); }
       #results { flex: 1; overflow-y: auto; padding: 4px 8px 10px; }
       .empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
       .result { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
       .result.active { background: var(--sel); }
       .r-icon { width: 26px; height: 26px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; overflow: hidden; }
       .r-icon img { width: 22px; height: 22px; object-fit: contain; background: #fff; border-radius: 4px; }
+      .r-icon.clipboard { color: var(--accent); background: rgba(18, 169, 212, .12); font-size: 15px; }
+      .r-icon.clipboard img { width: 26px; height: 26px; }
       .r-body { min-width: 0; flex: 1; }
       .r-title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .r-meta { margin-top: 2px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -65,11 +71,17 @@
         </div>
       </div>
       <div class="input-wrap">
-        <input id="q" autocomplete="off" placeholder="搜索目录、网页或启动命令…" />
+        <input id="q" autocomplete="off" placeholder="搜索网页、剪切板内容或目录…" />
+      </div>
+      <div class="scope-row" aria-label="搜索范围">
+        <span>范围</span>
+        <button class="scope-button active" data-scope="all">全部</button>
+        <button class="scope-button" data-scope="web">网页</button>
+        <button class="scope-button" data-scope="clipboard">剪切板</button>
       </div>
       <div id="results"></div>
       <div class="foot">
-        <span>↑↓ 选择 · <code>⏎</code> 打开 · <code>Esc</code> 关闭</span>
+        <span>↑↓ 选择 · <code>⏎</code> 打开/复制 · <code>Esc</code> 关闭</span>
         <span>Web Organization</span>
       </div>
     </div>
