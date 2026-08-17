@@ -3,6 +3,7 @@ const q = document.getElementById("q");
 const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
+const scopeOrder = ["all", "web", "clipboard"];
 
 const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardResults: [] };
 let clipboardSearchToken = 0;
@@ -135,6 +136,14 @@ function choose(page) {
   else window.weborg && window.weborg.openLocal(page?.title || "");
 }
 
+function setScope(scope) {
+  state.scope = scope;
+  state.index = 0;
+  document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
+  render();
+  void refreshClipboard();
+}
+
 // 更新配置（主进程每次呼出都会推送）
 window.weborg.onConfig((cfg) => { setConfig(cfg); render(); });
 
@@ -144,6 +153,17 @@ document.addEventListener("keydown", (e) => {
   const m = matches();
   if (e.key === "ArrowDown") { state.index = Math.min(state.index + 1, Math.max(0, m.length - 1)); render(); e.preventDefault(); }
   else if (e.key === "ArrowUp") { state.index = Math.max(state.index - 1, 0); render(); e.preventDefault(); }
+  else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const atStart = q.selectionStart === 0 && q.selectionEnd === 0;
+    const atEnd = q.selectionStart === q.value.length && q.selectionEnd === q.value.length;
+    const canSwitch = !q.value || (e.key === "ArrowLeft" ? atStart : atEnd);
+    if (!canSwitch) return;
+    const current = scopeOrder.indexOf(state.scope);
+    const offset = e.key === "ArrowRight" ? 1 : -1;
+    const next = (current + offset + scopeOrder.length) % scopeOrder.length;
+    setScope(scopeOrder[next]);
+    e.preventDefault();
+  }
   else if (e.key === "Enter") { const p = m[state.index]; if (p) choose(p); }
 });
 
@@ -170,13 +190,7 @@ q.addEventListener("input", () => {
   queueClipboardRefresh();
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
-document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => {
-  state.scope = button.dataset.scope;
-  state.index = 0;
-  document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item === button));
-  render();
-  void refreshClipboard();
-}));
+document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
 window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
 resultsEl.addEventListener("click", (e) => { const row = e.target.closest(".result"); if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); } });
 resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { state.index = i; render(); } } });
