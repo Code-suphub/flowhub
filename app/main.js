@@ -2,6 +2,7 @@
 // 类 uTools：Alt+空格 呼出全局搜索浮窗；搜索目录/网页/备注；回车用系统浏览器打开；
 // 可配置"打开本地应用/命令"。不依赖浏览器扩展。
 const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeImage, shell, screen } = require("electron");
+const { execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -159,7 +160,16 @@ function filePathFromValue(value) {
 }
 
 function parseFileClipboardData(buffer) {
-  const raw = Buffer.isBuffer(buffer) ? buffer.toString("utf8") : String(buffer || "");
+  let raw = Buffer.isBuffer(buffer) ? buffer.toString("utf8") : String(buffer || "");
+  if (Buffer.isBuffer(buffer) && buffer.subarray(0, 8).toString("ascii") === "bplist00" && process.platform === "darwin") {
+    try {
+      raw = execFileSync("plutil", ["-convert", "xml1", "-o", "-", "--", "-"], {
+        input: buffer,
+        encoding: "utf8",
+        maxBuffer: 2 * 1024 * 1024
+      });
+    } catch {}
+  }
   const xmlValues = [...raw.matchAll(/<string>(.*?)<\/string>/gis)].map((match) => match[1]
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
