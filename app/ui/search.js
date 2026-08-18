@@ -153,11 +153,44 @@ function clipboardFileTypeLabel(type) {
   return type === "folder" ? "文件夹" : type === "image" ? "图片" : "文件";
 }
 
-function renderUsageSection(item, index, items) {
-  if (!item.usageSection || (items[index - 1] && items[index - 1].usageSection === item.usageSection)) return "";
-  const title = item.usageSection === "frequent" ? "常用入口" : "最近使用";
-  const hint = item.usageSection === "frequent" ? "按热度" : "刚刚打开";
+function usageSectionHeading(section) {
+  const title = section === "frequent" ? "常用入口" : "最近使用";
+  const hint = section === "frequent" ? "按热度" : "刚刚打开";
   return `<div class="usage-section"><span>${title}</span><small>${hint}</small></div>`;
+}
+
+function renderUsageSection(item, index, items) {
+  if (!item.usageSection || item.usageSection === "recent" || (items[index - 1] && items[index - 1].usageSection === item.usageSection)) return "";
+  return usageSectionHeading(item.usageSection);
+}
+
+function renderUsageTile(item, index) {
+  const icon = item.type === "app"
+    ? (item.iconUrl ? `<img src="${esc(item.iconUrl)}" loading="lazy" decoding="async" alt="" />` : "▣")
+    : iconHtml(item);
+  return `
+    <div class="result usage-tile ${item.type === "app" ? "app" : "web"} ${index === state.index ? "active" : ""}" data-i="${index}" title="${esc(item.title || "")}">
+      <span class="usage-tile-icon">${icon}</span>
+      <span class="usage-tile-name">${esc(item.title || "未命名")}</span>
+    </div>
+  `;
+}
+
+function renderResults(items) {
+  let html = "";
+  for (let index = 0; index < items.length;) {
+    const item = items[index];
+    if (item.usageSection === "recent") {
+      const start = index;
+      while (index < items.length && items[index].usageSection === "recent") index += 1;
+      html += usageSectionHeading("recent");
+      html += `<div class="usage-strip">${items.slice(start, index).map((entry, offset) => renderUsageTile(entry, start + offset)).join("")}</div>`;
+      continue;
+    }
+    html += renderResult(item, index, items);
+    index += 1;
+  }
+  return html;
 }
 
 function renderResult(item, index, items) {
@@ -234,7 +267,7 @@ function render() {
   if (!state.config) { resultsEl.innerHTML = `<div class="empty">配置加载中…</div>`; return; }
   const m = matches();
   if (!m.length) { resultsEl.innerHTML = `<div class="empty">没有匹配项</div>`; return; }
-  resultsEl.innerHTML = m.map((item, index) => renderResult(item, index, m)).join("");
+  resultsEl.innerHTML = renderResults(m);
   const a = resultsEl.querySelector(".result.active");
   if (a) a.scrollIntoView({ block: "nearest" });
 }
