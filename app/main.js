@@ -2,7 +2,7 @@
 // 类 uTools：Alt+空格 呼出全局搜索浮窗；搜索目录/网页/备注；回车用系统浏览器打开；
 // 可配置"打开本地应用/命令"。不依赖浏览器扩展。
 const { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, screen } = require("electron");
-const { execFileSync } = require("child_process");
+const { execFile, execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -578,7 +578,7 @@ ipcMain.handle("weborg:search-clipboard", async (event, query) => {
   }));
 });
 
-ipcMain.handle("weborg:copy-clipboard", (event, id) => {
+ipcMain.handle("weborg:copy-clipboard", async (event, id) => {
   try {
     const record = clipboardStore.get(id);
     if (!record) return { ok: false, reason: "剪切板记录不存在或已过期" };
@@ -601,7 +601,8 @@ ipcMain.handle("weborg:copy-clipboard", (event, id) => {
       clipboard.writeImage(nativeImage.createFromBuffer(imageBuffer));
     }
     hideWindow();
-    return { ok: true };
+    const pasteResult = await pasteIntoPreviousApp();
+    return { ok: true, pasted: pasteResult.ok, pasteReason: pasteResult.reason || "" };
   } catch (error) {
     return { ok: false, reason: error.message };
   }
@@ -679,6 +680,27 @@ ipcMain.handle("weborg:open-local", (event, action) => {
 
 function hideWindow() {
   if (win && !win.isDestroyed()) win.hide();
+  if (process.platform === "darwin" && typeof app.hide === "function") app.hide();
+}
+
+function pasteIntoPreviousApp() {
+  if (process.platform !== "darwin") return Promise.resolve({ ok: false, reason: "当前平台暂不支持自动粘贴" });
+  return new Promise((resolve) => {
+    // 等 macOS 将焦点还给原应用，再由 System Events 发送 ⌘V。
+    setTimeout(() => {
+      execFile("osascript", [
+        "-e",
+        'tell application "System Events" to keystroke "v" using command down'
+      ], { timeout: 1500 }, (error) => {
+        if (error) {
+          console.warn("[weborg] 自动粘贴失败，请在系统设置中允许 Web Organization 使用辅助功能:", error.message);
+          resolve({ ok: false, reason: error.message });
+          return;
+        }
+        resolve({ ok: true });
+      });
+    }, 100);
+  });
 }
 
 app.on("window-all-closed", (e) => {
