@@ -264,6 +264,19 @@ function getFilePaths(id) {
   }
 }
 
+function remove(id) {
+  if (!db) return false;
+  const row = first("SELECT id, file_name FROM clipboard_records WHERE id = ?", [id]);
+  if (!row) return false;
+  if (row.file_name) {
+    try { fs.unlinkSync(imagePath(row.file_name)); } catch {}
+  }
+  db.run("DELETE FROM clipboard_records WHERE id = ?", [id]);
+  invalidateSearchCache();
+  persist();
+  return true;
+}
+
 function cleanup(retentionDays) {
   if (!db) return 0;
   const days = Number(retentionDays);
@@ -303,5 +316,6 @@ module.exports = {
   getImageBuffer,
   isReady,
   open,
+  remove,
   search
 };

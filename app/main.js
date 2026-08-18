@@ -537,6 +537,15 @@ ipcMain.handle("weborg:copy-clipboard", (event, id) => {
   }
 });
 
+ipcMain.handle("weborg:delete-clipboard", (event, id) => {
+  const recordId = Number(id);
+  if (!Number.isInteger(recordId) || recordId <= 0) return { ok: false, reason: "无效的剪切板记录" };
+  const removed = clipboardStore.remove(recordId);
+  if (!removed) return { ok: false, reason: "剪切板记录不存在或已删除" };
+  if (win && !win.isDestroyed()) win.webContents.send("weborg:clipboard-updated");
+  return { ok: true };
+});
+
 // 用系统浏览器/默认应用打开
 ipcMain.handle("weborg:open-url", (event, url) => {
   if (/^https?:\/\//i.test(url)) {
