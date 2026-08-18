@@ -45,6 +45,11 @@
       .scope-button { padding: 4px 9px; border: 1px solid transparent; border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; }
       .scope-button:hover { color: var(--text); background: #2b3a48; }
       .scope-button.active { color: var(--text); border-color: rgba(18, 169, 212, .4); background: var(--sel); }
+      .clipboard-kind-row { display: none; align-items: center; gap: 5px; padding: 0 14px 10px; color: var(--muted); font-size: 11px; }
+      .clipboard-kind-row.visible { display: flex; }
+      .clipboard-kind-button { padding: 4px 9px; border: 1px solid transparent; border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; }
+      .clipboard-kind-button:hover { color: var(--text); background: #2b3a48; }
+      .clipboard-kind-button.active { color: var(--text); border-color: rgba(18, 169, 212, .4); background: var(--sel); }
       #results { flex: 1; overflow-y: auto; padding: 4px 8px 10px; }
       .empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
       .result { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
@@ -123,6 +128,13 @@
         <button class="scope-button active" data-scope="all">全部</button>
         <button class="scope-button" data-scope="web">网页</button>
         <button class="scope-button" data-scope="clipboard">剪切板</button>
+      </div>
+      <div class="clipboard-kind-row" id="clipboardKindRow" aria-label="剪切板类型筛选">
+        <span>类型</span>
+        <button class="clipboard-kind-button active" data-clipboard-kind="all" aria-pressed="true">全部</button>
+        <button class="clipboard-kind-button" data-clipboard-kind="text" aria-pressed="false">文本</button>
+        <button class="clipboard-kind-button" data-clipboard-kind="image" aria-pressed="false">图片</button>
+        <button class="clipboard-kind-button" data-clipboard-kind="file" aria-pressed="false">文件</button>
       </div>
       <div id="results"></div>
       <div class="foot">

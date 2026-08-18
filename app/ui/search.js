@@ -3,9 +3,11 @@ const q = document.getElementById("q");
 const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
+const clipboardKindRow = document.getElementById("clipboardKindRow");
 const scopeOrder = ["all", "web", "clipboard"];
+const clipboardKinds = ["all", "text", "image", "file"];
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardResults: [], expandedClipboard: new Set() };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], expandedClipboard: new Set() };
 let clipboardSearchToken = 0;
 let clipboardSearchTimer = null;
 
@@ -66,7 +68,9 @@ function formatTime(value) {
 }
 
 function clipboardMatches() {
-  return state.clipboardResults.map((record) => ({ ...record, type: "clipboard" }));
+  return state.clipboardResults
+    .filter((record) => state.scope !== "clipboard" || state.clipboardKind === "all" || record.kind === state.clipboardKind)
+    .map((record) => ({ ...record, type: "clipboard" }));
 }
 
 function matches() {
@@ -161,8 +165,21 @@ function setScope(scope) {
   state.scope = scope;
   state.index = 0;
   document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
+  clipboardKindRow?.classList.toggle("visible", scope === "clipboard");
   render();
   void refreshClipboard();
+}
+
+function setClipboardKind(kind) {
+  if (!clipboardKinds.includes(kind)) return;
+  state.clipboardKind = kind;
+  state.index = 0;
+  document.querySelectorAll("[data-clipboard-kind]").forEach((item) => {
+    const active = item.dataset.clipboardKind === kind;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-pressed", String(active));
+  });
+  render();
 }
 
 // 更新配置（主进程每次呼出都会推送）
@@ -212,6 +229,7 @@ q.addEventListener("input", () => {
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
+document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
 window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
 resultsEl.addEventListener("click", (e) => {
   const toggle = e.target.closest("[data-clipboard-toggle]");
