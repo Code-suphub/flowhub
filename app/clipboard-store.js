@@ -9,6 +9,8 @@ let dataDir = "";
 let imageDir = "";
 let dbPath = "";
 const searchCache = new Map();
+let persistTimer = null;
+let persistPending = false;
 
 function rows(sql, params = []) {
   const statement = db.prepare(sql);
@@ -23,10 +25,32 @@ function first(sql, params = []) {
   return rows(sql, params)[0] || null;
 }
 
-function persist() {
+function persistNow() {
+  if (!db) return;
   const tempPath = `${dbPath}.tmp-${process.pid}`;
   fs.writeFileSync(tempPath, Buffer.from(db.export()));
   fs.renameSync(tempPath, dbPath);
+}
+
+function persist() {
+  if (!db) return;
+  persistPending = true;
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    if (!persistPending) return;
+    persistPending = false;
+    persistNow();
+  }, 250);
+}
+
+function flushPersist() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = null;
+  if (persistPending) {
+    persistPending = false;
+    persistNow();
+  }
 }
 
 function imagePath(fileName) {
@@ -35,11 +59,18 @@ function imagePath(fileName) {
 
 function toPublicRecord(row) {
   if (!row) return null;
+  let filePaths = [];
+  if (row.kind === "file" && row.file_paths) {
+    try { filePaths = JSON.parse(row.file_paths); } catch {}
+  }
   return {
     id: Number(row.id),
     kind: row.kind,
     hash: row.hash,
     content: row.content || "",
+    filePaths,
+    fileNames: filePaths.map((filePath) => path.basename(filePath)),
+    fileCount: filePaths.length,
     imageUrl: row.file_name ? pathToFileURL(imagePath(row.file_name)).href : "",
     size: Number(row.size || 0),
     createdAt: row.created_at,
@@ -67,6 +98,7 @@ async function open(baseDir) {
       hash TEXT NOT NULL,
       content TEXT,
       file_name TEXT,
+      file_paths TEXT,
       size INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL,
@@ -78,7 +110,11 @@ async function open(baseDir) {
     CREATE INDEX IF NOT EXISTS clipboard_records_hash
       ON clipboard_records(hash);
   `);
-  persist();
+  const columns = rows("PRAGMA table_info(clipboard_records)");
+  if (!columns.some((column) => column.name === "file_paths")) {
+    db.run("ALTER TABLE clipboard_records ADD COLUMN file_paths TEXT");
+  }
+  persistNow();
 }
 
 function isReady() {
@@ -132,13 +168,33 @@ function addImage(buffer, hash, shouldPersist = true) {
   return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]));
 }
 
+function addFiles(filePaths, hash, shouldPersist = true) {
+  if (!db || !Array.isArray(filePaths) || !filePaths.length) return null;
+  const normalizedPaths = [...new Set(filePaths.map((filePath) => String(filePath || "").trim()).filter(Boolean))];
+  if (!normalizedPaths.length) return null;
+  const now = new Date().toISOString();
+  const existing = first("SELECT * FROM clipboard_records WHERE kind = 'file' AND hash = ?", [hash]);
+  if (existing) return touchExisting(existing, now, shouldPersist);
+  const fileNames = normalizedPaths.map((filePath) => path.basename(filePath)).join(", ");
+  db.run(
+    `INSERT INTO clipboard_records(kind, hash, content, file_paths, size, created_at, last_seen_at)
+     VALUES ('file', ?, ?, ?, 0, ?, ?)`,
+    [hash, fileNames, JSON.stringify(normalizedPaths), now, now]
+  );
+  invalidateSearchCache();
+  if (shouldPersist) persist();
+  return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'file' AND hash = ?", [hash]));
+}
+
 function addBatch(payloads = []) {
   if (!db || !payloads.length) return [];
   db.run("BEGIN");
   try {
-    const records = payloads.map((payload) => payload.kind === "image"
-      ? addImage(payload.value, payload.hash, false)
-      : addText(payload.value, payload.hash, false));
+    const records = payloads.map((payload) => {
+      if (payload.kind === "image") return addImage(payload.value, payload.hash, false);
+      if (payload.kind === "file") return addFiles(payload.value, payload.hash, false);
+      return addText(payload.value, payload.hash, false);
+    });
     db.run("COMMIT");
     persist();
     return records;
@@ -185,6 +241,18 @@ function getImageBuffer(id) {
   try { return fs.readFileSync(imagePath(row.file_name)); } catch { return null; }
 }
 
+function getFilePaths(id) {
+  if (!db) return [];
+  const row = first("SELECT file_paths FROM clipboard_records WHERE id = ? AND kind = 'file'", [id]);
+  if (!row?.file_paths) return [];
+  try {
+    const paths = JSON.parse(row.file_paths);
+    return Array.isArray(paths) ? paths.filter((filePath) => typeof filePath === "string" && filePath) : [];
+  } catch {
+    return [];
+  }
+}
+
 function cleanup(retentionDays) {
   if (!db) return 0;
   const days = Number(retentionDays);
@@ -204,8 +272,9 @@ function cleanup(retentionDays) {
 }
 
 function close() {
+  flushPersist();
   if (db) {
-    persist();
+    persistNow();
     db.close();
   }
   db = null;
@@ -219,6 +288,7 @@ module.exports = {
   cleanup,
   close,
   get,
+  getFilePaths,
   getImageBuffer,
   isReady,
   open,

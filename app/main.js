@@ -5,6 +5,7 @@ const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeImage, she
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { fileURLToPath, pathToFileURL } = require("url");
 const clipboardStore = require("./clipboard-store");
 
 const CONFIG_PATH = path.join(__dirname, "..", "config.json");
@@ -23,6 +24,8 @@ let lastClipboardTextHash = "";
 let lastClipboardImageFormats = "";
 let lastClipboardImageCheckAt = 0;
 let cachedClipboardImage = null;
+let lastClipboardFileData = "";
+let cachedClipboardFiles = null;
 let blurHideTimer = null;
 
 function readConfig() {
@@ -104,6 +107,57 @@ function isImageClipboardFormat(format) {
   return /(^image\/|image|png|jpe?g|gif|tiff)/i.test(String(format || ""));
 }
 
+function filePathFromValue(value) {
+  const raw = String(value || "").trim().replace(/^<|>$/g, "");
+  if (!raw) return "";
+  try {
+    if (/^file:/i.test(raw)) return fileURLToPath(new URL(raw));
+  } catch {}
+  if (path.isAbsolute(raw) || /^[a-z]:[\\/]/i.test(raw)) return raw;
+  return "";
+}
+
+function parseFileClipboardData(buffer) {
+  const raw = Buffer.isBuffer(buffer) ? buffer.toString("utf8") : String(buffer || "");
+  const xmlValues = [...raw.matchAll(/<string>(.*?)<\/string>/gis)].map((match) => match[1]
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'"));
+  const values = xmlValues.length
+    ? xmlValues
+    : raw.includes("file://")
+    ? (raw.match(/file:\/\/[^\s\r\n<"]+/gi) || [])
+    : raw.split(/\r?\n|\0/);
+  return [...new Set(values.map(filePathFromValue).filter(Boolean))];
+}
+
+function readFileClipboardPayload(formats) {
+  const fileFormats = formats.filter((format) => /uri-list|file-url|filenames|filename/i.test(String(format || "")));
+  if (!fileFormats.length) {
+    lastClipboardFileData = "";
+    cachedClipboardFiles = null;
+    return null;
+  }
+
+  for (const format of ["text/uri-list", "public.file-url", "NSFilenamesPboardType", ...fileFormats]) {
+    if (!formats.includes(format)) continue;
+    let buffer;
+    try { buffer = clipboard.readBuffer(format); } catch { continue; }
+    const raw = Buffer.isBuffer(buffer) ? buffer.toString("utf8") : "";
+    const fileData = `${format}\u0000${raw}`;
+    if (fileData === lastClipboardFileData) return cachedClipboardFiles;
+    const filePaths = parseFileClipboardData(buffer);
+    lastClipboardFileData = fileData;
+    cachedClipboardFiles = filePaths.length
+      ? { kind: "file", value: filePaths, hash: hashBuffer(Buffer.from(filePaths.join("\u0000"), "utf8")) }
+      : null;
+    if (cachedClipboardFiles) return cachedClipboardFiles;
+  }
+  return null;
+}
+
 function resetClipboardSnapshot() {
   lastClipboardSignature = "";
   lastClipboardText = null;
@@ -111,11 +165,14 @@ function resetClipboardSnapshot() {
   lastClipboardImageFormats = "";
   lastClipboardImageCheckAt = 0;
   cachedClipboardImage = null;
+  lastClipboardFileData = "";
+  cachedClipboardFiles = null;
 }
 
 function readClipboardPayloads(now = Date.now()) {
   const payloads = [];
   const formats = clipboard.availableFormats();
+  const filePayload = readFileClipboardPayload(formats);
   const imageFormats = formats.filter(isImageClipboardFormat).sort().join("|");
   if (!imageFormats) {
     cachedClipboardImage = null;
@@ -137,8 +194,9 @@ function readClipboardPayloads(now = Date.now()) {
     lastClipboardText = text;
     lastClipboardTextHash = text ? hashBuffer(Buffer.from(text, "utf8")) : "";
   }
-  if (cachedClipboardImage) payloads.push(cachedClipboardImage);
-  if (text && lastClipboardTextHash) payloads.push({ kind: "text", value: text, hash: lastClipboardTextHash });
+  if (filePayload) payloads.push(filePayload);
+  else if (cachedClipboardImage) payloads.push(cachedClipboardImage);
+  else if (text && lastClipboardTextHash) payloads.push({ kind: "text", value: text, hash: lastClipboardTextHash });
   return payloads;
 }
 
@@ -363,6 +421,17 @@ ipcMain.handle("weborg:copy-clipboard", (event, id) => {
     if (!record) return { ok: false, reason: "剪切板记录不存在或已过期" };
     if (record.kind === "text") {
       clipboard.writeText(record.content);
+    } else if (record.kind === "file") {
+      const filePaths = clipboardStore.getFilePaths(id).filter((filePath) => fs.existsSync(filePath));
+      if (!filePaths.length) return { ok: false, reason: "文件已不存在或无法访问" };
+      const uriList = `${filePaths.map((filePath) => pathToFileURL(filePath).href).join("\r\n")}\r\n`;
+      clipboard.clear();
+      clipboard.writeBuffer("text/uri-list", Buffer.from(uriList, "utf8"));
+      if (process.platform === "darwin") {
+        const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", "\"": "&quot;" }[char]));
+        const plist = `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><array>${filePaths.map((filePath) => `<string>${escapeXml(filePath)}</string>`).join("")}</array></plist>`;
+        clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
+      }
     } else {
       const imageBuffer = clipboardStore.getImageBuffer(id);
       if (!imageBuffer) return { ok: false, reason: "图片文件不存在或已损坏" };

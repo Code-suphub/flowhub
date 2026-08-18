@@ -79,20 +79,24 @@ function matches() {
 
 function renderResult(item, index) {
   if (item.type === "clipboard") {
+    const isFile = item.kind === "file";
     const image = item.kind === "image" && item.imageUrl
       ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
-      : "▤";
+      : isFile ? "📄" : "▤";
     const preview = item.kind === "image"
       ? `图片 · ${formatBytes(item.size)}`
+      : isFile
+        ? (item.fileNames || []).join(" · ") || `${item.fileCount || 0} 个文件`
       : String(item.content || "").replace(/\s+/g, " ").slice(0, 120);
+    const detail = isFile ? ` · ${esc(preview.slice(0, 120))}` : "";
     return `
       <div class="result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon clipboard">${image}</span>
         <span class="r-body">
-          <span class="r-title">${item.kind === "image" ? "剪切板图片" : esc(preview || "空文本")}</span>
-          <span class="r-meta"><span class="path">剪切板</span> · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}</span>
+          <span class="r-title">${item.kind === "image" ? "剪切板图片" : isFile ? `剪切板文件 · ${item.fileCount || 0} 个` : esc(preview || "空文本")}</span>
+          <span class="r-meta"><span class="path">剪切板</span>${detail} · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}</span>
         </span>
-        <span class="r-kind clipboard">${item.kind === "image" ? "图片" : "文本"}</span>
+        <span class="r-kind clipboard">${item.kind === "image" ? "图片" : isFile ? "文件" : "文本"}</span>
       </div>
     `;
   }
