@@ -319,6 +319,11 @@ async function reload() {
   }
 }
 
+async function openAccessibilitySettings() {
+  const result = await window.weborg.openAccessibilitySettings();
+  if (!result?.ok) toast(result?.reason || "无法打开系统设置", true);
+}
+
 function handleAction(action) {
   if (action === "add-root") return addRoot();
   if (action === "expand-all") { expandAll(); return renderTree(); }
@@ -330,6 +335,7 @@ function handleAction(action) {
   if (action === "move-down") return moveSelected(1);
   if (action === "save") return save();
   if (action === "reload") return reload();
+  if (action === "open-accessibility-settings") return openAccessibilitySettings();
   if (action === "close") return window.close();
   if (action === "format-json") {
     try { $("#jsonEditor").value = JSON.stringify(readJsonEditor(), null, 2); toast("JSON 已格式化"); }

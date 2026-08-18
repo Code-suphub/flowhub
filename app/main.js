@@ -540,6 +540,16 @@ ipcMain.handle("weborg:open-settings", () => {
   return { ok: true };
 });
 
+ipcMain.handle("weborg:open-accessibility-settings", async () => {
+  if (process.platform !== "darwin") return { ok: false, reason: "该快捷入口仅支持 macOS" };
+  try {
+    await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+});
+
 ipcMain.handle("weborg:save-config", (event, config) => {
   try {
     writeConfig(config);

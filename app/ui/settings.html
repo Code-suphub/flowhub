@@ -99,6 +99,11 @@
       .switch-field input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: #829294; transition: .16s ease; }
       .switch-field input:checked { background: rgba(75, 208, 184, .5); }
       .switch-field input:checked::after { left: 17px; background: var(--accent-strong); }
+      .permission-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .permission-copy { min-width: 0; }
+      .permission-copy strong { display: block; color: var(--muted); font-size: 11px; font-weight: 600; }
+      .permission-copy .field-hint { margin-top: 4px; line-height: 1.45; }
+      .permission-row .button { flex: 0 0 auto; min-height: 30px; padding: 0 10px; font-size: 11px; }
       .tree-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
       .tree-heading .section-label { margin: 0; }
       .tree-actions { display: flex; align-items: center; gap: 4px; }
@@ -202,6 +207,10 @@
           <div class="app-card" id="clipboardSettings">
             <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">超过时间的记录会自动清理；填写 0 表示永久保留。</div></div>
             <label class="switch-field"><input id="clipboardEnabled" type="checkbox" data-config-field="clipboardEnabled" />自动记录剪切板内容</label>
+            <div class="permission-row">
+              <div class="permission-copy"><strong>自动粘贴权限</strong><div class="field-hint">用于选中剪切板后自动发送 ⌘V。</div></div>
+              <button class="button" type="button" data-action="open-accessibility-settings">打开系统设置</button>
+            </div>
           </div>
 
           <div class="tree-heading">

@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("weborg", {
   getConfig: (query) => ipcRenderer.invoke("weborg:get-config", query || ""),
   openSettings: () => ipcRenderer.invoke("weborg:open-settings"),
+  openAccessibilitySettings: () => ipcRenderer.invoke("weborg:open-accessibility-settings"),
   saveConfig: (config) => ipcRenderer.invoke("weborg:save-config", config),
   searchClipboard: (query) => ipcRenderer.invoke("weborg:search-clipboard", query || ""),
   copyClipboard: (id) => ipcRenderer.invoke("weborg:copy-clipboard", id),
