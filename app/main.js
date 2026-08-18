@@ -103,8 +103,49 @@ function hashBuffer(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+const FILE_CLIPBOARD_FORMATS = [
+  "public.file-url",
+  "NSFilenamesPboardType",
+  "text/uri-list",
+  "application/x-file-list"
+];
+const IMAGE_CLIPBOARD_FORMATS = [
+  "public.png",
+  "public.tiff",
+  "public.jpeg",
+  "public.jpg",
+  "public.gif",
+  "public.bmp",
+  "public.heic",
+  "public.webp",
+  "image/png",
+  "image/tiff",
+  "image/jpeg",
+  "image/gif",
+  "image/bmp",
+  "image/heic",
+  "image/webp"
+];
+
 function isImageClipboardFormat(format) {
   return /(^image\/|image|png|jpe?g|gif|tiff)/i.test(String(format || ""));
+}
+
+function hasClipboardFormat(format, formats) {
+  if (formats.includes(format)) return true;
+  try { return clipboard.has(format); } catch { return false; }
+}
+
+function readClipboardFormat(format) {
+  try {
+    const buffer = clipboard.readBuffer(format);
+    if (Buffer.isBuffer(buffer) && buffer.length) return buffer;
+  } catch {}
+  try {
+    const value = clipboard.read(format);
+    if (value) return Buffer.from(value, "utf8");
+  } catch {}
+  return Buffer.alloc(0);
 }
 
 function filePathFromValue(value) {
@@ -134,28 +175,61 @@ function parseFileClipboardData(buffer) {
 }
 
 function readFileClipboardPayload(formats) {
-  const fileFormats = formats.filter((format) => /uri-list|file-url|filenames|filename/i.test(String(format || "")));
+  const fileFormats = [...new Set([
+    ...FILE_CLIPBOARD_FORMATS,
+    ...formats.filter((format) => /uri-list|file-url|filenames|filename/i.test(String(format || "")))
+  ])].filter((format) => hasClipboardFormat(format, formats));
   if (!fileFormats.length) {
     lastClipboardFileData = "";
     cachedClipboardFiles = null;
     return null;
   }
 
-  for (const format of ["text/uri-list", "public.file-url", "NSFilenamesPboardType", ...fileFormats]) {
-    if (!formats.includes(format)) continue;
-    let buffer;
-    try { buffer = clipboard.readBuffer(format); } catch { continue; }
-    const raw = Buffer.isBuffer(buffer) ? buffer.toString("utf8") : "";
+  for (const format of fileFormats) {
+    const buffer = readClipboardFormat(format);
+    const raw = buffer.toString("utf8");
+    if (!raw) continue;
     const fileData = `${format}\u0000${raw}`;
     if (fileData === lastClipboardFileData) return cachedClipboardFiles;
     const filePaths = parseFileClipboardData(buffer);
+    if (!filePaths.length) continue;
     lastClipboardFileData = fileData;
-    cachedClipboardFiles = filePaths.length
-      ? { kind: "file", value: filePaths, hash: hashBuffer(Buffer.from(filePaths.join("\u0000"), "utf8")) }
-      : null;
-    if (cachedClipboardFiles) return cachedClipboardFiles;
+    cachedClipboardFiles = { kind: "file", value: filePaths, hash: hashBuffer(Buffer.from(filePaths.join("\u0000"), "utf8")) };
+    return cachedClipboardFiles;
   }
+  lastClipboardFileData = "";
+  cachedClipboardFiles = null;
   return null;
+}
+
+function readImageClipboardPayload(formats, now) {
+  const imageFormats = [...new Set([
+    ...formats.filter(isImageClipboardFormat),
+    ...IMAGE_CLIPBOARD_FORMATS
+  ])].filter((format) => hasClipboardFormat(format, formats)).sort().join("|");
+  if (!imageFormats) {
+    cachedClipboardImage = null;
+    lastClipboardImageFormats = "";
+    return null;
+  }
+  if (imageFormats !== lastClipboardImageFormats || now - lastClipboardImageCheckAt >= 1000) {
+    try {
+      const image = clipboard.readImage();
+      if (image.isEmpty()) {
+        cachedClipboardImage = null;
+      } else {
+        const buffer = image.toPNG();
+        cachedClipboardImage = buffer.length
+          ? { kind: "image", value: buffer, hash: hashBuffer(buffer) }
+          : null;
+      }
+    } catch {
+      cachedClipboardImage = null;
+    }
+    lastClipboardImageFormats = imageFormats;
+    lastClipboardImageCheckAt = now;
+  }
+  return cachedClipboardImage;
 }
 
 function resetClipboardSnapshot() {
@@ -173,29 +247,17 @@ function readClipboardPayloads(now = Date.now()) {
   const payloads = [];
   const formats = clipboard.availableFormats();
   const filePayload = readFileClipboardPayload(formats);
-  const imageFormats = formats.filter(isImageClipboardFormat).sort().join("|");
-  if (!imageFormats) {
-    cachedClipboardImage = null;
-    lastClipboardImageFormats = "";
-  } else if (imageFormats !== lastClipboardImageFormats || now - lastClipboardImageCheckAt >= 1000) {
-    const image = clipboard.readImage();
-    if (image.isEmpty()) {
-      cachedClipboardImage = null;
-    } else {
-      const buffer = image.toPNG();
-      cachedClipboardImage = { kind: "image", value: buffer, hash: hashBuffer(buffer) };
-    }
-    lastClipboardImageFormats = imageFormats;
-    lastClipboardImageCheckAt = now;
-  }
+  const imagePayload = readImageClipboardPayload(formats, now);
 
   const text = clipboard.readText();
   if (text !== lastClipboardText) {
     lastClipboardText = text;
     lastClipboardTextHash = text ? hashBuffer(Buffer.from(text, "utf8")) : "";
   }
-  if (filePayload) payloads.push(filePayload);
-  else if (cachedClipboardImage) payloads.push(cachedClipboardImage);
+  // macOS 的图片剪切板经常同时带有指向临时文件的 file-url；有真实图像数据时优先记录图片，
+  // 普通文件则落到 filePayload，避免退化成 readText() 返回的文件名。
+  if (imagePayload) payloads.push(imagePayload);
+  else if (filePayload) payloads.push(filePayload);
   else if (text && lastClipboardTextHash) payloads.push({ kind: "text", value: text, hash: lastClipboardTextHash });
   return payloads;
 }
