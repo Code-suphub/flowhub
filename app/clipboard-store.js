@@ -12,6 +12,9 @@ const searchCache = new Map();
 let persistTimer = null;
 let persistPending = false;
 
+const USAGE_FREQUENT_MIN_COUNT = 3;
+const USAGE_HALF_LIFE_DAYS = 30;
+
 function rows(sql, params = []) {
   const statement = db.prepare(sql);
   statement.bind(params);
@@ -99,6 +102,26 @@ function toPublicRecord(row) {
   };
 }
 
+function toPublicUsageRecord(row, now = Date.now()) {
+  if (!row) return null;
+  const targetType = row.target_type === "page" ? "page" : "app";
+  const lastUsedAt = row.last_used_at || row.first_used_at;
+  const ageDays = Math.max(0, (now - Date.parse(lastUsedAt)) / (24 * 60 * 60 * 1000));
+  const useCount = Number(row.use_count || 0);
+  return {
+    usageType: targetType,
+    usageKey: row.target_key,
+    title: row.title || row.target_key,
+    path: row.target_path || "",
+    url: row.url || "",
+    icon: row.icon || "",
+    useCount,
+    firstUsedAt: row.first_used_at,
+    lastUsedAt,
+    score: useCount * Math.pow(0.5, ageDays / USAGE_HALF_LIFE_DAYS)
+  };
+}
+
 async function open(baseDir) {
   dataDir = path.join(baseDir, "clipboard");
   imageDir = path.join(dataDir, "images");
@@ -131,6 +154,23 @@ async function open(baseDir) {
       ON clipboard_records(last_seen_at DESC);
     CREATE INDEX IF NOT EXISTS clipboard_records_hash
       ON clipboard_records(hash);
+    CREATE TABLE IF NOT EXISTS usage_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      target_type TEXT NOT NULL,
+      target_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      target_path TEXT,
+      url TEXT,
+      icon TEXT,
+      use_count INTEGER NOT NULL DEFAULT 1,
+      first_used_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      UNIQUE(target_type, target_key)
+    );
+    CREATE INDEX IF NOT EXISTS usage_records_recent
+      ON usage_records(target_type, last_used_at DESC);
+    CREATE INDEX IF NOT EXISTS usage_records_score
+      ON usage_records(target_type, use_count DESC, last_used_at DESC);
   `);
   const columns = rows("PRAGMA table_info(clipboard_records)");
   if (!columns.some((column) => column.name === "file_paths")) {
@@ -302,6 +342,65 @@ function search(query = "", limit = 12) {
   return publicRecords;
 }
 
+function recordUsage(target = {}) {
+  if (!db || !target || !["app", "page"].includes(target.type)) return null;
+  const targetType = target.type;
+  const targetKey = String(target.key || (targetType === "app" ? target.path : target.id || target.url) || "").trim();
+  if (!targetKey) return null;
+  const now = new Date().toISOString();
+  const title = String(target.title || targetKey).trim() || targetKey;
+  const targetPath = String(target.path || "").trim();
+  const url = String(target.url || "").trim();
+  const icon = String(target.icon || "").trim();
+  const existing = first(
+    "SELECT * FROM usage_records WHERE target_type = ? AND target_key = ?",
+    [targetType, targetKey]
+  );
+  if (existing) {
+    db.run(
+      `UPDATE usage_records
+       SET title = ?, target_path = ?, url = ?, icon = ?, last_used_at = ?, use_count = use_count + 1
+       WHERE id = ?`,
+      [title, targetPath, url, icon, now, existing.id]
+    );
+  } else {
+    db.run(
+      `INSERT INTO usage_records(target_type, target_key, title, target_path, url, icon, use_count, first_used_at, last_used_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [targetType, targetKey, title, targetPath, url, icon, now, now]
+    );
+  }
+  persist();
+  return toPublicUsageRecord(first(
+    "SELECT * FROM usage_records WHERE target_type = ? AND target_key = ?",
+    [targetType, targetKey]
+  ));
+}
+
+function usageSections(scope = "all", limit = 6) {
+  if (!db) return { frequent: [], recent: [] };
+  const safeLimit = Math.max(1, Math.min(12, Number(limit) || 6));
+  const targetType = scope === "app" ? "app" : scope === "web" ? "page" : "";
+  const storedRows = targetType
+    ? rows("SELECT * FROM usage_records WHERE target_type = ?", [targetType])
+    : rows("SELECT * FROM usage_records");
+  const now = Date.now();
+  const entries = storedRows.map((row) => ({ row, value: toPublicUsageRecord(row, now) }));
+  const frequent = entries
+    .filter(({ value }) => value.useCount >= USAGE_FREQUENT_MIN_COUNT)
+    .sort((a, b) => b.value.score - a.value.score || Date.parse(b.value.lastUsedAt) - Date.parse(a.value.lastUsedAt))
+    .slice(0, safeLimit);
+  const frequentKeys = new Set(frequent.map(({ value }) => `${value.usageType}:${value.usageKey}`));
+  const recent = entries
+    .filter(({ value }) => !frequentKeys.has(`${value.usageType}:${value.usageKey}`))
+    .sort((a, b) => Date.parse(b.value.lastUsedAt) - Date.parse(a.value.lastUsedAt))
+    .slice(0, safeLimit);
+  return {
+    frequent: frequent.map(({ value }) => value),
+    recent: recent.map(({ value }) => value)
+  };
+}
+
 function get(id) {
   return db ? toPublicRecord(first("SELECT * FROM clipboard_records WHERE id = ?", [id])) : null;
 }
@@ -377,6 +476,8 @@ module.exports = {
   getImageBuffer,
   isReady,
   open,
+  recordUsage,
   remove,
-  search
+  search,
+  usageSections
 };

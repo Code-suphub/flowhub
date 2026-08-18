@@ -487,6 +487,20 @@ async function searchApplications(query = "", limit = 12) {
   return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
 }
 
+async function searchUsage(scope = "all", limit = 6) {
+  const sections = clipboardStore.usageSections(scope, limit);
+  const allEntries = [...sections.frequent, ...sections.recent];
+  const appEntries = allEntries.filter((entry) => entry.usageType === "app");
+  await readMacNativeIcons(appEntries.map((entry) => entry.path), applicationIconCache);
+  const decorate = (entry) => entry.usageType === "app"
+    ? { ...entry, type: "app", iconUrl: applicationIconCache.get(entry.path) || "" }
+    : { ...entry, type: "page", id: entry.usageKey, icon: entry.icon || "", breadcrumb: entry.path };
+  return {
+    frequent: sections.frequent.map(decorate),
+    recent: sections.recent.map(decorate)
+  };
+}
+
 function isDev() {
   return process.argv.includes("--dev");
 }
@@ -667,6 +681,7 @@ ipcMain.handle("weborg:save-config", (event, config) => {
 });
 
 ipcMain.handle("weborg:search-apps", (event, query) => searchApplications(query || "", 12));
+ipcMain.handle("weborg:search-usage", (event, scope) => searchUsage(scope || "all", 6));
 
 ipcMain.handle("weborg:search-clipboard", async (event, query) => {
   const records = clipboardStore.search(query || "", 12);
@@ -773,23 +788,45 @@ ipcMain.handle("weborg:delete-clipboard", (event, id) => {
 });
 
 // 用系统浏览器/默认应用打开
-ipcMain.handle("weborg:open-url", (event, url) => {
-  if (/^https?:\/\//i.test(url)) {
-    shell.openExternal(url);
+ipcMain.handle("weborg:open-url", async (event, url, usage = {}) => {
+  if (!/^https?:\/\//i.test(url)) return { ok: false, reason: "非 http(s) 链接" };
+  try {
+    await shell.openExternal(url);
+    if (usage?.type === "page") {
+      clipboardStore.recordUsage({
+        type: "page",
+        key: usage.id || usage.url || url,
+        title: usage.title || url,
+        path: usage.breadcrumb || "",
+        url,
+        icon: usage.icon || ""
+      });
+      if (win && !win.isDestroyed()) win.webContents.send("weborg:usage-updated");
+    }
     hideWindow();
     return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error.message };
   }
-  return { ok: false, reason: "非 http(s) 链接" };
 });
 
 // 启动本地命令（如打开本地工具）。允许白名单模式：仅接受明显可执行/本地路径。
-ipcMain.handle("weborg:open-local", async (event, action) => {
+ipcMain.handle("weborg:open-local", async (event, action, usage = {}) => {
   if (typeof action !== "string" || !action.trim()) return { ok: false };
   const cmd = action.trim();
   // 用系统默认方式处理本地路径（文件/文件夹/可执行）
   // 直接用 shell.openPath 打开路径；对命令型（如 cli）用 exec 需谨慎，这里仅处理路径。
   const result = await shell.openPath(cmd);
   if (result) return { ok: false, reason: result };
+  if (usage?.type === "app") {
+    clipboardStore.recordUsage({
+      type: "app",
+      key: usage.path || cmd,
+      title: usage.title || path.basename(cmd, path.extname(cmd)),
+      path: usage.path || cmd
+    });
+    if (win && !win.isDestroyed()) win.webContents.send("weborg:usage-updated");
+  }
   hideWindow();
   return { ok: true };
 });

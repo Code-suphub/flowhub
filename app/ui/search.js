@@ -7,9 +7,10 @@ const clipboardKindRow = document.getElementById("clipboardKindRow");
 const scopeOrder = ["all", "web", "clipboard", "app"];
 const clipboardKinds = ["all", "text", "image", "file"];
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], appResults: [], expandedClipboard: new Set() };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set() };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
+let usageSearchToken = 0;
 let clipboardSearchTimer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -45,7 +46,11 @@ function setConfig(config) {
   state.pageIndex = flatten(config?.items || []);
 }
 function allPages() { return state.pageIndex; }
-function pathText(page) { return (page.path || []).map((x) => x.title).join(" / "); }
+function pathText(page) {
+  if (typeof page?.path === "string") return page.path;
+  if (page?.breadcrumb) return String(page.breadcrumb);
+  return (page?.path || []).map((x) => x.title).join(" / ");
+}
 function pageMatches() {
   const kw = state.query.trim().toLowerCase();
   let pages = allPages();
@@ -83,13 +88,46 @@ function appMatches() {
   return state.appResults.map((application) => ({ ...application, type: "app" }));
 }
 
+function usageKey(item) {
+  return `${item.type}:${item.usageKey || item.id || item.path || item.url || item.title}`;
+}
+
+function usageMatches() {
+  if (state.query.trim() || state.scope === "clipboard") return [];
+  const entries = [];
+  for (const section of ["frequent", "recent"]) {
+    for (const item of state.usageSections?.[section] || []) {
+      if (state.scope === "app" && item.type !== "app") continue;
+      if (state.scope === "web" && item.type !== "page") continue;
+      entries.push({ ...item, usageSection: section });
+    }
+  }
+  return entries;
+}
+
+function withoutUsageDuplicates(items, usedItems) {
+  const used = new Set(usedItems.map(usageKey));
+  return items.filter((item) => !used.has(usageKey(item)));
+}
+
 function matches() {
   const pages = pageMatches().map((page) => ({ ...page, type: "page" }));
   const clips = clipboardMatches();
   const apps = appMatches();
-  if (state.scope === "web") return pages;
+  const usages = usageMatches();
+  if (state.scope === "web") {
+    if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)].slice(0, 12);
+    return pages;
+  }
   if (state.scope === "clipboard") return clips;
-  if (state.scope === "app") return apps;
+  if (state.scope === "app") {
+    if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(apps, usages)].slice(0, 12);
+    return apps;
+  }
+  if (!state.query.trim()) {
+    const regularLimit = usages.length ? 4 : 6;
+    return [...clips.slice(0, regularLimit), ...usages.slice(0, usages.length ? 8 : 0), ...withoutUsageDuplicates(pages, usages).slice(0, regularLimit)].slice(0, 12);
+  }
   const appResults = state.query.trim() ? apps.slice(0, 4) : [];
   const regularLimit = appResults.length ? 4 : 6;
   return [...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
@@ -115,12 +153,20 @@ function clipboardFileTypeLabel(type) {
   return type === "folder" ? "文件夹" : type === "image" ? "图片" : "文件";
 }
 
-function renderResult(item, index) {
+function renderUsageSection(item, index, items) {
+  if (!item.usageSection || (items[index - 1] && items[index - 1].usageSection === item.usageSection)) return "";
+  const title = item.usageSection === "frequent" ? "常用入口" : "最近使用";
+  const hint = item.usageSection === "frequent" ? "按热度" : "刚刚打开";
+  return `<div class="usage-section"><span>${title}</span><small>${hint}</small></div>`;
+}
+
+function renderResult(item, index, items) {
+  const usageSection = renderUsageSection(item, index, items);
   if (item.type === "app") {
     const icon = item.iconUrl
       ? `<img src="${esc(item.iconUrl)}" loading="lazy" decoding="async" alt="" />`
       : "▣";
-    return `
+    return `${usageSection}
       <div class="result app-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon app">${icon}</span>
         <span class="r-body">
@@ -170,7 +216,7 @@ function renderResult(item, index) {
       </div>
     `;
   }
-  return `
+  return `${usageSection}
     <div class="result ${index === state.index ? "active" : ""}" data-i="${index}">
       <span class="r-icon">${iconHtml(item)}</span>
       <span class="r-body">
@@ -188,17 +234,25 @@ function render() {
   if (!state.config) { resultsEl.innerHTML = `<div class="empty">配置加载中…</div>`; return; }
   const m = matches();
   if (!m.length) { resultsEl.innerHTML = `<div class="empty">没有匹配项</div>`; return; }
-  resultsEl.innerHTML = m.map(renderResult).join("");
+  resultsEl.innerHTML = m.map((item, index) => renderResult(item, index, m)).join("");
   const a = resultsEl.querySelector(".result.active");
   if (a) a.scrollIntoView({ block: "nearest" });
 }
 
-function openUrl(url) {
+function openUrl(url, page) {
   const norm = normalizeUrl(url);
-  if (norm && window.weborg) window.weborg.openUrl(norm);
+  if (norm && window.weborg) {
+    window.weborg.openUrl(norm, {
+      type: "page",
+      id: page?.id || page?.usageKey || norm,
+      title: page?.title || norm,
+      breadcrumb: pathText(page),
+      icon: page?.icon || ""
+    });
+  }
 }
-function openLocal(action) {
-  if (window.weborg) window.weborg.openLocal(action);
+function openLocal(action, usage) {
+  if (window.weborg) window.weborg.openLocal(action, usage || {});
 }
 function choose(page) {
   if (page?.type === "clipboard") {
@@ -206,11 +260,11 @@ function choose(page) {
     return;
   }
   if (page?.type === "app") {
-    openLocal(page.path);
+    openLocal(page.path, { type: "app", title: page.title, path: page.path });
     return;
   }
   const norm = normalizeUrl(page?.url);
-  if (norm) openUrl(norm);
+  if (norm) openUrl(norm, page);
   else window.weborg && window.weborg.openLocal(page?.title || "");
 }
 
@@ -222,6 +276,7 @@ function setScope(scope) {
   render();
   void refreshClipboard();
   void refreshApps();
+  void refreshUsage();
 }
 
 function setClipboardKind(kind) {
@@ -289,11 +344,23 @@ async function refreshApps() {
   } catch {}
 }
 
+async function refreshUsage() {
+  if (state.scope === "clipboard" || state.query.trim()) return;
+  const token = ++usageSearchToken;
+  try {
+    const sections = await window.weborg?.searchUsage(state.scope);
+    if (token !== usageSearchToken) return;
+    state.usageSections = sections || { frequent: [], recent: [] };
+    render();
+  } catch {}
+}
+
 function queueClipboardRefresh(delay = 180) {
   clearTimeout(clipboardSearchTimer);
   clipboardSearchTimer = setTimeout(() => {
     void refreshClipboard();
     void refreshApps();
+    void refreshUsage();
   }, delay);
 }
 
@@ -307,6 +374,7 @@ settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
 document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
 window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
+window.weborg.onUsageUpdated(() => { void refreshUsage(); });
 resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
   if (!row) return;
@@ -333,10 +401,11 @@ function focusSearch() { q?.focus(); q?.select(); }
 window.focusSearch = focusSearch;
 
 // 初始加载
-Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard(""), window.weborg.searchApps("")]).then(([cfg, records, applications]) => {
+Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard(""), window.weborg.searchApps(""), window.weborg.searchUsage("all")]).then(([cfg, records, applications, usageSections]) => {
   setConfig(cfg);
   state.clipboardResults = records || [];
   state.appResults = applications || [];
+  state.usageSections = usageSections || { frequent: [], recent: [] };
   render();
   focusSearch();
 });
