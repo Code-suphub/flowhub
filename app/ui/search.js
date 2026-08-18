@@ -4,11 +4,12 @@ const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
-const scopeOrder = ["all", "web", "clipboard"];
+const scopeOrder = ["all", "web", "clipboard", "app"];
 const clipboardKinds = ["all", "text", "image", "file"];
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], expandedClipboard: new Set() };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], appResults: [], expandedClipboard: new Set() };
 let clipboardSearchToken = 0;
+let appSearchToken = 0;
 let clipboardSearchTimer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -78,12 +79,20 @@ function clipboardMatches() {
     .map((record) => ({ ...record, type: "clipboard" }));
 }
 
+function appMatches() {
+  return state.appResults.map((application) => ({ ...application, type: "app" }));
+}
+
 function matches() {
   const pages = pageMatches().map((page) => ({ ...page, type: "page" }));
   const clips = clipboardMatches();
+  const apps = appMatches();
   if (state.scope === "web") return pages;
   if (state.scope === "clipboard") return clips;
-  return [...clips.slice(0, 6), ...pages.slice(0, 6)].slice(0, 12);
+  if (state.scope === "app") return apps;
+  const appResults = state.query.trim() ? apps.slice(0, 4) : [];
+  const regularLimit = appResults.length ? 4 : 6;
+  return [...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
 }
 
 function isExpandableClipboard(item) {
@@ -107,6 +116,21 @@ function clipboardFileTypeLabel(type) {
 }
 
 function renderResult(item, index) {
+  if (item.type === "app") {
+    const icon = item.iconUrl
+      ? `<img src="${esc(item.iconUrl)}" loading="lazy" decoding="async" alt="" />`
+      : "▣";
+    return `
+      <div class="result app-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon app">${icon}</span>
+        <span class="r-body">
+          <span class="r-title">${esc(item.title || "未命名应用")}</span>
+          <span class="r-meta"><span class="path">应用</span> · ${esc(item.path)}</span>
+        </span>
+        <span class="r-kind">应用</span>
+      </div>
+    `;
+  }
   if (item.type === "clipboard") {
     const isFile = item.kind === "file";
     const fileType = isFile ? (item.fileType || "file") : "image";
@@ -181,6 +205,10 @@ function choose(page) {
     window.weborg?.copyClipboard(page.id);
     return;
   }
+  if (page?.type === "app") {
+    openLocal(page.path);
+    return;
+  }
   const norm = normalizeUrl(page?.url);
   if (norm) openUrl(norm);
   else window.weborg && window.weborg.openLocal(page?.title || "");
@@ -193,6 +221,7 @@ function setScope(scope) {
   clipboardKindRow?.classList.toggle("visible", scope === "clipboard");
   render();
   void refreshClipboard();
+  void refreshApps();
 }
 
 function setClipboardKind(kind) {
@@ -249,9 +278,23 @@ async function refreshClipboard() {
   } catch {}
 }
 
+async function refreshApps() {
+  if (state.scope === "web") return;
+  const token = ++appSearchToken;
+  try {
+    const applications = await window.weborg?.searchApps(state.query);
+    if (token !== appSearchToken) return;
+    state.appResults = applications || [];
+    render();
+  } catch {}
+}
+
 function queueClipboardRefresh(delay = 180) {
   clearTimeout(clipboardSearchTimer);
-  clipboardSearchTimer = setTimeout(() => { void refreshClipboard(); }, delay);
+  clipboardSearchTimer = setTimeout(() => {
+    void refreshClipboard();
+    void refreshApps();
+  }, delay);
 }
 
 q.addEventListener("input", () => {
@@ -290,9 +333,10 @@ function focusSearch() { q?.focus(); q?.select(); }
 window.focusSearch = focusSearch;
 
 // 初始加载
-Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard("")]).then(([cfg, records]) => {
+Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard(""), window.weborg.searchApps("")]).then(([cfg, records, applications]) => {
   setConfig(cfg);
   state.clipboardResults = records || [];
+  state.appResults = applications || [];
   render();
   focusSearch();
 });

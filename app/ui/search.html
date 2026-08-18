@@ -59,6 +59,9 @@
       .r-icon.clipboard { color: var(--accent); background: rgba(18, 169, 212, .12); font-size: 15px; }
       .r-icon.clipboard img { width: 26px; height: 26px; }
       .r-icon.clipboard img.native-clipboard-icon { width: 26px; height: 26px; background: transparent; border-radius: 0; }
+      .r-icon.app { color: #b9c9ff; background: rgba(113, 137, 255, .14); font-size: 15px; }
+      .r-icon.app img { width: 26px; height: 26px; background: transparent; border-radius: 5px; }
+      .app-result .r-icon, .app-result .r-kind { margin-top: 2px; }
       .clipboard-file-symbol { width: 23px; height: 23px; display: block; }
       .clipboard-file-symbol.folder { color: #63b9e8; }
       .clipboard-file-symbol.image { color: #73d0ae; }
@@ -126,13 +129,14 @@
         </div>
       </div>
       <div class="input-wrap">
-        <input id="q" autocomplete="off" placeholder="搜索网页、剪切板内容或目录…" />
+        <input id="q" autocomplete="off" placeholder="搜索网页、应用、剪切板内容或目录…" />
       </div>
       <div class="scope-row" aria-label="搜索范围">
         <span>范围</span>
         <button class="scope-button active" data-scope="all">全部</button>
         <button class="scope-button" data-scope="web">网页</button>
         <button class="scope-button" data-scope="clipboard">剪切板</button>
+        <button class="scope-button" data-scope="app">应用</button>
       </div>
       <div class="clipboard-kind-row" id="clipboardKindRow" aria-label="剪切板类型筛选">
         <span>类型</span>

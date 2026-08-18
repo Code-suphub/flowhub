@@ -28,6 +28,8 @@ let cachedClipboardImage = null;
 let lastClipboardFileData = "";
 let cachedClipboardFiles = null;
 const clipboardFileIconCache = new Map();
+const applicationIconCache = new Map();
+let applicationIndexPromise = null;
 let blurHideTimer = null;
 
 function readConfig() {
@@ -389,6 +391,74 @@ function stopClipboardMonitor() {
   clipboardTimer = null;
 }
 
+function applicationDirectories() {
+  const home = app.getPath("home");
+  return [
+    "/Applications",
+    "/Applications/Utilities",
+    "/System/Applications",
+    "/System/Applications/Utilities",
+    "/System/Library/CoreServices",
+    path.join(home, "Applications")
+  ];
+}
+
+function applicationDisplayName(applicationPath) {
+  // 应用包名通常就是用户看到的名称；避免为每个 app 启动一次 plutil，
+  // 让首次唤出和搜索保持轻量。原生图标仍由 app.getFileIcon 提供。
+  return path.basename(applicationPath, ".app");
+}
+
+function scanApplications() {
+  const applications = [];
+  const seen = new Set();
+  for (const directory of applicationDirectories()) {
+    let entries = [];
+    try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.toLowerCase().endsWith(".app")) continue;
+      const applicationPath = path.join(directory, entry.name);
+      if (seen.has(applicationPath)) continue;
+      seen.add(applicationPath);
+      const title = applicationDisplayName(applicationPath);
+      applications.push({
+        kind: "app",
+        title,
+        path: applicationPath,
+        hay: `${title} ${entry.name} ${applicationPath}`.toLowerCase()
+      });
+    }
+  }
+  return applications.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+}
+
+function applicationIndex() {
+  if (!applicationIndexPromise) applicationIndexPromise = Promise.resolve().then(scanApplications);
+  return applicationIndexPromise;
+}
+
+async function searchApplications(query = "", limit = 12) {
+  const keyword = String(query || "").trim().toLowerCase();
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const applications = await applicationIndex();
+  const matches = keyword ? applications.filter((application) => application.hay.includes(keyword)) : applications;
+  return Promise.all(matches.slice(0, safeLimit).map(async (application) => {
+    const applicationPath = application.path;
+    if (applicationIconCache.has(applicationPath)) {
+      return { ...application, iconUrl: applicationIconCache.get(applicationPath) };
+    }
+    try {
+      const icon = await app.getFileIcon(applicationPath, { size: "small" });
+      const iconUrl = icon.isEmpty() ? "" : icon.toDataURL();
+      applicationIconCache.set(applicationPath, iconUrl);
+      return { ...application, iconUrl };
+    } catch {
+      applicationIconCache.set(applicationPath, "");
+      return application;
+    }
+  }));
+}
+
 function isDev() {
   return process.argv.includes("--dev");
 }
@@ -509,6 +579,7 @@ app.whenReady().then(async () => {
     console.error("[weborg] 剪切板数据库初始化失败:", error.message);
   }
   createWindow();
+  void applicationIndex();
 
   // 全局快捷键：Alt+空格（系统级，不依赖浏览器）
   const ok = globalShortcut.register("Alt+Space", () => toggleWindow());
@@ -566,6 +637,8 @@ ipcMain.handle("weborg:save-config", (event, config) => {
     return { ok: false, reason: error.message };
   }
 });
+
+ipcMain.handle("weborg:search-apps", (event, query) => searchApplications(query || "", 12));
 
 ipcMain.handle("weborg:search-clipboard", async (event, query) => {
   const records = clipboardStore.search(query || "", 12);
@@ -676,16 +749,15 @@ ipcMain.handle("weborg:open-url", (event, url) => {
 });
 
 // 启动本地命令（如打开本地工具）。允许白名单模式：仅接受明显可执行/本地路径。
-ipcMain.handle("weborg:open-local", (event, action) => {
+ipcMain.handle("weborg:open-local", async (event, action) => {
   if (typeof action !== "string" || !action.trim()) return { ok: false };
   const cmd = action.trim();
   // 用系统默认方式处理本地路径（文件/文件夹/可执行）
   // 直接用 shell.openPath 打开路径；对命令型（如 cli）用 exec 需谨慎，这里仅处理路径。
-  shell.openPath(cmd).then((res) => {
-    hideWindow();
-    return res === "" ? { ok: true } : { ok: false, reason: res };
-  });
-  return { ok: true, pending: true };
+  const result = await shell.openPath(cmd);
+  if (result) return { ok: false, reason: result };
+  hideWindow();
+  return { ok: true };
 });
 
 function hideWindow() {
