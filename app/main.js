@@ -35,13 +35,13 @@ let blurHideTimer = null;
 const MAC_NATIVE_ICON_SCRIPT = [
   "ObjC.import('AppKit');",
   "var args = $.NSProcessInfo.processInfo.arguments;",
-  "var result = {};",
+  "var result = [];",
   "for (var i = 6; i < args.count; i++) {",
   "  var filePath = ObjC.unwrap(args.objectAtIndex(i));",
   "  var image = $.NSWorkspace.sharedWorkspace.iconForFile(filePath);",
   "  var bitmap = image ? $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation) : null;",
   "  var data = bitmap ? bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $.NSDictionary.dictionary) : null;",
-  "  if (data) result[filePath] = ObjC.unwrap(data.base64EncodedStringWithOptions(0));",
+  "  result.push(data ? ObjC.unwrap(data.base64EncodedStringWithOptions(0)) : '');",
   "}",
   "console.log(JSON.stringify(result));"
 ].join(" ");
@@ -452,7 +452,8 @@ function applicationIndex() {
 }
 
 function readMacNativeIcons(filePaths, cache) {
-  const missingPaths = [...new Set(filePaths.filter((filePath) => filePath && !cache.has(filePath)))];
+  // 空字符串代表上一次读取失败；允许后续重试，避免应用启动时机不对导致永久显示 fallback 图标。
+  const missingPaths = [...new Set(filePaths.filter((filePath) => filePath && !cache.get(filePath)))];
   if (process.platform !== "darwin" || !missingPaths.length) return Promise.resolve();
   return new Promise((resolve) => {
     execFile("osascript", ["-l", "JavaScript", "-e", MAC_NATIVE_ICON_SCRIPT, "--", ...missingPaths], {
@@ -460,12 +461,15 @@ function readMacNativeIcons(filePaths, cache) {
       maxBuffer: 32 * 1024 * 1024,
       encoding: "utf8"
     }, (error, stdout, stderr) => {
-      let icons = {};
+      let icons = [];
       if (!error) {
-        try { icons = JSON.parse(String(stdout || stderr).trim()); } catch {}
+        try {
+          const parsed = JSON.parse(String(stdout || stderr).trim());
+          if (Array.isArray(parsed)) icons = parsed;
+        } catch {}
       }
-      missingPaths.forEach((filePath) => {
-        const base64 = String(icons[filePath] || "");
+      missingPaths.forEach((filePath, index) => {
+        const base64 = String(icons[index] || "");
         cache.set(filePath, base64 ? `data:image/png;base64,${base64}` : "");
       });
       resolve();
