@@ -179,11 +179,47 @@ function addImage(buffer, hash, sourceName = "", shouldPersist = true) {
   return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]));
 }
 
-function addFiles(filePaths, hash, shouldPersist = true) {
+function repairPlaceholderFile(placeholderPaths, normalizedPaths, hash, now, shouldPersist) {
+  if (!Array.isArray(placeholderPaths) || !placeholderPaths.length) return null;
+  const placeholders = new Set(placeholderPaths);
+  const candidate = rows("SELECT * FROM clipboard_records WHERE kind = 'file'")
+    .find((row) => {
+      if (!row.file_paths) return false;
+      try {
+        const paths = JSON.parse(row.file_paths);
+        return Array.isArray(paths) && paths.some((filePath) => placeholders.has(filePath));
+      } catch {
+        return false;
+      }
+    });
+  if (!candidate) return null;
+
+  const existing = first("SELECT * FROM clipboard_records WHERE kind = 'file' AND hash = ?", [hash]);
+  if (existing && existing.id !== candidate.id) {
+    db.run("DELETE FROM clipboard_records WHERE id = ?", [candidate.id]);
+    invalidateSearchCache();
+    return touchExisting(existing, now, shouldPersist);
+  }
+
+  const fileNames = normalizedPaths.map((filePath) => path.basename(filePath)).join(", ");
+  db.run(
+    `UPDATE clipboard_records
+     SET hash = ?, content = ?, file_paths = ?, last_seen_at = ?, copy_count = copy_count + 1
+     WHERE id = ?`,
+    [hash, fileNames, JSON.stringify(normalizedPaths), now, candidate.id]
+  );
+  invalidateSearchCache();
+  if (shouldPersist) persist();
+  return toPublicRecord(first("SELECT * FROM clipboard_records WHERE id = ?", [candidate.id]));
+}
+
+function addFiles(filePaths, hash, shouldPersist = true, legacyPaths = []) {
   if (!db || !Array.isArray(filePaths) || !filePaths.length) return null;
   const normalizedPaths = [...new Set(filePaths.map((filePath) => String(filePath || "").trim()).filter(Boolean))];
   if (!normalizedPaths.length) return null;
   const now = new Date().toISOString();
+  const repaired = repairPlaceholderFile(legacyPaths, normalizedPaths, hash, now, shouldPersist);
+  if (repaired) return repaired;
   const existing = first("SELECT * FROM clipboard_records WHERE kind = 'file' AND hash = ?", [hash]);
   if (existing) return touchExisting(existing, now, shouldPersist);
   const fileNames = normalizedPaths.map((filePath) => path.basename(filePath)).join(", ");
@@ -203,7 +239,7 @@ function addBatch(payloads = []) {
   try {
     const records = payloads.map((payload) => {
       if (payload.kind === "image") return addImage(payload.value, payload.hash, payload.sourceName || "", false);
-      if (payload.kind === "file") return addFiles(payload.value, payload.hash, false);
+      if (payload.kind === "file") return addFiles(payload.value, payload.hash, false, payload.legacyPaths || []);
       return addText(payload.value, payload.hash, false);
     });
     db.run("COMMIT");

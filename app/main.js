@@ -107,8 +107,10 @@ function hashBuffer(value) {
 const FILE_CLIPBOARD_FORMATS = [
   "public.file-url",
   "NSFilenamesPboardType",
+  "NSFilesPromisePboardType",
   "text/uri-list",
-  "application/x-file-list"
+  "application/x-file-list",
+  "com.apple.pasteboard.promised-file-url"
 ];
 const IMAGE_CLIPBOARD_FORMATS = [
   "public.png",
@@ -159,6 +161,31 @@ function filePathFromValue(value) {
   return "";
 }
 
+function isPlaceholderFilePath(filePath) {
+  return /(?:^|[\\/])\.file[\\/]id=/i.test(String(filePath || ""));
+}
+
+function resolveMacFileReference(filePath) {
+  if (process.platform !== "darwin" || !isPlaceholderFilePath(filePath)) return "";
+  try {
+    // macOS 的文件引用 URL 不能由 Node 的 fileURLToPath 解析，
+    // 交给 Foundation 的 NSURL.fileSystemRepresentation 才能还原实际路径。
+    const script = [
+      "ObjC.import('Foundation');",
+      "var args = $.NSProcessInfo.processInfo.arguments;",
+      "var url = $.NSURL.URLWithString(ObjC.unwrap(args.lastObject));",
+      "if (url) { var path = ObjC.unwrap(url.path); if (path) console.log(path); }"
+    ].join(" ");
+    return execFileSync("osascript", ["-l", "JavaScript", "-e", script, "--", pathToFileURL(filePath).href], {
+      encoding: "utf8",
+      timeout: 1500,
+      maxBuffer: 64 * 1024
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
 function parseFileClipboardData(buffer) {
   let raw = Buffer.isBuffer(buffer) ? buffer.toString("utf8") : String(buffer || "");
   if (Buffer.isBuffer(buffer) && buffer.subarray(0, 8).toString("ascii") === "bplist00" && process.platform === "darwin") {
@@ -196,22 +223,47 @@ function readFileClipboardPayload(formats) {
     return null;
   }
 
+  const fileSources = [];
+  const candidatePaths = [];
   for (const format of fileFormats) {
     const buffer = readClipboardFormat(format);
     const raw = buffer.toString("utf8");
     if (!raw) continue;
-    const fileData = `${format}\u0000${raw}`;
-    if (fileData === lastClipboardFileData) return cachedClipboardFiles;
     const filePaths = parseFileClipboardData(buffer);
     if (!filePaths.length) continue;
+    fileSources.push(`${format}\u0000${raw}`);
+    candidatePaths.push(...filePaths);
+  }
+
+  const uniquePaths = [...new Set(candidatePaths)];
+  const fileData = fileSources.join("\u0001");
+  if (fileData === lastClipboardFileData && cachedClipboardFiles) return cachedClipboardFiles;
+
+  const resolvedCandidates = uniquePaths.flatMap((filePath) => {
+    if (!isPlaceholderFilePath(filePath)) return [filePath];
+    const resolvedPath = resolveMacFileReference(filePath);
+    return resolvedPath ? [resolvedPath] : [filePath];
+  });
+  // public.file-url 有时只返回 macOS 的文件引用占位符（/.file/id=...），
+  // 而 NSFilenamesPboardType 同时包含真实路径；Foundation 还能解析文件引用 URL。
+  // 必须遍历全部格式并解析后再选择，否则列表标题会变成“文件 · id=...”。
+  const resolvedPaths = [...new Set(resolvedCandidates)];
+  const filePaths = resolvedPaths.filter((filePath) => !isPlaceholderFilePath(filePath));
+  if (resolvedPaths.length) {
+    const selectedPaths = filePaths.length ? filePaths : resolvedPaths;
     lastClipboardFileData = fileData;
-    cachedClipboardFiles = { kind: "file", value: filePaths, hash: hashBuffer(Buffer.from(filePaths.join("\u0000"), "utf8")) };
+    cachedClipboardFiles = {
+      kind: "file",
+      value: selectedPaths,
+      hash: hashBuffer(Buffer.from(selectedPaths.join("\u0000"), "utf8")),
+      legacyPaths: filePaths.length ? uniquePaths.filter(isPlaceholderFilePath) : []
+    };
     return cachedClipboardFiles;
   }
   try {
     const bookmark = clipboard.readBookmark();
     const bookmarkPath = filePathFromValue(bookmark?.url);
-    if (bookmarkPath) {
+    if (bookmarkPath && !isPlaceholderFilePath(bookmarkPath)) {
       const filePaths = [bookmarkPath];
       const fileData = `bookmark\u0000${bookmark.url}`;
       if (fileData === lastClipboardFileData) return cachedClipboardFiles;
