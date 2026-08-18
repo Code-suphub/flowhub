@@ -185,10 +185,11 @@ function parseFileClipboardData(buffer) {
 }
 
 function readFileClipboardPayload(formats) {
+  // macOS 某些 Finder 文件类型不会出现在 availableFormats()/has()，但仍可通过原生 UTI 读取。
   const fileFormats = [...new Set([
     ...FILE_CLIPBOARD_FORMATS,
     ...formats.filter((format) => /uri-list|file-url|filenames|filename/i.test(String(format || "")))
-  ])].filter((format) => hasClipboardFormat(format, formats));
+  ])].filter((format) => process.platform === "darwin" || formats.includes(format) || hasClipboardFormat(format, formats));
   if (!fileFormats.length) {
     lastClipboardFileData = "";
     cachedClipboardFiles = null;
