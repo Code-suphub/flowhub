@@ -57,12 +57,29 @@ function imagePath(fileName) {
   return path.join(imageDir, fileName);
 }
 
+const IMAGE_FILE_EXTENSIONS = /\.(?:png|jpe?g|gif|webp|bmp|tiff?|heic|heif|avif|svg|ico)$/i;
+
+function classifyFilePath(filePath) {
+  try {
+    if (fs.statSync(filePath).isDirectory()) return "folder";
+  } catch {}
+  return IMAGE_FILE_EXTENSIONS.test(path.basename(filePath)) ? "image" : "file";
+}
+
 function toPublicRecord(row) {
   if (!row) return null;
   let filePaths = [];
+  let fileTypes = [];
   if (row.kind === "file" && row.file_paths) {
     try { filePaths = JSON.parse(row.file_paths); } catch {}
   }
+  if (row.kind === "file" && row.file_types) {
+    try { fileTypes = JSON.parse(row.file_types); } catch {}
+  }
+  if (row.kind === "file") {
+    fileTypes = filePaths.map((filePath, index) => fileTypes[index] || classifyFilePath(filePath));
+  }
+  const distinctFileTypes = [...new Set(fileTypes)];
   return {
     id: Number(row.id),
     kind: row.kind,
@@ -72,6 +89,8 @@ function toPublicRecord(row) {
     filePaths,
     fileNames: filePaths.map((filePath) => path.basename(filePath)),
     fileCount: filePaths.length,
+    fileTypes,
+    fileType: distinctFileTypes.length === 1 ? distinctFileTypes[0] : "file",
     imageUrl: row.file_name ? pathToFileURL(imagePath(row.file_name)).href : "",
     size: Number(row.size || 0),
     createdAt: row.created_at,
@@ -101,6 +120,7 @@ async function open(baseDir) {
       file_name TEXT,
       source_name TEXT,
       file_paths TEXT,
+      file_types TEXT,
       size INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL,
@@ -118,6 +138,9 @@ async function open(baseDir) {
   }
   if (!columns.some((column) => column.name === "source_name")) {
     db.run("ALTER TABLE clipboard_records ADD COLUMN source_name TEXT");
+  }
+  if (!columns.some((column) => column.name === "file_types")) {
+    db.run("ALTER TABLE clipboard_records ADD COLUMN file_types TEXT");
   }
   persistNow();
 }
@@ -202,11 +225,12 @@ function repairPlaceholderFile(placeholderPaths, normalizedPaths, hash, now, sho
   }
 
   const fileNames = normalizedPaths.map((filePath) => path.basename(filePath)).join(", ");
+  const fileTypes = normalizedPaths.map(classifyFilePath);
   db.run(
     `UPDATE clipboard_records
-     SET hash = ?, content = ?, file_paths = ?, last_seen_at = ?, copy_count = copy_count + 1
+     SET hash = ?, content = ?, file_paths = ?, file_types = ?, last_seen_at = ?, copy_count = copy_count + 1
      WHERE id = ?`,
-    [hash, fileNames, JSON.stringify(normalizedPaths), now, candidate.id]
+    [hash, fileNames, JSON.stringify(normalizedPaths), JSON.stringify(fileTypes), now, candidate.id]
   );
   invalidateSearchCache();
   if (shouldPersist) persist();
@@ -223,10 +247,11 @@ function addFiles(filePaths, hash, shouldPersist = true, legacyPaths = []) {
   const existing = first("SELECT * FROM clipboard_records WHERE kind = 'file' AND hash = ?", [hash]);
   if (existing) return touchExisting(existing, now, shouldPersist);
   const fileNames = normalizedPaths.map((filePath) => path.basename(filePath)).join(", ");
+  const fileTypes = normalizedPaths.map(classifyFilePath);
   db.run(
-    `INSERT INTO clipboard_records(kind, hash, content, file_paths, size, created_at, last_seen_at)
-     VALUES ('file', ?, ?, ?, 0, ?, ?)`,
-    [hash, fileNames, JSON.stringify(normalizedPaths), now, now]
+    `INSERT INTO clipboard_records(kind, hash, content, file_paths, file_types, size, created_at, last_seen_at)
+     VALUES ('file', ?, ?, ?, ?, 0, ?, ?)`,
+    [hash, fileNames, JSON.stringify(normalizedPaths), JSON.stringify(fileTypes), now, now]
   );
   invalidateSearchCache();
   if (shouldPersist) persist();

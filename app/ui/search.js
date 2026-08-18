@@ -69,7 +69,12 @@ function formatTime(value) {
 
 function clipboardMatches() {
   return state.clipboardResults
-    .filter((record) => state.scope !== "clipboard" || state.clipboardKind === "all" || record.kind === state.clipboardKind)
+    .filter((record) => {
+      if (state.scope !== "clipboard" || state.clipboardKind === "all") return true;
+      if (state.clipboardKind === "image") return record.kind === "image" || record.fileType === "image";
+      if (state.clipboardKind === "file") return record.kind === "file" && record.fileType !== "image";
+      return record.kind === state.clipboardKind;
+    })
     .map((record) => ({ ...record, type: "clipboard" }));
 }
 
@@ -87,15 +92,30 @@ function isExpandableClipboard(item) {
   return content.length > 120 || content.split("\n").length > 3;
 }
 
+function clipboardFileIcon(type) {
+  if (type === "folder") {
+    return `<svg class="clipboard-file-symbol folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h6l1.8 2h9.2v9.7a1.8 1.8 0 0 1-1.8 1.8H5.3a1.8 1.8 0 0 1-1.8-1.8V6.5Z"/><path d="M3.5 8.5h17" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
+  }
+  if (type === "image") {
+    return `<svg class="clipboard-file-symbol image" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><path d="m5.5 17 4.2-4.2 2.8 2.4 2.3-2.2 3.7 4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></svg>`;
+  }
+  return `<svg class="clipboard-file-symbol file" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2.8h8l4 4v14.4H6z" fill="currentColor"/><path d="M14 2.8v4h4" fill="none" stroke="#17232d" stroke-linejoin="round" stroke-width="1.4"/><path d="M8.5 11h7M8.5 14h7M8.5 17h5" fill="none" stroke="#17232d" stroke-linecap="round" stroke-width="1.2"/></svg>`;
+}
+
+function clipboardFileTypeLabel(type) {
+  return type === "folder" ? "文件夹" : type === "image" ? "图片" : "文件";
+}
+
 function renderResult(item, index) {
   if (item.type === "clipboard") {
     const isFile = item.kind === "file";
+    const fileType = isFile ? (item.fileType || "file") : "image";
     const content = String(item.content || "");
     const expandable = isExpandableClipboard(item);
     const expanded = expandable && state.expandedClipboard.has(item.id);
     const image = item.kind === "image" && item.imageUrl
       ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
-      : isFile ? "📄" : "▤";
+      : isFile ? clipboardFileIcon(fileType) : "▤";
     const preview = item.kind === "image"
       ? `图片 · ${formatBytes(item.size)}`
       : isFile
@@ -105,7 +125,7 @@ function renderResult(item, index) {
     const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
     const title = item.kind === "image"
       ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
-      : isFile ? `文件 · ${esc(fileLabel)}` : esc(preview || "空文本");
+      : isFile ? esc(fileLabel) : esc(preview || "空文本");
     const toggle = expandable
       ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
       : "";
@@ -119,7 +139,7 @@ function renderResult(item, index) {
             ${toggle}
           </span>
         </span>
-        <span class="r-kind clipboard">${item.kind === "image" ? "图片" : isFile ? "文件" : "文本"}</span>
+        <span class="r-kind clipboard">${item.kind === "image" ? "图片" : isFile ? clipboardFileTypeLabel(fileType) : "文本"}</span>
       </div>
     `;
   }
