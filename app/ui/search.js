@@ -5,7 +5,7 @@ const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const scopeOrder = ["all", "web", "clipboard"];
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardResults: [] };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardResults: [], expandedClipboard: new Set() };
 let clipboardSearchToken = 0;
 let clipboardSearchTimer = null;
 
@@ -77,9 +77,18 @@ function matches() {
   return [...clips.slice(0, 6), ...pages.slice(0, 6)].slice(0, 12);
 }
 
+function isExpandableClipboard(item) {
+  if (item.kind !== "text") return false;
+  const content = String(item.content || "");
+  return content.length > 120 || content.split("\n").length > 3;
+}
+
 function renderResult(item, index) {
   if (item.type === "clipboard") {
     const isFile = item.kind === "file";
+    const content = String(item.content || "");
+    const expandable = isExpandableClipboard(item);
+    const expanded = expandable && state.expandedClipboard.has(item.id);
     const image = item.kind === "image" && item.imageUrl
       ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
       : isFile ? "📄" : "▤";
@@ -87,14 +96,22 @@ function renderResult(item, index) {
       ? `图片 · ${formatBytes(item.size)}`
       : isFile
         ? (item.fileNames || []).join(" · ") || `${item.fileCount || 0} 个文件`
-      : String(item.content || "").replace(/\s+/g, " ").slice(0, 120);
+      : content;
     const detail = isFile ? ` · ${esc(preview.slice(0, 120))}` : "";
+    const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
+    const title = item.kind === "image" ? "剪切板图片" : isFile ? `剪切板文件 · ${item.fileCount || 0} 个` : esc(preview || "空文本");
+    const toggle = expandable
+      ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
+      : "";
     return `
       <div class="result clipboard-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon clipboard">${image}</span>
         <span class="r-body">
-          <span class="r-title clipboard-title">${item.kind === "image" ? "剪切板图片" : isFile ? `剪切板文件 · ${item.fileCount || 0} 个` : esc(preview || "空文本")}</span>
-          <span class="r-meta clipboard-meta"><span class="path">剪切板</span>${detail} · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}</span>
+          <span class="${titleClass}">${title}</span>
+          <span class="clipboard-meta-row">
+            <span class="r-meta clipboard-meta"><span class="path">剪切板</span>${detail} · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}</span>
+            ${toggle}
+          </span>
         </span>
         <span class="r-kind clipboard">${item.kind === "image" ? "图片" : isFile ? "文件" : "文本"}</span>
       </div>
@@ -196,7 +213,18 @@ q.addEventListener("input", () => {
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
 window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
-resultsEl.addEventListener("click", (e) => { const row = e.target.closest(".result"); if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); } });
+resultsEl.addEventListener("click", (e) => {
+  const toggle = e.target.closest("[data-clipboard-toggle]");
+  if (toggle) {
+    const id = Number(toggle.dataset.clipboardToggle);
+    if (state.expandedClipboard.has(id)) state.expandedClipboard.delete(id);
+    else state.expandedClipboard.add(id);
+    render();
+    return;
+  }
+  const row = e.target.closest(".result");
+  if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
+});
 resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { state.index = i; render(); } } });
 
 function focusSearch() { q?.focus(); q?.select(); }

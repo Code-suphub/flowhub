@@ -61,20 +61,45 @@
       .r-title.clipboard-title {
         display: -webkit-box;
         -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: 3;
         overflow: hidden;
-        white-space: normal;
+        white-space: pre-wrap;
         overflow-wrap: anywhere;
         word-break: break-word;
         line-height: 1.35;
         text-overflow: clip;
       }
+      .r-title.clipboard-title.expandable { -webkit-line-clamp: 5; }
+      .r-title.clipboard-title.is-expanded {
+        display: block;
+        max-height: 240px;
+        overflow: auto;
+        -webkit-line-clamp: unset;
+      }
+      .clipboard-meta-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .r-meta.clipboard-meta {
         display: block;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-        line-height: 1.35;
+        min-width: 0;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .clipboard-toggle {
+        flex: 0 0 auto;
+        border: 0;
+        padding: 1px 4px;
+        color: var(--muted);
+        background: transparent;
+        border-radius: 5px;
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .clipboard-toggle:hover, .clipboard-toggle:focus-visible {
+        color: var(--text);
+        background: rgba(18, 169, 212, .12);
+        outline: none;
       }
       .r-meta .path { color: var(--accent); }
       .r-kind { flex: 0 0 auto; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
