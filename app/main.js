@@ -274,10 +274,10 @@ function readClipboardPayloads(now = Date.now()) {
     lastClipboardText = text;
     lastClipboardTextHash = text ? hashBuffer(Buffer.from(text, "utf8")) : "";
   }
-  // macOS 的图片剪切板经常同时带有指向临时文件的 file-url；有真实图像数据时优先记录图片，
-  // 普通文件则落到 filePayload，避免退化成 readText() 返回的文件名。
-  if (imagePayload) payloads.push(imagePayload);
-  else if (filePayload) payloads.push(filePayload);
+  // Finder 复制文件时可能同时提供文件路径和预览图，必须优先保留文件路径，
+  // 否则 PNG/TXT 等文件会被误记成图片；没有文件路径时才记录纯图片。
+  if (filePayload) payloads.push(filePayload);
+  else if (imagePayload) payloads.push(imagePayload);
   else if (text && lastClipboardTextHash) payloads.push({ kind: "text", value: text, hash: lastClipboardTextHash });
   return payloads;
 }
