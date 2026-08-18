@@ -1,7 +1,7 @@
 // Web Organization 桌面启动器 - 主进程
 // 类 uTools：Alt+空格 呼出全局搜索浮窗；搜索目录/网页/备注；回车用系统浏览器打开；
 // 可配置"打开本地应用/命令"。不依赖浏览器扩展。
-const { app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeImage, shell, screen } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, screen } = require("electron");
 const { execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -537,13 +537,51 @@ ipcMain.handle("weborg:copy-clipboard", (event, id) => {
   }
 });
 
-ipcMain.handle("weborg:delete-clipboard", (event, id) => {
-  const recordId = Number(id);
-  if (!Number.isInteger(recordId) || recordId <= 0) return { ok: false, reason: "无效的剪切板记录" };
+async function deleteClipboardRecord(recordId, ownerWindow = null) {
+  const record = clipboardStore.get(recordId);
+  if (!record) return { ok: false, reason: "剪切板记录不存在或已删除" };
+  const label = record.kind === "file"
+    ? (record.fileNames || []).join("、") || "文件"
+    : record.kind === "image" ? (record.sourceName || "图片") : "文本记录";
+  const options = {
+    type: "warning",
+    title: "删除剪切板记录",
+    message: `确定删除“${label}”吗？`,
+    detail: "只删除剪切板历史和应用保存的图片副本，不会删除原始文件。",
+    buttons: ["删除", "取消"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  };
+  const response = ownerWindow && !ownerWindow.isDestroyed()
+    ? await dialog.showMessageBox(ownerWindow, options)
+    : await dialog.showMessageBox(options);
+  if (response.response !== 0) return { ok: false, cancelled: true };
   const removed = clipboardStore.remove(recordId);
   if (!removed) return { ok: false, reason: "剪切板记录不存在或已删除" };
   if (win && !win.isDestroyed()) win.webContents.send("weborg:clipboard-updated");
   return { ok: true };
+}
+
+ipcMain.handle("weborg:show-clipboard-menu", (event, id) => {
+  const recordId = Number(id);
+  const record = clipboardStore.get(recordId);
+  if (!record) return { ok: false, reason: "剪切板记录不存在或已删除" };
+  const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "删除剪切板记录",
+      click: () => { void deleteClipboardRecord(recordId, ownerWindow); }
+    }
+  ]);
+  menu.popup({ window: ownerWindow || undefined });
+  return { ok: true };
+});
+
+ipcMain.handle("weborg:delete-clipboard", (event, id) => {
+  const recordId = Number(id);
+  if (!Number.isInteger(recordId) || recordId <= 0) return { ok: false, reason: "无效的剪切板记录" };
+  return deleteClipboardRecord(recordId, BrowserWindow.fromWebContents(event.sender));
 });
 
 // 用系统浏览器/默认应用打开

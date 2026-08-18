@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("weborg", {
   saveConfig: (config) => ipcRenderer.invoke("weborg:save-config", config),
   searchClipboard: (query) => ipcRenderer.invoke("weborg:search-clipboard", query || ""),
   copyClipboard: (id) => ipcRenderer.invoke("weborg:copy-clipboard", id),
+  showClipboardMenu: (id) => ipcRenderer.invoke("weborg:show-clipboard-menu", id),
   deleteClipboard: (id) => ipcRenderer.invoke("weborg:delete-clipboard", id),
   openUrl: (url) => ipcRenderer.invoke("weborg:open-url", url),
   openLocal: (action) => ipcRenderer.invoke("weborg:open-local", action),

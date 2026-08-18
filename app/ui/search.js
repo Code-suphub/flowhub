@@ -4,15 +4,12 @@ const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
-const clipboardContextMenu = document.getElementById("clipboardContextMenu");
-const deleteClipboardBtn = document.getElementById("deleteClipboardBtn");
 const scopeOrder = ["all", "web", "clipboard"];
 const clipboardKinds = ["all", "text", "image", "file"];
 
 const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], expandedClipboard: new Set() };
 let clipboardSearchToken = 0;
 let clipboardSearchTimer = null;
-let contextClipboardId = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -141,7 +138,6 @@ function renderResult(item, index) {
 }
 
 function render() {
-  hideClipboardContextMenu();
   if (!state.config) { resultsEl.innerHTML = `<div class="empty">配置加载中…</div>`; return; }
   const m = matches();
   if (!m.length) { resultsEl.innerHTML = `<div class="empty">没有匹配项</div>`; return; }
@@ -165,24 +161,6 @@ function choose(page) {
   const norm = normalizeUrl(page?.url);
   if (norm) openUrl(norm);
   else window.weborg && window.weborg.openLocal(page?.title || "");
-}
-
-function hideClipboardContextMenu() {
-  contextClipboardId = null;
-  clipboardContextMenu?.classList.remove("visible");
-  clipboardContextMenu?.setAttribute("aria-hidden", "true");
-}
-
-function showClipboardContextMenu(event, item) {
-  if (!clipboardContextMenu) return;
-  contextClipboardId = item.id;
-  clipboardContextMenu.classList.add("visible");
-  clipboardContextMenu.setAttribute("aria-hidden", "false");
-  const rect = clipboardContextMenu.getBoundingClientRect();
-  const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
-  const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
-  clipboardContextMenu.style.left = `${Math.max(8, left)}px`;
-  clipboardContextMenu.style.top = `${Math.max(8, top)}px`;
 }
 
 function setScope(scope) {
@@ -210,12 +188,17 @@ function setClipboardKind(kind) {
 window.weborg.onConfig((cfg) => { setConfig(cfg); render(); });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    if (contextClipboardId !== null) { hideClipboardContextMenu(); e.preventDefault(); return; }
-    e.preventDefault(); window.close();
-  }
+  if (e.key === "Escape") { e.preventDefault(); window.close(); }
   if (document.activeElement !== q) return;
   const m = matches();
+  if (e.altKey && ["Backspace", "Delete"].includes(e.key)) {
+    const selected = m[state.index];
+    if (selected?.type === "clipboard") {
+      window.weborg?.showClipboardMenu(selected.id);
+      e.preventDefault();
+      return;
+    }
+  }
   if (e.key === "ArrowDown") { state.index = Math.min(state.index + 1, Math.max(0, m.length - 1)); render(); e.preventDefault(); }
   else if (e.key === "ArrowUp") { state.index = Math.max(state.index - 1, 0); render(); e.preventDefault(); }
   else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
@@ -258,29 +241,13 @@ settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
 document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
 window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
-document.addEventListener("mousedown", (e) => {
-  if (!clipboardContextMenu?.contains(e.target)) hideClipboardContextMenu();
-});
-document.addEventListener("contextmenu", (e) => {
+resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
-  if (!row || !resultsEl.contains(row)) return;
+  if (!row) return;
   const item = matches()[+row.dataset.i];
   if (item?.type !== "clipboard") return;
   e.preventDefault();
-  showClipboardContextMenu(e, item);
-});
-deleteClipboardBtn?.addEventListener("click", async () => {
-  const id = contextClipboardId;
-  hideClipboardContextMenu();
-  if (!id || !window.confirm("删除这条剪切板记录？\n应用保存的图片副本会被删除，但不会删除原始文件。")) return;
-  const result = await window.weborg?.deleteClipboard(id);
-  if (!result?.ok) {
-    window.alert(result?.reason || "删除失败");
-    return;
-  }
-  state.clipboardResults = state.clipboardResults.filter((item) => item.id !== id);
-  state.index = Math.min(state.index, Math.max(0, matches().length - 1));
-  render();
+  void window.weborg?.showClipboardMenu(item.id);
 });
 resultsEl.addEventListener("click", (e) => {
   const toggle = e.target.closest("[data-clipboard-toggle]");

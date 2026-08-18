@@ -106,34 +106,6 @@
         background: rgba(18, 169, 212, .12);
         outline: none;
       }
-      .context-menu {
-        position: fixed;
-        z-index: 20;
-        display: none;
-        min-width: 168px;
-        padding: 5px;
-        background: #111922;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        box-shadow: 0 12px 28px rgba(0, 0, 0, .38);
-      }
-      .context-menu.visible { display: block; }
-      .context-menu button {
-        width: 100%;
-        padding: 7px 9px;
-        border: 0;
-        border-radius: 5px;
-        color: #f08c8c;
-        background: transparent;
-        text-align: left;
-        font: inherit;
-        font-size: 12px;
-        cursor: pointer;
-      }
-      .context-menu button:hover, .context-menu button:focus-visible {
-        background: rgba(240, 100, 100, .14);
-        outline: none;
-      }
       .r-meta .path { color: var(--accent); }
       .r-kind { flex: 0 0 auto; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
       .foot { border-top: 1px solid var(--border); padding: 8px 14px; display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
@@ -169,9 +141,6 @@
         <span>↑↓ 选择 · <code>⏎</code> 打开/复制 · <code>Esc</code> 关闭</span>
         <span>Web Organization</span>
       </div>
-    </div>
-    <div class="context-menu" id="clipboardContextMenu" role="menu" aria-hidden="true">
-      <button type="button" id="deleteClipboardBtn" role="menuitem">删除剪切板记录</button>
     </div>
     <script src="search.js"></script>
   </body>
