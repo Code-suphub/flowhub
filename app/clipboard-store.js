@@ -68,6 +68,7 @@ function toPublicRecord(row) {
     kind: row.kind,
     hash: row.hash,
     content: row.content || "",
+    sourceName: row.source_name || "",
     filePaths,
     fileNames: filePaths.map((filePath) => path.basename(filePath)),
     fileCount: filePaths.length,
@@ -98,6 +99,7 @@ async function open(baseDir) {
       hash TEXT NOT NULL,
       content TEXT,
       file_name TEXT,
+      source_name TEXT,
       file_paths TEXT,
       size INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -113,6 +115,9 @@ async function open(baseDir) {
   const columns = rows("PRAGMA table_info(clipboard_records)");
   if (!columns.some((column) => column.name === "file_paths")) {
     db.run("ALTER TABLE clipboard_records ADD COLUMN file_paths TEXT");
+  }
+  if (!columns.some((column) => column.name === "source_name")) {
+    db.run("ALTER TABLE clipboard_records ADD COLUMN source_name TEXT");
   }
   persistNow();
 }
@@ -150,18 +155,24 @@ function addText(text, hash, shouldPersist = true) {
   return toPublicRecord(first("SELECT * FROM clipboard_records WHERE kind = 'text' AND hash = ?", [hash]));
 }
 
-function addImage(buffer, hash, shouldPersist = true) {
+function addImage(buffer, hash, sourceName = "", shouldPersist = true) {
   if (!db || !buffer?.length) return null;
   const now = new Date().toISOString();
   const existing = first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]);
-  if (existing) return touchExisting(existing, now, shouldPersist);
+  if (existing) {
+    if (sourceName && existing.source_name !== sourceName) {
+      db.run("UPDATE clipboard_records SET source_name = ? WHERE id = ?", [sourceName, existing.id]);
+      invalidateSearchCache();
+    }
+    return touchExisting(existing, now, shouldPersist);
+  }
 
   const fileName = `${hash}.png`;
   fs.writeFileSync(imagePath(fileName), buffer);
   db.run(
-    `INSERT INTO clipboard_records(kind, hash, file_name, size, created_at, last_seen_at)
-     VALUES ('image', ?, ?, ?, ?, ?)`,
-    [hash, fileName, buffer.length, now, now]
+    `INSERT INTO clipboard_records(kind, hash, file_name, source_name, size, created_at, last_seen_at)
+     VALUES ('image', ?, ?, ?, ?, ?, ?)`,
+    [hash, fileName, sourceName, buffer.length, now, now]
   );
   invalidateSearchCache();
   if (shouldPersist) persist();
@@ -191,7 +202,7 @@ function addBatch(payloads = []) {
   db.run("BEGIN");
   try {
     const records = payloads.map((payload) => {
-      if (payload.kind === "image") return addImage(payload.value, payload.hash, false);
+      if (payload.kind === "image") return addImage(payload.value, payload.hash, payload.sourceName || "", false);
       if (payload.kind === "file") return addFiles(payload.value, payload.hash, false);
       return addText(payload.value, payload.hash, false);
     });
@@ -219,9 +230,9 @@ function search(query = "", limit = 12) {
     const imageKeyword = ["图片", "图像", "image"].includes(normalizedKeyword) ? keyword : "";
     result = rows(
       `SELECT * FROM clipboard_records
-       WHERE content LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> '')
+       WHERE content LIKE ? OR source_name LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> '')
        ORDER BY last_seen_at DESC LIMIT ?`,
-      [like, like, imageKeyword, safeLimit]
+      [like, like, like, imageKeyword, safeLimit]
     );
   }
   const publicRecords = result.map(toPublicRecord);

@@ -197,12 +197,24 @@ function readFileClipboardPayload(formats) {
     cachedClipboardFiles = { kind: "file", value: filePaths, hash: hashBuffer(Buffer.from(filePaths.join("\u0000"), "utf8")) };
     return cachedClipboardFiles;
   }
+  try {
+    const bookmark = clipboard.readBookmark();
+    const bookmarkPath = filePathFromValue(bookmark?.url);
+    if (bookmarkPath) {
+      const filePaths = [bookmarkPath];
+      const fileData = `bookmark\u0000${bookmark.url}`;
+      if (fileData === lastClipboardFileData) return cachedClipboardFiles;
+      lastClipboardFileData = fileData;
+      cachedClipboardFiles = { kind: "file", value: filePaths, hash: hashBuffer(Buffer.from(filePaths.join("\u0000"), "utf8")) };
+      return cachedClipboardFiles;
+    }
+  } catch {}
   lastClipboardFileData = "";
   cachedClipboardFiles = null;
   return null;
 }
 
-function readImageClipboardPayload(formats, now) {
+function readImageClipboardPayload(formats, now, filePayload) {
   const imageFormats = [...new Set([
     ...formats.filter(isImageClipboardFormat),
     ...IMAGE_CLIPBOARD_FORMATS
@@ -220,7 +232,12 @@ function readImageClipboardPayload(formats, now) {
       } else {
         const buffer = image.toPNG();
         cachedClipboardImage = buffer.length
-          ? { kind: "image", value: buffer, hash: hashBuffer(buffer) }
+          ? {
+              kind: "image",
+              value: buffer,
+              hash: hashBuffer(buffer),
+              sourceName: filePayload?.value?.length === 1 ? path.basename(filePayload.value[0]) : ""
+            }
           : null;
       }
     } catch {
@@ -228,6 +245,9 @@ function readImageClipboardPayload(formats, now) {
     }
     lastClipboardImageFormats = imageFormats;
     lastClipboardImageCheckAt = now;
+  }
+  if (cachedClipboardImage && !cachedClipboardImage.sourceName && filePayload?.value?.length === 1) {
+    cachedClipboardImage = { ...cachedClipboardImage, sourceName: path.basename(filePayload.value[0]) };
   }
   return cachedClipboardImage;
 }
@@ -247,7 +267,7 @@ function readClipboardPayloads(now = Date.now()) {
   const payloads = [];
   const formats = clipboard.availableFormats();
   const filePayload = readFileClipboardPayload(formats);
-  const imagePayload = readImageClipboardPayload(formats, now);
+  const imagePayload = readImageClipboardPayload(formats, now, filePayload);
 
   const text = clipboard.readText();
   if (text !== lastClipboardText) {

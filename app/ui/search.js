@@ -103,7 +103,9 @@ function renderResult(item, index) {
       : content;
     const detail = isFile ? ` · ${esc(preview.slice(0, 120))}` : "";
     const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
-    const title = item.kind === "image" ? "剪切板图片" : isFile ? `剪切板文件 · ${item.fileCount || 0} 个` : esc(preview || "空文本");
+    const title = item.kind === "image"
+      ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
+      : isFile ? `剪切板文件 · ${item.fileCount || 0} 个` : esc(preview || "空文本");
     const toggle = expandable
       ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
       : "";
