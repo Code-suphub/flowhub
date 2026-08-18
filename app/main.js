@@ -32,6 +32,20 @@ const applicationIconCache = new Map();
 let applicationIndexPromise = null;
 let blurHideTimer = null;
 
+const MAC_NATIVE_ICON_SCRIPT = [
+  "ObjC.import('AppKit');",
+  "var args = $.NSProcessInfo.processInfo.arguments;",
+  "var result = {};",
+  "for (var i = 6; i < args.count; i++) {",
+  "  var filePath = ObjC.unwrap(args.objectAtIndex(i));",
+  "  var image = $.NSWorkspace.sharedWorkspace.iconForFile(filePath);",
+  "  var bitmap = image ? $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation) : null;",
+  "  var data = bitmap ? bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $.NSDictionary.dictionary) : null;",
+  "  if (data) result[filePath] = ObjC.unwrap(data.base64EncodedStringWithOptions(0));",
+  "}",
+  "console.log(JSON.stringify(result));"
+].join(" ");
+
 function readConfig() {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf8");
@@ -437,26 +451,36 @@ function applicationIndex() {
   return applicationIndexPromise;
 }
 
+function readMacNativeIcons(filePaths, cache) {
+  const missingPaths = [...new Set(filePaths.filter((filePath) => filePath && !cache.has(filePath)))];
+  if (process.platform !== "darwin" || !missingPaths.length) return Promise.resolve();
+  return new Promise((resolve) => {
+    execFile("osascript", ["-l", "JavaScript", "-e", MAC_NATIVE_ICON_SCRIPT, "--", ...missingPaths], {
+      timeout: 4000,
+      maxBuffer: 32 * 1024 * 1024,
+      encoding: "utf8"
+    }, (error, stdout, stderr) => {
+      let icons = {};
+      if (!error) {
+        try { icons = JSON.parse(String(stdout || stderr).trim()); } catch {}
+      }
+      missingPaths.forEach((filePath) => {
+        const base64 = String(icons[filePath] || "");
+        cache.set(filePath, base64 ? `data:image/png;base64,${base64}` : "");
+      });
+      resolve();
+    });
+  });
+}
+
 async function searchApplications(query = "", limit = 12) {
   const keyword = String(query || "").trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
   const applications = await applicationIndex();
   const matches = keyword ? applications.filter((application) => application.hay.includes(keyword)) : applications;
-  return Promise.all(matches.slice(0, safeLimit).map(async (application) => {
-    const applicationPath = application.path;
-    if (applicationIconCache.has(applicationPath)) {
-      return { ...application, iconUrl: applicationIconCache.get(applicationPath) };
-    }
-    try {
-      const icon = await app.getFileIcon(applicationPath, { size: "small" });
-      const iconUrl = icon.isEmpty() ? "" : icon.toDataURL();
-      applicationIconCache.set(applicationPath, iconUrl);
-      return { ...application, iconUrl };
-    } catch {
-      applicationIconCache.set(applicationPath, "");
-      return application;
-    }
-  }));
+  const selected = matches.slice(0, safeLimit);
+  await readMacNativeIcons(selected.map((application) => application.path), applicationIconCache);
+  return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
 }
 
 function isDev() {
@@ -642,10 +666,16 @@ ipcMain.handle("weborg:search-apps", (event, query) => searchApplications(query 
 
 ipcMain.handle("weborg:search-clipboard", async (event, query) => {
   const records = clipboardStore.search(query || "", 12);
+  const filePaths = records
+    .filter((record) => record.kind === "file")
+    .map((record) => record.filePaths?.find((candidate) => fs.existsSync(candidate)) || record.filePaths?.[0])
+    .filter(Boolean);
+  await readMacNativeIcons(filePaths, clipboardFileIconCache);
   return Promise.all(records.map(async (record) => {
     if (record.kind !== "file" || !record.filePaths?.length || typeof app.getFileIcon !== "function") return record;
     const filePath = record.filePaths.find((candidate) => fs.existsSync(candidate)) || record.filePaths[0];
     if (!filePath) return record;
+    if (process.platform === "darwin") return { ...record, fileIconUrl: clipboardFileIconCache.get(filePath) || "" };
     if (clipboardFileIconCache.has(filePath)) {
       return { ...record, fileIconUrl: clipboardFileIconCache.get(filePath) };
     }
