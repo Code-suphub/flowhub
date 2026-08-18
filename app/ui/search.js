@@ -115,6 +115,8 @@ function renderResult(item, index) {
     const expanded = expandable && state.expandedClipboard.has(item.id);
     const image = item.kind === "image" && item.imageUrl
       ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
+      : isFile && item.fileIconUrl
+        ? `<img class="native-clipboard-icon" src="${esc(item.fileIconUrl)}" loading="lazy" decoding="async" alt="" />`
       : isFile ? clipboardFileIcon(fileType) : "▤";
     const preview = item.kind === "image"
       ? `图片 · ${formatBytes(item.size)}`

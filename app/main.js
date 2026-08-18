@@ -27,6 +27,7 @@ let lastClipboardImageCheckAt = 0;
 let cachedClipboardImage = null;
 let lastClipboardFileData = "";
 let cachedClipboardFiles = null;
+const clipboardFileIconCache = new Map();
 let blurHideTimer = null;
 
 function readConfig() {
@@ -556,8 +557,25 @@ ipcMain.handle("weborg:save-config", (event, config) => {
   }
 });
 
-ipcMain.handle("weborg:search-clipboard", (event, query) => {
-  return clipboardStore.search(query || "", 12);
+ipcMain.handle("weborg:search-clipboard", async (event, query) => {
+  const records = clipboardStore.search(query || "", 12);
+  return Promise.all(records.map(async (record) => {
+    if (record.kind !== "file" || !record.filePaths?.length || typeof app.getFileIcon !== "function") return record;
+    const filePath = record.filePaths.find((candidate) => fs.existsSync(candidate)) || record.filePaths[0];
+    if (!filePath) return record;
+    if (clipboardFileIconCache.has(filePath)) {
+      return { ...record, fileIconUrl: clipboardFileIconCache.get(filePath) };
+    }
+    try {
+      const icon = await app.getFileIcon(filePath, { size: "small" });
+      const fileIconUrl = icon.isEmpty() ? "" : icon.toDataURL();
+      clipboardFileIconCache.set(filePath, fileIconUrl);
+      return { ...record, fileIconUrl };
+    } catch {
+      clipboardFileIconCache.set(filePath, "");
+      return record;
+    }
+  }));
 });
 
 ipcMain.handle("weborg:copy-clipboard", (event, id) => {
