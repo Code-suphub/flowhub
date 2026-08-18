@@ -126,7 +126,7 @@ function matches() {
   }
   if (!state.query.trim()) {
     const regularLimit = usages.length ? 4 : 6;
-    return [...clips.slice(0, regularLimit), ...usages.slice(0, usages.length ? 8 : 0), ...withoutUsageDuplicates(pages, usages).slice(0, regularLimit)].slice(0, 12);
+    return [...usages.slice(0, usages.length ? 8 : 0), ...clips.slice(0, regularLimit), ...withoutUsageDuplicates(pages, usages).slice(0, regularLimit)].slice(0, 12);
   }
   const appResults = state.query.trim() ? apps.slice(0, 4) : [];
   const regularLimit = appResults.length ? 4 : 6;
