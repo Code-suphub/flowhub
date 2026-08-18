@@ -113,11 +113,12 @@ function renderResult(item, index) {
     const content = String(item.content || "");
     const expandable = isExpandableClipboard(item);
     const expanded = expandable && state.expandedClipboard.has(item.id);
-    const image = item.kind === "image" && item.imageUrl
+    const icon = item.kind === "image" && item.imageUrl
       ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
       : isFile && item.fileIconUrl
         ? `<img class="native-clipboard-icon" src="${esc(item.fileIconUrl)}" loading="lazy" decoding="async" alt="" />`
       : isFile ? clipboardFileIcon(fileType) : "▤";
+    const iconMarkup = item.kind === "text" ? "" : `<span class="r-icon clipboard">${icon}</span>`;
     const preview = item.kind === "image"
       ? `图片 · ${formatBytes(item.size)}`
       : isFile
@@ -133,7 +134,7 @@ function renderResult(item, index) {
       : "";
     return `
       <div class="result clipboard-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon clipboard">${image}</span>
+        ${iconMarkup}
         <span class="r-body">
           <span class="${titleClass}">${title}</span>
           <span class="clipboard-meta-row">
