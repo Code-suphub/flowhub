@@ -160,7 +160,7 @@ function usageSectionHeading(section) {
 }
 
 function renderUsageSection(item, index, items) {
-  if (!item.usageSection || item.usageSection === "recent" || (items[index - 1] && items[index - 1].usageSection === item.usageSection)) return "";
+  if (!item.usageSection || (items[index - 1] && items[index - 1].usageSection === item.usageSection)) return "";
   return usageSectionHeading(item.usageSection);
 }
 
@@ -180,10 +180,11 @@ function renderResults(items) {
   let html = "";
   for (let index = 0; index < items.length;) {
     const item = items[index];
-    if (item.usageSection === "recent") {
+    if (item.usageSection) {
       const start = index;
-      while (index < items.length && items[index].usageSection === "recent") index += 1;
-      html += usageSectionHeading("recent");
+      const section = item.usageSection;
+      while (index < items.length && items[index].usageSection === section) index += 1;
+      html += usageSectionHeading(section);
       html += `<div class="usage-strip">${items.slice(start, index).map((entry, offset) => renderUsageTile(entry, start + offset)).join("")}</div>`;
       continue;
     }
