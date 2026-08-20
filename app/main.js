@@ -32,6 +32,18 @@ const applicationIconCache = new Map();
 let applicationIndexPromise = null;
 let blurHideTimer = null;
 
+const MAC_NATIVE_PASTE_SCRIPT = [
+  "ObjC.import('CoreGraphics');",
+  "var source = $.CGEventSourceCreate($.kCGEventSourceStateHIDSystemState);",
+  "var down = $.CGEventCreateKeyboardEvent(source, 9, true);",
+  "var up = $.CGEventCreateKeyboardEvent(source, 9, false);",
+  "if (!down || !up) throw new Error('无法创建粘贴键盘事件');",
+  "$.CGEventSetFlags(down, $.kCGEventFlagMaskCommand);",
+  "$.CGEventSetFlags(up, $.kCGEventFlagMaskCommand);",
+  "$.CGEventPost($.kCGHIDEventTap, down);",
+  "$.CGEventPost($.kCGHIDEventTap, up);"
+].join(" ");
+
 const MAC_NATIVE_ICON_SCRIPT = [
   "ObjC.import('AppKit');",
   "var args = $.NSProcessInfo.processInfo.arguments;",
@@ -836,23 +848,52 @@ function hideWindow() {
   if (process.platform === "darwin" && typeof app.hide === "function") app.hide();
 }
 
+function sendPasteWithAppleScript() {
+  return new Promise((resolve) => {
+    execFile("osascript", [
+      "-e",
+      'tell application "System Events" to keystroke "v" using command down'
+    ], { timeout: 1500 }, (error) => {
+      if (error) {
+        console.warn("[weborg] 自动粘贴失败，请在系统设置中允许 Web Organization 使用辅助功能:", error.message);
+        resolve({ ok: false, reason: error.message });
+        return;
+      }
+      resolve({ ok: true });
+    });
+  });
+}
+
+function sendNativePaste() {
+  return new Promise((resolve) => {
+    execFile("osascript", ["-l", "JavaScript", "-e", MAC_NATIVE_PASTE_SCRIPT], { timeout: 800 }, async (error) => {
+      if (!error) {
+        resolve({ ok: true });
+        return;
+      }
+      // CoreGraphics 在极少数系统权限状态下可能失败，保留旧实现作为兜底。
+      resolve(await sendPasteWithAppleScript());
+    });
+  });
+}
+
 function pasteIntoPreviousApp() {
   if (process.platform !== "darwin") return Promise.resolve({ ok: false, reason: "当前平台暂不支持自动粘贴" });
   return new Promise((resolve) => {
-    // 等 macOS 将焦点还给原应用，再由 System Events 发送 ⌘V。
-    setTimeout(() => {
-      execFile("osascript", [
-        "-e",
-        'tell application "System Events" to keystroke "v" using command down'
-      ], { timeout: 1500 }, (error) => {
-        if (error) {
-          console.warn("[weborg] 自动粘贴失败，请在系统设置中允许 Web Organization 使用辅助功能:", error.message);
-          resolve({ ok: false, reason: error.message });
-          return;
-        }
-        resolve({ ok: true });
-      });
-    }, 100);
+    // 隐藏面板后给 macOS 一个最短的焦点交接时间；只有 Electron 仍保持焦点时才继续等待。
+    const startedAt = Date.now();
+    const minimumHandoffMs = 32;
+    const maximumHandoffMs = 140;
+    const waitForPreviousApp = () => {
+      const elapsed = Date.now() - startedAt;
+      const electronStillFocused = typeof app.isFocused === "function" && app.isFocused();
+      if (elapsed < minimumHandoffMs || (electronStillFocused && elapsed < maximumHandoffMs)) {
+        setTimeout(waitForPreviousApp, 8);
+        return;
+      }
+      void sendNativePaste().then(resolve);
+    };
+    waitForPreviousApp();
   });
 }
 
