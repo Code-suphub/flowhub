@@ -43,6 +43,9 @@ const MAC_NATIVE_PASTE_SCRIPT = [
   "$.CGEventPost($.kCGHIDEventTap, down);",
   "$.CGEventPost($.kCGHIDEventTap, up);"
 ].join(" ");
+const MAC_NATIVE_PASTE_SOURCE = path.join(__dirname, "native", "macos-paste.swift");
+let nativePasteHelperPromise = null;
+let nativeIconReadQueue = Promise.resolve();
 
 const MAC_NATIVE_ICON_SCRIPT = [
   "ObjC.import('AppKit');",
@@ -57,6 +60,45 @@ const MAC_NATIVE_ICON_SCRIPT = [
   "}",
   "console.log(JSON.stringify(result));"
 ].join(" ");
+
+function prepareNativePasteHelper() {
+  if (process.platform !== "darwin") return Promise.resolve("");
+  if (nativePasteHelperPromise) return nativePasteHelperPromise;
+  nativePasteHelperPromise = new Promise((resolve) => {
+    const helperDirectory = path.join(app.getPath("userData"), "native");
+    const helperPath = path.join(helperDirectory, "macos-paste-v1");
+    const sourcePath = path.join(helperDirectory, "macos-paste-v1.swift");
+    const tempHelperPath = `${helperPath}.tmp-${process.pid}`;
+    try {
+      if (fs.existsSync(helperPath)) {
+        resolve(helperPath);
+        return;
+      }
+      fs.mkdirSync(helperDirectory, { recursive: true });
+      fs.writeFileSync(sourcePath, fs.readFileSync(MAC_NATIVE_PASTE_SOURCE, "utf8"), "utf8");
+    } catch (error) {
+      console.warn("[weborg] 无法准备原生粘贴助手:", error.message);
+      resolve("");
+      return;
+    }
+    execFile("swiftc", ["-O", sourcePath, "-o", tempHelperPath], { timeout: 15000 }, (error) => {
+      if (error) {
+        try { fs.unlinkSync(tempHelperPath); } catch {}
+        console.warn("[weborg] 编译原生粘贴助手失败，将使用系统兜底:", error.message);
+        resolve("");
+        return;
+      }
+      try {
+        fs.renameSync(tempHelperPath, helperPath);
+        resolve(helperPath);
+      } catch (renameError) {
+        console.warn("[weborg] 保存原生粘贴助手失败:", renameError.message);
+        resolve("");
+      }
+    });
+  });
+  return nativePasteHelperPromise;
+}
 
 function readConfig() {
   try {
@@ -463,7 +505,7 @@ function applicationIndex() {
   return applicationIndexPromise;
 }
 
-function readMacNativeIcons(filePaths, cache) {
+function readMacNativeIconsNow(filePaths, cache) {
   // 空字符串代表上一次读取失败；允许后续重试，避免应用启动时机不对导致永久显示 fallback 图标。
   const missingPaths = [...new Set(filePaths.filter((filePath) => filePath && !cache.get(filePath)))];
   if (process.platform !== "darwin" || !missingPaths.length) return Promise.resolve();
@@ -487,6 +529,17 @@ function readMacNativeIcons(filePaths, cache) {
       resolve();
     });
   });
+}
+
+function readMacNativeIcons(filePaths, cache) {
+  // 应用搜索和常用入口会在启动时同时请求图标；串行化可以避免两次 osascript
+  // 同时读取时，一条请求先拿到空结果并把 fallback 直接交给渲染层。
+  const request = nativeIconReadQueue.then(
+    () => readMacNativeIconsNow(filePaths, cache),
+    () => readMacNativeIconsNow(filePaths, cache)
+  );
+  nativeIconReadQueue = request.catch(() => {});
+  return request;
 }
 
 async function searchApplications(query = "", limit = 12) {
@@ -632,6 +685,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error("[weborg] 剪切板数据库初始化失败:", error.message);
   }
+  void prepareNativePasteHelper();
   createWindow();
   void applicationIndex();
 
@@ -864,14 +918,30 @@ function sendPasteWithAppleScript() {
   });
 }
 
-function sendNativePaste() {
+async function sendNativePaste() {
+  // 首次启动可能仍在后台编译 Swift 助手；不要让第一次粘贴等待编译完成，先走轻量 JXA 兜底。
+  const helperPath = nativePasteHelperPromise
+    ? await Promise.race([
+      nativePasteHelperPromise,
+      new Promise((resolve) => setTimeout(() => resolve(""), 24))
+    ])
+    : await prepareNativePasteHelper();
+  if (helperPath) {
+    const nativeResult = await new Promise((resolve) => {
+      execFile(helperPath, [], { timeout: 500 }, (error) => {
+        resolve(error ? { ok: false, reason: error.message } : { ok: true });
+      });
+    });
+    if (nativeResult.ok) return nativeResult;
+  }
+
+  // 原生助手不可用时使用 JXA；它仍比启动 System Events 更轻，且保留最终兜底能力。
   return new Promise((resolve) => {
     execFile("osascript", ["-l", "JavaScript", "-e", MAC_NATIVE_PASTE_SCRIPT], { timeout: 800 }, async (error) => {
       if (!error) {
         resolve({ ok: true });
         return;
       }
-      // CoreGraphics 在极少数系统权限状态下可能失败，保留旧实现作为兜底。
       resolve(await sendPasteWithAppleScript());
     });
   });
