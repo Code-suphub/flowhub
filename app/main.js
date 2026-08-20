@@ -542,13 +542,19 @@ function readMacNativeIcons(filePaths, cache) {
   return request;
 }
 
+async function readMacNativeIconsWithRetry(filePaths, cache) {
+  await readMacNativeIcons(filePaths, cache);
+  const missingPaths = [...new Set(filePaths.filter((filePath) => filePath && !cache.get(filePath)))];
+  if (missingPaths.length) await readMacNativeIcons(missingPaths, cache);
+}
+
 async function searchApplications(query = "", limit = 12) {
   const keyword = String(query || "").trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
   const applications = await applicationIndex();
   const matches = keyword ? applications.filter((application) => application.hay.includes(keyword)) : applications;
   const selected = matches.slice(0, safeLimit);
-  await readMacNativeIcons(selected.map((application) => application.path), applicationIconCache);
+  await readMacNativeIconsWithRetry(selected.map((application) => application.path), applicationIconCache);
   return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
 }
 
@@ -556,7 +562,7 @@ async function searchUsage(scope = "all", limit = 6) {
   const sections = clipboardStore.usageSections(scope, limit);
   const allEntries = [...sections.frequent, ...sections.recent];
   const appEntries = allEntries.filter((entry) => entry.usageType === "app");
-  await readMacNativeIcons(appEntries.map((entry) => entry.path), applicationIconCache);
+  await readMacNativeIconsWithRetry(appEntries.map((entry) => entry.path), applicationIconCache);
   const decorate = (entry) => entry.usageType === "app"
     ? { ...entry, type: "app", iconUrl: applicationIconCache.get(entry.path) || "" }
     : { ...entry, type: "page", id: entry.usageKey, icon: entry.icon || "", breadcrumb: entry.path };
