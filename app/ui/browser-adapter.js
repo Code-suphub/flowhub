@@ -159,15 +159,16 @@ if (!window.weborg) {
       return { ok: false, preview: true, reason: "请在 Electron App 中打开系统辅助功能设置" };
     },
     async getClipboardStorageInfo() {
-      const config = await getConfig();
-      const configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
-      return {
-        available: false,
-        configuredPath,
-        defaultPath: "Electron 用户数据目录/clipboard",
-        resolvedPath: configuredPath || "Electron 用户数据目录/clipboard",
-        activePath: ""
-      };
+      try {
+        const response = await fetch("/__weborg/clipboard/storage", { cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.reason || "读取存放位置失败");
+        return result;
+      } catch {
+        const config = await getConfig();
+        const configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
+        return { available: false, configuredPath, defaultPath: "Electron 用户数据目录/clipboard", resolvedPath: configuredPath || "Electron 用户数据目录/clipboard", activePath: "" };
+      }
     },
     async chooseClipboardStorage() {
       return { ok: false, preview: true, reason: "请在 Electron App 中选择存放目录" };

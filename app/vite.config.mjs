@@ -83,6 +83,24 @@ async function clipboardDatabaseCandidates() {
   ].filter(Boolean);
 }
 
+async function clipboardStorageInfo() {
+  const applicationSupport = join(homedir(), "Library", "Application Support");
+  const legacyPath = join(applicationSupport, "Web Organization", "clipboard");
+  const defaultPath = await access(legacyPath).then(() => legacyPath).catch(() => join(applicationSupport, "FlowHub", "clipboard"));
+  let configuredPath = "";
+  try {
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
+  } catch {}
+  return {
+    available: false,
+    configuredPath,
+    defaultPath,
+    resolvedPath: configuredPath || defaultPath,
+    activePath: ""
+  };
+}
+
 async function clipboardDatabasePath() {
   for (const candidate of await clipboardDatabaseCandidates()) {
     try {
@@ -335,6 +353,16 @@ function localClipboardApi() {
   return {
     name: "flowhub-local-readonly-clipboard-api",
     configureServer(server) {
+      server.middlewares.use("/__weborg/clipboard/storage", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Read only");
+          return;
+        }
+        sendJson(response, 200, { ok: true, readonly: true, ...(await clipboardStorageInfo()) });
+      });
+
       server.middlewares.use("/__weborg/clipboard/records", async (request, response) => {
         if (request.method !== "GET") {
           response.statusCode = 405;
