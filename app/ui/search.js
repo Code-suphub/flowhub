@@ -4,7 +4,7 @@ const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
-const scopeOrder = ["all", "web", "clipboard", "app"];
+const scopeOrder = ["all", "clipboard", "app", "web"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
 
