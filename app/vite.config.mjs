@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import { execFile } from "node:child_process";
-import { readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import initSqlJs from "sql.js";
 
 const appDirectory = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = resolve(appDirectory, "ui");
@@ -12,6 +13,7 @@ const configPath = resolve(appDirectory, "..", "config.json");
 const execFileAsync = promisify(execFile);
 const applicationIconCache = new Map();
 let applicationsPromise;
+let sqlJsPromise;
 
 const MAC_NATIVE_ICON_SCRIPT = [
   "ObjC.import('AppKit');",
@@ -64,6 +66,132 @@ async function scanApplications() {
 function applications() {
   if (!applicationsPromise) applicationsPromise = scanApplications();
   return applicationsPromise;
+}
+
+function clipboardDatabaseCandidates() {
+  const applicationSupport = join(homedir(), "Library", "Application Support");
+  return [
+    join(applicationSupport, "Web Organization", "clipboard", "weborg.db"),
+    join(applicationSupport, "FlowHub", "clipboard", "weborg.db"),
+    join(applicationSupport, "Electron", "clipboard", "weborg.db")
+  ];
+}
+
+async function clipboardDatabasePath() {
+  for (const candidate of clipboardDatabaseCandidates()) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {}
+  }
+  return "";
+}
+
+function sqlJs() {
+  if (!sqlJsPromise) {
+    sqlJsPromise = initSqlJs({ locateFile: (file) => resolve(appDirectory, "node_modules", "sql.js", "dist", file) });
+  }
+  return sqlJsPromise;
+}
+
+function databaseRows(database, sql, parameters = []) {
+  const statement = database.prepare(sql);
+  statement.bind(parameters);
+  const result = [];
+  while (statement.step()) result.push(statement.getAsObject());
+  statement.free();
+  return result;
+}
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function browserClipboardRecord(row) {
+  const filePaths = row.kind === "file" ? parseJsonArray(row.file_paths) : [];
+  const fileTypes = row.kind === "file" ? parseJsonArray(row.file_types) : [];
+  const normalizedTypes = filePaths.map((filePath, index) => fileTypes[index] || (/\.(?:png|jpe?g|gif|webp|bmp|tiff?|heic|heif|avif|svg|ico)$/i.test(filePath) ? "image" : "file"));
+  const distinctTypes = [...new Set(normalizedTypes)];
+  return {
+    id: Number(row.id),
+    kind: row.kind,
+    hash: row.hash,
+    content: row.content || "",
+    sourceName: row.source_name || "",
+    filePaths,
+    fileNames: filePaths.map((filePath) => basename(filePath)),
+    fileCount: filePaths.length,
+    fileTypes: normalizedTypes,
+    fileType: distinctTypes.length === 1 ? distinctTypes[0] : "file",
+    imageUrl: row.file_name ? `/__weborg/clipboard/image?id=${Number(row.id)}` : "",
+    size: Number(row.size || 0),
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+    copyCount: Number(row.copy_count || 1)
+  };
+}
+
+async function withClipboardDatabase(callback) {
+  const databasePath = await clipboardDatabasePath();
+  if (!databasePath) throw new Error("未找到 FlowHub 剪切板数据库");
+  const [SQL, file] = await Promise.all([sqlJs(), readFile(databasePath)]);
+  const database = new SQL.Database(file);
+  try {
+    return await callback(database, databasePath);
+  } finally {
+    database.close();
+  }
+}
+
+async function searchClipboardRecords(query = "", limit = 12, kind = "all") {
+  const keyword = String(query || "").trim();
+  const normalizedKeyword = keyword.toLowerCase();
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const safeKind = ["text", "image", "file"].includes(kind) ? kind : "all";
+  const candidateLimit = safeKind === "all" ? safeLimit : 250;
+  return withClipboardDatabase((database) => {
+    const total = Number(databaseRows(database, "SELECT COUNT(*) AS total FROM clipboard_records")[0]?.total || 0);
+    const conditions = [];
+    const parameters = [];
+    if (keyword) {
+      const like = `%${keyword}%`;
+      const imageKeyword = ["图片", "图像", "image"].includes(normalizedKeyword) ? keyword : "";
+      conditions.push("(content LIKE ? OR source_name LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> ''))");
+      parameters.push(like, like, like, imageKeyword);
+    }
+    if (safeKind === "text") conditions.push("kind = 'text'");
+    if (safeKind === "image") conditions.push("kind IN ('image', 'file')");
+    if (safeKind === "file") conditions.push("kind = 'file'");
+    parameters.push(candidateLimit);
+    const records = databaseRows(
+      database,
+      `SELECT * FROM clipboard_records
+       ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
+       ORDER BY last_seen_at DESC LIMIT ?`,
+      parameters
+    );
+    const publicRecords = records.map(browserClipboardRecord).filter((record) => {
+      if (safeKind === "text") return record.kind === "text";
+      if (safeKind === "image") return record.kind === "image" || (record.kind === "file" && record.fileType === "image");
+      if (safeKind === "file") return record.kind === "file" && record.fileType !== "image";
+      return true;
+    }).slice(0, safeLimit);
+    return { total, records: publicRecords };
+  });
+}
+
+async function clipboardImage(recordId) {
+  return withClipboardDatabase(async (database, databasePath) => {
+    const row = databaseRows(database, "SELECT file_name FROM clipboard_records WHERE id = ? AND kind = 'image'", [recordId])[0];
+    const fileName = String(row?.file_name || "");
+    if (!fileName || basename(fileName) !== fileName) throw new Error("图片记录不存在");
+    return readFile(join(dirname(databasePath), "images", fileName));
+  });
 }
 
 async function readNativeApplicationIconBatch(filePaths) {
@@ -185,9 +313,57 @@ function localApplicationApi() {
   };
 }
 
+function localClipboardApi() {
+  return {
+    name: "flowhub-local-readonly-clipboard-api",
+    configureServer(server) {
+      server.middlewares.use("/__weborg/clipboard/records", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Read only");
+          return;
+        }
+        try {
+          const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+          const result = await searchClipboardRecords(
+            requestUrl.searchParams.get("q") || "",
+            requestUrl.searchParams.get("limit") || 12,
+            requestUrl.searchParams.get("kind") || "all"
+          );
+          sendJson(response, 200, { ok: true, readonly: true, ...result });
+        } catch (error) {
+          sendJson(response, 500, { ok: false, readonly: true, reason: error.message, total: 0, records: [] });
+        }
+      });
+
+      server.middlewares.use("/__weborg/clipboard/image", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Read only");
+          return;
+        }
+        try {
+          const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+          const id = Number(requestUrl.searchParams.get("id"));
+          if (!Number.isInteger(id) || id <= 0) throw new Error("图片记录 ID 无效");
+          const image = await clipboardImage(id);
+          response.statusCode = 200;
+          response.setHeader("content-type", "image/png");
+          response.setHeader("cache-control", "private, no-store");
+          response.end(image);
+        } catch (error) {
+          sendJson(response, 404, { ok: false, readonly: true, reason: error.message });
+        }
+      });
+    }
+  };
+}
+
 export default defineConfig({
   root: uiDirectory,
-  plugins: [localConfigApi(), localApplicationApi()],
+  plugins: [localConfigApi(), localApplicationApi(), localClipboardApi()],
   server: {
     host: "127.0.0.1",
     port: 5173,

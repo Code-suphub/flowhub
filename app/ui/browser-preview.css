@@ -41,6 +41,16 @@ html[data-weborg-runtime="browser"][data-weborg-page="settings"] body {
   min-width: 760px;
 }
 
+html[data-weborg-runtime="browser"][data-weborg-readonly="true"] .clipboard-result {
+  cursor: default;
+}
+
+html[data-weborg-runtime="browser"][data-weborg-readonly="true"] #runtimeMode {
+  color: #8fc7d2;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
 @media (max-width: 680px) {
   html[data-weborg-runtime="browser"][data-weborg-page="search"] body { padding: 12px; }
   html[data-weborg-runtime="browser"][data-weborg-page="search"] .shell {

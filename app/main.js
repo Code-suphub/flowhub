@@ -836,8 +836,8 @@ ipcMain.handle("weborg:save-config", (event, config) => {
 ipcMain.handle("weborg:search-apps", (event, query) => searchApplications(query || "", 12));
 ipcMain.handle("weborg:search-usage", (event, scope) => searchUsage(scope || "all", 6));
 
-ipcMain.handle("weborg:search-clipboard", async (event, query) => {
-  const records = clipboardStore.search(query || "", 12);
+ipcMain.handle("weborg:search-clipboard", async (event, query, kind) => {
+  const records = clipboardStore.search(query || "", 12, kind || "all");
   const filePaths = records
     .filter((record) => record.kind === "file")
     .map((record) => record.filePaths?.find((candidate) => fs.existsSync(candidate)) || record.filePaths?.[0])

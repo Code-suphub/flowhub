@@ -1,48 +1,16 @@
 // 普通浏览器没有 Electron preload。这里提供只用于界面开发的兼容层：
 // 导航配置来自真实 config.json，应用列表来自仅绑定本机的开发接口，
-// 剪切板仍使用不含用户数据的预览内容。
+// 剪切板通过仅绑定 127.0.0.1 的只读接口读取真实历史。
 if (!window.weborg) {
   document.documentElement.dataset.weborgRuntime = "browser";
   document.documentElement.dataset.weborgPage = location.pathname.includes("settings") ? "settings" : "search";
+  document.documentElement.dataset.weborgReadonly = "true";
+  const runtimeMode = document.getElementById("runtimeMode");
+  if (runtimeMode) runtimeMode.textContent = "只读预览 · FlowHub";
 
   const configListeners = new Set();
   const clipboardListeners = new Set();
   const usageListeners = new Set();
-  const now = Date.now();
-  let previewClipboard = [
-    {
-      id: 9001,
-      kind: "text",
-      content: "浏览器预览模式：这里展示剪切板文本的排版、搜索与展开效果。",
-      hash: "preview-text-9001-0000000000000000000000000000000000000000000000",
-      copyCount: 4,
-      lastSeenAt: new Date(now - 70_000).toISOString()
-    },
-    {
-      id: 9002,
-      kind: "file",
-      fileType: "folder",
-      fileNames: ["FlowHub"],
-      fileCount: 1,
-      content: "/Users/example/Projects/FlowHub",
-      hash: "preview-file-9002-000000000000000000000000000000000000000000000",
-      copyCount: 2,
-      lastSeenAt: new Date(now - 240_000).toISOString()
-    },
-    {
-      id: 9003,
-      kind: "text",
-      content: [
-        "curl --request GET 'https://api.example.com/v1/projects' \\",
-        "  --header 'accept: application/json' \\",
-        "  --header 'authorization: Bearer preview-token'"
-      ].join("\n"),
-      hash: "preview-long-9003-000000000000000000000000000000000000000000000",
-      copyCount: 7,
-      lastSeenAt: new Date(now - 420_000).toISOString()
-    }
-  ];
-
   const fallbackApplications = [
     { title: "Safari", path: "/Applications/Safari.app", hay: "safari browser 浏览器" },
     { title: "Terminal", path: "/System/Applications/Utilities/Terminal.app", hay: "terminal 终端" },
@@ -124,25 +92,19 @@ if (!window.weborg) {
       configListeners.forEach((listener) => listener(result.config));
       return result;
     },
-    async searchClipboard(query = "") {
-      const keyword = String(query).trim().toLowerCase();
-      return previewClipboard.filter((record) => !keyword || [record.content, ...(record.fileNames || [])].join(" ").toLowerCase().includes(keyword));
+    async searchClipboard(query = "", kind = "all") {
+      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(query)}&kind=${encodeURIComponent(kind)}&limit=12`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
+      return result.records || [];
     },
     async searchApps(query = "") {
       return getApplications(query, 12);
     },
     searchUsage: usageSections,
-    async copyClipboard(id) {
-      const record = previewClipboard.find((entry) => entry.id === Number(id));
-      if (record?.kind === "text" && navigator.clipboard?.writeText) await navigator.clipboard.writeText(record.content);
-      return { ok: Boolean(record), preview: true };
-    },
-    async deleteClipboard(id) {
-      previewClipboard = previewClipboard.filter((entry) => entry.id !== Number(id));
-      clipboardListeners.forEach((listener) => listener());
-      return { ok: true, preview: true };
-    },
-    async showClipboardMenu() { return { ok: true, preview: true }; },
+    async copyClipboard() { return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" }; },
+    async deleteClipboard() { return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" }; },
+    async showClipboardMenu() { return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" }; },
     async openUrl(url) {
       window.open(url, "_blank", "noopener,noreferrer");
       usageListeners.forEach((listener) => listener());

@@ -350,27 +350,39 @@ function addBatch(payloads = []) {
   }
 }
 
-function search(query = "", limit = 12) {
+function search(query = "", limit = 12, kind = "all") {
   if (!db) return [];
   const keyword = String(query || "").trim();
   const normalizedKeyword = keyword.toLowerCase();
   const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
-  const cacheKey = `${normalizedKeyword}\u0000${safeLimit}`;
+  const safeKind = ["text", "image", "file"].includes(kind) ? kind : "all";
+  const cacheKey = `${normalizedKeyword}\u0000${safeLimit}\u0000${safeKind}`;
   if (searchCache.has(cacheKey)) return searchCache.get(cacheKey);
-  let result;
-  if (!keyword) {
-    result = rows("SELECT * FROM clipboard_records ORDER BY last_seen_at DESC LIMIT ?", [safeLimit]);
-  } else {
+  const candidateLimit = safeKind === "all" ? safeLimit : 250;
+  const conditions = [];
+  const parameters = [];
+  if (keyword) {
     const like = `%${keyword}%`;
     const imageKeyword = ["图片", "图像", "image"].includes(normalizedKeyword) ? keyword : "";
-    result = rows(
-      `SELECT * FROM clipboard_records
-       WHERE content LIKE ? OR source_name LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> '')
-       ORDER BY last_seen_at DESC LIMIT ?`,
-      [like, like, like, imageKeyword, safeLimit]
-    );
+    conditions.push("(content LIKE ? OR source_name LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> ''))");
+    parameters.push(like, like, like, imageKeyword);
   }
-  const publicRecords = result.map(toPublicRecord);
+  if (safeKind === "text") conditions.push("kind = 'text'");
+  if (safeKind === "image") conditions.push("kind IN ('image', 'file')");
+  if (safeKind === "file") conditions.push("kind = 'file'");
+  parameters.push(candidateLimit);
+  const result = rows(
+    `SELECT * FROM clipboard_records
+     ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
+     ORDER BY last_seen_at DESC LIMIT ?`,
+    parameters
+  );
+  const publicRecords = result.map(toPublicRecord).filter((record) => {
+    if (safeKind === "text") return record.kind === "text";
+    if (safeKind === "image") return record.kind === "image" || (record.kind === "file" && record.fileType === "image");
+    if (safeKind === "file") return record.kind === "file" && record.fileType !== "image";
+    return true;
+  }).slice(0, safeLimit);
   searchCache.set(cacheKey, publicRecords);
   if (searchCache.size > 32) searchCache.delete(searchCache.keys().next().value);
   return publicRecords;

@@ -290,6 +290,7 @@ function openLocal(action, usage) {
 }
 function choose(page) {
   if (page?.type === "clipboard") {
+    if (document.documentElement.dataset.weborgReadonly === "true") return;
     window.weborg?.copyClipboard(page.id);
     return;
   }
@@ -323,6 +324,7 @@ function setClipboardKind(kind) {
     item.setAttribute("aria-pressed", String(active));
   });
   render();
+  void refreshClipboard();
 }
 
 // 更新配置（主进程每次呼出都会推送）
@@ -334,7 +336,7 @@ document.addEventListener("keydown", (e) => {
   const m = matches();
   if (e.altKey && ["Backspace", "Delete"].includes(e.key)) {
     const selected = m[state.index];
-    if (selected?.type === "clipboard") {
+    if (selected?.type === "clipboard" && document.documentElement.dataset.weborgReadonly !== "true") {
       window.weborg?.showClipboardMenu(selected.id);
       e.preventDefault();
       return;
@@ -360,7 +362,7 @@ async function refreshClipboard() {
   if (state.scope === "web") return;
   const token = ++clipboardSearchToken;
   try {
-    const records = await window.weborg?.searchClipboard(state.query);
+    const records = await window.weborg?.searchClipboard(state.query, state.scope === "clipboard" ? state.clipboardKind : "all");
     if (token !== clipboardSearchToken) return;
     state.clipboardResults = records || [];
     render();
@@ -415,6 +417,7 @@ resultsEl.addEventListener("contextmenu", (e) => {
   const item = matches()[+row.dataset.i];
   if (item?.type !== "clipboard") return;
   e.preventDefault();
+  if (document.documentElement.dataset.weborgReadonly === "true") return;
   void window.weborg?.showClipboardMenu(item.id);
 });
 resultsEl.addEventListener("click", (e) => {
