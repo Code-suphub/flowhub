@@ -1,6 +1,6 @@
-# Web Organization Chrome Extension
+# FlowHub Chrome Extension
 
-Chrome Extension version of the Web Organization workspace.
+Chrome Extension version of the FlowHub workspace.
 
 ## Load Locally
 

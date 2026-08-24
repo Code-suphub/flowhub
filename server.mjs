@@ -220,5 +220,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`Iframe workspace running at ${serverOrigin}`);
+  console.log(`FlowHub web workspace running at ${serverOrigin}`);
 });

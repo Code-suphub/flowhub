@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Iframe Workspace</title>
+    <title>FlowHub</title>
     <style>
       :root {
         --pcolor: #0aa9db;
@@ -1383,7 +1383,7 @@
         <div class="brand">
           <div class="mark">IF</div>
           <div>
-            <h1 id="appTitle">Iframe 管理工作台</h1>
+            <h1 id="appTitle">FlowHub</h1>
             <div class="subtitle" id="appSubtitle">任意层级节点都可以配置为页面</div>
           </div>
         </div>
@@ -2079,7 +2079,7 @@
         pages = flatten(workspaceConfig);
         probeCache.clear();
         activeProbeToken += 1;
-        document.querySelector("#appTitle").textContent = appConfig.app?.title || "Iframe 管理工作台";
+        document.querySelector("#appTitle").textContent = appConfig.app?.title || "FlowHub";
         document.querySelector("#appSubtitle").textContent = appConfig.app?.subtitle || "配置驱动 iframe 工作台";
         if (preferredPageId && pages.some((page) => page.id === preferredPageId)) selectPage(preferredPageId);
         else syncInitialSelection();

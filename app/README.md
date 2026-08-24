@@ -1,4 +1,4 @@
-# Web Organization 桌面启动器
+# FlowHub 桌面启动器
 
 类 uTools 的桌面全局搜索框。不依赖浏览器扩展，作为独立桌面 App 运行：
 按 **Alt+Space** 呼出一个无边框置顶搜索浮窗，输入即可搜索目录/网页/备注，
@@ -72,7 +72,7 @@ npm run dev:web
 ## 冒烟测试（无 GUI 验证）
 
 ```bash
-WEBORG_SMOKE_TEST=1 npm start
+FLOWHUB_SMOKE_TEST=1 npm start
 ```
 
 主进程启动后自动退出，打印全局快捷键注册结果，用于 CI / 无图形环境验证。
@@ -80,7 +80,7 @@ WEBORG_SMOKE_TEST=1 npm start
 排查自动粘贴耗时时，可以开启分阶段日志：
 
 ```bash
-WEBORG_CLIPBOARD_PERF=1 npm start
+FLOWHUB_CLIPBOARD_PERF=1 npm start
 ```
 
 终端会输出记录查询、内容准备、系统剪切板写入、窗口隐藏、焦点交接和原生粘贴各阶段耗时，不会输出剪切板正文。

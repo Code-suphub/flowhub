@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "Iframe 管理工作台",
-    "subtitle": ""
+    "title": "FlowHub",
+    "subtitle": "网页、应用与剪切板的快捷中枢"
   },
   "probe": {
     "enabled": true,

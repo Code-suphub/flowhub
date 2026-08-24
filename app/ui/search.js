@@ -1,4 +1,4 @@
-// Web Organization 桌面启动器 - 渲染层逻辑
+// FlowHub 桌面启动器 - 渲染层逻辑
 const q = document.getElementById("q");
 const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");

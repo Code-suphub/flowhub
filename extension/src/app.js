@@ -232,7 +232,7 @@ function render() {
         <div class="brand">
           <div class="brand-mark">W</div>
           <div class="brand-title">
-            <strong>${escapeHtml(state.config?.app?.title || "Web Organization")}</strong>
+            <strong>${escapeHtml(state.config?.app?.title || "FlowHub")}</strong>
             <span>Chrome Extension · ${surface === "side" ? "Side Panel" : surface === "popup" ? "Popup" : "New Tab"}</span>
           </div>
         </div>

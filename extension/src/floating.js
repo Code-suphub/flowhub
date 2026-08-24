@@ -31,7 +31,7 @@
     const entry = { t: Date.now(), n: ++logSeq, level, message: String(message), extra };
     state.debug.push(entry);
     if (state.debug.length > 200) state.debug.shift();
-    try { console[level === "error" ? "error" : "log"](`[weborg] ${message}`, extra ?? ""); } catch {}
+    try { console[level === "error" ? "error" : "log"](`[flowhub] ${message}`, extra ?? ""); } catch {}
     if (debugConsoleVisible) renderDebugConsole();
   }
   // 暴露给页面，便于从原生 DevTools 直接查询
@@ -645,7 +645,7 @@
       <section class="panel">
         <header class="head">
           <div class="brand">
-            <strong>${escapeHtml(state.config?.app?.title || "Web Organization")}</strong>
+          <strong>${escapeHtml(state.config?.app?.title || "FlowHub")}</strong>
             <span>${escapeHtml(state.status || "悬浮导航 · 当前页打开")} · 最小化后${state.hoverMode === "hover" ? "悬停展开" : "点击展开"}</span>
           </div>
           <div class="head-actions">
@@ -712,7 +712,7 @@
     return `
       <aside class="debug-console">
         <div class="debug-head">
-          <strong>Web Organization · 调试控制台</strong>
+          <strong>FlowHub · 调试控制台</strong>
           <div class="debug-head-actions">
             <button class="debug-f12-toggle ${state.f12Hijack ? "on" : ""}" data-f12-toggle title="开启后按 F12 打开本调试面板；关闭后 F12 恢复为浏览器原生 DevTools">
               F12 劫持：${state.f12Hijack ? "开" : "关"}
@@ -1124,7 +1124,7 @@
     })
     .catch((error) => {
       state.status = error.message;
-      state.config = { app: { title: "Web Organization" }, items: [] };
+      state.config = { app: { title: "FlowHub" }, items: [] };
       logDebug("error", "配置加载失败", { reason: error.message });
       render();
     });

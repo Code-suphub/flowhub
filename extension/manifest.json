@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Web Organization",
+  "name": "FlowHub",
   "description": "Multi-surface navigation workspace for internal web systems.",
   "version": "0.1.0",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Web Organization"
+    "default_title": "FlowHub"
   },
   "chrome_url_overrides": {
     "newtab": "newtab.html"

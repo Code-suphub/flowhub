@@ -1,4 +1,4 @@
-// Web Organization 桌面启动器 - 主进程
+// FlowHub 桌面启动器 - 主进程
 // 类 uTools：Alt+空格 呼出全局搜索浮窗；搜索目录/网页/备注；回车用系统浏览器打开；
 // 可配置"打开本地应用/命令"。不依赖浏览器扩展。
 const { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, screen } = require("electron");
@@ -8,6 +8,10 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { fileURLToPath, pathToFileURL } = require("url");
 const clipboardStore = require("./clipboard-store");
+
+// 产品重命名后继续读取 Web Organization 的历史数据；新安装使用 FlowHub 默认目录。
+const LEGACY_USER_DATA_PATH = path.join(app.getPath("appData"), "Web Organization");
+if (fs.existsSync(LEGACY_USER_DATA_PATH)) app.setPath("userData", LEGACY_USER_DATA_PATH);
 
 const CONFIG_PATH = path.join(__dirname, "..", "config.json");
 
@@ -33,7 +37,7 @@ const clipboardFileIconCache = new Map();
 const applicationIconCache = new Map();
 let applicationIndexPromise = null;
 let blurHideTimer = null;
-const CLIPBOARD_PERF_ENABLED = process.env.WEBORG_CLIPBOARD_PERF === "1";
+const CLIPBOARD_PERF_ENABLED = process.env.FLOWHUB_CLIPBOARD_PERF === "1" || process.env.WEBORG_CLIPBOARD_PERF === "1";
 
 const MAC_NATIVE_PASTE_SCRIPT = [
   "ObjC.import('CoreGraphics');",
@@ -80,14 +84,14 @@ function prepareNativePasteHelper() {
       fs.mkdirSync(helperDirectory, { recursive: true });
       fs.writeFileSync(sourcePath, fs.readFileSync(MAC_NATIVE_PASTE_SOURCE, "utf8"), "utf8");
     } catch (error) {
-      console.warn("[weborg] 无法准备原生粘贴助手:", error.message);
+      console.warn("[flowhub] 无法准备原生粘贴助手:", error.message);
       resolve("");
       return;
     }
     execFile("swiftc", ["-O", sourcePath, "-o", tempHelperPath], { timeout: 15000 }, (error) => {
       if (error) {
         try { fs.unlinkSync(tempHelperPath); } catch {}
-        console.warn("[weborg] 编译原生粘贴助手失败，将使用系统兜底:", error.message);
+        console.warn("[flowhub] 编译原生粘贴助手失败，将使用系统兜底:", error.message);
         resolve("");
         return;
       }
@@ -95,7 +99,7 @@ function prepareNativePasteHelper() {
         fs.renameSync(tempHelperPath, helperPath);
         resolve(helperPath);
       } catch (renameError) {
-        console.warn("[weborg] 保存原生粘贴助手失败:", renameError.message);
+        console.warn("[flowhub] 保存原生粘贴助手失败:", renameError.message);
         resolve("");
       }
     });
@@ -108,8 +112,8 @@ function readConfig() {
     const raw = fs.readFileSync(CONFIG_PATH, "utf8");
     return JSON.parse(raw);
   } catch (e) {
-    console.error("[weborg] 读取配置失败:", e.message);
-    return { app: { title: "Web Organization" }, items: [] };
+    console.error("[flowhub] 读取配置失败:", e.message);
+    return { app: { title: "FlowHub" }, items: [] };
   }
 }
 
@@ -192,7 +196,7 @@ function clipboardPerfTimer(recordId) {
     finish(details = {}) {
       const total = Number(process.hrtime.bigint() - startedAt) / 1e6;
       const roundedStages = Object.fromEntries(Object.entries(stages).map(([name, milliseconds]) => [name, Number(milliseconds.toFixed(1))]));
-      console.log("[weborg][clipboard-perf]", JSON.stringify({
+      console.log("[flowhub][clipboard-perf]", JSON.stringify({
         id: Number(recordId),
         ...details,
         stages: roundedStages,
@@ -511,7 +515,7 @@ async function pollClipboard() {
       lastClipboardCleanupAt = now;
     }
   } catch (error) {
-    console.error("[weborg] 剪切板读取失败:", error.message);
+    console.error("[flowhub] 剪切板读取失败:", error.message);
   } finally {
     clipboardPollInFlight = false;
   }
@@ -646,7 +650,7 @@ function isDev() {
 }
 
 function loadRendererPage(browserWindow, pageName) {
-  const rendererUrl = String(process.env.WEBORG_RENDERER_URL || "").replace(/\/$/, "");
+  const rendererUrl = String(process.env.FLOWHUB_RENDERER_URL || process.env.WEBORG_RENDERER_URL || "").replace(/\/$/, "");
   if (isDev() && rendererUrl) {
     return browserWindow.loadURL(`${rendererUrl}/${pageName}`);
   }
@@ -716,7 +720,7 @@ function createSettingsWindow() {
     height: 720,
     minWidth: 820,
     minHeight: 600,
-    title: "Web Organization 配置管理",
+    title: "FlowHub 配置管理",
     backgroundColor: "#101820",
     show: false,
     webPreferences: {
@@ -766,7 +770,7 @@ app.whenReady().then(async () => {
     await clipboardStore.open(app.getPath("userData"));
     startClipboardMonitor();
   } catch (error) {
-    console.error("[weborg] 剪切板数据库初始化失败:", error.message);
+    console.error("[flowhub] 剪切板数据库初始化失败:", error.message);
   }
   void prepareNativePasteHelper();
   createWindow();
@@ -775,12 +779,12 @@ app.whenReady().then(async () => {
   // 全局快捷键：Alt+空格（系统级，不依赖浏览器）
   const ok = globalShortcut.register("Alt+Space", () => toggleWindow());
   if (!ok) {
-    console.warn("[weborg] 无法注册 Alt+Space（可能被系统/其它程序占用）。可在 app 设置中修改。");
+    console.warn("[flowhub] 无法注册 Alt+Space（可能被系统/其它程序占用）。可在 app 设置中修改。");
   }
 
   // 冒烟测试：设置该环境变量时，启动后立即退出，便于 CI/无 GUI 环境验证主进程能跑通。
-  if (process.env.WEBORG_SMOKE_TEST === "1") {
-    console.log("[weborg] smoke test: 主进程已就绪，Alt+Space 全局快捷键注册:", ok);
+  if (process.env.FLOWHUB_SMOKE_TEST === "1" || process.env.WEBORG_SMOKE_TEST === "1") {
+    console.log("[flowhub] smoke test: 主进程已就绪，Alt+Space 全局快捷键注册:", ok);
     setTimeout(() => app.quit(), 500);
   }
 
@@ -1024,7 +1028,7 @@ function sendPasteWithAppleScript() {
       'tell application "System Events" to keystroke "v" using command down'
     ], { timeout: 1500 }, (error) => {
       if (error) {
-        console.warn("[weborg] 自动粘贴失败，请在系统设置中允许 Web Organization 使用辅助功能:", error.message);
+        console.warn("[flowhub] 自动粘贴失败，请在系统设置中允许 FlowHub 使用辅助功能:", error.message);
         resolve({ ok: false, reason: error.message, transport: "applescript" });
         return;
       }

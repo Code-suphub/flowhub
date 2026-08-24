@@ -22,9 +22,9 @@ if (!window.weborg) {
       id: 9002,
       kind: "file",
       fileType: "folder",
-      fileNames: ["Web Organization"],
+      fileNames: ["FlowHub"],
       fileCount: 1,
-      content: "/Users/example/Projects/Web Organization",
+      content: "/Users/example/Projects/FlowHub",
       hash: "preview-file-9002-000000000000000000000000000000000000000000000",
       copyCount: 2,
       lastSeenAt: new Date(now - 240_000).toISOString()
@@ -57,7 +57,7 @@ if (!window.weborg) {
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取应用失败：${response.status}`);
       return result.applications || [];
     } catch (error) {
-      console.warn(`[weborg preview] ${error.message}，使用预览应用数据`);
+      console.warn(`[flowhub preview] ${error.message}，使用预览应用数据`);
       const keyword = String(query).trim().toLowerCase();
       return fallbackApplications
         .filter((application) => !keyword || `${application.title} ${application.hay}`.toLowerCase().includes(keyword))
@@ -149,7 +149,7 @@ if (!window.weborg) {
       return { ok: true, preview: true };
     },
     async openLocal(action) {
-      console.info(`[weborg preview] 浏览器不能启动本地应用：${action}`);
+      console.info(`[flowhub preview] 浏览器不能启动本地应用：${action}`);
       return { ok: false, preview: true, reason: "浏览器预览不能启动本地应用" };
     },
     async openSettings() {

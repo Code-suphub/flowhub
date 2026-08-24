@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Web Organization - 一键启动本地管理台
+# FlowHub - 一键启动本地管理台
 # 双击此文件（或执行 ./start.command）即可：
 #   1) 若 localhost:4173 尚未运行，则后台启动 node server.mjs
 #   2) 等待服务就绪后，用默认浏览器打开 http://localhost:4173/
@@ -14,7 +14,7 @@ cd "$(dirname "$0")" || exit 1
 PORT="${PORT:-4173}"
 URL="http://localhost:${PORT}"
 
-echo "== Web Organization 一键启动 =="
+echo "== FlowHub 一键启动 =="
 echo "服务端口: ${PORT}"
 echo
 
@@ -35,10 +35,10 @@ if is_running; then
   echo "[提示] 服务已在运行（${URL}），直接打开浏览器。"
 else
   echo "[启动] 启动 node server.mjs ..."
-  # 后台启动，日志写入 weborg-server.log
-  nohup node server.mjs > weborg-server.log 2>&1 &
+  # 后台启动，日志写入 flowhub-server.log
+  nohup node server.mjs > flowhub-server.log 2>&1 &
   SERVER_PID=$!
-  echo "      已启动，PID=${SERVER_PID}（日志见 weborg-server.log）"
+  echo "      已启动，PID=${SERVER_PID}（日志见 flowhub-server.log）"
 
   # 最多等 8 秒
   waited=0
@@ -46,7 +46,7 @@ else
     sleep 1
     waited=$((waited + 1))
     if [ "$waited" -ge 8 ]; then
-      echo "[错误] 服务启动超时。请检查 weborg-server.log 与 ${PORT} 端口占用。"
+      echo "[错误] 服务启动超时。请检查 flowhub-server.log 与 ${PORT} 端口占用。"
       read -r -p "按回车关闭窗口…" _
       exit 1
     fi
