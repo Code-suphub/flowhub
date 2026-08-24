@@ -113,7 +113,7 @@ function readConfig() {
     return JSON.parse(raw);
   } catch (e) {
     console.error("[flowhub] 读取配置失败:", e.message);
-    return { app: { title: "FlowHub" }, items: [] };
+    return { clipboard: { enabled: true, retentionDays: 30 }, items: [] };
   }
 }
 

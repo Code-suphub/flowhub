@@ -1,12 +1,4 @@
 {
-  "app": {
-    "title": "FlowHub",
-    "subtitle": "网页、应用与剪切板的快捷中枢"
-  },
-  "probe": {
-    "enabled": true,
-    "timeoutMs": 8000
-  },
   "clipboard": {
     "enabled": true,
     "retentionDays": 30

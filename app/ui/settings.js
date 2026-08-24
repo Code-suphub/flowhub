@@ -200,10 +200,7 @@ function renderSelected() {
   bindIconFallbacks();
 }
 
-function renderAppFields() {
-  $("#appTitle").value = state.config?.app?.title || "";
-  $("#appSubtitle").value = state.config?.app?.subtitle || "";
-  $("#probeEnabled").checked = state.config?.probe?.enabled !== false;
+function renderSettingsFields() {
   $("#clipboardRetentionDays").value = Number(state.config?.clipboard?.retentionDays ?? 30);
   $("#clipboardEnabled").checked = state.config?.clipboard?.enabled !== false;
   renderClipboardSummary();
@@ -247,7 +244,7 @@ function renderModule() {
 
 function render() {
   ensureSelection();
-  renderAppFields();
+  renderSettingsFields();
   renderTree();
   renderSelected();
   syncJson();
@@ -431,10 +428,7 @@ document.addEventListener("input", (event) => {
   }
   const configField = event.target.dataset.configField;
   if (configField) {
-    if (configField === "probeEnabled") {
-      state.config.probe ||= {};
-      state.config.probe.enabled = event.target.checked;
-    } else if (configField === "clipboardEnabled") {
+    if (configField === "clipboardEnabled") {
       state.config.clipboard ||= {};
       state.config.clipboard.enabled = event.target.checked;
     } else if (configField === "clipboardRetentionDays") {
@@ -442,8 +436,7 @@ document.addEventListener("input", (event) => {
       const days = Number(event.target.value);
       state.config.clipboard.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
     } else {
-      state.config.app ||= {};
-      state.config.app[configField] = event.target.value;
+      return;
     }
     markDirty();
     renderClipboardSummary();
