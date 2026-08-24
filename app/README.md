@@ -36,6 +36,28 @@ npm start
 - `Esc` 关闭浮窗
 - 点击搜索框右上角的 `⚙` 打开配置管理
 
+## 浏览器预览与热更新
+
+调整搜索浮窗或配置管理界面时，使用 Vite 开发模式：
+
+```bash
+cd app
+npm run dev
+```
+
+该命令会同时启动 Electron 和渲染层开发服务器。浏览器也可以直接访问：
+
+- 搜索浮窗：`http://127.0.0.1:5173/search.html`
+- 配置管理：`http://127.0.0.1:5173/settings.html`
+
+HTML、CSS 和渲染层 JavaScript 修改后会自动刷新，Electron 开发窗口与浏览器预览共用同一份页面。浏览器模式会读取真实的 `config.json`，剪切板和本地应用使用固定预览数据；全局快捷键、系统剪切板、自动粘贴和启动应用等原生能力仍需在 Electron 中验证。
+
+只需要浏览器预览、不启动 Electron 时：
+
+```bash
+npm run dev:web
+```
+
 ## 自定义
 
 - **导航配置**：可以在 app 的配置管理中编辑，也可以继续编辑项目根 `config.json`。

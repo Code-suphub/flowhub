@@ -645,6 +645,14 @@ function isDev() {
   return process.argv.includes("--dev");
 }
 
+function loadRendererPage(browserWindow, pageName) {
+  const rendererUrl = String(process.env.WEBORG_RENDERER_URL || "").replace(/\/$/, "");
+  if (isDev() && rendererUrl) {
+    return browserWindow.loadURL(`${rendererUrl}/${pageName}`);
+  }
+  return browserWindow.loadFile(path.join(__dirname, "ui", pageName));
+}
+
 // 构建搜索窗（无边框、置顶、不抢焦点的浮层）
 function createWindow() {
   const cursorPoint = screen.getCursorScreenPoint();
@@ -677,7 +685,7 @@ function createWindow() {
     win.setAlwaysOnTop(true, "pop-up-menu");
   }
 
-  win.loadFile(path.join(__dirname, "ui", "search.html"));
+  loadRendererPage(win, "search.html");
   win.hide();
   win.on("closed", () => {
     if (blurHideTimer) clearTimeout(blurHideTimer);
@@ -718,7 +726,7 @@ function createSettingsWindow() {
     }
   });
 
-  settingsWin.loadFile(path.join(__dirname, "ui", "settings.html"));
+  loadRendererPage(settingsWin, "settings.html");
   settingsWin.on("closed", () => { settingsWin = null; });
   return settingsWin;
 }
