@@ -8,11 +8,14 @@ const scopeOrder = ["all", "web", "clipboard", "app"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set() };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let usageSearchToken = 0;
 let clipboardSearchTimer = null;
+let scopeTabHeld = false;
+let scopeTabUsedWithArrow = false;
+let scopeTabTapOffset = 1;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -132,6 +135,54 @@ function matches() {
   const appResults = state.query.trim() ? apps.slice(0, 4) : [];
   const regularLimit = appResults.length ? 4 : 6;
   return [...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
+}
+
+function usageIndices(items, section) {
+  return items.reduce((indices, item, index) => {
+    if (item.usageSection === section) indices.push(index);
+    return indices;
+  }, []);
+}
+
+function usagePosition(items, index = state.index) {
+  const section = items[index]?.usageSection;
+  if (!section) return null;
+  const indices = usageIndices(items, section);
+  return { section, indices, column: Math.max(0, indices.indexOf(index)) };
+}
+
+function moveUsageHorizontal(items, offset) {
+  const position = usagePosition(items);
+  if (!position) return false;
+  const column = Math.max(0, Math.min(position.indices.length - 1, position.column + offset));
+  state.usageColumn = column;
+  state.index = position.indices[column];
+  return true;
+}
+
+function moveVertical(items, offset) {
+  if (!items.length) return;
+  const sections = ["frequent", "recent"].filter((section) => usageIndices(items, section).length);
+  const position = usagePosition(items);
+  const firstRegular = items.findIndex((item) => !item.usageSection);
+  if (position) {
+    state.usageColumn = position.column;
+    const sectionIndex = sections.indexOf(position.section);
+    const targetSection = sections[sectionIndex + offset];
+    if (targetSection) {
+      const targetIndices = usageIndices(items, targetSection);
+      state.index = targetIndices[Math.min(state.usageColumn, targetIndices.length - 1)];
+    } else if (offset > 0 && firstRegular >= 0) {
+      state.index = firstRegular;
+    }
+    return;
+  }
+  if (offset < 0 && state.index === firstRegular && sections.length) {
+    const targetIndices = usageIndices(items, sections.at(-1));
+    state.index = targetIndices[Math.min(state.usageColumn, targetIndices.length - 1)];
+    return;
+  }
+  state.index = Math.max(0, Math.min(items.length - 1, state.index + offset));
 }
 
 function isExpandableClipboard(item) {
@@ -328,6 +379,12 @@ function setScope(scope) {
   void refreshClipboard();
   void refreshApps();
   void refreshUsage();
+  q?.focus({ preventScroll: true });
+}
+
+function moveScope(offset) {
+  const current = Math.max(0, scopeOrder.indexOf(state.scope));
+  setScope(scopeOrder[(current + offset + scopeOrder.length) % scopeOrder.length]);
 }
 
 function setClipboardKind(kind) {
@@ -342,6 +399,7 @@ function setClipboardKind(kind) {
   });
   render();
   void refreshClipboard();
+  q?.focus({ preventScroll: true });
 }
 
 // 更新配置（主进程每次呼出都会推送）
@@ -349,6 +407,22 @@ window.weborg.onConfig((cfg) => { setConfig(cfg); render(); });
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); window.close(); }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    if (!scopeTabHeld) {
+      scopeTabHeld = true;
+      scopeTabUsedWithArrow = false;
+      scopeTabTapOffset = e.shiftKey ? -1 : 1;
+    }
+    q?.focus({ preventScroll: true });
+    return;
+  }
+  if (scopeTabHeld && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    scopeTabUsedWithArrow = true;
+    moveScope(e.key === "ArrowRight" ? 1 : -1);
+    e.preventDefault();
+    return;
+  }
   if (document.activeElement !== q) return;
   const m = matches();
   if (e.altKey && ["Backspace", "Delete"].includes(e.key)) {
@@ -359,20 +433,29 @@ document.addEventListener("keydown", (e) => {
       return;
     }
   }
-  if (e.key === "ArrowDown") { state.index = Math.min(state.index + 1, Math.max(0, m.length - 1)); render(); e.preventDefault(); }
-  else if (e.key === "ArrowUp") { state.index = Math.max(state.index - 1, 0); render(); e.preventDefault(); }
+  if (e.key === "ArrowDown") { moveVertical(m, 1); render(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { moveVertical(m, -1); render(); e.preventDefault(); }
   else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-    const atStart = q.selectionStart === 0 && q.selectionEnd === 0;
-    const atEnd = q.selectionStart === q.value.length && q.selectionEnd === q.value.length;
-    const canSwitch = !q.value || (e.key === "ArrowLeft" ? atStart : atEnd);
-    if (!canSwitch) return;
-    const current = scopeOrder.indexOf(state.scope);
-    const offset = e.key === "ArrowRight" ? 1 : -1;
-    const next = (current + offset + scopeOrder.length) % scopeOrder.length;
-    setScope(scopeOrder[next]);
-    e.preventDefault();
+    if (moveUsageHorizontal(m, e.key === "ArrowRight" ? 1 : -1)) {
+      render();
+      e.preventDefault();
+    }
   }
   else if (e.key === "Enter") { const p = m[state.index]; if (p) choose(p); }
+});
+
+document.addEventListener("keyup", (e) => {
+  if (e.key !== "Tab" || !scopeTabHeld) return;
+  e.preventDefault();
+  if (!scopeTabUsedWithArrow) moveScope(scopeTabTapOffset);
+  scopeTabHeld = false;
+  scopeTabUsedWithArrow = false;
+  q?.focus({ preventScroll: true });
+});
+
+window.addEventListener("blur", () => {
+  scopeTabHeld = false;
+  scopeTabUsedWithArrow = false;
 });
 
 async function refreshClipboard({ append = false } = {}) {
@@ -469,7 +552,7 @@ resultsEl.addEventListener("click", (e) => {
   const row = e.target.closest(".result");
   if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
 });
-resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { state.index = i; render(); } } });
+resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { const position = usagePosition(matches(), i); if (position) state.usageColumn = position.column; state.index = i; render(); } } });
 
 function focusSearch() { q?.focus(); q?.select(); }
 window.focusSearch = focusSearch;
