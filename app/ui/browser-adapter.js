@@ -1,5 +1,6 @@
 // 普通浏览器没有 Electron preload。这里提供只用于界面开发的兼容层：
-// 导航配置来自真实 config.json，剪切板和应用列表使用不含用户数据的预览内容。
+// 导航配置来自真实 config.json，应用列表来自仅绑定本机的开发接口，
+// 剪切板仍使用不含用户数据的预览内容。
 if (!window.weborg) {
   document.documentElement.dataset.weborgRuntime = "browser";
   document.documentElement.dataset.weborgPage = location.pathname.includes("settings") ? "settings" : "search";
@@ -42,12 +43,27 @@ if (!window.weborg) {
     }
   ];
 
-  const previewApplications = [
+  const fallbackApplications = [
     { title: "Safari", path: "/Applications/Safari.app", hay: "safari browser 浏览器" },
     { title: "Terminal", path: "/System/Applications/Utilities/Terminal.app", hay: "terminal 终端" },
     { title: "Finder", path: "/System/Library/CoreServices/Finder.app", hay: "finder 文件管理" },
     { title: "DataGrip", path: "/Applications/DataGrip.app", hay: "datagrip database 数据库" }
   ];
+
+  async function getApplications(query = "", limit = 12) {
+    try {
+      const response = await fetch(`/__weborg/apps?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.reason || `读取应用失败：${response.status}`);
+      return result.applications || [];
+    } catch (error) {
+      console.warn(`[weborg preview] ${error.message}，使用预览应用数据`);
+      const keyword = String(query).trim().toLowerCase();
+      return fallbackApplications
+        .filter((application) => !keyword || `${application.title} ${application.hay}`.toLowerCase().includes(keyword))
+        .slice(0, limit);
+    }
+  }
 
   let configPromise;
   function getConfig() {
@@ -69,7 +85,11 @@ if (!window.weborg) {
   }
 
   async function usageSections(scope = "all") {
-    const config = await getConfig();
+    const [config, frequentApplications, recentApplications] = await Promise.all([
+      getConfig(),
+      getApplications("QQ", 1),
+      getApplications("DataGrip", 1)
+    ]);
     const pages = flattenPages(config.items || []);
     const appEntry = (application) => ({
       ...application,
@@ -82,8 +102,10 @@ if (!window.weborg) {
       usageKey: page.id,
       breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
     });
-    const frequent = [appEntry(previewApplications[0]), pages[0] && pageEntry(pages[0])].filter(Boolean);
-    const recent = [appEntry(previewApplications[3]), pages[1] && pageEntry(pages[1])].filter(Boolean);
+    const frequentApplication = frequentApplications[0] || fallbackApplications[0];
+    const recentApplication = recentApplications[0] || fallbackApplications[3];
+    const frequent = [frequentApplication && appEntry(frequentApplication), pages[0] && pageEntry(pages[0])].filter(Boolean);
+    const recent = [recentApplication && appEntry(recentApplication), pages[1] && pageEntry(pages[1])].filter(Boolean);
     const allowed = (item) => scope === "all" || (scope === "app" ? item.type === "app" : scope === "web" ? item.type === "page" : false);
     return { frequent: frequent.filter(allowed), recent: recent.filter(allowed) };
   }
@@ -107,8 +129,7 @@ if (!window.weborg) {
       return previewClipboard.filter((record) => !keyword || [record.content, ...(record.fileNames || [])].join(" ").toLowerCase().includes(keyword));
     },
     async searchApps(query = "") {
-      const keyword = String(query).trim().toLowerCase();
-      return previewApplications.filter((application) => !keyword || `${application.title} ${application.hay}`.toLowerCase().includes(keyword));
+      return getApplications(query, 12);
     },
     searchUsage: usageSections,
     async copyClipboard(id) {

@@ -50,7 +50,7 @@ npm run dev
 - 搜索浮窗：`http://127.0.0.1:5173/search.html`
 - 配置管理：`http://127.0.0.1:5173/settings.html`
 
-HTML、CSS 和渲染层 JavaScript 修改后会自动刷新，Electron 开发窗口与浏览器预览共用同一份页面。浏览器模式会读取真实的 `config.json`，剪切板和本地应用使用固定预览数据；全局快捷键、系统剪切板、自动粘贴和启动应用等原生能力仍需在 Electron 中验证。
+HTML、CSS 和渲染层 JavaScript 修改后会自动刷新，Electron 开发窗口与浏览器预览共用同一份页面。浏览器模式会读取真实的 `config.json`，并通过仅绑定 `127.0.0.1` 的开发接口扫描本机应用、提取 macOS 原生图标；剪切板仍使用固定预览数据。全局快捷键、系统剪切板、自动粘贴和启动应用等原生能力仍需在 Electron 中验证。
 
 只需要浏览器预览、不启动 Electron 时：
 
