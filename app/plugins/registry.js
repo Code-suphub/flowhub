@@ -64,7 +64,7 @@ class PluginRegistry {
           if (typeof runtime.stop === "function") runtime.stop();
           this.started.delete(manifest.id);
         }
-        if (shouldRun && typeof runtime.configure === "function") runtime.configure(this.config);
+        if (shouldRun && typeof runtime.configure === "function") await runtime.configure(this.config);
       } catch (error) {
         failures.push({ id: manifest.id, reason: error.message });
       }

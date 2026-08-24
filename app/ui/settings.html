@@ -181,6 +181,7 @@
       .overview-card span { color: var(--faint); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
       .overview-card strong { color: var(--ink); font-size: 20px; letter-spacing: -.03em; }
       .overview-card small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+      #clipboardStorageSummary { overflow-wrap: anywhere; }
       .clipboard-settings-card { padding: 21px; }
       .clipboard-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
       .settings-block {
@@ -190,6 +191,10 @@
       .settings-block.wide { grid-column: 1 / -1; min-height: 0; }
       .settings-block-title { color: var(--ink); font-size: 12px; font-weight: 700; }
       .settings-block .permission-row { margin-top: 2px; }
+      .storage-path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+      .storage-path-row input { min-width: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+      .storage-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+      .storage-actions .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
       .empty-editor { padding: 50px 20px; border: 1px dashed rgba(166, 208, 202, .22); border-radius: 15px; color: var(--muted); text-align: center; line-height: 1.7; }
       .empty-editor strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 15px; }
       .json-panel { display: grid; gap: 12px; }
@@ -263,7 +268,7 @@
               <strong>本机剪切板历史</strong>
               <span>记录文本、图片与文件，支持搜索、去重和快速粘贴。</span>
             </div>
-            <p class="side-note">历史记录保存在 Electron 用户数据目录，不会写入网页目录配置。</p>
+            <p class="side-note">历史记录默认保存在 Electron 用户数据目录，也可以在右侧改为独立目录。</p>
           </div>
 
           <div class="module-panel hidden" data-module-panel="app">
@@ -343,7 +348,7 @@
             <div class="clipboard-overview">
               <article class="overview-card"><span>记录状态</span><strong id="clipboardStatusValue">正在记录</strong><small>监听文本、图片和文件变化</small></article>
               <article class="overview-card"><span>留存时间</span><strong id="clipboardRetentionValue">30 天</strong><small>到期记录会在后台自动清理</small></article>
-              <article class="overview-card"><span>数据位置</span><strong>本机</strong><small>SQLite 与图片文件保存在用户数据目录</small></article>
+              <article class="overview-card"><span>数据位置</span><strong id="clipboardStorageMode">默认目录</strong><small id="clipboardStorageSummary">SQLite 与图片文件保存在用户数据目录</small></article>
             </div>
 
             <section class="selected-card clipboard-settings-card" id="clipboardSettings">
@@ -355,6 +360,15 @@
                 <div class="settings-block">
                   <div class="settings-block-title">历史留存</div>
                   <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">超过时间的记录会自动清理；填写 0 表示永久保留。</div></div>
+                </div>
+                <div class="settings-block">
+                  <div class="settings-block-title">记录存放位置</div>
+                  <div class="field">
+                    <label for="clipboardStoragePath">SQLite 数据库与图片目录</label>
+                    <div class="storage-path-row"><input id="clipboardStoragePath" readonly /><button class="button" type="button" data-action="choose-clipboard-storage">选择…</button></div>
+                    <div class="storage-actions"><button class="button" type="button" data-action="open-clipboard-storage">在 Finder 中打开</button><button class="button" type="button" data-action="reset-clipboard-storage">恢复默认</button></div>
+                    <div class="field-hint" id="clipboardStorageHint">保存配置后切换位置；现有记录会安全复制到新的空目录。</div>
+                  </div>
                 </div>
                 <div class="settings-block wide">
                   <div class="permission-row">

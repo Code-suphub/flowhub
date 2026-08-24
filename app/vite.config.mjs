@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import { execFile } from "node:child_process";
 import { access, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
@@ -68,17 +68,23 @@ function applications() {
   return applicationsPromise;
 }
 
-function clipboardDatabaseCandidates() {
+async function clipboardDatabaseCandidates() {
   const applicationSupport = join(homedir(), "Library", "Application Support");
+  let configuredPath = "";
+  try {
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
+  } catch {}
   return [
+    configuredPath && join(configuredPath, "weborg.db"),
     join(applicationSupport, "Web Organization", "clipboard", "weborg.db"),
     join(applicationSupport, "FlowHub", "clipboard", "weborg.db"),
     join(applicationSupport, "Electron", "clipboard", "weborg.db")
-  ];
+  ].filter(Boolean);
 }
 
 async function clipboardDatabasePath() {
-  for (const candidate of clipboardDatabaseCandidates()) {
+  for (const candidate of await clipboardDatabaseCandidates()) {
     try {
       await access(candidate);
       return candidate;
@@ -237,6 +243,9 @@ function validateConfig(config) {
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
+  const storagePath = config.plugins.clipboard?.settings?.storagePath;
+  if (storagePath !== undefined && typeof storagePath !== "string") throw new Error("剪切板存放位置必须是字符串");
+  if (String(storagePath || "").trim() && !isAbsolute(storagePath.trim())) throw new Error("剪切板存放位置必须是绝对路径");
   const ids = new Set();
   const visit = (nodes) => {
     for (const node of nodes) {
@@ -278,6 +287,10 @@ function localConfigApi() {
           }
           if (request.method === "POST") {
             const config = validateConfig(JSON.parse(await requestBody(request)));
+            const currentConfig = JSON.parse(await readFile(configPath, "utf8"));
+            const currentStoragePath = String(currentConfig.plugins?.clipboard?.settings?.storagePath || "").trim();
+            const nextStoragePath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
+            if (currentStoragePath !== nextStoragePath) throw new Error("请在 Electron App 中修改剪切板存放位置");
             const temporaryPath = `${configPath}.vite-${process.pid}`;
             await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
             await rename(temporaryPath, configPath);

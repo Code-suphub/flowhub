@@ -750,7 +750,8 @@
     "clipboard": {
       "enabled": true,
       "settings": {
-        "retentionDays": 30
+        "retentionDays": 30,
+        "storagePath": ""
       }
     },
     "app": {

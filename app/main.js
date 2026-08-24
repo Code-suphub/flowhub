@@ -116,7 +116,7 @@ function readConfig() {
     return JSON.parse(raw);
   } catch (e) {
     console.error("[flowhub] 读取配置失败:", e.message);
-    return { core: { hotkey: "Alt+Space", launchAtLogin: false }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30 } }, app: { enabled: true, settings: {} }, memo: { enabled: false, settings: {} } } };
+    return { core: { hotkey: "Alt+Space", launchAtLogin: false }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: false, settings: {} } } };
   }
 }
 
@@ -128,6 +128,9 @@ function validateConfig(config) {
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
+  const storagePath = config.plugins.clipboard?.settings?.storagePath;
+  if (storagePath !== undefined && typeof storagePath !== "string") throw new Error("剪切板存放位置必须是字符串");
+  if (String(storagePath || "").trim() && !path.isAbsolute(storagePath.trim())) throw new Error("剪切板存放位置必须是绝对路径");
 
   const ids = new Set();
   function visit(nodes) {
@@ -161,6 +164,63 @@ function writeConfig(config) {
   fs.renameSync(tempPath, CONFIG_PATH);
   clipboardSettingsCache = null;
   clipboardSettingsMtime = 0;
+}
+
+function defaultClipboardStoragePath() {
+  return path.join(app.getPath("userData"), "clipboard");
+}
+
+function resolveClipboardStoragePath(config = readConfig()) {
+  const configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
+  return configuredPath ? path.resolve(configuredPath) : defaultClipboardStoragePath();
+}
+
+function clipboardStorageInfo(config = readConfig()) {
+  const configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
+  return {
+    available: true,
+    configuredPath,
+    defaultPath: defaultClipboardStoragePath(),
+    resolvedPath: resolveClipboardStoragePath(config),
+    activePath: clipboardStore.storagePath() || ""
+  };
+}
+
+async function switchClipboardStorage(config) {
+  const targetPath = resolveClipboardStoragePath(config);
+  const currentPath = clipboardStore.storagePath();
+  if (!currentPath || path.resolve(currentPath) === targetPath) return { ...clipboardStorageInfo(config), migrated: false };
+  const currentResolved = path.resolve(currentPath);
+  if (targetPath.startsWith(`${currentResolved}${path.sep}`) || currentResolved.startsWith(`${targetPath}${path.sep}`)) {
+    throw new Error("新的存放位置不能与当前数据目录互相嵌套");
+  }
+
+  const shouldRestartMonitor = Boolean(clipboardTimer);
+  stopClipboardMonitor();
+  clipboardStore.close();
+  let migrated = false;
+  try {
+    fs.mkdirSync(targetPath, { recursive: true });
+    const targetEntries = fs.readdirSync(targetPath);
+    const targetDatabase = path.join(targetPath, "weborg.db");
+    if (targetEntries.length && !fs.existsSync(targetDatabase)) {
+      throw new Error("所选目录不是空目录，也不包含 FlowHub 数据库");
+    }
+    if (!targetEntries.length && fs.existsSync(currentResolved)) {
+      for (const entry of fs.readdirSync(currentResolved)) {
+        fs.cpSync(path.join(currentResolved, entry), path.join(targetPath, entry), { recursive: true, errorOnExist: true, force: false });
+      }
+      migrated = true;
+    }
+    await clipboardStore.open(targetPath);
+    resetClipboardSnapshot();
+  } catch (error) {
+    try { await clipboardStore.open(currentResolved); } catch {}
+    if (shouldRestartMonitor) startClipboardMonitor();
+    throw error;
+  }
+  if (shouldRestartMonitor) startClipboardMonitor();
+  return { ...clipboardStorageInfo(config), activePath: targetPath, migrated };
 }
 
 function clipboardSettings() {
@@ -810,7 +870,7 @@ app.whenReady().then(async () => {
   try {
     // 使用记录和剪切板历史目前共用同一个 SQLite。数据库属于 App 核心数据服务，
     // 因此即使剪切板插件停用，常用入口与最近使用仍然可以正常工作。
-    await clipboardStore.open(app.getPath("userData"));
+    await clipboardStore.open(resolveClipboardStoragePath(config));
   } catch (error) {
     console.error("[flowhub] 共享数据存储初始化失败:", error.message);
   }
@@ -857,8 +917,36 @@ ipcMain.handle("weborg:open-accessibility-settings", async () => {
   }
 });
 
+ipcMain.handle("weborg:get-clipboard-storage-info", () => clipboardStorageInfo());
+
+ipcMain.handle("weborg:choose-clipboard-storage", async () => {
+  const options = {
+    title: "选择 FlowHub 数据存放目录",
+    defaultPath: resolveClipboardStoragePath(),
+    buttonLabel: "选择此目录",
+    properties: ["openDirectory", "createDirectory"]
+  };
+  const owner = settingsWin && !settingsWin.isDestroyed() ? settingsWin : win && !win.isDestroyed() ? win : null;
+  const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+  if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+  return { ok: true, path: path.resolve(result.filePaths[0]) };
+});
+
+ipcMain.handle("weborg:open-clipboard-storage", async () => {
+  const storagePath = resolveClipboardStoragePath();
+  try {
+    fs.mkdirSync(storagePath, { recursive: true });
+    const reason = await shell.openPath(storagePath);
+    return reason ? { ok: false, reason } : { ok: true, path: storagePath };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+});
+
 ipcMain.handle("weborg:save-config", async (event, config) => {
   try {
+    validateConfig(config);
+    const storageState = await switchClipboardStorage(config);
     writeConfig(config);
     const savedConfig = readConfig();
     const failures = await pluginRegistry.applyConfig(savedConfig, { app });
@@ -867,7 +955,7 @@ ipcMain.handle("weborg:save-config", async (event, config) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
     }
-    return { ok: true, config: savedConfig, pluginFailures: failures, coreState };
+    return { ok: true, config: savedConfig, pluginFailures: failures, coreState, storageState };
   } catch (error) {
     return { ok: false, reason: error.message };
   }

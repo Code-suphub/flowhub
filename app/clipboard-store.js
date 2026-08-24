@@ -154,8 +154,8 @@ function toPublicUsageRecord(row, now = Date.now()) {
   };
 }
 
-async function open(baseDir) {
-  dataDir = path.join(baseDir, "clipboard");
+async function open(storageDirectory) {
+  dataDir = path.resolve(storageDirectory);
   imageDir = path.join(dataDir, "images");
   dbPath = path.join(dataDir, "weborg.db");
   fs.mkdirSync(imageDir, { recursive: true });
@@ -219,6 +219,10 @@ async function open(baseDir) {
 
 function isReady() {
   return Boolean(db);
+}
+
+function storagePath() {
+  return dataDir;
 }
 
 function invalidateSearchCache() {
@@ -539,5 +543,6 @@ module.exports = {
   recordUsage,
   remove,
   search,
+  storagePath,
   usageSections
 };

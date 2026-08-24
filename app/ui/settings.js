@@ -1,6 +1,7 @@
 const state = {
   config: null,
   plugins: [],
+  clipboardStorage: null,
   selectedId: "",
   mode: "structure",
   module: "core",
@@ -216,7 +217,19 @@ function renderSettingsFields() {
   $("#coreHotkey").value = state.config?.core?.hotkey || "Alt+Space";
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
+  renderClipboardStorage();
   renderClipboardSummary();
+}
+
+function renderClipboardStorage() {
+  const configuredPath = String(pluginConfig("clipboard")?.settings?.storagePath || "").trim();
+  const resolvedPath = configuredPath || state.clipboardStorage?.defaultPath || state.clipboardStorage?.resolvedPath || "Electron 用户数据目录/clipboard";
+  $("#clipboardStoragePath").value = resolvedPath;
+  $("#clipboardStorageMode").textContent = configuredPath ? "自定义目录" : "默认目录";
+  $("#clipboardStorageSummary").textContent = resolvedPath;
+  $("#clipboardStorageHint").textContent = state.clipboardStorage?.available === false
+    ? "浏览器仅用于预览，请在 Electron App 中选择或打开目录。"
+    : "保存配置后切换位置；现有记录会安全复制到新的空目录。";
 }
 
 function renderClipboardSummary() {
@@ -348,7 +361,7 @@ async function save() {
     const result = await window.weborg.saveConfig(state.config);
     if (!result?.ok) throw new Error(result?.reason || "保存失败");
     state.config = result.config || state.config;
-    state.plugins = await window.weborg.listPlugins();
+    [state.plugins, state.clipboardStorage] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo()]);
     state.dirty = false;
     render();
     toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 个插件启动失败` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
@@ -360,7 +373,7 @@ async function save() {
 async function reload() {
   if (state.dirty && !window.confirm("当前有未保存修改，确定重新读取并丢弃这些修改吗？")) return;
   try {
-    [state.plugins, state.config] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig()]);
+    [state.plugins, state.config, state.clipboardStorage] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo()]);
     normalizeConfig(state.config);
     state.dirty = false;
     render();
@@ -375,6 +388,37 @@ async function openAccessibilitySettings() {
   if (!result?.ok) toast(result?.reason || "无法打开系统设置", true);
 }
 
+async function chooseClipboardStorage() {
+  const result = await window.weborg.chooseClipboardStorage();
+  if (!result?.ok) {
+    if (!result?.canceled) toast(result?.reason || "无法选择存放目录", true);
+    return;
+  }
+  const clipboard = pluginConfig("clipboard");
+  clipboard.settings ||= {};
+  clipboard.settings.storagePath = result.path;
+  state.clipboardStorage = { ...(state.clipboardStorage || {}), resolvedPath: result.path };
+  markDirty("存放位置将在保存后切换");
+  renderClipboardStorage();
+}
+
+async function openClipboardStorage() {
+  if (state.dirty && String(pluginConfig("clipboard")?.settings?.storagePath || "").trim() !== String(state.clipboardStorage?.configuredPath || "").trim()) {
+    toast("请先保存新的存放位置，再打开目录");
+    return;
+  }
+  const result = await window.weborg.openClipboardStorage();
+  if (!result?.ok) toast(result?.reason || "无法打开存放目录", true);
+}
+
+function resetClipboardStorage() {
+  const clipboard = pluginConfig("clipboard");
+  clipboard.settings ||= {};
+  clipboard.settings.storagePath = "";
+  markDirty("保存后将恢复默认存放位置");
+  renderClipboardStorage();
+}
+
 function handleAction(action) {
   if (action === "add-root") return addRoot();
   if (action === "expand-all") { expandAll(); return renderTree(); }
@@ -387,6 +431,9 @@ function handleAction(action) {
   if (action === "save") return save();
   if (action === "reload") return reload();
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
+  if (action === "choose-clipboard-storage") return chooseClipboardStorage();
+  if (action === "open-clipboard-storage") return openClipboardStorage();
+  if (action === "reset-clipboard-storage") return resetClipboardStorage();
   if (action === "close") return window.close();
   if (action === "format-json") {
     try { $("#jsonEditor").value = JSON.stringify(readJsonEditor(), null, 2); toast("JSON 已格式化"); }
@@ -507,9 +554,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") window.close();
 });
 
-Promise.all([window.weborg.listPlugins(), window.weborg.getConfig()]).then(([plugins, config]) => {
+Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo()]).then(([plugins, config, clipboardStorage]) => {
   state.plugins = plugins || [];
   state.config = clone(normalizeConfig(config));
+  state.clipboardStorage = clipboardStorage;
   expandAll();
   render();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));
