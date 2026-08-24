@@ -6,14 +6,10 @@ contextBridge.exposeInMainWorld("weborg", {
   openSettings: () => ipcRenderer.invoke("weborg:open-settings"),
   openAccessibilitySettings: () => ipcRenderer.invoke("weborg:open-accessibility-settings"),
   saveConfig: (config) => ipcRenderer.invoke("weborg:save-config", config),
-  searchApps: (query) => ipcRenderer.invoke("weborg:search-apps", query || ""),
+  listPlugins: () => ipcRenderer.invoke("weborg:list-plugins"),
+  pluginSearch: (id, request) => ipcRenderer.invoke("weborg:plugin-search", id, request || {}),
+  pluginAction: (id, action, payload) => ipcRenderer.invoke("weborg:plugin-action", id, action, payload || {}),
   searchUsage: (scope) => ipcRenderer.invoke("weborg:search-usage", scope || "all"),
-  searchClipboard: (query, kind, limit, offset) => ipcRenderer.invoke("weborg:search-clipboard", query || "", kind || "all", limit || 30, offset || 0),
-  copyClipboard: (id) => ipcRenderer.invoke("weborg:copy-clipboard", id),
-  showClipboardMenu: (id) => ipcRenderer.invoke("weborg:show-clipboard-menu", id),
-  deleteClipboard: (id) => ipcRenderer.invoke("weborg:delete-clipboard", id),
-  openUrl: (url, usage) => ipcRenderer.invoke("weborg:open-url", url, usage || {}),
-  openLocal: (action, usage) => ipcRenderer.invoke("weborg:open-local", action, usage || {}),
   onConfig: (cb) => {
     ipcRenderer.on("weborg:config", (e, cfg, query) => cb(cfg, query));
   },

@@ -8,6 +8,8 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { fileURLToPath, pathToFileURL } = require("url");
 const clipboardStore = require("./clipboard-store");
+const { PluginRegistry } = require("./plugins/registry");
+const pluginRegistry = new PluginRegistry();
 
 // 产品重命名后继续读取 Web Organization 的历史数据；新安装使用 FlowHub 默认目录。
 const LEGACY_USER_DATA_PATH = path.join(app.getPath("appData"), "Web Organization");
@@ -631,6 +633,26 @@ async function searchApplications(query = "", limit = 12) {
   return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
 }
 
+function flattenWebPages(nodes = [], parents = [], result = []) {
+  for (const node of nodes) {
+    const pathEntries = [...parents, { id: node.id, title: node.title, icon: node.icon }];
+    if (node.url) {
+      const page = { ...node, path: pathEntries, breadcrumb: pathEntries.map((entry) => entry.title).join(" / "), type: "page" };
+      page.hay = `${page.title || ""} ${page.url || ""} ${page.breadcrumb} ${page.note || ""}`.toLowerCase();
+      result.push(page);
+    }
+    flattenWebPages(node.children || [], pathEntries, result);
+  }
+  return result;
+}
+
+function searchWebPages(query = "", limit = 12) {
+  const keyword = String(query || "").trim().toLowerCase();
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const pages = flattenWebPages(readConfig().items || []);
+  return (keyword ? pages.filter((page) => page.hay.includes(keyword)) : pages).slice(0, safeLimit);
+}
+
 async function searchUsage(scope = "all", limit = 6) {
   const sections = clipboardStore.usageSections(scope, limit);
   const allEntries = [...sections.frequent, ...sections.recent];
@@ -766,15 +788,9 @@ app.whenReady().then(async () => {
     app.setActivationPolicy("accessory");
   }
 
-  try {
-    await clipboardStore.open(app.getPath("userData"));
-    startClipboardMonitor();
-  } catch (error) {
-    console.error("[flowhub] 剪切板数据库初始化失败:", error.message);
-  }
-  void prepareNativePasteHelper();
+  const pluginFailures = await pluginRegistry.startAll({ app });
+  pluginFailures.forEach((failure) => console.error(`[flowhub] 插件 ${failure.id} 初始化失败:`, failure.reason));
   createWindow();
-  void applicationIndex();
 
   // 全局快捷键：Alt+空格（系统级，不依赖浏览器）
   const ok = globalShortcut.register("Alt+Space", () => toggleWindow());
@@ -790,8 +806,7 @@ app.whenReady().then(async () => {
 
   app.on("will-quit", () => {
     globalShortcut.unregisterAll();
-    stopClipboardMonitor();
-    clipboardStore.close();
+    pluginRegistry.stopAll();
   });
 });
 
@@ -820,9 +835,7 @@ ipcMain.handle("weborg:save-config", (event, config) => {
   try {
     writeConfig(config);
     const savedConfig = readConfig();
-    if (clipboardStore.isReady()) {
-      clipboardStore.cleanup(savedConfig.clipboard?.retentionDays ?? 30);
-    }
+    pluginRegistry.configureAll(savedConfig);
     // 搜索浮窗下次呼出会重新读取；如果它当前仍在显示，也立即刷新结果。
     if (win && !win.isDestroyed()) {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
@@ -833,10 +846,9 @@ ipcMain.handle("weborg:save-config", (event, config) => {
   }
 });
 
-ipcMain.handle("weborg:search-apps", (event, query) => searchApplications(query || "", 12));
 ipcMain.handle("weborg:search-usage", (event, scope) => searchUsage(scope || "all", 6));
 
-ipcMain.handle("weborg:search-clipboard", async (event, query, kind, limit, offset) => {
+async function searchClipboardRecords({ query = "", kind = "all", limit = 30, offset = 0 } = {}) {
   const records = clipboardStore.search(query || "", limit || 30, kind || "all", offset || 0);
   const filePaths = records
     .filter((record) => record.kind === "file")
@@ -861,9 +873,9 @@ ipcMain.handle("weborg:search-clipboard", async (event, query, kind, limit, offs
       return record;
     }
   }));
-});
+}
 
-ipcMain.handle("weborg:copy-clipboard", async (event, id) => {
+async function copyClipboardRecord(id) {
   const perf = clipboardPerfTimer(id);
   let record = null;
   try {
@@ -923,7 +935,7 @@ ipcMain.handle("weborg:copy-clipboard", async (event, id) => {
     perf.finish({ ok: false, kind: record?.kind || "unknown", reason: error.message });
     return { ok: false, reason: error.message };
   }
-});
+}
 
 async function deleteClipboardRecord(recordId, ownerWindow = null) {
   const record = clipboardStore.get(recordId);
@@ -951,11 +963,10 @@ async function deleteClipboardRecord(recordId, ownerWindow = null) {
   return { ok: true };
 }
 
-ipcMain.handle("weborg:show-clipboard-menu", (event, id) => {
+function showClipboardRecordMenu(id, ownerWindow = null) {
   const recordId = Number(id);
   const record = clipboardStore.get(recordId);
   if (!record) return { ok: false, reason: "剪切板记录不存在或已删除" };
-  const ownerWindow = BrowserWindow.fromWebContents(event.sender);
   const menu = Menu.buildFromTemplate([
     {
       label: "删除剪切板记录",
@@ -964,16 +975,10 @@ ipcMain.handle("weborg:show-clipboard-menu", (event, id) => {
   ]);
   menu.popup({ window: ownerWindow || undefined });
   return { ok: true };
-});
-
-ipcMain.handle("weborg:delete-clipboard", (event, id) => {
-  const recordId = Number(id);
-  if (!Number.isInteger(recordId) || recordId <= 0) return { ok: false, reason: "无效的剪切板记录" };
-  return deleteClipboardRecord(recordId, BrowserWindow.fromWebContents(event.sender));
-});
+}
 
 // 用系统浏览器/默认应用打开
-ipcMain.handle("weborg:open-url", async (event, url, usage = {}) => {
+async function openWebPage(url, usage = {}) {
   if (!/^https?:\/\//i.test(url)) return { ok: false, reason: "非 http(s) 链接" };
   try {
     await shell.openExternal(url);
@@ -993,10 +998,10 @@ ipcMain.handle("weborg:open-url", async (event, url, usage = {}) => {
   } catch (error) {
     return { ok: false, reason: error.message };
   }
-});
+}
 
 // 启动本地命令（如打开本地工具）。允许白名单模式：仅接受明显可执行/本地路径。
-ipcMain.handle("weborg:open-local", async (event, action, usage = {}) => {
+async function openLocalApplication(action, usage = {}) {
   if (typeof action !== "string" || !action.trim()) return { ok: false };
   const cmd = action.trim();
   // 用系统默认方式处理本地路径（文件/文件夹/可执行）
@@ -1014,7 +1019,48 @@ ipcMain.handle("weborg:open-local", async (event, action, usage = {}) => {
   }
   hideWindow();
   return { ok: true };
-});
+}
+
+pluginRegistry
+  .register("web", {
+    search: ({ query, limit }) => searchWebPages(query, limit),
+    actions: { activate: ({ url, usage }) => openWebPage(url, usage) }
+  })
+  .register("app", {
+    start: () => applicationIndex(),
+    search: ({ query, limit }) => searchApplications(query, limit),
+    actions: { activate: ({ path: applicationPath, usage }) => openLocalApplication(applicationPath, usage) }
+  })
+  .register("clipboard", {
+    start: async () => {
+      await clipboardStore.open(app.getPath("userData"));
+      startClipboardMonitor();
+      void prepareNativePasteHelper();
+    },
+    configure: (config) => {
+      if (clipboardStore.isReady()) clipboardStore.cleanup(config.clipboard?.retentionDays ?? 30);
+    },
+    stop: () => {
+      stopClipboardMonitor();
+      clipboardStore.close();
+    },
+    search: searchClipboardRecords,
+    actions: {
+      activate: ({ id }) => copyClipboardRecord(id),
+      menu: ({ id }, context) => showClipboardRecordMenu(id, context.ownerWindow),
+      delete: ({ id }, context) => {
+        const recordId = Number(id);
+        if (!Number.isInteger(recordId) || recordId <= 0) return { ok: false, reason: "无效的剪切板记录" };
+        return deleteClipboardRecord(recordId, context.ownerWindow);
+      }
+    }
+  });
+
+ipcMain.handle("weborg:list-plugins", () => pluginRegistry.list());
+ipcMain.handle("weborg:plugin-search", (event, id, request) => pluginRegistry.search(id, request || {}));
+ipcMain.handle("weborg:plugin-action", (event, id, action, payload) => pluginRegistry.action(id, action, payload || {}, {
+  ownerWindow: BrowserWindow.fromWebContents(event.sender)
+}));
 
 function hideWindow() {
   if (win && !win.isDestroyed()) win.hide();

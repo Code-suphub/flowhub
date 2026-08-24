@@ -1,0 +1,50 @@
+[
+  {
+    "id": "clipboard",
+    "name": "剪切板",
+    "description": "记录、搜索并快速粘贴文本、图片和文件",
+    "icon": "▤",
+    "enabled": true,
+    "searchable": true,
+    "settingsPanel": "clipboard",
+    "settingsHint": "记录设置",
+    "settingsOrder": 30,
+    "order": 10
+  },
+  {
+    "id": "app",
+    "name": "应用",
+    "description": "搜索并启动本机应用",
+    "icon": "▣",
+    "enabled": true,
+    "searchable": true,
+    "settingsPanel": "",
+    "settingsHint": "",
+    "order": 20
+  },
+  {
+    "id": "web",
+    "name": "网页",
+    "settingsName": "网页管理",
+    "description": "管理层级目录并搜索网页入口",
+    "icon": "◇",
+    "enabled": true,
+    "searchable": true,
+    "settingsPanel": "web",
+    "settingsHint": "网页入口",
+    "settingsOrder": 10,
+    "order": 30
+  },
+  {
+    "id": "memo",
+    "name": "备忘录",
+    "description": "快速记录与检索备忘内容",
+    "icon": "▧",
+    "enabled": false,
+    "searchable": false,
+    "settingsPanel": "",
+    "settingsHint": "即将支持",
+    "settingsOrder": 20,
+    "order": 40
+  }
+]

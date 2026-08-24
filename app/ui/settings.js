@@ -1,5 +1,6 @@
 const state = {
   config: null,
+  plugins: [],
   selectedId: "",
   mode: "structure",
   module: "web",
@@ -237,13 +238,26 @@ function renderModule() {
     item.classList.toggle("active", active);
     item.setAttribute("aria-pressed", String(active));
     const hint = item.querySelector("small");
-    if (hint && item.dataset.module === "clipboard") hint.textContent = active ? "当前模块" : "记录设置";
-    if (hint && item.dataset.module === "web") hint.textContent = active ? "当前模块" : "网页入口";
+    const plugin = state.plugins.find((entry) => entry.settingsPanel === item.dataset.module);
+    if (hint && plugin) hint.textContent = active ? "当前模块" : plugin.settingsHint;
   });
+}
+
+function renderPluginModules() {
+  const plugins = state.plugins
+    .filter((plugin) => plugin.settingsPanel || !plugin.enabled)
+    .sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
+  $("#moduleSwitcher").innerHTML = plugins.map((plugin) => {
+    const moduleId = plugin.settingsPanel || "";
+    const active = moduleId === state.module;
+    const disabled = !plugin.enabled || !moduleId;
+    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""}><span>${esc(plugin.settingsName || plugin.name)}</span><small>${active ? "当前模块" : esc(plugin.settingsHint || "")}</small></button>`;
+  }).join("");
 }
 
 function render() {
   ensureSelection();
+  renderPluginModules();
   renderSettingsFields();
   renderTree();
   renderSelected();
@@ -463,7 +477,8 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") window.close();
 });
 
-window.weborg.getConfig().then((config) => {
+Promise.all([window.weborg.listPlugins(), window.weborg.getConfig()]).then(([plugins, config]) => {
+  state.plugins = plugins || [];
   state.config = clone(normalizeConfig(config));
   expandAll();
   render();

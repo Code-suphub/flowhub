@@ -78,6 +78,55 @@ if (!window.weborg) {
     return { frequent: frequent.filter(allowed), recent: recent.filter(allowed) };
   }
 
+  let pluginsPromise;
+  function listPlugins() {
+    if (!pluginsPromise) {
+      pluginsPromise = fetch("/plugins.json", { cache: "no-store" })
+        .then((response) => response.json())
+        .then((plugins) => plugins.map((plugin) => ({ ...plugin, available: plugin.enabled })));
+    }
+    return pluginsPromise.then((plugins) => plugins.map((plugin) => ({ ...plugin })));
+  }
+
+  async function pluginSearch(id, request = {}) {
+    const query = String(request.query || "").trim().toLowerCase();
+    const limit = Number(request.limit) || (id === "clipboard" ? 30 : 12);
+    if (id === "clipboard") {
+      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(request.query || "")}&kind=${encodeURIComponent(request.kind || "all")}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(request.offset || 0)}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
+      return (result.records || []).map((record) => ({ ...record, pluginId: id }));
+    }
+    if (id === "app") {
+      return (await getApplications(query, limit)).map((record) => ({ ...record, pluginId: id }));
+    }
+    if (id === "web") {
+      const pages = flattenPages((await getConfig()).items || []).map((page) => ({
+        ...page,
+        type: "page",
+        breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
+      }));
+      return (query ? pages.filter((page) => `${page.title || ""} ${page.url || ""} ${page.breadcrumb} ${page.note || ""}`.toLowerCase().includes(query)) : pages)
+        .slice(0, limit)
+        .map((record) => ({ ...record, pluginId: id }));
+    }
+    return [];
+  }
+
+  async function pluginAction(id, action, payload = {}) {
+    if (id === "clipboard") return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" };
+    if (id === "web" && action === "activate") {
+      window.open(payload.url, "_blank", "noopener,noreferrer");
+      usageListeners.forEach((listener) => listener());
+      return { ok: true, preview: true };
+    }
+    if (id === "app" && action === "activate") {
+      console.info(`[flowhub preview] 浏览器不能启动本地应用：${payload.path}`);
+      return { ok: false, preview: true, reason: "浏览器预览不能启动本地应用" };
+    }
+    return { ok: false, preview: true, reason: `插件 ${id} 不支持操作 ${action}` };
+  }
+
   window.weborg = {
     getConfig,
     async saveConfig(config) {
@@ -92,28 +141,10 @@ if (!window.weborg) {
       configListeners.forEach((listener) => listener(result.config));
       return result;
     },
-    async searchClipboard(query = "", kind = "all", limit = 30, offset = 0) {
-      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(query)}&kind=${encodeURIComponent(kind)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`, { cache: "no-store" });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
-      return result.records || [];
-    },
-    async searchApps(query = "") {
-      return getApplications(query, 12);
-    },
+    listPlugins,
+    pluginSearch,
+    pluginAction,
     searchUsage: usageSections,
-    async copyClipboard() { return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" }; },
-    async deleteClipboard() { return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" }; },
-    async showClipboardMenu() { return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" }; },
-    async openUrl(url) {
-      window.open(url, "_blank", "noopener,noreferrer");
-      usageListeners.forEach((listener) => listener());
-      return { ok: true, preview: true };
-    },
-    async openLocal(action) {
-      console.info(`[flowhub preview] 浏览器不能启动本地应用：${action}`);
-      return { ok: false, preview: true, reason: "浏览器预览不能启动本地应用" };
-    },
     async openSettings() {
       window.open("/settings.html", "weborg-settings");
       return { ok: true, preview: true };

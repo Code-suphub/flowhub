@@ -4,13 +4,15 @@ const resultsEl = document.getElementById("results");
 const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
-const scopeOrder = ["all", "clipboard", "app", "web"];
+const scopeRow = document.getElementById("scopeRow");
+let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
+const state = { config: null, plugins: [], webResults: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
+let webSearchToken = 0;
 let usageSearchToken = 0;
 let clipboardSearchTimer = null;
 let scopeTabHeld = false;
@@ -32,36 +34,16 @@ function iconHtml(n) {
   if (/^https?:\/\//i.test(raw)) return `<img src="${esc(raw)}" alt="" />`;
   return esc(raw || "□");
 }
-function flatten(nodes, path = []) {
-  const pages = [];
-  (nodes || []).forEach((n) => {
-    const p = [...path, { title: n.title, id: n.id, icon: n.icon }];
-    if (n.url) {
-      const page = { ...n, path: p };
-      page.hay = `${page.title || ""} ${page.url || ""} ${pathText(page)} ${noteOf(page)}`.toLowerCase();
-      pages.push(page);
-    }
-    pages.push(...flatten(n.children || [], p));
-  });
-  return pages;
-}
 function setConfig(config) {
   state.config = config;
-  state.pageIndex = flatten(config?.items || []);
 }
-function allPages() { return state.pageIndex; }
 function pathText(page) {
   if (typeof page?.path === "string") return page.path;
   if (page?.breadcrumb) return String(page.breadcrumb);
   return (page?.path || []).map((x) => x.title).join(" / ");
 }
 function pageMatches() {
-  const kw = state.query.trim().toLowerCase();
-  let pages = allPages();
-  if (!kw) return pages.slice(0, 12);
-  return pages
-    .filter((p) => p.hay.includes(kw))
-    .slice(0, 12);
+  return state.webResults.slice(0, 12);
 }
 
 function formatBytes(bytes) {
@@ -333,34 +315,28 @@ function render({ preserveScroll = false } = {}) {
   if (a) a.scrollIntoView({ block: "nearest" });
 }
 
-function openUrl(url, page) {
-  const norm = normalizeUrl(url);
-  if (norm && window.weborg) {
-    window.weborg.openUrl(norm, {
-      type: "page",
-      id: page?.id || page?.usageKey || norm,
-      title: page?.title || norm,
-      breadcrumb: pathText(page),
-      icon: page?.icon || ""
-    });
-  }
-}
-function openLocal(action, usage) {
-  if (window.weborg) window.weborg.openLocal(action, usage || {});
-}
 function choose(page) {
-  if (page?.type === "clipboard") {
-    if (document.documentElement.dataset.weborgReadonly === "true") return;
-    window.weborg?.copyClipboard(page.id);
-    return;
-  }
-  if (page?.type === "app") {
-    openLocal(page.path, { type: "app", title: page.title, path: page.path });
-    return;
-  }
-  const norm = normalizeUrl(page?.url);
-  if (norm) openUrl(norm, page);
-  else window.weborg && window.weborg.openLocal(page?.title || "");
+  const pluginId = page?.pluginId || (page?.type === "clipboard" ? "clipboard" : page?.type === "app" ? "app" : "web");
+  if (pluginId === "clipboard" && document.documentElement.dataset.weborgReadonly === "true") return;
+  const usage = pluginId === "app"
+    ? { type: "app", title: page.title, path: page.path }
+    : { type: "page", id: page.id || page.usageKey, title: page.title, breadcrumb: pathText(page), icon: page.icon || "" };
+  void window.weborg?.pluginAction(pluginId, "activate", {
+    id: page.id,
+    path: page.path,
+    url: normalizeUrl(page.url),
+    usage
+  });
+}
+
+function renderPluginScopes(plugins) {
+  state.plugins = (plugins || []).filter((plugin) => plugin.enabled && plugin.available && plugin.searchable).sort((a, b) => a.order - b.order);
+  scopeOrder = ["all", ...state.plugins.map((plugin) => plugin.id)];
+  scopeRow.querySelectorAll("[data-scope]").forEach((button) => button.remove());
+  scopeRow.insertAdjacentHTML("beforeend", [
+    `<button class="scope-button active" data-scope="all">全部</button>`,
+    ...state.plugins.map((plugin) => `<button class="scope-button" data-scope="${esc(plugin.id)}">${esc(plugin.name)}</button>`)
+  ].join(""));
 }
 
 function invalidateClipboardPaging() {
@@ -378,6 +354,7 @@ function setScope(scope) {
   render();
   void refreshClipboard();
   void refreshApps();
+  void refreshWeb();
   void refreshUsage();
   q?.focus({ preventScroll: true });
 }
@@ -403,7 +380,7 @@ function setClipboardKind(kind) {
 }
 
 // 更新配置（主进程每次呼出都会推送）
-window.weborg.onConfig((cfg) => { setConfig(cfg); render(); });
+window.weborg.onConfig((cfg) => { setConfig(cfg); render(); void refreshWeb(); });
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); window.close(); }
@@ -428,7 +405,7 @@ document.addEventListener("keydown", (e) => {
   if (e.altKey && ["Backspace", "Delete"].includes(e.key)) {
     const selected = m[state.index];
     if (selected?.type === "clipboard" && document.documentElement.dataset.weborgReadonly !== "true") {
-      window.weborg?.showClipboardMenu(selected.id);
+      window.weborg?.pluginAction("clipboard", "menu", { id: selected.id });
       e.preventDefault();
       return;
     }
@@ -459,7 +436,7 @@ window.addEventListener("blur", () => {
 });
 
 async function refreshClipboard({ append = false } = {}) {
-  if (state.scope === "web") return;
+  if (!["all", "clipboard"].includes(state.scope)) return;
   if (append && (state.scope !== "clipboard" || state.clipboardLoading || !state.clipboardHasMore)) return;
   const token = ++clipboardSearchToken;
   const offset = append ? state.clipboardResults.length : 0;
@@ -467,7 +444,7 @@ async function refreshClipboard({ append = false } = {}) {
   if (!append) state.clipboardHasMore = true;
   if (append) render({ preserveScroll: true });
   try {
-    const records = await window.weborg?.searchClipboard(state.query, state.scope === "clipboard" ? state.clipboardKind : "all", CLIPBOARD_PAGE_SIZE, offset);
+    const records = await window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset });
     if (token !== clipboardSearchToken) return;
     const nextRecords = records || [];
     state.clipboardResults = append
@@ -486,12 +463,23 @@ async function refreshClipboard({ append = false } = {}) {
 }
 
 async function refreshApps() {
-  if (state.scope === "web") return;
+  if (!["all", "app"].includes(state.scope)) return;
   const token = ++appSearchToken;
   try {
-    const applications = await window.weborg?.searchApps(state.query);
+    const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit: 12 });
     if (token !== appSearchToken) return;
     state.appResults = applications || [];
+    render();
+  } catch {}
+}
+
+async function refreshWeb() {
+  if (!["all", "web"].includes(state.scope)) return;
+  const token = ++webSearchToken;
+  try {
+    const pages = await window.weborg?.pluginSearch("web", { query: state.query, limit: 12 });
+    if (token !== webSearchToken) return;
+    state.webResults = pages || [];
     render();
   } catch {}
 }
@@ -512,6 +500,7 @@ function queueClipboardRefresh(delay = 180) {
   clipboardSearchTimer = setTimeout(() => {
     void refreshClipboard();
     void refreshApps();
+    void refreshWeb();
     void refreshUsage();
   }, delay);
 }
@@ -527,7 +516,10 @@ resultsEl.addEventListener("scroll", () => {
   if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight < 160) void refreshClipboard({ append: true });
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
-document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
+scopeRow?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-scope]");
+  if (button) setScope(button.dataset.scope);
+});
 document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
 window.weborg.onClipboardUpdated(() => { invalidateClipboardPaging(); queueClipboardRefresh(80); });
 window.weborg.onUsageUpdated(() => { void refreshUsage(); });
@@ -538,7 +530,7 @@ resultsEl.addEventListener("contextmenu", (e) => {
   if (item?.type !== "clipboard") return;
   e.preventDefault();
   if (document.documentElement.dataset.weborgReadonly === "true") return;
-  void window.weborg?.showClipboardMenu(item.id);
+  void window.weborg?.pluginAction("clipboard", "menu", { id: item.id });
 });
 resultsEl.addEventListener("click", (e) => {
   const toggle = e.target.closest("[data-clipboard-toggle]");
@@ -558,11 +550,20 @@ function focusSearch() { q?.focus(); q?.select(); }
 window.focusSearch = focusSearch;
 
 // 初始加载
-Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard("", "all", CLIPBOARD_PAGE_SIZE, 0), window.weborg.searchApps(""), window.weborg.searchUsage("all")]).then(([cfg, records, applications, usageSections]) => {
+Promise.all([
+  window.weborg.listPlugins(),
+  window.weborg.getConfig(),
+  window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }),
+  window.weborg.pluginSearch("app", { query: "", limit: 12 }),
+  window.weborg.pluginSearch("web", { query: "", limit: 12 }),
+  window.weborg.searchUsage("all")
+]).then(([plugins, cfg, records, applications, pages, usageSections]) => {
+  renderPluginScopes(plugins);
   setConfig(cfg);
   state.clipboardResults = records || [];
   state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
   state.appResults = applications || [];
+  state.webResults = pages || [];
   state.usageSections = usageSections || { frequent: [], recent: [] };
   render();
   focusSearch();
