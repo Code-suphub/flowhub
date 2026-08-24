@@ -3,7 +3,7 @@ const state = {
   plugins: [],
   selectedId: "",
   mode: "structure",
-  module: "web",
+  module: "core",
   dirty: false,
   expanded: new Set()
 };
@@ -28,7 +28,10 @@ function iconHtml(node, className = "tree-icon") {
 
 function normalizeConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
-  if (!Array.isArray(config.items)) throw new Error("配置缺少 items 数组");
+  if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
+  if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
+  const items = config.plugins.web?.settings?.items;
+  if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
   const ids = new Set();
   const visit = (nodes) => {
     nodes.forEach((node) => {
@@ -41,11 +44,19 @@ function normalizeConfig(config) {
       visit(node.children || []);
     });
   };
-  visit(config.items);
+  visit(items);
   return config;
 }
 
-function nodeEntries(nodes = state.config?.items || [], level = 0, parent = null, result = []) {
+function pluginConfig(id) {
+  return state.config?.plugins?.[id];
+}
+
+function webItems() {
+  return pluginConfig("web")?.settings?.items || [];
+}
+
+function nodeEntries(nodes = webItems(), level = 0, parent = null, result = []) {
   nodes.forEach((node, index) => {
     result.push({ node, level, parent, index });
     nodeEntries(node.children || [], level + 1, node, result);
@@ -53,7 +64,7 @@ function nodeEntries(nodes = state.config?.items || [], level = 0, parent = null
   return result;
 }
 
-function visibleNodeEntries(nodes = state.config?.items || [], level = 0, parent = null, result = []) {
+function visibleNodeEntries(nodes = webItems(), level = 0, parent = null, result = []) {
   nodes.forEach((node, index) => {
     result.push({ node, level, parent, index });
     if (node.children?.length && state.expanded.has(node.id)) {
@@ -116,7 +127,7 @@ function pathFor(nodeId) {
     }
     return false;
   }
-  visit(state.config?.items || []);
+  visit(webItems());
   return path.join(" / ");
 }
 
@@ -202,14 +213,15 @@ function renderSelected() {
 }
 
 function renderSettingsFields() {
-  $("#clipboardRetentionDays").value = Number(state.config?.clipboard?.retentionDays ?? 30);
-  $("#clipboardEnabled").checked = state.config?.clipboard?.enabled !== false;
+  $("#coreHotkey").value = state.config?.core?.hotkey || "Alt+Space";
+  $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
+  $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   renderClipboardSummary();
 }
 
 function renderClipboardSummary() {
-  const enabled = state.config?.clipboard?.enabled !== false;
-  const retentionDays = Number(state.config?.clipboard?.retentionDays ?? 30);
+  const enabled = pluginConfig("clipboard")?.enabled !== false;
+  const retentionDays = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   const statusText = enabled ? "正在记录" : "已暂停";
   if ($("#clipboardStatusValue")) $("#clipboardStatusValue").textContent = statusText;
   if ($("#clipboardRetentionValue")) $("#clipboardRetentionValue").textContent = retentionDays === 0 ? "永久保留" : `${retentionDays} 天`;
@@ -237,22 +249,20 @@ function renderModule() {
     const active = item.dataset.module === state.module;
     item.classList.toggle("active", active);
     item.setAttribute("aria-pressed", String(active));
-    const hint = item.querySelector("small");
-    const plugin = state.plugins.find((entry) => entry.settingsPanel === item.dataset.module);
-    if (hint && plugin) hint.textContent = active ? "当前模块" : plugin.settingsHint;
   });
 }
 
 function renderPluginModules() {
-  const plugins = state.plugins
-    .filter((plugin) => plugin.settingsPanel || !plugin.enabled)
-    .sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
-  $("#moduleSwitcher").innerHTML = plugins.map((plugin) => {
+  const plugins = [...state.plugins].sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
+  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><span>通用设置</span><small>${state.module === "core" ? "当前模块" : "App 配置"}</small></button>`;
+  const pluginButtons = plugins.map((plugin) => {
     const moduleId = plugin.settingsPanel || "";
     const active = moduleId === state.module;
-    const disabled = !plugin.enabled || !moduleId;
-    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""}><span>${esc(plugin.settingsName || plugin.name)}</span><small>${active ? "当前模块" : esc(plugin.settingsHint || "")}</small></button>`;
+    const disabled = !plugin.available || !moduleId;
+    const hint = active ? "当前模块" : !plugin.available ? "未安装" : plugin.enabled ? plugin.settingsHint : "已停用";
+    return `<div class="plugin-module-row"><button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""}><span>${esc(plugin.settingsName || plugin.name)}</span><small>${esc(hint || "")}</small></button><label class="plugin-enable" title="${plugin.available ? (plugin.enabled ? "停用插件" : "启用插件") : "插件未安装"}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
   }).join("");
+  $("#moduleSwitcher").innerHTML = coreButton + pluginButtons;
 }
 
 function render() {
@@ -269,7 +279,7 @@ function render() {
 
 function addRoot() {
   const node = newNode();
-  state.config.items.push(node);
+  webItems().push(node);
   state.selectedId = node.id;
   markDirty();
   render();
@@ -290,7 +300,7 @@ function addChild() {
 function addSibling() {
   const context = selectedContext();
   if (!context) return addRoot();
-  const siblings = context.parent ? (context.parent.children ||= []) : state.config.items;
+  const siblings = context.parent ? (context.parent.children ||= []) : webItems();
   const node = newNode();
   siblings.splice(context.index + 1, 0, node);
   state.selectedId = node.id;
@@ -304,7 +314,7 @@ function deleteSelected() {
   const childCount = context.node.children?.length || 0;
   const message = childCount ? `“${context.node.title || context.node.id}” 下有 ${childCount} 个子节点，确定删除整个分支吗？` : `确定删除“${context.node.title || context.node.id}”吗？`;
   if (!window.confirm(message)) return;
-  const siblings = context.parent ? context.parent.children : state.config.items;
+  const siblings = context.parent ? context.parent.children : webItems();
   siblings.splice(context.index, 1);
   state.expanded.delete(context.node.id);
   state.selectedId = siblings[context.index]?.id || siblings[context.index - 1]?.id || context.parent?.id || "";
@@ -315,7 +325,7 @@ function deleteSelected() {
 function moveSelected(direction) {
   const context = selectedContext();
   if (!context) return;
-  const siblings = context.parent ? context.parent.children : state.config.items;
+  const siblings = context.parent ? context.parent.children : webItems();
   const nextIndex = context.index + direction;
   if (nextIndex < 0 || nextIndex >= siblings.length) return toast("已经到当前层级的边界");
   [siblings[context.index], siblings[nextIndex]] = [siblings[nextIndex], siblings[context.index]];
@@ -338,9 +348,10 @@ async function save() {
     const result = await window.weborg.saveConfig(state.config);
     if (!result?.ok) throw new Error(result?.reason || "保存失败");
     state.config = result.config || state.config;
+    state.plugins = await window.weborg.listPlugins();
     state.dirty = false;
     render();
-    toast("配置已保存，Web 端和搜索浮窗会使用最新内容");
+    toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 个插件启动失败` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
   } catch (error) {
     toast(error.message, true);
   }
@@ -349,7 +360,7 @@ async function save() {
 async function reload() {
   if (state.dirty && !window.confirm("当前有未保存修改，确定重新读取并丢弃这些修改吗？")) return;
   try {
-    state.config = await window.weborg.getConfig();
+    [state.plugins, state.config] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig()]);
     normalizeConfig(state.config);
     state.dirty = false;
     render();
@@ -395,8 +406,9 @@ function handleAction(action) {
 }
 
 function switchModule(module) {
-  if (!["web", "clipboard"].includes(module)) return;
+  if (!["core", "web", "clipboard", "app"].includes(module)) return;
   state.module = module;
+  renderPluginModules();
   renderModule();
 }
 
@@ -440,15 +452,33 @@ document.addEventListener("input", (event) => {
     markDirty("JSON 已修改");
     return;
   }
+  const pluginId = event.target.dataset.pluginToggle;
+  if (pluginId) {
+    const config = pluginConfig(pluginId);
+    const plugin = state.plugins.find((entry) => entry.id === pluginId);
+    if (!config || !plugin?.available) return;
+    config.enabled = event.target.checked;
+    plugin.enabled = event.target.checked;
+    markDirty(event.target.checked ? `${plugin.name}将在保存后启用` : `${plugin.name}将在保存后停用`);
+    renderPluginModules();
+    renderModule();
+    renderClipboardSummary();
+    return;
+  }
+  const coreField = event.target.dataset.coreField;
+  if (coreField) {
+    state.config.core ||= {};
+    state.config.core[coreField] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
+    markDirty();
+    return;
+  }
   const configField = event.target.dataset.configField;
   if (configField) {
-    if (configField === "clipboardEnabled") {
-      state.config.clipboard ||= {};
-      state.config.clipboard.enabled = event.target.checked;
-    } else if (configField === "clipboardRetentionDays") {
-      state.config.clipboard ||= {};
+    if (configField === "clipboardRetentionDays") {
+      const clipboard = pluginConfig("clipboard");
+      clipboard.settings ||= {};
       const days = Number(event.target.value);
-      state.config.clipboard.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
+      clipboard.settings.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
     } else {
       return;
     }

@@ -83,6 +83,8 @@ function usageMatches() {
   const entries = [];
   for (const section of ["frequent", "recent"]) {
     for (const item of state.usageSections?.[section] || []) {
+      if (item.type === "app" && !pluginEnabled("app")) continue;
+      if (item.type === "page" && !pluginEnabled("web")) continue;
       if (state.scope === "app" && item.type !== "app") continue;
       if (state.scope === "web" && item.type !== "page") continue;
       entries.push({ ...item, usageSection: section });
@@ -97,9 +99,9 @@ function withoutUsageDuplicates(items, usedItems) {
 }
 
 function matches() {
-  const pages = pageMatches().map((page) => ({ ...page, type: "page" }));
-  const clips = clipboardMatches();
-  const apps = appMatches();
+  const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
+  const clips = pluginEnabled("clipboard") ? clipboardMatches() : [];
+  const apps = pluginEnabled("app") ? appMatches() : [];
   const usages = usageMatches();
   if (state.scope === "web") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)].slice(0, 12);
@@ -339,6 +341,10 @@ function renderPluginScopes(plugins) {
   ].join(""));
 }
 
+function pluginEnabled(id) {
+  return state.plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
+}
+
 function invalidateClipboardPaging() {
   clipboardSearchToken += 1;
   state.clipboardLoading = false;
@@ -380,7 +386,15 @@ function setClipboardKind(kind) {
 }
 
 // 更新配置（主进程每次呼出都会推送）
-window.weborg.onConfig((cfg) => { setConfig(cfg); render(); void refreshWeb(); });
+window.weborg.onConfig(async (cfg) => {
+  setConfig(cfg);
+  renderPluginScopes(await window.weborg.listPlugins());
+  if (!scopeOrder.includes(state.scope)) state.scope = "all";
+  render();
+  void refreshClipboard();
+  void refreshApps();
+  void refreshWeb();
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); window.close(); }
@@ -436,7 +450,7 @@ window.addEventListener("blur", () => {
 });
 
 async function refreshClipboard({ append = false } = {}) {
-  if (!["all", "clipboard"].includes(state.scope)) return;
+  if (!pluginEnabled("clipboard") || !["all", "clipboard"].includes(state.scope)) return;
   if (append && (state.scope !== "clipboard" || state.clipboardLoading || !state.clipboardHasMore)) return;
   const token = ++clipboardSearchToken;
   const offset = append ? state.clipboardResults.length : 0;
@@ -463,7 +477,7 @@ async function refreshClipboard({ append = false } = {}) {
 }
 
 async function refreshApps() {
-  if (!["all", "app"].includes(state.scope)) return;
+  if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
   const token = ++appSearchToken;
   try {
     const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit: 12 });
@@ -474,7 +488,7 @@ async function refreshApps() {
 }
 
 async function refreshWeb() {
-  if (!["all", "web"].includes(state.scope)) return;
+  if (!pluginEnabled("web") || !["all", "web"].includes(state.scope)) return;
   const token = ++webSearchToken;
   try {
     const pages = await window.weborg?.pluginSearch("web", { query: state.query, limit: 12 });
@@ -550,15 +564,17 @@ function focusSearch() { q?.focus(); q?.select(); }
 window.focusSearch = focusSearch;
 
 // 初始加载
-Promise.all([
-  window.weborg.listPlugins(),
-  window.weborg.getConfig(),
-  window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }),
-  window.weborg.pluginSearch("app", { query: "", limit: 12 }),
-  window.weborg.pluginSearch("web", { query: "", limit: 12 }),
-  window.weborg.searchUsage("all")
-]).then(([plugins, cfg, records, applications, pages, usageSections]) => {
+async function initialize() {
+  const plugins = await window.weborg.listPlugins();
   renderPluginScopes(plugins);
+  const enabled = (id) => plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
+  const [cfg, records, applications, pages, usageSections] = await Promise.all([
+    window.weborg.getConfig(),
+    enabled("clipboard") ? window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }) : [],
+    enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: 12 }) : [],
+    enabled("web") ? window.weborg.pluginSearch("web", { query: "", limit: 12 }) : [],
+    window.weborg.searchUsage("all")
+  ]);
   setConfig(cfg);
   state.clipboardResults = records || [];
   state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
@@ -567,4 +583,6 @@ Promise.all([
   state.usageSections = usageSections || { frequent: [], recent: [] };
   render();
   focusSearch();
-});
+}
+
+void initialize();

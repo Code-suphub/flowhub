@@ -58,7 +58,7 @@ if (!window.weborg) {
       getApplications("QQ", 1),
       getApplications("DataGrip", 1)
     ]);
-    const pages = flattenPages(config.items || []);
+    const pages = flattenPages(config.plugins?.web?.settings?.items || []);
     const appEntry = (application) => ({
       ...application,
       type: "app",
@@ -79,16 +79,22 @@ if (!window.weborg) {
   }
 
   let pluginsPromise;
-  function listPlugins() {
+  async function listPlugins() {
     if (!pluginsPromise) {
-      pluginsPromise = fetch("/plugins.json", { cache: "no-store" })
-        .then((response) => response.json())
-        .then((plugins) => plugins.map((plugin) => ({ ...plugin, available: plugin.enabled })));
+      pluginsPromise = fetch("/plugins.json", { cache: "no-store" }).then((response) => response.json());
     }
-    return pluginsPromise.then((plugins) => plugins.map((plugin) => ({ ...plugin })));
+    const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
+    return plugins.map((plugin) => ({
+      ...plugin,
+      available: ["web", "clipboard", "app"].includes(plugin.id),
+      enabled: config.plugins?.[plugin.id]?.enabled ?? plugin.defaultEnabled !== false
+    }));
   }
 
   async function pluginSearch(id, request = {}) {
+    const plugin = (await listPlugins()).find((entry) => entry.id === id);
+    if (!plugin?.available) throw new Error(`插件未安装：${id}`);
+    if (!plugin.enabled) throw new Error(`插件未启用：${id}`);
     const query = String(request.query || "").trim().toLowerCase();
     const limit = Number(request.limit) || (id === "clipboard" ? 30 : 12);
     if (id === "clipboard") {
@@ -101,7 +107,7 @@ if (!window.weborg) {
       return (await getApplications(query, limit)).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "web") {
-      const pages = flattenPages((await getConfig()).items || []).map((page) => ({
+      const pages = flattenPages((await getConfig()).plugins?.web?.settings?.items || []).map((page) => ({
         ...page,
         type: "page",
         breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")

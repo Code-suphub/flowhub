@@ -1,744 +1,765 @@
 {
-  "clipboard": {
-    "enabled": true,
-    "retentionDays": 30
+  "core": {
+    "hotkey": "Alt+Space",
+    "launchAtLogin": false
   },
-  "items": [
-    {
-      "id": "cloud",
-      "title": "云服务",
-      "children": [
-        {
-          "id": "public-cloud",
-          "title": "公有云",
-          "children": [
-            {
-              "id": "aliyun",
-              "title": "阿里云",
-              "children": [
-                {
-                  "id": "aliyun-ecs",
-                  "title": "ECS 实例",
-                  "url": "mock://aliyun/ecs",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/aliyun.com"
-                },
-                {
-                  "id": "aliyun-oss",
-                  "title": "OSS 存储",
-                  "url": "mock://aliyun/oss",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/aliyun.com"
-                },
-                {
-                  "id": "aliyun-console",
-                  "title": "阿里云官网",
-                  "url": "https://www.aliyun.com/",
-                  "accent": "#FFAA1A",
-                  "icon": "https://icon.horse/icon/aliyun.com"
-                }
-              ],
-              "url": "http://wave.bilibiligame.co/wave/application/create-publish?cmdb_app_id=game.tzd.tts&page_size=10&page_num=1",
-              "icon": "https://icon.horse/icon/aliyun.com"
-            },
-            {
-              "id": "tencent",
-              "title": "腾讯云",
-              "children": [
-                {
-                  "id": "tencent-cvm",
-                  "title": "CVM 主机",
-                  "url": "mock://tencent/cvm",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/cloud.tencent.com"
-                },
-                {
-                  "id": "tencent-home",
-                  "title": "腾讯云官网",
-                  "url": "https://cloud.tencent.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/cloud.tencent.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/cloud.tencent.com"
-            },
-            {
-              "id": "baidu",
-              "title": "百度云",
-              "children": [
-                {
-                  "id": "baidu-console",
-                  "title": "百度智能云官网",
-                  "url": "https://cloud.baidu.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://cdn.simpleicons.org/baidu"
-                },
-                {
-                  "id": "baidu-bce",
-                  "title": "百度云控制台",
-                  "url": "https://console.bce.baidu.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://cdn.simpleicons.org/baidu"
-                }
-              ]
-            },
-            {
-              "id": "aws",
-              "title": "AWS",
-              "children": [
-                {
-                  "id": "aws-home",
-                  "title": "AWS 官网",
-                  "url": "https://aws.amazon.com/",
-                  "accent": "#FFAA1A",
-                  "icon": "https://icon.horse/icon/aws.amazon.com"
-                },
-                {
-                  "id": "aws-console",
-                  "title": "AWS 控制台",
-                  "url": "https://console.aws.amazon.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/aws.amazon.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/aws.amazon.com"
-            },
-            {
-              "id": "huawei",
-              "title": "华为云",
-              "children": [
-                {
-                  "id": "huawei-home",
-                  "title": "华为云官网",
-                  "url": "https://www.huaweicloud.com/",
-                  "accent": "#DE3030",
-                  "icon": "https://cdn.simpleicons.org/huawei"
-                },
-                {
-                  "id": "huawei-console",
-                  "title": "华为云控制台",
-                  "url": "https://console.huaweicloud.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://cdn.simpleicons.org/huawei"
-                }
-              ],
-              "icon": "https://cdn.simpleicons.org/huawei"
-            },
-            {
-              "id": "ctyun",
-              "title": "天翼云",
-              "children": [
-                {
-                  "id": "ctyun-home",
-                  "title": "天翼云官网",
-                  "url": "https://www.ctyun.cn/",
-                  "accent": "#005BAC",
-                  "icon": "https://icon.horse/icon/www.ctyun.cn"
-                },
-                {
-                  "id": "ctyun-console",
-                  "title": "天翼云控制台",
-                  "url": "https://www.ctyun.cn/console/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/www.ctyun.cn"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.ctyun.cn"
-            },
-            {
-              "id": "cmcc-cloud",
-              "title": "移动云",
-              "children": [
-                {
-                  "id": "cmcc-home",
-                  "title": "移动云官网",
-                  "url": "https://ecloud.10086.cn/",
-                  "accent": "#00A6E0",
-                  "icon": "https://ecloud.10086.cn/portal-sso/images/logo.png"
-                },
-                {
-                  "id": "cmcc-console",
-                  "title": "移动云控制台",
-                  "url": "https://ecloud.10086.cn/api/pc/login",
-                  "accent": "#1FB4A2",
-                  "icon": "https://ecloud.10086.cn/portal-sso/images/logo.png"
-                }
-              ],
-              "icon": "https://ecloud.10086.cn/portal-sso/images/logo.png"
-            },
-            {
-              "id": "cucloud",
-              "title": "联通云",
-              "children": [
-                {
-                  "id": "cucloud-home",
-                  "title": "联通云官网",
-                  "url": "https://www.cucloud.cn/",
-                  "accent": "#DE3030",
-                  "icon": "https://icon.horse/icon/www.cucloud.cn"
-                },
-                {
-                  "id": "cucloud-console",
-                  "title": "联通云控制台",
-                  "url": "https://www.cucloud.cn/shop/login",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.cucloud.cn"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.cucloud.cn"
-            },
-            {
-              "id": "jdcloud",
-              "title": "京东云",
-              "children": [
-                {
-                  "id": "jdcloud-home",
-                  "title": "京东云官网",
-                  "url": "https://www.jdcloud.com/",
-                  "accent": "#DE3030",
-                  "icon": "https://icon.horse/icon/www.jdcloud.com"
-                },
-                {
-                  "id": "jdcloud-console",
-                  "title": "京东云控制台",
-                  "url": "https://console.jdcloud.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.jdcloud.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.jdcloud.com"
-            },
-            {
-              "id": "ksyun",
-              "title": "金山云",
-              "children": [
-                {
-                  "id": "ksyun-home",
-                  "title": "金山云官网",
-                  "url": "https://www.ksyun.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "☁"
-                },
-                {
-                  "id": "ksyun-console",
-                  "title": "金山云控制台",
-                  "url": "https://console.ksyun.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "☁"
-                }
-              ],
-              "icon": "☁"
-            },
-            {
-              "id": "ucloud",
-              "title": "UCloud",
-              "children": [
-                {
-                  "id": "ucloud-home",
-                  "title": "UCloud 官网",
-                  "url": "https://www.ucloud.cn/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.ucloud.cn"
-                },
-                {
-                  "id": "ucloud-console",
-                  "title": "UCloud 控制台",
-                  "url": "https://console.ucloud.cn/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/www.ucloud.cn"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.ucloud.cn"
-            },
-            {
-              "id": "volcengine",
-              "title": "火山引擎",
-              "children": [
-                {
-                  "id": "volcengine-home",
-                  "title": "火山引擎官网",
-                  "url": "https://www.volcengine.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.volcengine.com"
-                },
-                {
-                  "id": "volcengine-console",
-                  "title": "火山引擎控制台",
-                  "url": "https://console.volcengine.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/www.volcengine.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.volcengine.com"
-            },
-            {
-              "id": "qingcloud",
-              "title": "青云",
-              "children": [
-                {
-                  "id": "qingcloud-home",
-                  "title": "青云官网",
-                  "url": "https://www.qingcloud.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.qingcloud.com"
-                },
-                {
-                  "id": "qingcloud-console",
-                  "title": "青云控制台",
-                  "url": "https://console.qingcloud.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/www.qingcloud.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.qingcloud.com"
-            },
-            {
-              "id": "qiniu",
-              "title": "七牛云",
-              "children": [
-                {
-                  "id": "qiniu-home",
-                  "title": "七牛云官网",
-                  "url": "https://www.qiniu.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.qiniu.com"
-                },
-                {
-                  "id": "qiniu-console",
-                  "title": "七牛云控制台",
-                  "url": "https://portal.qiniu.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/www.qiniu.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.qiniu.com"
-            },
-            {
-              "id": "azure",
-              "title": "微软云 Azure",
-              "children": [
-                {
-                  "id": "azure-home",
-                  "title": "Azure 官网",
-                  "url": "https://azure.microsoft.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/azure.microsoft.com"
-                },
-                {
-                  "id": "azure-console",
-                  "title": "Azure 门户",
-                  "url": "https://portal.azure.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://icon.horse/icon/azure.microsoft.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/azure.microsoft.com"
-            },
-            {
-              "id": "gcp",
-              "title": "谷歌云",
-              "children": [
-                {
-                  "id": "gcp-home",
-                  "title": "Google Cloud 官网",
-                  "url": "https://cloud.google.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://cdn.simpleicons.org/googlecloud"
-                },
-                {
-                  "id": "gcp-console",
-                  "title": "Google Cloud 控制台",
-                  "url": "https://console.cloud.google.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://cdn.simpleicons.org/googlecloud"
-                }
-              ],
-              "icon": "https://cdn.simpleicons.org/googlecloud"
-            },
-            {
-              "id": "oracle-cloud",
-              "title": "甲骨文云 OCI",
-              "children": [
-                {
-                  "id": "oracle-home",
-                  "title": "Oracle Cloud 官网",
-                  "url": "https://www.oracle.com/cn/cloud/",
-                  "accent": "#DE3030",
-                  "icon": "https://icon.horse/icon/www.oracle.com"
-                },
-                {
-                  "id": "oracle-console",
-                  "title": "Oracle Cloud 控制台",
-                  "url": "https://cloud.oracle.com/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.oracle.com"
-                }
-              ],
-              "icon": "https://icon.horse/icon/www.oracle.com"
-            }
-          ]
-        },
-        {
-          "id": "private-cloud",
-          "title": "私有云",
-          "children": [
-            {
-              "id": "hudi",
-              "title": "虎迪云",
-              "children": [
-                {
-                  "id": "hudi-node",
-                  "title": "节点资源",
-                  "url": "mock://hudi/node",
-                  "accent": "#1FB4A2"
-                },
-                {
-                  "id": "hudi-billing",
-                  "title": "费用中心",
-                  "url": "mock://hudi/billing",
-                  "accent": "#FFAA1A"
-                }
-              ]
-            },
-            {
-              "id": "edge",
-              "title": "边缘节点",
-              "children": [
-                {
-                  "id": "edge-status",
-                  "title": "节点状态",
-                  "url": "mock://edge/status",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "edge-route",
-                  "title": "线路调度",
-                  "url": "mock://edge/route",
-                  "accent": "#1FB4A2"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "serverless",
-          "title": "Serverless / 现代平台",
-          "children": [
-            {
-              "id": "db-serverless",
-              "title": "托管数据库",
-              "children": [
-                {
-                  "id": "neon",
-                  "title": "Neon (Serverless Postgres)",
-                  "url": "https://neon.tech/",
-                  "accent": "#0AB6FF",
-                  "icon": "https://icon.horse/icon/neon.tech"
-                },
-                {
-                  "id": "planetscale",
-                  "title": "PlanetScale",
-                  "url": "https://planetscale.com/",
-                  "accent": "#1FB4A2",
-                  "icon": "https://cdn.simpleicons.org/planetscale"
-                },
-                {
-                  "id": "supabase-db",
-                  "title": "Supabase",
-                  "url": "https://supabase.com/",
-                  "accent": "#3ECF8E",
-                  "icon": "https://cdn.simpleicons.org/supabase"
-                },
-                {
-                  "id": "mongodb-atlas",
-                  "title": "MongoDB Atlas",
-                  "url": "https://www.mongodb.com/atlas",
-                  "accent": "#00684A",
-                  "icon": "https://cdn.simpleicons.org/mongodb"
-                }
-              ]
-            },
-            {
-              "id": "frontend-hosting",
-              "title": "前端托管 / PaaS",
-              "children": [
-                {
-                  "id": "vercel",
-                  "title": "Vercel",
-                  "url": "https://vercel.com/",
-                  "accent": "#000000",
-                  "icon": "https://cdn.simpleicons.org/vercel"
-                },
-                {
-                  "id": "netlify",
-                  "title": "Netlify",
-                  "url": "https://www.netlify.com/",
-                  "accent": "#00C7B7",
-                  "icon": "https://cdn.simpleicons.org/netlify"
-                },
-                {
-                  "id": "render",
-                  "title": "Render",
-                  "url": "https://render.com/",
-                  "accent": "#46E3B7",
-                  "icon": "https://cdn.simpleicons.org/render"
-                },
-                {
-                  "id": "railway",
-                  "title": "Railway",
-                  "url": "https://railway.com/",
-                  "accent": "#0B080A",
-                  "icon": "https://cdn.simpleicons.org/railway"
-                },
-                {
-                  "id": "flyio",
-                  "title": "Fly.io",
-                  "url": "https://fly.io/",
-                  "accent": "#7B19C9",
-                  "icon": "https://icon.horse/icon/fly.io"
-                }
-              ]
-            },
-            {
-              "id": "edge-platform",
-              "title": "边缘 / Serverless",
-              "children": [
-                {
-                  "id": "cloudflare",
-                  "title": "Cloudflare",
-                  "url": "https://www.cloudflare.com/",
-                  "accent": "#F6821F",
-                  "icon": "https://cdn.simpleicons.org/cloudflare"
-                },
-                {
-                  "id": "cloudflare-workers",
-                  "title": "Cloudflare Workers",
-                  "url": "https://workers.cloudflare.com/",
-                  "accent": "#F38020",
-                  "icon": "https://cdn.simpleicons.org/cloudflareworkers"
-                },
-                {
-                  "id": "cloudflare-pages",
-                  "title": "Cloudflare Pages",
-                  "url": "https://pages.cloudflare.com/",
-                  "accent": "#F38020",
-                  "icon": "https://cdn.simpleicons.org/cloudflarepages"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "vps",
-          "title": "VPS / 独立服务器",
-          "children": [
-            {
-              "id": "vps-hosts",
-              "title": "VPS 主机商",
-              "children": [
-                {
-                  "id": "dmit",
-                  "title": "DMIT",
-                  "url": "https://www.dmit.io/",
-                  "accent": "#0AA9DB",
-                  "icon": "https://icon.horse/icon/www.dmit.io"
-                },
-                {
-                  "id": "vultr",
-                  "title": "Vultr",
-                  "url": "https://www.vultr.com/",
-                  "accent": "#007BFC",
-                  "icon": "https://cdn.simpleicons.org/vultr"
-                },
-                {
-                  "id": "linode",
-                  "title": "Linode (Akamai)",
-                  "url": "https://www.linode.com/",
-                  "accent": "#00A95C",
-                  "icon": "https://icon.horse/icon/www.linode.com"
-                },
-                {
-                  "id": "digitalocean",
-                  "title": "DigitalOcean",
-                  "url": "https://www.digitalocean.com/",
-                  "accent": "#0080FF",
-                  "icon": "https://cdn.simpleicons.org/digitalocean"
-                },
-                {
-                  "id": "hetzner",
-                  "title": "Hetzner",
-                  "url": "https://www.hetzner.com/",
-                  "accent": "#D50F2D",
-                  "icon": "https://cdn.simpleicons.org/hetzner"
-                },
-                {
-                  "id": "ovh",
-                  "title": "OVHcloud",
-                  "url": "https://www.ovhcloud.com/",
-                  "accent": "#123F6D",
-                  "icon": "https://cdn.simpleicons.org/ovh"
-                },
-                {
-                  "id": "scaleway",
-                  "title": "Scaleway",
-                  "url": "https://www.scaleway.com/",
-                  "accent": "#D30235",
-                  "icon": "https://cdn.simpleicons.org/scaleway"
-                }
-              ]
-            },
-            {
-              "id": "vps-managed",
-              "title": "管理型 / 云实例",
-              "children": [
-                {
-                  "id": "contabo",
-                  "title": "Contabo",
-                  "url": "https://contabo.com/",
-                  "accent": "#FF5A00",
-                  "icon": "https://cdn.simpleicons.org/contabo"
-                },
-                {
-                  "id": "ionos",
-                  "title": "IONOS",
-                  "url": "https://www.ionos.com/",
-                  "accent": "#003D8D",
-                  "icon": "https://cdn.simpleicons.org/ionos"
-                },
-                {
-                  "id": "hostinger-vps",
-                  "title": "Hostinger",
-                  "url": "https://www.hostinger.com/",
-                  "accent": "#673DE6",
-                  "icon": "https://cdn.simpleicons.org/hostinger"
-                }
-              ]
-            }
-          ]
-        }
-      ],
-      "url": "https://static-rayyu-oss.qingjiaocloud.com/2022-02-21/5b6f732ddaf0801557d8242835b831fb.jpg"
+  "plugins": {
+    "web": {
+      "enabled": true,
+      "settings": {
+        "items": [
+          {
+            "id": "cloud",
+            "title": "云服务",
+            "children": [
+              {
+                "id": "public-cloud",
+                "title": "公有云",
+                "children": [
+                  {
+                    "id": "aliyun",
+                    "title": "阿里云",
+                    "children": [
+                      {
+                        "id": "aliyun-ecs",
+                        "title": "ECS 实例",
+                        "url": "mock://aliyun/ecs",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/aliyun.com"
+                      },
+                      {
+                        "id": "aliyun-oss",
+                        "title": "OSS 存储",
+                        "url": "mock://aliyun/oss",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/aliyun.com"
+                      },
+                      {
+                        "id": "aliyun-console",
+                        "title": "阿里云官网",
+                        "url": "https://www.aliyun.com/",
+                        "accent": "#FFAA1A",
+                        "icon": "https://icon.horse/icon/aliyun.com"
+                      }
+                    ],
+                    "url": "http://wave.bilibiligame.co/wave/application/create-publish?cmdb_app_id=game.tzd.tts&page_size=10&page_num=1",
+                    "icon": "https://icon.horse/icon/aliyun.com"
+                  },
+                  {
+                    "id": "tencent",
+                    "title": "腾讯云",
+                    "children": [
+                      {
+                        "id": "tencent-cvm",
+                        "title": "CVM 主机",
+                        "url": "mock://tencent/cvm",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/cloud.tencent.com"
+                      },
+                      {
+                        "id": "tencent-home",
+                        "title": "腾讯云官网",
+                        "url": "https://cloud.tencent.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/cloud.tencent.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/cloud.tencent.com"
+                  },
+                  {
+                    "id": "baidu",
+                    "title": "百度云",
+                    "children": [
+                      {
+                        "id": "baidu-console",
+                        "title": "百度智能云官网",
+                        "url": "https://cloud.baidu.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://cdn.simpleicons.org/baidu"
+                      },
+                      {
+                        "id": "baidu-bce",
+                        "title": "百度云控制台",
+                        "url": "https://console.bce.baidu.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://cdn.simpleicons.org/baidu"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "aws",
+                    "title": "AWS",
+                    "children": [
+                      {
+                        "id": "aws-home",
+                        "title": "AWS 官网",
+                        "url": "https://aws.amazon.com/",
+                        "accent": "#FFAA1A",
+                        "icon": "https://icon.horse/icon/aws.amazon.com"
+                      },
+                      {
+                        "id": "aws-console",
+                        "title": "AWS 控制台",
+                        "url": "https://console.aws.amazon.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/aws.amazon.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/aws.amazon.com"
+                  },
+                  {
+                    "id": "huawei",
+                    "title": "华为云",
+                    "children": [
+                      {
+                        "id": "huawei-home",
+                        "title": "华为云官网",
+                        "url": "https://www.huaweicloud.com/",
+                        "accent": "#DE3030",
+                        "icon": "https://cdn.simpleicons.org/huawei"
+                      },
+                      {
+                        "id": "huawei-console",
+                        "title": "华为云控制台",
+                        "url": "https://console.huaweicloud.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://cdn.simpleicons.org/huawei"
+                      }
+                    ],
+                    "icon": "https://cdn.simpleicons.org/huawei"
+                  },
+                  {
+                    "id": "ctyun",
+                    "title": "天翼云",
+                    "children": [
+                      {
+                        "id": "ctyun-home",
+                        "title": "天翼云官网",
+                        "url": "https://www.ctyun.cn/",
+                        "accent": "#005BAC",
+                        "icon": "https://icon.horse/icon/www.ctyun.cn"
+                      },
+                      {
+                        "id": "ctyun-console",
+                        "title": "天翼云控制台",
+                        "url": "https://www.ctyun.cn/console/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/www.ctyun.cn"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.ctyun.cn"
+                  },
+                  {
+                    "id": "cmcc-cloud",
+                    "title": "移动云",
+                    "children": [
+                      {
+                        "id": "cmcc-home",
+                        "title": "移动云官网",
+                        "url": "https://ecloud.10086.cn/",
+                        "accent": "#00A6E0",
+                        "icon": "https://ecloud.10086.cn/portal-sso/images/logo.png"
+                      },
+                      {
+                        "id": "cmcc-console",
+                        "title": "移动云控制台",
+                        "url": "https://ecloud.10086.cn/api/pc/login",
+                        "accent": "#1FB4A2",
+                        "icon": "https://ecloud.10086.cn/portal-sso/images/logo.png"
+                      }
+                    ],
+                    "icon": "https://ecloud.10086.cn/portal-sso/images/logo.png"
+                  },
+                  {
+                    "id": "cucloud",
+                    "title": "联通云",
+                    "children": [
+                      {
+                        "id": "cucloud-home",
+                        "title": "联通云官网",
+                        "url": "https://www.cucloud.cn/",
+                        "accent": "#DE3030",
+                        "icon": "https://icon.horse/icon/www.cucloud.cn"
+                      },
+                      {
+                        "id": "cucloud-console",
+                        "title": "联通云控制台",
+                        "url": "https://www.cucloud.cn/shop/login",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.cucloud.cn"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.cucloud.cn"
+                  },
+                  {
+                    "id": "jdcloud",
+                    "title": "京东云",
+                    "children": [
+                      {
+                        "id": "jdcloud-home",
+                        "title": "京东云官网",
+                        "url": "https://www.jdcloud.com/",
+                        "accent": "#DE3030",
+                        "icon": "https://icon.horse/icon/www.jdcloud.com"
+                      },
+                      {
+                        "id": "jdcloud-console",
+                        "title": "京东云控制台",
+                        "url": "https://console.jdcloud.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.jdcloud.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.jdcloud.com"
+                  },
+                  {
+                    "id": "ksyun",
+                    "title": "金山云",
+                    "children": [
+                      {
+                        "id": "ksyun-home",
+                        "title": "金山云官网",
+                        "url": "https://www.ksyun.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "☁"
+                      },
+                      {
+                        "id": "ksyun-console",
+                        "title": "金山云控制台",
+                        "url": "https://console.ksyun.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "☁"
+                      }
+                    ],
+                    "icon": "☁"
+                  },
+                  {
+                    "id": "ucloud",
+                    "title": "UCloud",
+                    "children": [
+                      {
+                        "id": "ucloud-home",
+                        "title": "UCloud 官网",
+                        "url": "https://www.ucloud.cn/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.ucloud.cn"
+                      },
+                      {
+                        "id": "ucloud-console",
+                        "title": "UCloud 控制台",
+                        "url": "https://console.ucloud.cn/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/www.ucloud.cn"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.ucloud.cn"
+                  },
+                  {
+                    "id": "volcengine",
+                    "title": "火山引擎",
+                    "children": [
+                      {
+                        "id": "volcengine-home",
+                        "title": "火山引擎官网",
+                        "url": "https://www.volcengine.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.volcengine.com"
+                      },
+                      {
+                        "id": "volcengine-console",
+                        "title": "火山引擎控制台",
+                        "url": "https://console.volcengine.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/www.volcengine.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.volcengine.com"
+                  },
+                  {
+                    "id": "qingcloud",
+                    "title": "青云",
+                    "children": [
+                      {
+                        "id": "qingcloud-home",
+                        "title": "青云官网",
+                        "url": "https://www.qingcloud.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.qingcloud.com"
+                      },
+                      {
+                        "id": "qingcloud-console",
+                        "title": "青云控制台",
+                        "url": "https://console.qingcloud.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/www.qingcloud.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.qingcloud.com"
+                  },
+                  {
+                    "id": "qiniu",
+                    "title": "七牛云",
+                    "children": [
+                      {
+                        "id": "qiniu-home",
+                        "title": "七牛云官网",
+                        "url": "https://www.qiniu.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.qiniu.com"
+                      },
+                      {
+                        "id": "qiniu-console",
+                        "title": "七牛云控制台",
+                        "url": "https://portal.qiniu.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/www.qiniu.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.qiniu.com"
+                  },
+                  {
+                    "id": "azure",
+                    "title": "微软云 Azure",
+                    "children": [
+                      {
+                        "id": "azure-home",
+                        "title": "Azure 官网",
+                        "url": "https://azure.microsoft.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/azure.microsoft.com"
+                      },
+                      {
+                        "id": "azure-console",
+                        "title": "Azure 门户",
+                        "url": "https://portal.azure.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://icon.horse/icon/azure.microsoft.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/azure.microsoft.com"
+                  },
+                  {
+                    "id": "gcp",
+                    "title": "谷歌云",
+                    "children": [
+                      {
+                        "id": "gcp-home",
+                        "title": "Google Cloud 官网",
+                        "url": "https://cloud.google.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://cdn.simpleicons.org/googlecloud"
+                      },
+                      {
+                        "id": "gcp-console",
+                        "title": "Google Cloud 控制台",
+                        "url": "https://console.cloud.google.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://cdn.simpleicons.org/googlecloud"
+                      }
+                    ],
+                    "icon": "https://cdn.simpleicons.org/googlecloud"
+                  },
+                  {
+                    "id": "oracle-cloud",
+                    "title": "甲骨文云 OCI",
+                    "children": [
+                      {
+                        "id": "oracle-home",
+                        "title": "Oracle Cloud 官网",
+                        "url": "https://www.oracle.com/cn/cloud/",
+                        "accent": "#DE3030",
+                        "icon": "https://icon.horse/icon/www.oracle.com"
+                      },
+                      {
+                        "id": "oracle-console",
+                        "title": "Oracle Cloud 控制台",
+                        "url": "https://cloud.oracle.com/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.oracle.com"
+                      }
+                    ],
+                    "icon": "https://icon.horse/icon/www.oracle.com"
+                  }
+                ]
+              },
+              {
+                "id": "private-cloud",
+                "title": "私有云",
+                "children": [
+                  {
+                    "id": "hudi",
+                    "title": "虎迪云",
+                    "children": [
+                      {
+                        "id": "hudi-node",
+                        "title": "节点资源",
+                        "url": "mock://hudi/node",
+                        "accent": "#1FB4A2"
+                      },
+                      {
+                        "id": "hudi-billing",
+                        "title": "费用中心",
+                        "url": "mock://hudi/billing",
+                        "accent": "#FFAA1A"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "edge",
+                    "title": "边缘节点",
+                    "children": [
+                      {
+                        "id": "edge-status",
+                        "title": "节点状态",
+                        "url": "mock://edge/status",
+                        "accent": "#0AA9DB"
+                      },
+                      {
+                        "id": "edge-route",
+                        "title": "线路调度",
+                        "url": "mock://edge/route",
+                        "accent": "#1FB4A2"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "serverless",
+                "title": "Serverless / 现代平台",
+                "children": [
+                  {
+                    "id": "db-serverless",
+                    "title": "托管数据库",
+                    "children": [
+                      {
+                        "id": "neon",
+                        "title": "Neon (Serverless Postgres)",
+                        "url": "https://neon.tech/",
+                        "accent": "#0AB6FF",
+                        "icon": "https://icon.horse/icon/neon.tech"
+                      },
+                      {
+                        "id": "planetscale",
+                        "title": "PlanetScale",
+                        "url": "https://planetscale.com/",
+                        "accent": "#1FB4A2",
+                        "icon": "https://cdn.simpleicons.org/planetscale"
+                      },
+                      {
+                        "id": "supabase-db",
+                        "title": "Supabase",
+                        "url": "https://supabase.com/",
+                        "accent": "#3ECF8E",
+                        "icon": "https://cdn.simpleicons.org/supabase"
+                      },
+                      {
+                        "id": "mongodb-atlas",
+                        "title": "MongoDB Atlas",
+                        "url": "https://www.mongodb.com/atlas",
+                        "accent": "#00684A",
+                        "icon": "https://cdn.simpleicons.org/mongodb"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "frontend-hosting",
+                    "title": "前端托管 / PaaS",
+                    "children": [
+                      {
+                        "id": "vercel",
+                        "title": "Vercel",
+                        "url": "https://vercel.com/",
+                        "accent": "#000000",
+                        "icon": "https://cdn.simpleicons.org/vercel"
+                      },
+                      {
+                        "id": "netlify",
+                        "title": "Netlify",
+                        "url": "https://www.netlify.com/",
+                        "accent": "#00C7B7",
+                        "icon": "https://cdn.simpleicons.org/netlify"
+                      },
+                      {
+                        "id": "render",
+                        "title": "Render",
+                        "url": "https://render.com/",
+                        "accent": "#46E3B7",
+                        "icon": "https://cdn.simpleicons.org/render"
+                      },
+                      {
+                        "id": "railway",
+                        "title": "Railway",
+                        "url": "https://railway.com/",
+                        "accent": "#0B080A",
+                        "icon": "https://cdn.simpleicons.org/railway"
+                      },
+                      {
+                        "id": "flyio",
+                        "title": "Fly.io",
+                        "url": "https://fly.io/",
+                        "accent": "#7B19C9",
+                        "icon": "https://icon.horse/icon/fly.io"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "edge-platform",
+                    "title": "边缘 / Serverless",
+                    "children": [
+                      {
+                        "id": "cloudflare",
+                        "title": "Cloudflare",
+                        "url": "https://www.cloudflare.com/",
+                        "accent": "#F6821F",
+                        "icon": "https://cdn.simpleicons.org/cloudflare"
+                      },
+                      {
+                        "id": "cloudflare-workers",
+                        "title": "Cloudflare Workers",
+                        "url": "https://workers.cloudflare.com/",
+                        "accent": "#F38020",
+                        "icon": "https://cdn.simpleicons.org/cloudflareworkers"
+                      },
+                      {
+                        "id": "cloudflare-pages",
+                        "title": "Cloudflare Pages",
+                        "url": "https://pages.cloudflare.com/",
+                        "accent": "#F38020",
+                        "icon": "https://cdn.simpleicons.org/cloudflarepages"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "vps",
+                "title": "VPS / 独立服务器",
+                "children": [
+                  {
+                    "id": "vps-hosts",
+                    "title": "VPS 主机商",
+                    "children": [
+                      {
+                        "id": "dmit",
+                        "title": "DMIT",
+                        "url": "https://www.dmit.io/",
+                        "accent": "#0AA9DB",
+                        "icon": "https://icon.horse/icon/www.dmit.io"
+                      },
+                      {
+                        "id": "vultr",
+                        "title": "Vultr",
+                        "url": "https://www.vultr.com/",
+                        "accent": "#007BFC",
+                        "icon": "https://cdn.simpleicons.org/vultr"
+                      },
+                      {
+                        "id": "linode",
+                        "title": "Linode (Akamai)",
+                        "url": "https://www.linode.com/",
+                        "accent": "#00A95C",
+                        "icon": "https://icon.horse/icon/www.linode.com"
+                      },
+                      {
+                        "id": "digitalocean",
+                        "title": "DigitalOcean",
+                        "url": "https://www.digitalocean.com/",
+                        "accent": "#0080FF",
+                        "icon": "https://cdn.simpleicons.org/digitalocean"
+                      },
+                      {
+                        "id": "hetzner",
+                        "title": "Hetzner",
+                        "url": "https://www.hetzner.com/",
+                        "accent": "#D50F2D",
+                        "icon": "https://cdn.simpleicons.org/hetzner"
+                      },
+                      {
+                        "id": "ovh",
+                        "title": "OVHcloud",
+                        "url": "https://www.ovhcloud.com/",
+                        "accent": "#123F6D",
+                        "icon": "https://cdn.simpleicons.org/ovh"
+                      },
+                      {
+                        "id": "scaleway",
+                        "title": "Scaleway",
+                        "url": "https://www.scaleway.com/",
+                        "accent": "#D30235",
+                        "icon": "https://cdn.simpleicons.org/scaleway"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "vps-managed",
+                    "title": "管理型 / 云实例",
+                    "children": [
+                      {
+                        "id": "contabo",
+                        "title": "Contabo",
+                        "url": "https://contabo.com/",
+                        "accent": "#FF5A00",
+                        "icon": "https://cdn.simpleicons.org/contabo"
+                      },
+                      {
+                        "id": "ionos",
+                        "title": "IONOS",
+                        "url": "https://www.ionos.com/",
+                        "accent": "#003D8D",
+                        "icon": "https://cdn.simpleicons.org/ionos"
+                      },
+                      {
+                        "id": "hostinger-vps",
+                        "title": "Hostinger",
+                        "url": "https://www.hostinger.com/",
+                        "accent": "#673DE6",
+                        "icon": "https://cdn.simpleicons.org/hostinger"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "url": "https://static-rayyu-oss.qingjiaocloud.com/2022-02-21/5b6f732ddaf0801557d8242835b831fb.jpg"
+          },
+          {
+            "id": "ops",
+            "title": "运维平台",
+            "children": [
+              {
+                "id": "observe",
+                "title": "可观测",
+                "children": [
+                  {
+                    "id": "metrics",
+                    "title": "指标与日志",
+                    "children": [
+                      {
+                        "id": "grafana",
+                        "title": "Grafana",
+                        "url": "mock://ops/grafana",
+                        "accent": "#0AA9DB"
+                      },
+                      {
+                        "id": "logs",
+                        "title": "日志检索",
+                        "url": "mock://ops/logs",
+                        "accent": "#1FB4A2"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "alerts",
+                    "title": "告警",
+                    "children": [
+                      {
+                        "id": "alert-rules",
+                        "title": "告警规则",
+                        "url": "mock://ops/alert-rules",
+                        "accent": "#FFAA1A"
+                      },
+                      {
+                        "id": "alert-history",
+                        "title": "告警历史",
+                        "url": "mock://ops/alert-history",
+                        "accent": "#DE3030"
+                      }
+                    ]
+                  }
+                ],
+                "url": "https://www.openprice.cc/card-products"
+              },
+              {
+                "id": "delivery",
+                "title": "发布交付",
+                "children": [
+                  {
+                    "id": "pipeline",
+                    "title": "流水线",
+                    "children": [
+                      {
+                        "id": "jenkins",
+                        "title": "Jenkins",
+                        "url": "mock://ops/jenkins",
+                        "accent": "#0AA9DB"
+                      },
+                      {
+                        "id": "argo",
+                        "title": "Argo CD",
+                        "url": "mock://ops/argo",
+                        "accent": "#1FB4A2"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "business",
+            "title": "业务系统",
+            "children": [
+              {
+                "id": "customer",
+                "title": "客户运营",
+                "children": [],
+                "url": "https://www.openprice.cc/card-products"
+              },
+              {
+                "id": "analysis",
+                "title": "数据分析",
+                "children": [
+                  {
+                    "id": "reports",
+                    "title": "报表与任务",
+                    "children": [
+                      {
+                        "id": "bi",
+                        "title": "BI 报表",
+                        "url": "mock://biz/bi",
+                        "accent": "#1FB4A2"
+                      },
+                      {
+                        "id": "warehouse",
+                        "title": "数仓任务",
+                        "url": "mock://biz/warehouse",
+                        "accent": "#0AA9DB"
+                      },
+                      {
+                        "id": "huohuo-home",
+                        "title": "逸刻时光",
+                        "url": "https://huohuo90.com/home",
+                        "accent": "#0AA9DB"
+                      },
+                      {
+                        "id": "github-home",
+                        "title": "GitHub 禁嵌示例",
+                        "url": "https://github.com/",
+                        "accent": "#DE3030"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     },
-    {
-      "id": "ops",
-      "title": "运维平台",
-      "children": [
-        {
-          "id": "observe",
-          "title": "可观测",
-          "children": [
-            {
-              "id": "metrics",
-              "title": "指标与日志",
-              "children": [
-                {
-                  "id": "grafana",
-                  "title": "Grafana",
-                  "url": "mock://ops/grafana",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "logs",
-                  "title": "日志检索",
-                  "url": "mock://ops/logs",
-                  "accent": "#1FB4A2"
-                }
-              ]
-            },
-            {
-              "id": "alerts",
-              "title": "告警",
-              "children": [
-                {
-                  "id": "alert-rules",
-                  "title": "告警规则",
-                  "url": "mock://ops/alert-rules",
-                  "accent": "#FFAA1A"
-                },
-                {
-                  "id": "alert-history",
-                  "title": "告警历史",
-                  "url": "mock://ops/alert-history",
-                  "accent": "#DE3030"
-                }
-              ]
-            }
-          ],
-          "url": "https://www.openprice.cc/card-products"
-        },
-        {
-          "id": "delivery",
-          "title": "发布交付",
-          "children": [
-            {
-              "id": "pipeline",
-              "title": "流水线",
-              "children": [
-                {
-                  "id": "jenkins",
-                  "title": "Jenkins",
-                  "url": "mock://ops/jenkins",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "argo",
-                  "title": "Argo CD",
-                  "url": "mock://ops/argo",
-                  "accent": "#1FB4A2"
-                }
-              ]
-            }
-          ]
-        }
-      ]
+    "clipboard": {
+      "enabled": true,
+      "settings": {
+        "retentionDays": 30
+      }
     },
-    {
-      "id": "business",
-      "title": "业务系统",
-      "children": [
-        {
-          "id": "customer",
-          "title": "客户运营",
-          "children": [],
-          "url": "https://www.openprice.cc/card-products"
-        },
-        {
-          "id": "analysis",
-          "title": "数据分析",
-          "children": [
-            {
-              "id": "reports",
-              "title": "报表与任务",
-              "children": [
-                {
-                  "id": "bi",
-                  "title": "BI 报表",
-                  "url": "mock://biz/bi",
-                  "accent": "#1FB4A2"
-                },
-                {
-                  "id": "warehouse",
-                  "title": "数仓任务",
-                  "url": "mock://biz/warehouse",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "huohuo-home",
-                  "title": "逸刻时光",
-                  "url": "https://huohuo90.com/home",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "github-home",
-                  "title": "GitHub 禁嵌示例",
-                  "url": "https://github.com/",
-                  "accent": "#DE3030"
-                }
-              ]
-            }
-          ]
-        }
-      ]
+    "app": {
+      "enabled": true,
+      "settings": {}
+    },
+    "memo": {
+      "enabled": false,
+      "settings": {}
     }
-  ]
+  }
 }

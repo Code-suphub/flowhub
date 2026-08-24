@@ -2,32 +2,35 @@ const manifests = require("../ui/plugins.json");
 
 class PluginRegistry {
   constructor(entries = manifests) {
-    this.manifests = entries
-      .map((entry) => Object.freeze({ ...entry }))
-      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    this.manifests = entries.map((entry) => Object.freeze({ ...entry })).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     this.runtimes = new Map();
+    this.started = new Set();
+    this.config = { core: {}, plugins: {} };
+    this.context = {};
   }
 
   register(id, runtime) {
-    const manifest = this.manifests.find((entry) => entry.id === id);
-    if (!manifest) throw new Error(`未知插件：${id}`);
-    if (!manifest.enabled) throw new Error(`插件尚未启用：${id}`);
+    if (!this.manifests.some((entry) => entry.id === id)) throw new Error(`未知插件：${id}`);
     this.runtimes.set(id, runtime || {});
     return this;
   }
 
+  enabled(id) {
+    const manifest = this.manifests.find((entry) => entry.id === id);
+    if (!manifest) return false;
+    return this.config.plugins?.[id]?.enabled ?? manifest.defaultEnabled !== false;
+  }
+
   list() {
-    return this.manifests.map((manifest) => ({
-      ...manifest,
-      available: manifest.enabled && this.runtimes.has(manifest.id)
-    }));
+    return this.manifests.map((manifest) => ({ ...manifest, available: this.runtimes.has(manifest.id), enabled: this.enabled(manifest.id) }));
   }
 
   runtime(id) {
     const manifest = this.manifests.find((entry) => entry.id === id);
-    if (!manifest?.enabled) throw new Error(`插件不可用：${id}`);
+    if (!manifest) throw new Error(`未知插件：${id}`);
     const runtime = this.runtimes.get(id);
-    if (!runtime) throw new Error(`插件未注册：${id}`);
+    if (!runtime) throw new Error(`插件未安装：${id}`);
+    if (!this.enabled(id)) throw new Error(`插件未启用：${id}`);
     return runtime;
   }
 
@@ -45,13 +48,23 @@ class PluginRegistry {
     return handler(payload, context);
   }
 
-  async startAll(context = {}) {
+  async applyConfig(config, context = this.context) {
+    this.config = config || { core: {}, plugins: {} };
+    this.context = context || {};
     const failures = [];
     for (const manifest of this.manifests) {
       const runtime = this.runtimes.get(manifest.id);
-      if (!manifest.enabled || typeof runtime?.start !== "function") continue;
+      if (!runtime) continue;
+      const shouldRun = this.enabled(manifest.id);
       try {
-        await runtime.start(context);
+        if (shouldRun && !this.started.has(manifest.id)) {
+          if (typeof runtime.start === "function") await runtime.start(this.context);
+          this.started.add(manifest.id);
+        } else if (!shouldRun && this.started.has(manifest.id)) {
+          if (typeof runtime.stop === "function") runtime.stop();
+          this.started.delete(manifest.id);
+        }
+        if (shouldRun && typeof runtime.configure === "function") runtime.configure(this.config);
       } catch (error) {
         failures.push({ id: manifest.id, reason: error.message });
       }
@@ -59,18 +72,12 @@ class PluginRegistry {
     return failures;
   }
 
-  configureAll(config) {
-    for (const manifest of this.manifests) {
-      const runtime = this.runtimes.get(manifest.id);
-      if (manifest.enabled && typeof runtime?.configure === "function") runtime.configure(config);
-    }
-  }
-
   stopAll() {
     for (const manifest of [...this.manifests].reverse()) {
       const runtime = this.runtimes.get(manifest.id);
-      if (!manifest.enabled || typeof runtime?.stop !== "function") continue;
+      if (!this.started.has(manifest.id) || typeof runtime?.stop !== "function") continue;
       try { runtime.stop(); } catch {}
+      this.started.delete(manifest.id);
     }
   }
 }

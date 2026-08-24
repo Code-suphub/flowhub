@@ -35,6 +35,7 @@ let lastClipboardImageCheckAt = 0;
 let cachedClipboardImage = null;
 let lastClipboardFileData = "";
 let cachedClipboardFiles = null;
+let registeredHotkey = "";
 const clipboardFileIconCache = new Map();
 const applicationIconCache = new Map();
 let applicationIndexPromise = null;
@@ -115,7 +116,7 @@ function readConfig() {
     return JSON.parse(raw);
   } catch (e) {
     console.error("[flowhub] 读取配置失败:", e.message);
-    return { clipboard: { enabled: true, retentionDays: 30 }, items: [] };
+    return { core: { hotkey: "Alt+Space", launchAtLogin: false }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30 } }, app: { enabled: true, settings: {} }, memo: { enabled: false, settings: {} } } };
   }
 }
 
@@ -123,9 +124,10 @@ function validateConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     throw new Error("配置必须是 JSON 对象");
   }
-  if (!Array.isArray(config.items)) {
-    throw new Error("配置缺少 items 数组");
-  }
+  if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
+  if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
+  const items = config.plugins.web?.settings?.items;
+  if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
 
   const ids = new Set();
   function visit(nodes) {
@@ -147,7 +149,7 @@ function validateConfig(config) {
     }
   }
 
-  visit(config.items);
+  visit(items);
   return config;
 }
 
@@ -166,17 +168,19 @@ function clipboardSettings() {
     const mtime = fs.statSync(CONFIG_PATH).mtimeMs;
     if (clipboardSettingsCache && clipboardSettingsMtime === mtime) return clipboardSettingsCache;
     const config = readConfig();
+    const clipboardPlugin = config.plugins?.clipboard;
     clipboardSettingsCache = {
-      enabled: config.clipboard?.enabled !== false,
-      retentionDays: Number(config.clipboard?.retentionDays ?? 30)
+      enabled: clipboardPlugin?.enabled !== false,
+      retentionDays: Number(clipboardPlugin?.settings?.retentionDays ?? 30)
     };
     clipboardSettingsMtime = mtime;
     return clipboardSettingsCache;
   } catch {}
   const config = readConfig();
+  const clipboardPlugin = config.plugins?.clipboard;
   return {
-    enabled: config.clipboard?.enabled !== false,
-    retentionDays: Number(config.clipboard?.retentionDays ?? 30)
+    enabled: clipboardPlugin?.enabled !== false,
+    retentionDays: Number(clipboardPlugin?.settings?.retentionDays ?? 30)
   };
 }
 
@@ -649,7 +653,7 @@ function flattenWebPages(nodes = [], parents = [], result = []) {
 function searchWebPages(query = "", limit = 12) {
   const keyword = String(query || "").trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
-  const pages = flattenWebPages(readConfig().items || []);
+  const pages = flattenWebPages(readConfig().plugins?.web?.settings?.items || []);
   return (keyword ? pages.filter((page) => page.hay.includes(keyword)) : pages).slice(0, safeLimit);
 }
 
@@ -782,31 +786,53 @@ function toggleWindow() {
   }
 }
 
+function applyCoreConfig(config) {
+  const hotkey = String(config.core?.hotkey || "Alt+Space").trim() || "Alt+Space";
+  if (registeredHotkey && registeredHotkey !== hotkey) globalShortcut.unregister(registeredHotkey);
+  let hotkeyRegistered = registeredHotkey === hotkey && globalShortcut.isRegistered(hotkey);
+  if (!hotkeyRegistered) {
+    try { hotkeyRegistered = globalShortcut.register(hotkey, () => toggleWindow()); } catch { hotkeyRegistered = false; }
+  }
+  registeredHotkey = hotkeyRegistered ? hotkey : "";
+  if (app.isPackaged && typeof app.setLoginItemSettings === "function") {
+    app.setLoginItemSettings({ openAtLogin: config.core?.launchAtLogin === true });
+  }
+  return { hotkey, hotkeyRegistered };
+}
+
 app.whenReady().then(async () => {
   if (process.platform === "darwin") {
     // 启动器不是普通 Dock 应用；使用 accessory 可避免唤出时切换到应用自己的 Space。
     app.setActivationPolicy("accessory");
   }
 
-  const pluginFailures = await pluginRegistry.startAll({ app });
+  const config = readConfig();
+  try {
+    // 使用记录和剪切板历史目前共用同一个 SQLite。数据库属于 App 核心数据服务，
+    // 因此即使剪切板插件停用，常用入口与最近使用仍然可以正常工作。
+    await clipboardStore.open(app.getPath("userData"));
+  } catch (error) {
+    console.error("[flowhub] 共享数据存储初始化失败:", error.message);
+  }
+  const pluginFailures = await pluginRegistry.applyConfig(config, { app });
   pluginFailures.forEach((failure) => console.error(`[flowhub] 插件 ${failure.id} 初始化失败:`, failure.reason));
   createWindow();
 
-  // 全局快捷键：Alt+空格（系统级，不依赖浏览器）
-  const ok = globalShortcut.register("Alt+Space", () => toggleWindow());
-  if (!ok) {
-    console.warn("[flowhub] 无法注册 Alt+Space（可能被系统/其它程序占用）。可在 app 设置中修改。");
+  const coreState = applyCoreConfig(config);
+  if (!coreState.hotkeyRegistered) {
+    console.warn(`[flowhub] 无法注册 ${coreState.hotkey}（可能被系统/其它程序占用）。可在通用设置中修改。`);
   }
 
   // 冒烟测试：设置该环境变量时，启动后立即退出，便于 CI/无 GUI 环境验证主进程能跑通。
   if (process.env.FLOWHUB_SMOKE_TEST === "1" || process.env.WEBORG_SMOKE_TEST === "1") {
-    console.log("[flowhub] smoke test: 主进程已就绪，Alt+Space 全局快捷键注册:", ok);
+    console.log(`[flowhub] smoke test: 主进程已就绪，${coreState.hotkey} 全局快捷键注册:`, coreState.hotkeyRegistered);
     setTimeout(() => app.quit(), 500);
   }
 
   app.on("will-quit", () => {
     globalShortcut.unregisterAll();
     pluginRegistry.stopAll();
+    clipboardStore.close();
   });
 });
 
@@ -831,16 +857,17 @@ ipcMain.handle("weborg:open-accessibility-settings", async () => {
   }
 });
 
-ipcMain.handle("weborg:save-config", (event, config) => {
+ipcMain.handle("weborg:save-config", async (event, config) => {
   try {
     writeConfig(config);
     const savedConfig = readConfig();
-    pluginRegistry.configureAll(savedConfig);
+    const failures = await pluginRegistry.applyConfig(savedConfig, { app });
+    const coreState = applyCoreConfig(savedConfig);
     // 搜索浮窗下次呼出会重新读取；如果它当前仍在显示，也立即刷新结果。
     if (win && !win.isDestroyed()) {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
     }
-    return { ok: true, config: savedConfig };
+    return { ok: true, config: savedConfig, pluginFailures: failures, coreState };
   } catch (error) {
     return { ok: false, reason: error.message };
   }
@@ -1033,16 +1060,14 @@ pluginRegistry
   })
   .register("clipboard", {
     start: async () => {
-      await clipboardStore.open(app.getPath("userData"));
       startClipboardMonitor();
       void prepareNativePasteHelper();
     },
     configure: (config) => {
-      if (clipboardStore.isReady()) clipboardStore.cleanup(config.clipboard?.retentionDays ?? 30);
+      if (clipboardStore.isReady()) clipboardStore.cleanup(config.plugins?.clipboard?.settings?.retentionDays ?? 30);
     },
     stop: () => {
       stopClipboardMonitor();
-      clipboardStore.close();
     },
     search: searchClipboardRecords,
     actions: {

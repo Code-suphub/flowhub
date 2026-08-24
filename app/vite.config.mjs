@@ -233,7 +233,10 @@ async function searchApplications(query = "", limit = 12) {
 
 function validateConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
-  if (!Array.isArray(config.items)) throw new Error("配置缺少 items 数组");
+  if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
+  if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
+  const items = config.plugins.web?.settings?.items;
+  if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
   const ids = new Set();
   const visit = (nodes) => {
     for (const node of nodes) {
@@ -246,7 +249,7 @@ function validateConfig(config) {
       visit(node.children || []);
     }
   };
-  visit(config.items);
+  visit(items);
   return config;
 }
 
