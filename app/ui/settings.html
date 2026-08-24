@@ -443,6 +443,15 @@
               <div class="clipboard-settings-grid">
                 <div class="settings-block"><div class="settings-block-title">全局快捷键</div><div class="field"><label for="coreHotkey">唤出 FlowHub</label><input id="coreHotkey" data-core-field="hotkey" placeholder="Alt+Space" /><div class="field-hint">使用 Electron Accelerator 格式，例如 Alt+Space、CommandOrControl+Space。</div></div></div>
                 <div class="settings-block"><div class="settings-block-title">系统启动</div><label class="switch-field"><input id="coreLaunchAtLogin" type="checkbox" data-core-field="launchAtLogin" />登录后自动启动 FlowHub</label><div class="field-hint">打包后的 App 保存时会同步 macOS 登录项。</div></div>
+                <div class="settings-block wide config-path-block">
+                  <div class="settings-block-title">配置文件位置</div>
+                  <div class="field">
+                    <label for="coreConfigPath">FlowHub 主配置文件</label>
+                    <div class="storage-path-row"><input id="coreConfigPath" readonly /><button class="button" type="button" data-action="choose-config-path">选择…</button></div>
+                    <div class="storage-actions"><button class="button" type="button" data-action="open-config-path">在 Finder 中显示</button><button class="button" type="button" data-action="reset-config-path">恢复默认</button></div>
+                    <div class="field-hint" id="coreConfigPathHint">保存后切换到新的配置文件；原文件会保留。</div>
+                  </div>
+                </div>
               </div>
             </section>
           </div>

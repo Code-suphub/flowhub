@@ -158,6 +158,24 @@ if (!window.weborg) {
     async openAccessibilitySettings() {
       return { ok: false, preview: true, reason: "请在 Electron App 中打开系统辅助功能设置" };
     },
+    async getConfigPathInfo() {
+      try {
+        const response = await fetch("/__weborg/config/location", { cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.reason || "读取配置文件位置失败");
+        return result;
+      } catch {
+        const config = await getConfig();
+        const configuredPath = String(config.core?.configPath || "").trim();
+        return { available: false, configuredPath, defaultPath: "项目目录/config.json", resolvedPath: configuredPath || "项目目录/config.json", activePath: "" };
+      }
+    },
+    async chooseConfigPath() {
+      return { ok: false, preview: true, reason: "请在 Electron App 中选择配置文件位置" };
+    },
+    async openConfigPath() {
+      return { ok: false, preview: true, reason: "请在 Electron App 中打开配置文件位置" };
+    },
     async getClipboardStorageInfo() {
       try {
         const response = await fetch("/__weborg/clipboard/storage", { cache: "no-store" });

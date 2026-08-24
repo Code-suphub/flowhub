@@ -9,11 +9,42 @@ import initSqlJs from "sql.js";
 
 const appDirectory = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = resolve(appDirectory, "ui");
-const configPath = resolve(appDirectory, "..", "config.json");
+const defaultConfigPath = resolve(appDirectory, "..", "config.json");
 const execFileAsync = promisify(execFile);
 const applicationIconCache = new Map();
 let applicationsPromise;
 let sqlJsPromise;
+
+function configLocatorCandidates() {
+  const applicationSupport = join(homedir(), "Library", "Application Support");
+  return ["Web Organization", "FlowHub", "Electron"].map((name) => join(applicationSupport, name, "config-location.json"));
+}
+
+async function activeConfigPath() {
+  for (const locatorPath of configLocatorCandidates()) {
+    try { await access(locatorPath); } catch { continue; }
+    try {
+      const configuredPath = String(JSON.parse(await readFile(locatorPath, "utf8")).configPath || "").trim();
+      if (!configuredPath) return defaultConfigPath;
+      if (configuredPath && isAbsolute(configuredPath)) {
+        try { await access(configuredPath); } catch { return defaultConfigPath; }
+        return resolve(configuredPath);
+      }
+      return defaultConfigPath;
+    } catch { return defaultConfigPath; }
+  }
+  return defaultConfigPath;
+}
+
+async function configFileInfo() {
+  const activePath = await activeConfigPath();
+  let configuredPath = "";
+  try {
+    const config = JSON.parse(await readFile(activePath, "utf8"));
+    configuredPath = String(config.core?.configPath || "").trim();
+  } catch {}
+  return { available: false, configuredPath, defaultPath: defaultConfigPath, resolvedPath: configuredPath || defaultConfigPath, activePath };
+}
 
 const MAC_NATIVE_ICON_SCRIPT = [
   "ObjC.import('AppKit');",
@@ -72,7 +103,7 @@ async function clipboardDatabaseCandidates() {
   const applicationSupport = join(homedir(), "Library", "Application Support");
   let configuredPath = "";
   try {
-    const config = JSON.parse(await readFile(configPath, "utf8"));
+    const config = JSON.parse(await readFile(await activeConfigPath(), "utf8"));
     configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
   } catch {}
   return [
@@ -89,7 +120,7 @@ async function clipboardStorageInfo() {
   const defaultPath = await access(legacyPath).then(() => legacyPath).catch(() => join(applicationSupport, "FlowHub", "clipboard"));
   let configuredPath = "";
   try {
-    const config = JSON.parse(await readFile(configPath, "utf8"));
+    const config = JSON.parse(await readFile(await activeConfigPath(), "utf8"));
     configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
   } catch {}
   return {
@@ -258,6 +289,9 @@ async function searchApplications(query = "", limit = 12) {
 function validateConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
   if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
+  const configuredConfigPath = config.core.configPath;
+  if (configuredConfigPath !== undefined && typeof configuredConfigPath !== "string") throw new Error("配置文件位置必须是字符串");
+  if (String(configuredConfigPath || "").trim() && !isAbsolute(configuredConfigPath.trim())) throw new Error("配置文件位置必须是绝对路径");
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
@@ -299,6 +333,17 @@ function localConfigApi() {
     configureServer(server) {
       server.middlewares.use("/__weborg/config", async (request, response) => {
         try {
+          if ((request.url || "").startsWith("/location")) {
+            if (request.method !== "GET") {
+              response.statusCode = 405;
+              response.setHeader("allow", "GET");
+              response.end("Read only");
+              return;
+            }
+            sendJson(response, 200, { ok: true, readonly: true, ...(await configFileInfo()) });
+            return;
+          }
+          const configPath = await activeConfigPath();
           if (request.method === "GET") {
             sendJson(response, 200, JSON.parse(await readFile(configPath, "utf8")));
             return;
@@ -306,6 +351,9 @@ function localConfigApi() {
           if (request.method === "POST") {
             const config = validateConfig(JSON.parse(await requestBody(request)));
             const currentConfig = JSON.parse(await readFile(configPath, "utf8"));
+            const currentConfigPath = String(currentConfig.core?.configPath || "").trim();
+            const nextConfigPath = String(config.core?.configPath || "").trim();
+            if (currentConfigPath !== nextConfigPath) throw new Error("请在 Electron App 中修改配置文件位置");
             const currentStoragePath = String(currentConfig.plugins?.clipboard?.settings?.storagePath || "").trim();
             const nextStoragePath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
             if (currentStoragePath !== nextStoragePath) throw new Error("请在 Electron App 中修改剪切板存放位置");

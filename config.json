@@ -1,7 +1,8 @@
 {
   "core": {
     "hotkey": "Alt+Space",
-    "launchAtLogin": false
+    "launchAtLogin": false,
+    "configPath": ""
   },
   "plugins": {
     "web": {

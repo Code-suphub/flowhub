@@ -15,7 +15,22 @@ const pluginRegistry = new PluginRegistry();
 const LEGACY_USER_DATA_PATH = path.join(app.getPath("appData"), "Web Organization");
 if (fs.existsSync(LEGACY_USER_DATA_PATH)) app.setPath("userData", LEGACY_USER_DATA_PATH);
 
-const CONFIG_PATH = path.join(__dirname, "..", "config.json");
+const BUNDLED_CONFIG_PATH = path.join(__dirname, "..", "config.json");
+const CONFIG_LOCATOR_PATH = path.join(app.getPath("userData"), "config-location.json");
+
+function defaultConfigPath() {
+  return app.isPackaged ? path.join(app.getPath("userData"), "config.json") : BUNDLED_CONFIG_PATH;
+}
+
+function locatedConfigPath() {
+  try {
+    const configuredPath = String(JSON.parse(fs.readFileSync(CONFIG_LOCATOR_PATH, "utf8")).configPath || "").trim();
+    if (configuredPath && path.isAbsolute(configuredPath) && fs.existsSync(configuredPath)) return path.resolve(configuredPath);
+  } catch {}
+  return defaultConfigPath();
+}
+
+let CONFIG_PATH = locatedConfigPath();
 
 let win = null;
 let settingsWin = null;
@@ -116,7 +131,10 @@ function readConfig() {
     return JSON.parse(raw);
   } catch (e) {
     console.error("[flowhub] 读取配置失败:", e.message);
-    return { core: { hotkey: "Alt+Space", launchAtLogin: false }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: false, settings: {} } } };
+    if (CONFIG_PATH !== BUNDLED_CONFIG_PATH) {
+      try { return JSON.parse(fs.readFileSync(BUNDLED_CONFIG_PATH, "utf8")); } catch {}
+    }
+    return { core: { hotkey: "Alt+Space", launchAtLogin: false, configPath: "" }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: false, settings: {} } } };
   }
 }
 
@@ -125,6 +143,9 @@ function validateConfig(config) {
     throw new Error("配置必须是 JSON 对象");
   }
   if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
+  const configuredConfigPath = config.core.configPath;
+  if (configuredConfigPath !== undefined && typeof configuredConfigPath !== "string") throw new Error("配置文件位置必须是字符串");
+  if (String(configuredConfigPath || "").trim() && !path.isAbsolute(configuredConfigPath.trim())) throw new Error("配置文件位置必须是绝对路径");
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
@@ -156,14 +177,39 @@ function validateConfig(config) {
   return config;
 }
 
+function resolveConfigPath(config) {
+  const configuredPath = String(config.core?.configPath || "").trim();
+  return configuredPath ? path.resolve(configuredPath) : defaultConfigPath();
+}
+
+function configPathInfo(config = readConfig()) {
+  const configuredPath = String(config.core?.configPath || "").trim();
+  return {
+    available: true,
+    configuredPath,
+    defaultPath: defaultConfigPath(),
+    resolvedPath: configuredPath || defaultConfigPath(),
+    activePath: CONFIG_PATH
+  };
+}
+
 function writeConfig(config) {
   validateConfig(config);
+  const targetPath = resolveConfigPath(config);
+  if (targetPath === CONFIG_LOCATOR_PATH) throw new Error("主配置文件不能与配置定位文件使用同一路径");
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   // 先写临时文件再替换，避免 app 与 Web 端同时保存时留下半个 JSON 文件。
-  const tempPath = `${CONFIG_PATH}.tmp-${process.pid}`;
+  const tempPath = `${targetPath}.tmp-${process.pid}`;
   fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  fs.renameSync(tempPath, CONFIG_PATH);
+  fs.renameSync(tempPath, targetPath);
+  fs.mkdirSync(path.dirname(CONFIG_LOCATOR_PATH), { recursive: true });
+  const locatorTempPath = `${CONFIG_LOCATOR_PATH}.tmp-${process.pid}`;
+  fs.writeFileSync(locatorTempPath, `${JSON.stringify({ configPath: String(config.core?.configPath || "").trim() }, null, 2)}\n`, "utf8");
+  fs.renameSync(locatorTempPath, CONFIG_LOCATOR_PATH);
+  CONFIG_PATH = targetPath;
   clipboardSettingsCache = null;
   clipboardSettingsMtime = 0;
+  return configPathInfo(config);
 }
 
 function defaultClipboardStoragePath() {
@@ -919,6 +965,34 @@ ipcMain.handle("weborg:open-accessibility-settings", async () => {
 
 ipcMain.handle("weborg:get-clipboard-storage-info", () => clipboardStorageInfo());
 
+ipcMain.handle("weborg:get-config-path-info", () => configPathInfo());
+
+ipcMain.handle("weborg:choose-config-path", async () => {
+  const options = {
+    title: "选择 FlowHub 配置文件位置",
+    defaultPath: CONFIG_PATH,
+    buttonLabel: "保存到这里",
+    filters: [{ name: "JSON 配置", extensions: ["json"] }],
+    properties: ["showOverwriteConfirmation", "createDirectory"]
+  };
+  const owner = settingsWin && !settingsWin.isDestroyed() ? settingsWin : win && !win.isDestroyed() ? win : null;
+  const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  const selectedPath = path.extname(result.filePath) ? result.filePath : `${result.filePath}.json`;
+  if (path.resolve(selectedPath) === CONFIG_LOCATOR_PATH) return { ok: false, reason: "请选择其他文件名" };
+  return { ok: true, path: path.resolve(selectedPath) };
+});
+
+ipcMain.handle("weborg:open-config-path", () => {
+  try {
+    if (!fs.existsSync(CONFIG_PATH)) return { ok: false, reason: "配置文件尚不存在" };
+    shell.showItemInFolder(CONFIG_PATH);
+    return { ok: true, path: CONFIG_PATH };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+});
+
 ipcMain.handle("weborg:choose-clipboard-storage", async () => {
   const options = {
     title: "选择 FlowHub 数据存放目录",
@@ -947,7 +1021,7 @@ ipcMain.handle("weborg:save-config", async (event, config) => {
   try {
     validateConfig(config);
     const storageState = await switchClipboardStorage(config);
-    writeConfig(config);
+    const configState = writeConfig(config);
     const savedConfig = readConfig();
     const failures = await pluginRegistry.applyConfig(savedConfig, { app });
     const coreState = applyCoreConfig(savedConfig);
@@ -955,7 +1029,7 @@ ipcMain.handle("weborg:save-config", async (event, config) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
     }
-    return { ok: true, config: savedConfig, pluginFailures: failures, coreState, storageState };
+    return { ok: true, config: savedConfig, pluginFailures: failures, coreState, storageState, configState };
   } catch (error) {
     return { ok: false, reason: error.message };
   }

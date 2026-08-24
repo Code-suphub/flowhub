@@ -1,6 +1,7 @@
 const state = {
   config: null,
   plugins: [],
+  configFile: null,
   clipboardStorage: null,
   selectedId: "",
   mode: "structure",
@@ -30,6 +31,7 @@ function iconHtml(node, className = "tree-icon") {
 function normalizeConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
   if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
+  if (config.core.configPath !== undefined && typeof config.core.configPath !== "string") throw new Error("配置文件位置必须是字符串");
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
@@ -216,9 +218,19 @@ function renderSelected() {
 function renderSettingsFields() {
   $("#coreHotkey").value = state.config?.core?.hotkey || "Alt+Space";
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
+  renderConfigPath();
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   renderClipboardStorage();
   renderClipboardSummary();
+}
+
+function renderConfigPath() {
+  const configuredPath = String(state.config?.core?.configPath || "").trim();
+  const resolvedPath = configuredPath || state.configFile?.defaultPath || state.configFile?.resolvedPath || "项目目录/config.json";
+  $("#coreConfigPath").value = resolvedPath;
+  $("#coreConfigPathHint").textContent = state.configFile?.available === false
+    ? "浏览器仅用于预览，请在 Electron App 中选择或打开配置文件。"
+    : "保存后切换到新的配置文件；原文件会保留。";
 }
 
 function renderClipboardStorage() {
@@ -361,7 +373,7 @@ async function save() {
     const result = await window.weborg.saveConfig(state.config);
     if (!result?.ok) throw new Error(result?.reason || "保存失败");
     state.config = result.config || state.config;
-    [state.plugins, state.clipboardStorage] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo()]);
+    [state.plugins, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     state.dirty = false;
     render();
     toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 个插件启动失败` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
@@ -373,7 +385,7 @@ async function save() {
 async function reload() {
   if (state.dirty && !window.confirm("当前有未保存修改，确定重新读取并丢弃这些修改吗？")) return;
   try {
-    [state.plugins, state.config, state.clipboardStorage] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo()]);
+    [state.plugins, state.config, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     normalizeConfig(state.config);
     state.dirty = false;
     render();
@@ -386,6 +398,34 @@ async function reload() {
 async function openAccessibilitySettings() {
   const result = await window.weborg.openAccessibilitySettings();
   if (!result?.ok) toast(result?.reason || "无法打开系统设置", true);
+}
+
+async function chooseConfigPath() {
+  const result = await window.weborg.chooseConfigPath();
+  if (!result?.ok) {
+    if (!result?.canceled) toast(result?.reason || "无法选择配置文件位置", true);
+    return;
+  }
+  state.config.core ||= {};
+  state.config.core.configPath = result.path;
+  markDirty("配置文件位置将在保存后切换");
+  renderConfigPath();
+}
+
+async function openConfigPath() {
+  if (state.dirty && String(state.config?.core?.configPath || "").trim() !== String(state.configFile?.configuredPath || "").trim()) {
+    toast("请先保存新的配置文件位置，再打开文件");
+    return;
+  }
+  const result = await window.weborg.openConfigPath();
+  if (!result?.ok) toast(result?.reason || "无法打开配置文件位置", true);
+}
+
+function resetConfigPath() {
+  state.config.core ||= {};
+  state.config.core.configPath = "";
+  markDirty("保存后将恢复默认配置文件位置");
+  renderConfigPath();
 }
 
 async function chooseClipboardStorage() {
@@ -431,6 +471,9 @@ function handleAction(action) {
   if (action === "save") return save();
   if (action === "reload") return reload();
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
+  if (action === "choose-config-path") return chooseConfigPath();
+  if (action === "open-config-path") return openConfigPath();
+  if (action === "reset-config-path") return resetConfigPath();
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();
@@ -554,10 +597,11 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") window.close();
 });
 
-Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo()]).then(([plugins, config, clipboardStorage]) => {
+Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]).then(([plugins, config, clipboardStorage, configFile]) => {
   state.plugins = plugins || [];
   state.config = clone(normalizeConfig(config));
   state.clipboardStorage = clipboardStorage;
+  state.configFile = configFile;
   expandAll();
   render();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));
