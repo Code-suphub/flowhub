@@ -205,6 +205,151 @@
       .toast.show { opacity: 1; transform: translateY(0); }
       .toast.error { border-color: rgba(255, 142, 142, .4); background: #3b252b; }
       .hidden { display: none !important; }
+
+      /* Quiet technical workspace: graphite surfaces and restrained mint accents. */
+      :root {
+        --ink: #edf2ef;
+        --muted: #9ba9a3;
+        --faint: #68766f;
+        --line: rgba(211, 231, 220, .1);
+        --panel: rgba(18, 27, 31, .94);
+        --panel-deep: #0b1216;
+        --accent: #8fd5b7;
+        --accent-strong: #b9ead3;
+        --accent-deep: #346f5e;
+        --danger: #f09a9a;
+      }
+      body {
+        background:
+          radial-gradient(circle at 78% -18%, rgba(91, 151, 126, .12), transparent 38%),
+          linear-gradient(135deg, #0a1115 0%, #0d1519 55%, #0b1216 100%);
+        font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      }
+      .topbar {
+        min-height: 68px;
+        padding: 13px 22px;
+        border-color: rgba(211, 231, 220, .08);
+        background: rgba(9, 16, 20, .9);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, .015);
+      }
+      .brand-mark {
+        width: 36px;
+        height: 36px;
+        border: 0;
+        border-radius: 11px;
+        color: #10221b;
+        background: linear-gradient(145deg, #b8e8d3, #79c9aa);
+        box-shadow: 0 7px 22px rgba(72, 146, 116, .16), inset 0 1px rgba(255, 255, 255, .42);
+      }
+      .eyebrow { color: #79c8aa; letter-spacing: .18em; }
+      h1 { font-size: 17px; font-weight: 750; }
+      .button {
+        min-height: 32px;
+        border-color: rgba(211, 231, 220, .12);
+        border-radius: 8px;
+        color: #a8b5af;
+        background: rgba(255, 255, 255, .025);
+      }
+      .button:hover { border-color: rgba(143, 213, 183, .28); background: rgba(143, 213, 183, .065); }
+      .button.primary { color: #10231b; background: #8fd5b7; }
+      .button.primary:hover { background: #a9e2c9; box-shadow: 0 6px 18px rgba(88, 168, 135, .18); }
+      .workspace { grid-template-columns: 258px minmax(0, 1fr); }
+      .sidebar {
+        padding: 24px 14px 28px;
+        border-color: rgba(211, 231, 220, .08);
+        background: rgba(10, 18, 22, .74);
+      }
+      .section-label { margin-left: 11px; color: #586761; letter-spacing: .16em; }
+      .module-switcher { gap: 4px; margin-bottom: 26px; }
+      .plugin-module-row {
+        min-height: 43px;
+        gap: 2px;
+        padding: 2px 4px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        transition: .16s ease;
+      }
+      .plugin-module-row:has(.module-button.active) {
+        border-color: rgba(143, 213, 183, .2);
+        background: linear-gradient(90deg, rgba(83, 151, 123, .14), rgba(83, 151, 123, .035));
+        box-shadow: inset 2px 0 #79c8aa;
+      }
+      .plugin-module-row:has(.module-button:not(:disabled)):hover { background-color: rgba(255, 255, 255, .025); }
+      .module-button { min-height: 38px; padding: 8px 9px; border: 0; border-radius: 8px; }
+      .module-button.active, .module-button:not(:disabled):hover { border: 0; background: transparent; }
+      .module-button span { font-size: 12px; font-weight: 650; }
+      .module-button small { color: #61716a; }
+      .plugin-enable { width: 38px; height: 36px; background: transparent; }
+      .plugin-enable input { width: 28px; height: 16px; background: #25332f; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025); }
+      .plugin-enable input:checked { background: #467f6c; }
+      .plugin-enable input:checked::after { background: #b8ead2; }
+      .app-card, .tree-card { border-color: rgba(211, 231, 220, .09); background: rgba(255, 255, 255, .022); }
+      .module-summary { padding: 15px; }
+      .module-summary-mark { color: #9fdec3; background: rgba(111, 193, 159, .09); }
+      .side-note { color: #61716a; }
+      .editor { padding: 32px 38px 44px; }
+      .editor-inner { width: min(960px, 100%); }
+      .editor-head { align-items: center; margin-bottom: 24px; }
+      .editor-head h2 { font-size: 28px; font-weight: 720; letter-spacing: -.04em; }
+      .editor-head p { margin-top: 7px; color: #91a09a; }
+      .editor-kicker { margin-bottom: 7px; color: #79c8aa; letter-spacing: .18em; }
+      .module-state {
+        padding: 6px 10px;
+        border-color: rgba(143, 213, 183, .16);
+        color: #94b3a6;
+        background: rgba(143, 213, 183, .045);
+      }
+      .module-state::before { background: #81d5b3; box-shadow: 0 0 0 4px rgba(129, 213, 179, .09); }
+      .clipboard-overview {
+        grid-template-columns: 170px 170px minmax(260px, 1fr);
+        gap: 9px;
+        margin-bottom: 16px;
+      }
+      .overview-card {
+        min-height: 88px;
+        gap: 7px;
+        padding: 13px 14px;
+        border-color: rgba(211, 231, 220, .09);
+        border-radius: 11px;
+        background: rgba(255, 255, 255, .022);
+      }
+      .overview-card span { color: #63736c; font-size: 9px; letter-spacing: .12em; }
+      .overview-card strong { font-size: 17px; font-weight: 690; }
+      .overview-card small { color: #82918b; }
+      .storage-overview { grid-template-columns: auto minmax(0, 1fr); align-items: center; align-content: center; column-gap: 14px; }
+      .storage-overview span { grid-column: 1 / -1; }
+      .storage-overview strong { white-space: nowrap; }
+      .storage-overview small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .selected-card {
+        padding: 20px;
+        border-color: rgba(211, 231, 220, .1);
+        border-radius: 14px;
+        background: rgba(18, 28, 32, .76);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, .13);
+      }
+      .selected-banner { padding-bottom: 15px; margin-bottom: 16px; }
+      .selected-icon { color: #11231c; background: #8fd5b7; }
+      .selected-banner strong { font-size: 14px; }
+      .clipboard-settings-grid { grid-template-columns: minmax(220px, .72fr) minmax(380px, 1.28fr); gap: 10px; }
+      .settings-block {
+        min-height: 140px;
+        padding: 15px;
+        border-color: rgba(211, 231, 220, .085);
+        border-radius: 10px;
+        background: rgba(4, 11, 14, .25);
+      }
+      .settings-block-title { font-size: 11px; letter-spacing: .02em; }
+      input, textarea { border-color: rgba(211, 231, 220, .11); background: rgba(4, 10, 13, .48); }
+      input:focus, textarea:focus { border-color: rgba(143, 213, 183, .58); box-shadow: 0 0 0 3px rgba(143, 213, 183, .075); }
+      input[readonly] { color: #879690; cursor: default; }
+      .storage-path-row { grid-template-columns: minmax(0, 1fr) 74px; }
+      .storage-path-row input { color: #a8b6b0; }
+      .storage-actions { margin-top: 1px; }
+      .settings-block.wide { padding: 13px 15px; background: rgba(143, 213, 183, .025); }
+      .field-hint { color: #65756e; line-height: 1.5; }
+      .permission-copy strong { color: #b7c1bd; }
+      .status::before { background: #81d5b3; box-shadow: 0 0 0 4px rgba(129, 213, 179, .08); }
+
       @media (max-width: 760px) {
         .workspace { grid-template-columns: 235px minmax(0, 1fr); }
         .editor { padding: 22px 18px 28px; }
@@ -213,6 +358,12 @@
         .clipboard-overview, .clipboard-settings-grid { grid-template-columns: 1fr; }
         .settings-block.wide { grid-column: auto; }
         .status { display: none; }
+      }
+      @media (max-width: 980px) {
+        .clipboard-overview { grid-template-columns: 1fr 1fr; }
+        .storage-overview { grid-column: 1 / -1; }
+        .clipboard-settings-grid { grid-template-columns: 1fr; }
+        .settings-block.wide { grid-column: auto; }
       }
     </style>
   </head>
@@ -348,7 +499,7 @@
             <div class="clipboard-overview">
               <article class="overview-card"><span>记录状态</span><strong id="clipboardStatusValue">正在记录</strong><small>监听文本、图片和文件变化</small></article>
               <article class="overview-card"><span>留存时间</span><strong id="clipboardRetentionValue">30 天</strong><small>到期记录会在后台自动清理</small></article>
-              <article class="overview-card"><span>数据位置</span><strong id="clipboardStorageMode">默认目录</strong><small id="clipboardStorageSummary">SQLite 与图片文件保存在用户数据目录</small></article>
+              <article class="overview-card storage-overview"><span>数据位置</span><strong id="clipboardStorageMode">默认目录</strong><small id="clipboardStorageSummary">SQLite 与图片文件保存在用户数据目录</small></article>
             </div>
 
             <section class="selected-card clipboard-settings-card" id="clipboardSettings">
@@ -357,11 +508,11 @@
                 <div><strong>记录与粘贴</strong><small>这些设置只影响桌面 App 的剪切板模块。</small></div>
               </div>
               <div class="clipboard-settings-grid">
-                <div class="settings-block">
+                <div class="settings-block history-block">
                   <div class="settings-block-title">历史留存</div>
                   <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">超过时间的记录会自动清理；填写 0 表示永久保留。</div></div>
                 </div>
-                <div class="settings-block">
+                <div class="settings-block storage-block">
                   <div class="settings-block-title">记录存放位置</div>
                   <div class="field">
                     <label for="clipboardStoragePath">SQLite 数据库与图片目录</label>

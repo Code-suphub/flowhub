@@ -41,6 +41,15 @@ html[data-weborg-runtime="browser"][data-weborg-page="settings"] body {
   min-width: 760px;
 }
 
+html[data-weborg-runtime="browser"][data-weborg-page="settings"] body::before {
+  top: auto;
+  right: 12px;
+  bottom: 12px;
+  border-color: rgba(143, 213, 183, .18);
+  color: rgba(185, 234, 211, .58);
+  background: rgba(8, 15, 18, .72);
+}
+
 html[data-weborg-runtime="browser"][data-weborg-readonly="true"] .clipboard-result {
   cursor: default;
 }
