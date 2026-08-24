@@ -350,15 +350,15 @@ function addBatch(payloads = []) {
   }
 }
 
-function search(query = "", limit = 12, kind = "all") {
+function search(query = "", limit = 30, kind = "all", offset = 0) {
   if (!db) return [];
   const keyword = String(query || "").trim();
   const normalizedKeyword = keyword.toLowerCase();
-  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
+  const safeOffset = Math.max(0, Number(offset) || 0);
   const safeKind = ["text", "image", "file"].includes(kind) ? kind : "all";
-  const cacheKey = `${normalizedKeyword}\u0000${safeLimit}\u0000${safeKind}`;
+  const cacheKey = `${normalizedKeyword}\u0000${safeLimit}\u0000${safeKind}\u0000${safeOffset}`;
   if (searchCache.has(cacheKey)) return searchCache.get(cacheKey);
-  const candidateLimit = safeKind === "all" ? safeLimit : 250;
   const conditions = [];
   const parameters = [];
   if (keyword) {
@@ -370,11 +370,13 @@ function search(query = "", limit = 12, kind = "all") {
   if (safeKind === "text") conditions.push("kind = 'text'");
   if (safeKind === "image") conditions.push("kind IN ('image', 'file')");
   if (safeKind === "file") conditions.push("kind = 'file'");
-  parameters.push(candidateLimit);
+  const requiresFileClassification = safeKind === "image" || safeKind === "file";
+  if (!requiresFileClassification) parameters.push(safeLimit, safeOffset);
   const result = rows(
     `SELECT * FROM clipboard_records
      ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
-     ORDER BY last_seen_at DESC LIMIT ?`,
+     ORDER BY last_seen_at DESC
+     ${requiresFileClassification ? "" : "LIMIT ? OFFSET ?"}`,
     parameters
   );
   const publicRecords = result.map(toPublicRecord).filter((record) => {
@@ -382,7 +384,7 @@ function search(query = "", limit = 12, kind = "all") {
     if (safeKind === "image") return record.kind === "image" || (record.kind === "file" && record.fileType === "image");
     if (safeKind === "file") return record.kind === "file" && record.fileType !== "image";
     return true;
-  }).slice(0, safeLimit);
+  }).slice(requiresFileClassification ? safeOffset : 0, requiresFileClassification ? safeOffset + safeLimit : safeLimit);
   searchCache.set(cacheKey, publicRecords);
   if (searchCache.size > 32) searchCache.delete(searchCache.keys().next().value);
   return publicRecords;

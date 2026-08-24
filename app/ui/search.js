@@ -6,8 +6,9 @@ const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
 const scopeOrder = ["all", "web", "clipboard", "app"];
 const clipboardKinds = ["all", "text", "image", "file"];
+const CLIPBOARD_PAGE_SIZE = 30;
 
-const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set() };
+const state = { config: null, pageIndex: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set() };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let usageSearchToken = 0;
@@ -264,11 +265,19 @@ function renderResult(item, index, items) {
   `;
 }
 
-function render() {
+function render({ preserveScroll = false } = {}) {
+  const previousScrollTop = preserveScroll ? resultsEl.scrollTop : 0;
   if (!state.config) { resultsEl.innerHTML = `<div class="empty">配置加载中…</div>`; return; }
   const m = matches();
   if (!m.length) { resultsEl.innerHTML = `<div class="empty">没有匹配项</div>`; return; }
   resultsEl.innerHTML = renderResults(m);
+  if (state.scope === "clipboard" && (state.clipboardLoading || !state.clipboardHasMore)) {
+    resultsEl.insertAdjacentHTML("beforeend", `<div class="clipboard-load-status">${state.clipboardLoading ? "正在加载更多…" : "已经到底了"}</div>`);
+  }
+  if (preserveScroll) {
+    resultsEl.scrollTop = previousScrollTop;
+    return;
+  }
   const a = resultsEl.querySelector(".result.active");
   if (a) a.scrollIntoView({ block: "nearest" });
 }
@@ -303,7 +312,14 @@ function choose(page) {
   else window.weborg && window.weborg.openLocal(page?.title || "");
 }
 
+function invalidateClipboardPaging() {
+  clipboardSearchToken += 1;
+  state.clipboardLoading = false;
+  state.clipboardHasMore = false;
+}
+
 function setScope(scope) {
+  invalidateClipboardPaging();
   state.scope = scope;
   state.index = 0;
   document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
@@ -316,6 +332,7 @@ function setScope(scope) {
 
 function setClipboardKind(kind) {
   if (!clipboardKinds.includes(kind)) return;
+  invalidateClipboardPaging();
   state.clipboardKind = kind;
   state.index = 0;
   document.querySelectorAll("[data-clipboard-kind]").forEach((item) => {
@@ -358,15 +375,31 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Enter") { const p = m[state.index]; if (p) choose(p); }
 });
 
-async function refreshClipboard() {
+async function refreshClipboard({ append = false } = {}) {
   if (state.scope === "web") return;
+  if (append && (state.scope !== "clipboard" || state.clipboardLoading || !state.clipboardHasMore)) return;
   const token = ++clipboardSearchToken;
+  const offset = append ? state.clipboardResults.length : 0;
+  state.clipboardLoading = true;
+  if (!append) state.clipboardHasMore = true;
+  if (append) render({ preserveScroll: true });
   try {
-    const records = await window.weborg?.searchClipboard(state.query, state.scope === "clipboard" ? state.clipboardKind : "all");
+    const records = await window.weborg?.searchClipboard(state.query, state.scope === "clipboard" ? state.clipboardKind : "all", CLIPBOARD_PAGE_SIZE, offset);
     if (token !== clipboardSearchToken) return;
-    state.clipboardResults = records || [];
-    render();
-  } catch {}
+    const nextRecords = records || [];
+    state.clipboardResults = append
+      ? [...state.clipboardResults, ...nextRecords.filter((record) => !state.clipboardResults.some((current) => current.id === record.id))]
+      : nextRecords;
+    state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
+    render({ preserveScroll: append });
+  } catch {
+    if (!append) state.clipboardResults = [];
+  } finally {
+    if (token === clipboardSearchToken) {
+      state.clipboardLoading = false;
+      render({ preserveScroll: append });
+    }
+  }
 }
 
 async function refreshApps() {
@@ -401,15 +434,19 @@ function queueClipboardRefresh(delay = 180) {
 }
 
 q.addEventListener("input", () => {
+  invalidateClipboardPaging();
   state.query = q.value;
   state.index = 0;
   render();
   queueClipboardRefresh();
 });
+resultsEl.addEventListener("scroll", () => {
+  if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight < 160) void refreshClipboard({ append: true });
+});
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => setScope(button.dataset.scope)));
 document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
-window.weborg.onClipboardUpdated(() => { queueClipboardRefresh(80); });
+window.weborg.onClipboardUpdated(() => { invalidateClipboardPaging(); queueClipboardRefresh(80); });
 window.weborg.onUsageUpdated(() => { void refreshUsage(); });
 resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
@@ -438,9 +475,10 @@ function focusSearch() { q?.focus(); q?.select(); }
 window.focusSearch = focusSearch;
 
 // 初始加载
-Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard(""), window.weborg.searchApps(""), window.weborg.searchUsage("all")]).then(([cfg, records, applications, usageSections]) => {
+Promise.all([window.weborg.getConfig(), window.weborg.searchClipboard("", "all", CLIPBOARD_PAGE_SIZE, 0), window.weborg.searchApps(""), window.weborg.searchUsage("all")]).then(([cfg, records, applications, usageSections]) => {
   setConfig(cfg);
   state.clipboardResults = records || [];
+  state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
   state.appResults = applications || [];
   state.usageSections = usageSections || { frequent: [], recent: [] };
   render();

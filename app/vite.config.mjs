@@ -148,12 +148,12 @@ async function withClipboardDatabase(callback) {
   }
 }
 
-async function searchClipboardRecords(query = "", limit = 12, kind = "all") {
+async function searchClipboardRecords(query = "", limit = 30, kind = "all", offset = 0) {
   const keyword = String(query || "").trim();
   const normalizedKeyword = keyword.toLowerCase();
-  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
+  const safeOffset = Math.max(0, Number(offset) || 0);
   const safeKind = ["text", "image", "file"].includes(kind) ? kind : "all";
-  const candidateLimit = safeKind === "all" ? safeLimit : 250;
   return withClipboardDatabase((database) => {
     const total = Number(databaseRows(database, "SELECT COUNT(*) AS total FROM clipboard_records")[0]?.total || 0);
     const conditions = [];
@@ -167,12 +167,14 @@ async function searchClipboardRecords(query = "", limit = 12, kind = "all") {
     if (safeKind === "text") conditions.push("kind = 'text'");
     if (safeKind === "image") conditions.push("kind IN ('image', 'file')");
     if (safeKind === "file") conditions.push("kind = 'file'");
-    parameters.push(candidateLimit);
+    const requiresFileClassification = safeKind === "image" || safeKind === "file";
+    if (!requiresFileClassification) parameters.push(safeLimit, safeOffset);
     const records = databaseRows(
       database,
       `SELECT * FROM clipboard_records
        ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
-       ORDER BY last_seen_at DESC LIMIT ?`,
+       ORDER BY last_seen_at DESC
+       ${requiresFileClassification ? "" : "LIMIT ? OFFSET ?"}`,
       parameters
     );
     const publicRecords = records.map(browserClipboardRecord).filter((record) => {
@@ -180,7 +182,7 @@ async function searchClipboardRecords(query = "", limit = 12, kind = "all") {
       if (safeKind === "image") return record.kind === "image" || (record.kind === "file" && record.fileType === "image");
       if (safeKind === "file") return record.kind === "file" && record.fileType !== "image";
       return true;
-    }).slice(0, safeLimit);
+    }).slice(requiresFileClassification ? safeOffset : 0, requiresFileClassification ? safeOffset + safeLimit : safeLimit);
     return { total, records: publicRecords };
   });
 }
@@ -328,8 +330,9 @@ function localClipboardApi() {
           const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
           const result = await searchClipboardRecords(
             requestUrl.searchParams.get("q") || "",
-            requestUrl.searchParams.get("limit") || 12,
-            requestUrl.searchParams.get("kind") || "all"
+            requestUrl.searchParams.get("limit") || 30,
+            requestUrl.searchParams.get("kind") || "all",
+            requestUrl.searchParams.get("offset") || 0
           );
           sendJson(response, 200, { ok: true, readonly: true, ...result });
         } catch (error) {

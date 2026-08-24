@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld("weborg", {
   saveConfig: (config) => ipcRenderer.invoke("weborg:save-config", config),
   searchApps: (query) => ipcRenderer.invoke("weborg:search-apps", query || ""),
   searchUsage: (scope) => ipcRenderer.invoke("weborg:search-usage", scope || "all"),
-  searchClipboard: (query, kind) => ipcRenderer.invoke("weborg:search-clipboard", query || "", kind || "all"),
+  searchClipboard: (query, kind, limit, offset) => ipcRenderer.invoke("weborg:search-clipboard", query || "", kind || "all", limit || 30, offset || 0),
   copyClipboard: (id) => ipcRenderer.invoke("weborg:copy-clipboard", id),
   showClipboardMenu: (id) => ipcRenderer.invoke("weborg:show-clipboard-menu", id),
   deleteClipboard: (id) => ipcRenderer.invoke("weborg:delete-clipboard", id),

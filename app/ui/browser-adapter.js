@@ -92,8 +92,8 @@ if (!window.weborg) {
       configListeners.forEach((listener) => listener(result.config));
       return result;
     },
-    async searchClipboard(query = "", kind = "all") {
-      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(query)}&kind=${encodeURIComponent(kind)}&limit=12`, { cache: "no-store" });
+    async searchClipboard(query = "", kind = "all", limit = 30, offset = 0) {
+      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(query)}&kind=${encodeURIComponent(kind)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
       return result.records || [];
