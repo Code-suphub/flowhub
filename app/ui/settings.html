@@ -84,7 +84,14 @@
       .module-button:disabled { cursor: default; opacity: .56; }
       .module-button span { font-weight: 700; }
       .module-button small { color: var(--faint); font-size: 10px; }
+      .module-panel.hidden { display: none; }
       .app-card { display: grid; gap: 11px; margin-bottom: 22px; }
+      .module-summary { gap: 9px; color: var(--muted); line-height: 1.55; }
+      .module-summary strong { color: var(--ink); font-size: 13px; }
+      .module-summary-mark {
+        width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px;
+        color: var(--accent-strong); background: rgba(75, 208, 184, .1); font-size: 17px;
+      }
       .field { display: grid; align-content: start; gap: 6px; }
       .field label { color: var(--muted); font-size: 11px; }
       input, textarea {
@@ -137,6 +144,13 @@
       .editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
       .editor-head h2 { font-size: 24px; letter-spacing: -.035em; }
       .editor-head p { margin-top: 6px; color: var(--muted); line-height: 1.55; }
+      .editor-kicker { margin-bottom: 6px; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      .module-state {
+        display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; padding: 7px 10px;
+        border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(255, 255, 255, .035); font-size: 11px;
+      }
+      .module-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(75, 208, 184, .1); }
+      .module-state.paused::before { background: var(--faint); box-shadow: 0 0 0 4px rgba(99, 121, 121, .1); }
       .mode-tabs { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: rgba(0, 0, 0, .16); }
       .mode-tab { padding: 7px 12px; border-radius: 6px; color: var(--faint); background: transparent; cursor: pointer; }
       .mode-tab.active { color: var(--ink); background: rgba(255, 255, 255, .1); }
@@ -151,6 +165,23 @@
       .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .form-grid .wide { grid-column: 1 / -1; }
       .field-hint { margin-top: 5px; color: var(--faint); font-size: 10px; }
+      .clipboard-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin-bottom: 14px; }
+      .overview-card {
+        min-height: 108px; display: grid; align-content: space-between; gap: 10px; padding: 15px;
+        border: 1px solid var(--line); border-radius: 13px; background: rgba(255, 255, 255, .035);
+      }
+      .overview-card span { color: var(--faint); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      .overview-card strong { color: var(--ink); font-size: 20px; letter-spacing: -.03em; }
+      .overview-card small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+      .clipboard-settings-card { padding: 21px; }
+      .clipboard-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+      .settings-block {
+        min-height: 132px; display: grid; align-content: start; gap: 10px; padding: 16px;
+        border: 1px solid var(--line); border-radius: 12px; background: rgba(4, 13, 18, .28);
+      }
+      .settings-block.wide { grid-column: 1 / -1; min-height: 0; }
+      .settings-block-title { color: var(--ink); font-size: 12px; font-weight: 700; }
+      .settings-block .permission-row { margin-top: 2px; }
       .empty-editor { padding: 50px 20px; border: 1px dashed rgba(166, 208, 202, .22); border-radius: 15px; color: var(--muted); text-align: center; line-height: 1.7; }
       .empty-editor strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 15px; }
       .json-panel { display: grid; gap: 12px; }
@@ -166,6 +197,8 @@
         .editor { padding: 22px 18px 28px; }
         .form-grid { grid-template-columns: 1fr; }
         .form-grid .wide { grid-column: auto; }
+        .clipboard-overview, .clipboard-settings-grid { grid-template-columns: 1fr; }
+        .settings-block.wide { grid-column: auto; }
         .status { display: none; }
       }
     </style>
@@ -197,37 +230,39 @@
             <button class="module-button" type="button" data-module="clipboard"><span>剪切板</span><small>记录中</small></button>
           </div>
 
-          <div class="section-label">工作台设置</div>
-          <div class="app-card">
-            <div class="field"><label for="appTitle">标题</label><input id="appTitle" data-config-field="title" /></div>
-            <div class="field"><label for="appSubtitle">副标题</label><input id="appSubtitle" data-config-field="subtitle" /></div>
-            <label class="switch-field"><input id="probeEnabled" type="checkbox" data-config-field="probeEnabled" />启用链接 iframe 探测</label>
+          <div class="module-panel" data-module-panel="web">
+            <div class="section-label">工作台设置</div>
+            <div class="app-card">
+              <div class="field"><label for="appTitle">标题</label><input id="appTitle" data-config-field="title" /></div>
+              <div class="field"><label for="appSubtitle">副标题</label><input id="appSubtitle" data-config-field="subtitle" /></div>
+              <label class="switch-field"><input id="probeEnabled" type="checkbox" data-config-field="probeEnabled" />启用链接 iframe 探测</label>
+            </div>
+
+            <div class="tree-heading">
+              <div class="section-label">目录结构</div>
+              <div class="tree-actions">
+                <button class="mini-button" data-action="expand-all" title="全部展开">⊞</button>
+                <button class="mini-button" data-action="collapse-all" title="全部收缩">⊟</button>
+                <button class="mini-button" data-action="add-root" title="添加一级目录">＋</button>
+              </div>
+            </div>
+            <div class="tree-card"><div class="tree" id="tree"></div></div>
+            <p class="side-note">配置会写入项目根目录的 <code>config.json</code>。Web 管理台和浏览器扩展仍然使用这份配置。</p>
           </div>
 
-          <div class="section-label" data-module-section="clipboard">剪切板设置</div>
-          <div class="app-card" id="clipboardSettings">
-            <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">超过时间的记录会自动清理；填写 0 表示永久保留。</div></div>
-            <label class="switch-field"><input id="clipboardEnabled" type="checkbox" data-config-field="clipboardEnabled" />自动记录剪切板内容</label>
-            <div class="permission-row">
-              <div class="permission-copy"><strong>自动粘贴权限</strong><div class="field-hint">用于选中剪切板后自动发送 ⌘V。</div></div>
-              <button class="button" type="button" data-action="open-accessibility-settings">打开系统设置</button>
+          <div class="module-panel hidden" data-module-panel="clipboard">
+            <div class="section-label">模块说明</div>
+            <div class="app-card module-summary">
+              <div class="module-summary-mark">▤</div>
+              <strong>本机剪切板历史</strong>
+              <span>记录文本、图片与文件，支持搜索、去重和快速粘贴。</span>
             </div>
+            <p class="side-note">历史记录保存在 Electron 用户数据目录，不会写入网页目录配置。</p>
           </div>
-
-          <div class="tree-heading">
-            <div class="section-label">目录结构</div>
-            <div class="tree-actions">
-              <button class="mini-button" data-action="expand-all" title="全部展开">⊞</button>
-              <button class="mini-button" data-action="collapse-all" title="全部收缩">⊟</button>
-              <button class="mini-button" data-action="add-root" title="添加一级目录">＋</button>
-            </div>
-          </div>
-          <div class="tree-card"><div class="tree" id="tree"></div></div>
-          <p class="side-note">配置会写入项目根目录的 <code>config.json</code>。Web 管理台和浏览器扩展仍然使用这份配置。</p>
         </aside>
 
         <main class="editor">
-          <div class="editor-inner">
+          <div class="editor-inner module-panel" data-module-panel="web">
             <div class="editor-head">
               <div><h2>目录与页面</h2><p>把常用平台整理成可搜索的层级入口，任意节点都可以配置页面链接。</p></div>
               <div class="mode-tabs" role="tablist">
@@ -252,6 +287,47 @@
               <div class="json-actions">
                 <small>JSON 模式适合批量编辑；应用 JSON 后再点击“保存配置”。</small>
                 <div class="toolbar"><button class="button" data-action="format-json">格式化</button><button class="button" data-action="apply-json">应用 JSON</button></div>
+              </div>
+            </section>
+          </div>
+
+          <div class="editor-inner module-panel hidden" data-module-panel="clipboard">
+            <div class="editor-head">
+              <div>
+                <div class="editor-kicker">Clipboard</div>
+                <h2>剪切板设置</h2>
+                <p>管理历史记录的留存方式、监听状态和自动粘贴权限。</p>
+              </div>
+              <span class="module-state" id="clipboardModuleState">正在记录</span>
+            </div>
+
+            <div class="clipboard-overview">
+              <article class="overview-card"><span>记录状态</span><strong id="clipboardStatusValue">正在记录</strong><small>监听文本、图片和文件变化</small></article>
+              <article class="overview-card"><span>留存时间</span><strong id="clipboardRetentionValue">30 天</strong><small>到期记录会在后台自动清理</small></article>
+              <article class="overview-card"><span>数据位置</span><strong>本机</strong><small>SQLite 与图片文件保存在用户数据目录</small></article>
+            </div>
+
+            <section class="selected-card clipboard-settings-card" id="clipboardSettings">
+              <div class="selected-banner">
+                <span class="selected-icon">▤</span>
+                <div><strong>记录与粘贴</strong><small>这些设置只影响桌面 App 的剪切板模块。</small></div>
+              </div>
+              <div class="clipboard-settings-grid">
+                <div class="settings-block">
+                  <div class="settings-block-title">历史留存</div>
+                  <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">超过时间的记录会自动清理；填写 0 表示永久保留。</div></div>
+                </div>
+                <div class="settings-block">
+                  <div class="settings-block-title">自动记录</div>
+                  <label class="switch-field"><input id="clipboardEnabled" type="checkbox" data-config-field="clipboardEnabled" />自动记录剪切板内容</label>
+                  <div class="field-hint">关闭后保留已有历史，但不再写入新的复制内容。</div>
+                </div>
+                <div class="settings-block wide">
+                  <div class="permission-row">
+                    <div class="permission-copy"><strong>自动粘贴权限</strong><div class="field-hint">选中历史记录后自动发送 ⌘V，需要 macOS 辅助功能权限。</div></div>
+                    <button class="button" type="button" data-action="open-accessibility-settings">打开系统设置</button>
+                  </div>
+                </div>
               </div>
             </section>
           </div>

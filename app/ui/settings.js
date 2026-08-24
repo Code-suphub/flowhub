@@ -2,6 +2,7 @@ const state = {
   config: null,
   selectedId: "",
   mode: "structure",
+  module: "web",
   dirty: false,
   expanded: new Set()
 };
@@ -205,6 +206,19 @@ function renderAppFields() {
   $("#probeEnabled").checked = state.config?.probe?.enabled !== false;
   $("#clipboardRetentionDays").value = Number(state.config?.clipboard?.retentionDays ?? 30);
   $("#clipboardEnabled").checked = state.config?.clipboard?.enabled !== false;
+  renderClipboardSummary();
+}
+
+function renderClipboardSummary() {
+  const enabled = state.config?.clipboard?.enabled !== false;
+  const retentionDays = Number(state.config?.clipboard?.retentionDays ?? 30);
+  const statusText = enabled ? "正在记录" : "已暂停";
+  if ($("#clipboardStatusValue")) $("#clipboardStatusValue").textContent = statusText;
+  if ($("#clipboardRetentionValue")) $("#clipboardRetentionValue").textContent = retentionDays === 0 ? "永久保留" : `${retentionDays} 天`;
+  if ($("#clipboardModuleState")) {
+    $("#clipboardModuleState").textContent = statusText;
+    $("#clipboardModuleState").classList.toggle("paused", !enabled);
+  }
 }
 
 function syncJson() {
@@ -217,6 +231,20 @@ function renderMode() {
   document.querySelectorAll(".mode-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.mode === state.mode));
 }
 
+function renderModule() {
+  document.querySelectorAll("[data-module-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.modulePanel !== state.module);
+  });
+  document.querySelectorAll("[data-module]").forEach((item) => {
+    const active = item.dataset.module === state.module;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-pressed", String(active));
+    const hint = item.querySelector("small");
+    if (hint && item.dataset.module === "clipboard") hint.textContent = active ? "当前模块" : "记录设置";
+    if (hint && item.dataset.module === "web") hint.textContent = active ? "当前模块" : "网页入口";
+  });
+}
+
 function render() {
   ensureSelection();
   renderAppFields();
@@ -224,6 +252,7 @@ function render() {
   renderSelected();
   syncJson();
   renderMode();
+  renderModule();
   updateStatus();
 }
 
@@ -355,20 +384,9 @@ function handleAction(action) {
 }
 
 function switchModule(module) {
-  document.querySelectorAll("[data-module]").forEach((item) => {
-    const active = item.dataset.module === module;
-    item.classList.toggle("active", active);
-    const hint = item.querySelector("small");
-    if (hint && item.dataset.module === "clipboard") hint.textContent = active ? "当前模块" : "记录中";
-    if (hint && item.dataset.module === "web") hint.textContent = active ? "当前模块" : "网页入口";
-  });
-
-  if (module === "clipboard") {
-    $("#clipboardSettings")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(() => $("#clipboardRetentionDays")?.focus({ preventScroll: true }), 180);
-  } else {
-    $("#tree")?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
+  if (!["web", "clipboard"].includes(module)) return;
+  state.module = module;
+  renderModule();
 }
 
 document.addEventListener("click", (event) => {
@@ -413,7 +431,6 @@ document.addEventListener("input", (event) => {
   }
   const configField = event.target.dataset.configField;
   if (configField) {
-    state.config.app ||= {};
     if (configField === "probeEnabled") {
       state.config.probe ||= {};
       state.config.probe.enabled = event.target.checked;
@@ -425,9 +442,11 @@ document.addEventListener("input", (event) => {
       const days = Number(event.target.value);
       state.config.clipboard.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
     } else {
+      state.config.app ||= {};
       state.config.app[configField] = event.target.value;
     }
     markDirty();
+    renderClipboardSummary();
     return;
   }
   const nodeField = event.target.dataset.nodeField;
