@@ -17,6 +17,8 @@ let lastQuery = "";
 let clipboardTimer = null;
 let clipboardPollInFlight = false;
 let lastClipboardSignature = "";
+let pendingSelfClipboardSignature = "";
+let pendingSelfClipboardExpiresAt = 0;
 let lastClipboardCleanupAt = 0;
 let clipboardSettingsCache = null;
 let clipboardSettingsMtime = 0;
@@ -31,6 +33,7 @@ const clipboardFileIconCache = new Map();
 const applicationIconCache = new Map();
 let applicationIndexPromise = null;
 let blurHideTimer = null;
+const CLIPBOARD_PERF_ENABLED = process.env.WEBORG_CLIPBOARD_PERF === "1";
 
 const MAC_NATIVE_PASTE_SCRIPT = [
   "ObjC.import('CoreGraphics');",
@@ -175,6 +178,30 @@ function hashBuffer(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+function clipboardPerfTimer(recordId) {
+  if (!CLIPBOARD_PERF_ENABLED) return { mark() {}, finish() {} };
+  const startedAt = process.hrtime.bigint();
+  let previousAt = startedAt;
+  const stages = {};
+  return {
+    mark(name) {
+      const now = process.hrtime.bigint();
+      stages[name] = Number(now - previousAt) / 1e6;
+      previousAt = now;
+    },
+    finish(details = {}) {
+      const total = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      const roundedStages = Object.fromEntries(Object.entries(stages).map(([name, milliseconds]) => [name, Number(milliseconds.toFixed(1))]));
+      console.log("[weborg][clipboard-perf]", JSON.stringify({
+        id: Number(recordId),
+        ...details,
+        stages: roundedStages,
+        totalMs: Number(total.toFixed(1))
+      }));
+    }
+  };
+}
+
 const FILE_CLIPBOARD_FORMATS = [
   "public.file-url",
   "NSFilenamesPboardType",
@@ -203,6 +230,13 @@ const IMAGE_CLIPBOARD_FORMATS = [
 
 function isImageClipboardFormat(format) {
   return /(^image\/|image|png|jpe?g|gif|tiff)/i.test(String(format || ""));
+}
+
+function clipboardImageFormatSignature(formats) {
+  return [...new Set([
+    ...formats.filter(isImageClipboardFormat),
+    ...IMAGE_CLIPBOARD_FORMATS
+  ])].filter((format) => hasClipboardFormat(format, formats)).sort().join("|");
 }
 
 function hasClipboardFormat(format, formats) {
@@ -349,10 +383,7 @@ function readFileClipboardPayload(formats) {
 }
 
 function readImageClipboardPayload(formats, now, filePayload) {
-  const imageFormats = [...new Set([
-    ...formats.filter(isImageClipboardFormat),
-    ...IMAGE_CLIPBOARD_FORMATS
-  ])].filter((format) => hasClipboardFormat(format, formats)).sort().join("|");
+  const imageFormats = clipboardImageFormatSignature(formats);
   if (!imageFormats) {
     cachedClipboardImage = null;
     lastClipboardImageFormats = "";
@@ -397,6 +428,33 @@ function resetClipboardSnapshot() {
   cachedClipboardFiles = null;
 }
 
+function markOwnClipboardWrite(record, imageBuffer = null) {
+  const signature = `${record.kind}:${record.hash}`;
+  pendingSelfClipboardSignature = signature;
+  pendingSelfClipboardExpiresAt = Date.now() + 2000;
+  lastClipboardSignature = signature;
+  if (record.kind === "text") {
+    lastClipboardText = record.content;
+    lastClipboardTextHash = record.hash;
+    return;
+  }
+  if (record.kind === "image" && imageBuffer) {
+    lastClipboardImageFormats = clipboardImageFormatSignature(clipboard.availableFormats());
+    lastClipboardImageCheckAt = Date.now();
+    cachedClipboardImage = {
+      kind: "image",
+      value: imageBuffer,
+      hash: record.hash,
+      sourceName: record.sourceName || ""
+    };
+    return;
+  }
+  if (record.kind === "file") {
+    lastClipboardFileData = "";
+    cachedClipboardFiles = null;
+  }
+}
+
 function readClipboardPayloads(now = Date.now()) {
   const payloads = [];
   const formats = clipboard.availableFormats();
@@ -428,7 +486,15 @@ async function pollClipboard() {
 
     const payloads = readClipboardPayloads();
     const signature = payloads.map((payload) => `${payload.kind}:${payload.hash}`).join("|");
-    if (signature && signature !== lastClipboardSignature) {
+    const now = Date.now();
+    const isSelfWrite = signature
+      && signature === pendingSelfClipboardSignature
+      && now <= pendingSelfClipboardExpiresAt;
+    if (isSelfWrite) {
+      lastClipboardSignature = signature;
+      pendingSelfClipboardSignature = "";
+      pendingSelfClipboardExpiresAt = 0;
+    } else if (signature && signature !== lastClipboardSignature) {
       clipboardStore.addBatch(payloads);
       lastClipboardSignature = signature;
       if (win && !win.isDestroyed()) win.webContents.send("weborg:clipboard-updated");
@@ -436,7 +502,10 @@ async function pollClipboard() {
       resetClipboardSnapshot();
     }
 
-    const now = Date.now();
+    if (pendingSelfClipboardExpiresAt && now > pendingSelfClipboardExpiresAt) {
+      pendingSelfClipboardSignature = "";
+      pendingSelfClipboardExpiresAt = 0;
+    }
     if (now - lastClipboardCleanupAt > 60 * 1000) {
       clipboardStore.cleanup(settings.retentionDays);
       lastClipboardCleanupAt = now;
@@ -783,31 +852,63 @@ ipcMain.handle("weborg:search-clipboard", async (event, query) => {
 });
 
 ipcMain.handle("weborg:copy-clipboard", async (event, id) => {
+  const perf = clipboardPerfTimer(id);
+  let record = null;
   try {
-    const record = clipboardStore.get(id);
-    if (!record) return { ok: false, reason: "剪切板记录不存在或已过期" };
+    record = clipboardStore.get(id);
+    perf.mark("lookup");
+    if (!record) {
+      perf.finish({ ok: false, reason: "not-found" });
+      return { ok: false, reason: "剪切板记录不存在或已过期" };
+    }
+    let imageBuffer = null;
     if (record.kind === "text") {
+      perf.mark("prepare");
       clipboard.writeText(record.content);
     } else if (record.kind === "file") {
       const filePaths = clipboardStore.getFilePaths(id).filter((filePath) => fs.existsSync(filePath));
-      if (!filePaths.length) return { ok: false, reason: "文件已不存在或无法访问" };
+      if (!filePaths.length) {
+        perf.finish({ ok: false, kind: record.kind, reason: "missing-files" });
+        return { ok: false, reason: "文件已不存在或无法访问" };
+      }
       const uriList = `${filePaths.map((filePath) => pathToFileURL(filePath).href).join("\r\n")}\r\n`;
+      const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", "\"": "&quot;" }[char]));
+      const plist = process.platform === "darwin"
+        ? `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><array>${filePaths.map((filePath) => `<string>${escapeXml(filePath)}</string>`).join("")}</array></plist>`
+        : "";
+      perf.mark("prepare");
       clipboard.clear();
       clipboard.writeBuffer("text/uri-list", Buffer.from(uriList, "utf8"));
       if (process.platform === "darwin") {
-        const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", "\"": "&quot;" }[char]));
-        const plist = `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><array>${filePaths.map((filePath) => `<string>${escapeXml(filePath)}</string>`).join("")}</array></plist>`;
         clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
       }
     } else {
-      const imageBuffer = clipboardStore.getImageBuffer(id);
-      if (!imageBuffer) return { ok: false, reason: "图片文件不存在或已损坏" };
-      clipboard.writeImage(nativeImage.createFromBuffer(imageBuffer));
+      imageBuffer = clipboardStore.getImageBuffer(id);
+      if (!imageBuffer) {
+        perf.finish({ ok: false, kind: record.kind, reason: "missing-image" });
+        return { ok: false, reason: "图片文件不存在或已损坏" };
+      }
+      const image = nativeImage.createFromBuffer(imageBuffer);
+      perf.mark("prepare");
+      clipboard.writeImage(image);
     }
+    perf.mark("clipboardWrite");
+    markOwnClipboardWrite(record, imageBuffer);
     hideWindow();
+    perf.mark("hide");
     const pasteResult = await pasteIntoPreviousApp();
+    perf.mark("paste");
+    perf.finish({
+      ok: true,
+      kind: record.kind,
+      pasted: pasteResult.ok,
+      transport: pasteResult.transport || "none",
+      handoffMs: pasteResult.handoffMs,
+      sendMs: pasteResult.sendMs
+    });
     return { ok: true, pasted: pasteResult.ok, pasteReason: pasteResult.reason || "" };
   } catch (error) {
+    perf.finish({ ok: false, kind: record?.kind || "unknown", reason: error.message });
     return { ok: false, reason: error.message };
   }
 });
@@ -916,10 +1017,10 @@ function sendPasteWithAppleScript() {
     ], { timeout: 1500 }, (error) => {
       if (error) {
         console.warn("[weborg] 自动粘贴失败，请在系统设置中允许 Web Organization 使用辅助功能:", error.message);
-        resolve({ ok: false, reason: error.message });
+        resolve({ ok: false, reason: error.message, transport: "applescript" });
         return;
       }
-      resolve({ ok: true });
+      resolve({ ok: true, transport: "applescript" });
     });
   });
 }
@@ -935,7 +1036,9 @@ async function sendNativePaste() {
   if (helperPath) {
     const nativeResult = await new Promise((resolve) => {
       execFile(helperPath, [], { timeout: 500 }, (error) => {
-        resolve(error ? { ok: false, reason: error.message } : { ok: true });
+        resolve(error
+          ? { ok: false, reason: error.message, transport: "swift" }
+          : { ok: true, transport: "swift" });
       });
     });
     if (nativeResult.ok) return nativeResult;
@@ -945,7 +1048,7 @@ async function sendNativePaste() {
   return new Promise((resolve) => {
     execFile("osascript", ["-l", "JavaScript", "-e", MAC_NATIVE_PASTE_SCRIPT], { timeout: 800 }, async (error) => {
       if (!error) {
-        resolve({ ok: true });
+        resolve({ ok: true, transport: "jxa" });
         return;
       }
       resolve(await sendPasteWithAppleScript());
@@ -967,7 +1070,13 @@ function pasteIntoPreviousApp() {
         setTimeout(waitForPreviousApp, 8);
         return;
       }
-      void sendNativePaste().then(resolve);
+      const handoffMs = Date.now() - startedAt;
+      const sendStartedAt = Date.now();
+      void sendNativePaste().then((result) => resolve({
+        ...result,
+        handoffMs,
+        sendMs: Date.now() - sendStartedAt
+      }));
     };
     waitForPreviousApp();
   });

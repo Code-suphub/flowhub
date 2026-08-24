@@ -9,11 +9,15 @@ let dataDir = "";
 let imageDir = "";
 let dbPath = "";
 const searchCache = new Map();
+const imageBufferCache = new Map();
+let imageBufferCacheBytes = 0;
 let persistTimer = null;
 let persistPending = false;
 
 const USAGE_FREQUENT_MIN_COUNT = 3;
 const USAGE_HALF_LIFE_DAYS = 30;
+const IMAGE_BUFFER_CACHE_MAX_ENTRIES = 4;
+const IMAGE_BUFFER_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 
 function rows(sql, params = []) {
   const statement = db.prepare(sql);
@@ -58,6 +62,34 @@ function flushPersist() {
 
 function imagePath(fileName) {
   return path.join(imageDir, fileName);
+}
+
+function removeCachedImage(fileName) {
+  const buffer = imageBufferCache.get(fileName);
+  if (!buffer) return;
+  imageBufferCache.delete(fileName);
+  imageBufferCacheBytes -= buffer.length;
+}
+
+function cacheImageBuffer(fileName, buffer) {
+  if (!fileName || !Buffer.isBuffer(buffer) || !buffer.length || buffer.length > IMAGE_BUFFER_CACHE_MAX_BYTES) return;
+  removeCachedImage(fileName);
+  imageBufferCache.set(fileName, buffer);
+  imageBufferCacheBytes += buffer.length;
+  while (imageBufferCache.size > IMAGE_BUFFER_CACHE_MAX_ENTRIES || imageBufferCacheBytes > IMAGE_BUFFER_CACHE_MAX_BYTES) {
+    const oldestFileName = imageBufferCache.keys().next().value;
+    if (!oldestFileName) break;
+    removeCachedImage(oldestFileName);
+  }
+}
+
+function cachedImageBuffer(fileName) {
+  const buffer = imageBufferCache.get(fileName);
+  if (!buffer) return null;
+  // Map 的插入顺序作为 LRU 顺序，命中后移动到末尾。
+  imageBufferCache.delete(fileName);
+  imageBufferCache.set(fileName, buffer);
+  return buffer;
 }
 
 const IMAGE_FILE_EXTENSIONS = /\.(?:png|jpe?g|gif|webp|bmp|tiff?|heic|heif|avif|svg|ico)$/i;
@@ -223,6 +255,7 @@ function addImage(buffer, hash, sourceName = "", shouldPersist = true) {
   const now = new Date().toISOString();
   const existing = first("SELECT * FROM clipboard_records WHERE kind = 'image' AND hash = ?", [hash]);
   if (existing) {
+    if (existing.file_name) cacheImageBuffer(existing.file_name, buffer);
     if (sourceName && existing.source_name !== sourceName) {
       db.run("UPDATE clipboard_records SET source_name = ? WHERE id = ?", [sourceName, existing.id]);
       invalidateSearchCache();
@@ -232,6 +265,7 @@ function addImage(buffer, hash, sourceName = "", shouldPersist = true) {
 
   const fileName = `${hash}.png`;
   fs.writeFileSync(imagePath(fileName), buffer);
+  cacheImageBuffer(fileName, buffer);
   db.run(
     `INSERT INTO clipboard_records(kind, hash, file_name, source_name, size, created_at, last_seen_at)
      VALUES ('image', ?, ?, ?, ?, ?, ?)`,
@@ -409,7 +443,15 @@ function getImageBuffer(id) {
   if (!db) return null;
   const row = first("SELECT file_name FROM clipboard_records WHERE id = ? AND kind = 'image'", [id]);
   if (!row?.file_name) return null;
-  try { return fs.readFileSync(imagePath(row.file_name)); } catch { return null; }
+  const cached = cachedImageBuffer(row.file_name);
+  if (cached) return cached;
+  try {
+    const buffer = fs.readFileSync(imagePath(row.file_name));
+    cacheImageBuffer(row.file_name, buffer);
+    return buffer;
+  } catch {
+    return null;
+  }
 }
 
 function getFilePaths(id) {
@@ -429,6 +471,7 @@ function remove(id) {
   const row = first("SELECT id, file_name FROM clipboard_records WHERE id = ?", [id]);
   if (!row) return false;
   if (row.file_name) {
+    removeCachedImage(row.file_name);
     try { fs.unlinkSync(imagePath(row.file_name)); } catch {}
   }
   db.run("DELETE FROM clipboard_records WHERE id = ?", [id]);
@@ -446,6 +489,7 @@ function cleanup(retentionDays) {
   if (!expired.length) return 0;
   for (const row of expired) {
     if (row.file_name) {
+      removeCachedImage(row.file_name);
       try { fs.unlinkSync(imagePath(row.file_name)); } catch {}
     }
   }
@@ -463,6 +507,8 @@ function close() {
   }
   db = null;
   invalidateSearchCache();
+  imageBufferCache.clear();
+  imageBufferCacheBytes = 0;
 }
 
 module.exports = {
