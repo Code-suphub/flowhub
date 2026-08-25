@@ -5,6 +5,7 @@ const pinBtn = document.getElementById("pinBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
 const scopeRow = document.getElementById("scopeRow");
+const keyboardHint = document.getElementById("keyboardHint");
 let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
@@ -357,6 +358,7 @@ function setScope(scope) {
   state.index = 0;
   document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
   clipboardKindRow?.classList.toggle("visible", scope === "clipboard");
+  renderKeyboardHint();
   render();
   void refreshClipboard();
   void refreshApps();
@@ -368,6 +370,17 @@ function setScope(scope) {
 function moveScope(offset) {
   const current = Math.max(0, scopeOrder.indexOf(state.scope));
   setScope(scopeOrder[(current + offset + scopeOrder.length) % scopeOrder.length]);
+}
+
+function renderKeyboardHint() {
+  if (!keyboardHint) return;
+  if (state.scope === "clipboard") {
+    keyboardHint.innerHTML = `←→ 类型 · ↑↓ 记录 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴`;
+  } else if (state.scope === "all") {
+    keyboardHint.innerHTML = `←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
+  } else {
+    keyboardHint.innerHTML = `↑↓ 结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
+  }
 }
 
 function setClipboardKind(kind) {
@@ -385,11 +398,19 @@ function setClipboardKind(kind) {
   q?.focus({ preventScroll: true });
 }
 
+function moveClipboardKind(offset) {
+  if (state.scope !== "clipboard") return false;
+  const current = Math.max(0, clipboardKinds.indexOf(state.clipboardKind));
+  setClipboardKind(clipboardKinds[(current + offset + clipboardKinds.length) % clipboardKinds.length]);
+  return true;
+}
+
 // 更新配置（主进程每次呼出都会推送）
 window.weborg.onConfig(async (cfg) => {
   setConfig(cfg);
   renderPluginScopes(await window.weborg.listPlugins());
   if (!scopeOrder.includes(state.scope)) state.scope = "all";
+  renderKeyboardHint();
   render();
   void refreshClipboard();
   void refreshApps();
@@ -427,7 +448,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown") { moveVertical(m, 1); render(); e.preventDefault(); }
   else if (e.key === "ArrowUp") { moveVertical(m, -1); render(); e.preventDefault(); }
   else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-    if (moveUsageHorizontal(m, e.key === "ArrowRight" ? 1 : -1)) {
+    const offset = e.key === "ArrowRight" ? 1 : -1;
+    if (moveClipboardKind(offset)) {
+      e.preventDefault();
+    } else if (state.scope === "all" && moveUsageHorizontal(m, offset)) {
       render();
       e.preventDefault();
     }
