@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const { fileURLToPath, pathToFileURL } = require("url");
 const clipboardStore = require("./clipboard-store");
 const { PluginRegistry } = require("./plugins/registry");
+const { rankWebPages } = require("./ui/web-search");
 const pluginRegistry = new PluginRegistry();
 
 // 产品重命名后继续读取 Web Organization 的历史数据；新安装使用 FlowHub 默认目录。
@@ -748,7 +749,6 @@ function flattenWebPages(nodes = [], parents = [], result = []) {
     const pathEntries = [...parents, { id: node.id, title: node.title, icon: node.icon }];
     if (node.url) {
       const page = { ...node, path: pathEntries, breadcrumb: pathEntries.map((entry) => entry.title).join(" / "), type: "page" };
-      page.hay = `${page.title || ""} ${page.url || ""} ${page.breadcrumb} ${page.note || ""}`.toLowerCase();
       result.push(page);
     }
     flattenWebPages(node.children || [], pathEntries, result);
@@ -757,10 +757,8 @@ function flattenWebPages(nodes = [], parents = [], result = []) {
 }
 
 function searchWebPages(query = "", limit = 12) {
-  const keyword = String(query || "").trim().toLowerCase();
-  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
   const pages = flattenWebPages(readConfig().plugins?.web?.settings?.items || []);
-  return (keyword ? pages.filter((page) => page.hay.includes(keyword)) : pages).slice(0, safeLimit);
+  return rankWebPages(pages, query, limit);
 }
 
 async function searchUsage(scope = "all", limit = 6) {

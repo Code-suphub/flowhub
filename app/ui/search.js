@@ -32,8 +32,11 @@ const noteOf = (n) => String(n?.note || "").trim();
 
 function iconHtml(n) {
   const raw = String(n?.icon || "").trim();
-  if (/^https?:\/\//i.test(raw)) return `<img src="${esc(raw)}" alt="" />`;
-  return esc(raw || "□");
+  const isImage = /^https?:\/\//i.test(raw)
+    || /^data:image\//i.test(raw)
+    || /^(?:\.\/|\/)?assets\/[^?#]+\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i.test(raw);
+  if (isImage) return `<img src="${esc(raw)}" alt="" />`;
+  return esc(raw || "⌁");
 }
 function setConfig(config) {
   state.config = config;

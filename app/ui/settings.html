@@ -128,19 +128,38 @@
       .tree-card { padding: 7px; }
       .tree { display: grid; gap: 2px; }
       .tree-row {
-        width: 100%; min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px calc(8px + var(--depth) * 15px);
-        border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; text-align: left; transition: .14s ease;
+        position: relative; width: 100%; min-height: 38px; display: flex; align-items: center; gap: 7px; padding: 6px 8px 6px calc(5px + var(--depth) * 15px);
+        border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; text-align: left; transition: opacity .14s ease, color .14s ease, background .14s ease, transform .14s ease;
       }
       .tree-row:hover { color: var(--ink); background: rgba(255, 255, 255, .055); }
       .tree-row.active { color: var(--ink); background: linear-gradient(90deg, rgba(75, 208, 184, .17), rgba(75, 208, 184, .04)); box-shadow: inset 2px 0 var(--accent); }
       .tree-row:focus-visible { outline: 2px solid rgba(75, 208, 184, .7); outline-offset: -2px; }
+      .tree-row.dragging { opacity: .32; transform: scale(.985); }
+      .tree-row.drop-inside { color: var(--ink); background: rgba(143, 213, 183, .13); outline: 1px solid rgba(143, 213, 183, .5); outline-offset: -1px; }
+      .tree-row.drop-before::after, .tree-row.drop-after::after {
+        content: ""; position: absolute; z-index: 3; left: calc(11px + var(--depth) * 15px); right: 7px; height: 2px; border-radius: 999px;
+        background: var(--accent-strong); box-shadow: 0 0 0 3px rgba(143, 213, 183, .08);
+      }
+      .tree-row.drop-before::after { top: -2px; }
+      .tree-row.drop-after::after { bottom: -2px; }
+      .tree-row.drop-before::before, .tree-row.drop-after::before {
+        content: ""; position: absolute; z-index: 4; left: calc(7px + var(--depth) * 15px); width: 7px; height: 7px; border: 2px solid var(--accent-strong); border-radius: 50%; background: var(--panel-deep);
+      }
+      .tree-row.drop-before::before { top: -5px; }
+      .tree-row.drop-after::before { bottom: -5px; }
+      .tree-drag-handle { width: 10px; height: 20px; flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, 2px); grid-auto-rows: 2px; place-content: center; gap: 2px; border-radius: 4px; cursor: grab; opacity: .2; transition: opacity .14s ease, background .14s ease; }
+      .tree-row:hover .tree-drag-handle, .tree-drag-handle:focus-visible { opacity: .8; background: rgba(255, 255, 255, .04); }
+      .tree-drag-handle:active { cursor: grabbing; }
+      .tree-drag-handle i { width: 2px; height: 2px; border-radius: 50%; background: currentColor; pointer-events: none; }
       .tree-toggle, .tree-toggle-spacer { width: 17px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; }
       .tree-toggle { border: 0; border-radius: 5px; color: var(--faint); background: transparent; cursor: pointer; font-size: 13px; }
       .tree-toggle:hover { color: var(--accent-strong); background: rgba(75, 208, 184, .12); }
       .tree-toggle::before { content: ""; width: 6px; height: 6px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); transition: transform .16s ease; }
       .tree-toggle[aria-expanded="true"]::before { transform: rotate(45deg); }
-      .tree-icon { width: 23px; height: 23px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 6px; color: var(--accent-strong); background: rgba(75, 208, 184, .1); font-size: 13px; }
-      .tree-icon img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+      .tree-icon { width: 23px; height: 23px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 6px; color: var(--accent-strong); background: rgba(75, 208, 184, .08); font-size: 13px; }
+      .tree-icon.image-icon { padding: 2px; background: rgba(238, 244, 241, .92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28); }
+      .tree-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: 4px; }
+      .tree-icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
       .tree-copy { min-width: 0; display: grid; gap: 2px; }
       .tree-copy strong, .tree-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tree-copy strong { font-size: 12px; font-weight: 700; }
@@ -167,7 +186,9 @@
       .selected-card { padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: linear-gradient(145deg, rgba(27, 45, 50, .86), rgba(16, 27, 33, .8)); box-shadow: 0 18px 45px rgba(0, 0, 0, .12); }
       .selected-banner { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; margin-bottom: 17px; border-bottom: 1px solid var(--line); }
       .selected-icon { width: 38px; height: 38px; display: grid; place-items: center; overflow: hidden; border-radius: 10px; color: #092320; background: var(--accent); font-size: 18px; }
-      .selected-icon img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+      .selected-icon.image-icon { padding: 4px; background: rgba(238, 244, 241, .94); }
+      .selected-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: 7px; }
+      .selected-icon svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
       .selected-banner strong { display: block; font-size: 15px; }
       .selected-banner small { display: block; margin-top: 4px; color: var(--muted); }
       .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -409,7 +430,7 @@
               </div>
             </div>
             <div class="tree-card"><div class="tree" id="tree"></div></div>
-            <p class="side-note">配置会写入项目根目录的 <code>config.json</code>。Web 管理台和浏览器扩展仍然使用这份配置。</p>
+            <p class="side-note">拖动节点左侧手柄可调整顺序或层级；配置会写入当前 <code>config.json</code>。</p>
           </div>
 
           <div class="module-panel hidden" data-module-panel="clipboard">
@@ -543,6 +564,7 @@
       </div>
     </div>
     <div class="toast" id="toast"></div>
+    <script src="web-search.js"></script>
     <script src="browser-adapter.js"></script>
     <script src="settings.js"></script>
   </body>

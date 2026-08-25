@@ -744,6 +744,429 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "bilibili",
+            "title": "B 站",
+            "children": [
+              {
+                "id": "utools-quickweb-1748498705595",
+                "title": "akali",
+                "url": "https://cloud.bilibili.co/akali/appsManage?appId=infra.sre-arch.cloud-cd&level=4&appVersion=undefined#sh/sh001/prod",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748587288880",
+                "title": "pslb",
+                "url": "https://cloud.bilibili.co/slb#sh/sh001/prod",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748587216956",
+                "title": "pbcm",
+                "url": "https://cloud.bilibili.co/fbcm/home",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748585923847",
+                "title": "pcaster",
+                "url": "https://caster.bilibili.co/prod/apps"
+              },
+              {
+                "id": "utools-quickweb-1748587191886",
+                "title": "pchange",
+                "url": "https://cloud.bilibili.co/changePilot/overview",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748491241298",
+                "title": "uwave",
+                "url": "https://uat-cloud.bilibili.co/wave/application?page_size=10&page_num=1",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748578126147",
+                "title": "ugamewave",
+                "url": "http://uat-game-cloud-cd.bilibili.co/wave/my-release?page_size=10&page_num=1"
+              },
+              {
+                "id": "utools-quickweb-1748585991425",
+                "title": "upaladin",
+                "url": "https://uat-cloud.bilibili.co/paladin#sh/sh001/uat",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748587049822",
+                "title": "pdiscovery",
+                "url": "https://cloud.bilibili.co/discovery#sh/sh001/prod",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748585862165",
+                "title": "ucaster",
+                "url": "https://uat-caster.bilibili.co/uat/apps"
+              },
+              {
+                "id": "utools-quickweb-1748587253137",
+                "title": "cmdb",
+                "url": "https://cmdb.bilibili.co/cmdb/home",
+                "icon": "assets/web-icons/a57d2e5fc538a09618784fc65e4856441baa51b93450f2c6ae2bb3f7f039e5aa.png"
+              },
+              {
+                "id": "utools-quickweb-1748486121355",
+                "title": "pjob",
+                "url": "https://cloud.bilibili.co/job/immediate-task/history#sh/sh001/prod"
+              },
+              {
+                "id": "utools-quickweb-1748586015715",
+                "title": "ujob",
+                "url": "https://uat-cloud.bilibili.co/job/immediate-task/create#sh/sh001/uat",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748587427322",
+                "title": "pbilllion",
+                "url": "https://cloud.bilibili.co/log-ck/log?caseInsensitive=false",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748587466874",
+                "title": "pakso",
+                "url": "http://akso.bilibili.co/overview#/"
+              },
+              {
+                "id": "utools-quickweb-1748596958701",
+                "title": "tracep",
+                "url": "https://cloud.bilibili.co/alchemy-v2/appQuery#sh/sh001/prod",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1748597417539",
+                "title": "pwave",
+                "url": "https://cloud.bilibili.co/wave/home",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1749094702091",
+                "title": "pagent",
+                "url": "https://cloud.bilibili.co/agent/apply/application?page_size=10&page_num=1",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1749095192077",
+                "title": "uagent",
+                "url": "https://uat-cloud.bilibili.co/agent/publish/my-publish?page_size=10&page_num=1#sh/sh001/uat",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1749108581822",
+                "title": "ds",
+                "url": "https://chat.deepseek.com/"
+              },
+              {
+                "id": "utools-quickweb-1749124526566",
+                "title": "db",
+                "url": "https://www.doubao.com/chat/"
+              },
+              {
+                "id": "utools-quickweb-1749459321401",
+                "title": "pmoni",
+                "url": "https://moni.bilibili.co/dashboards"
+              },
+              {
+                "id": "utools-quickweb-1749466249098",
+                "title": "tapd",
+                "url": "https://www.tapd.cn/20055901/personal_documents/my_cooperation",
+                "icon": "assets/web-icons/c07820cc18ee24f6d5b4bea0691a1455f0b6906725519772bb38e04b1574c0fa.png"
+              },
+              {
+                "id": "utools-quickweb-1749730668738",
+                "title": "gitlab",
+                "url": "https://git.bilibili.co/",
+                "icon": "assets/web-icons/fc01799c5caadb9aac115cbce1f6ba184023282c1f3b9ba2c60dac43981d6475.png"
+              },
+              {
+                "id": "utools-quickweb-1749807443917",
+                "title": "pgamewave",
+                "url": "http://wave.bilibiligame.co/wave/my-release?page_size=10&page_num=1"
+              },
+              {
+                "id": "utools-quickweb-1750073899849",
+                "title": "info",
+                "url": "https://info.bilibili.co/pages/viewpage.action?pageId=257631352",
+                "icon": "assets/web-icons/c407aa2ed5128b5900ef7d2fe582628607c494a302a55b685811e4dcd5579749.png"
+              },
+              {
+                "id": "utools-quickweb-1750141059173",
+                "title": "easydata",
+                "url": "https://easydata.bilibili.co/web-fe/#/panel/index"
+              },
+              {
+                "id": "utools-quickweb-1750162700917",
+                "title": "uslo",
+                "url": "https://uat-cloud.bilibili.co/watcher/sli?current=1&pageSize=10",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1750162736736",
+                "title": "pslo",
+                "url": "https://cloud.bilibili.co/watcher#sh/sh001/prod",
+                "icon": "assets/web-icons/4049a6e373abedbc52224af127908951b47cf473dee49644d11a910937ba3f1d.png"
+              },
+              {
+                "id": "utools-quickweb-1750403253178",
+                "title": "ubillion",
+                "url": "https://uat-cloud.bilibili.co/log-ck/log?caseInsensitive=false"
+              },
+              {
+                "id": "utools-quickweb-1750404720470",
+                "title": "uakso",
+                "url": "http://uat-akso.bilibili.co/db"
+              },
+              {
+                "id": "utools-quickweb-1750682441100",
+                "title": "ppaladin",
+                "url": "https://cloud.bilibili.co/paladin#sh/sh001/prod"
+              },
+              {
+                "id": "utools-quickweb-1750745754218",
+                "title": "prds",
+                "url": "https://cloud.bilibili.co/rds/database?activeAppId=infra.rider.cloud-cd-agent&searchAppId&stateTab=using#sh/sh001/prod"
+              },
+              {
+                "id": "utools-quickweb-1750756439950",
+                "title": "cmdb接口文档",
+                "url": "https://info.bilibili.co/pages/viewpage.action?pageId=860424421",
+                "icon": "assets/web-icons/c407aa2ed5128b5900ef7d2fe582628607c494a302a55b685811e4dcd5579749.png"
+              },
+              {
+                "id": "utools-quickweb-1750764636682",
+                "title": "urds",
+                "url": "https://uat-cloud.bilibili.co/rds/database?searchAppId&stateTab=using"
+              },
+              {
+                "id": "utools-quickweb-1748586035782",
+                "title": "nyx",
+                "url": "https://nyx.bilibili.co/#/application/applicationManager",
+                "icon": "assets/web-icons/a8d34567e525c8ad6e6a05b3cf483e5a7dec9e12d666099537568e379b05a507.png"
+              },
+              {
+                "id": "utools-quickweb-1751957885049",
+                "title": "uslb",
+                "url": "https://uat-cloud.bilibili.co/slb#sh/sh001/uat"
+              },
+              {
+                "id": "utools-quickweb-1749522911312",
+                "title": "localcheck1",
+                "url": "http://localhost:8080/api/v1/health"
+              },
+              {
+                "id": "utools-quickweb-1752492692105",
+                "title": "pchangePilot",
+                "url": "https://cloud.bilibili.co/changePilot/searchAdd"
+              },
+              {
+                "id": "utools-quickweb-1752552524858",
+                "title": "uagile",
+                "url": "https://pre-agileflow.bilibili.co/#/a/ops_rider_rider-dev02/pipeline/pipelineManager",
+                "icon": "assets/web-icons/a8d34567e525c8ad6e6a05b3cf483e5a7dec9e12d666099537568e379b05a507.png"
+              },
+              {
+                "id": "utools-quickweb-1753435972074",
+                "title": "火山方舟",
+                "url": "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&OpenTokenDrawer=false"
+              },
+              {
+                "id": "utools-quickweb-1753787307931",
+                "title": "info_cd",
+                "url": "https://info.bilibili.co/display/CloudUSP/CD",
+                "icon": "assets/web-icons/c407aa2ed5128b5900ef7d2fe582628607c494a302a55b685811e4dcd5579749.png"
+              },
+              {
+                "id": "utools-quickweb-1754463254091",
+                "title": "moni_agent",
+                "url": "https://moni.bilibili.co/d/ODPjro1Zk/d71f6bb?orgId=1&var-datasource=000000908&var-app_group=infra.rider.cloud-cd-agent&var-app=infra.rider.cloud-cd-agent&var-env=prod&var-http_user=$__all&var-http_method=$__all&var-http_client_method=$__all&var-container_id=$__all&var-cluster=shylf-k8s&from=now-7d&to=now&timezone=browser&var-zone=sh001&viewPanel=panel-168"
+              },
+              {
+                "id": "utools-quickweb-1755069613922",
+                "title": "uNavigator",
+                "url": "https://uat-cloud.bilibili.co/navigator/application/manage/appInstance?activeKey=1&appId=infra.rider.cloud-cd-agent#sh/sh001/uat"
+              },
+              {
+                "id": "utools-quickweb-1755072395647",
+                "title": "info_personal",
+                "url": "https://info.bilibili.co/spaces/viewspace.action?key=~lixuefei02",
+                "icon": "assets/web-icons/c407aa2ed5128b5900ef7d2fe582628607c494a302a55b685811e4dcd5579749.png"
+              },
+              {
+                "id": "utools-quickweb-1755140027815",
+                "title": "pTaishan",
+                "url": "https://cloud.bilibili.co/taishan/table"
+              },
+              {
+                "id": "utools-quickweb-1755140345149",
+                "title": "moni_instance",
+                "url": "https://moni.bilibili.co/d/000000451/zi-jian-idcji-chu-jian-kong-v2ban-ben?orgId=1&var-interval=$__auto&from=now-30m&to=now&timezone=browser&var-datasource=000000883&var-instance_name=jscs-k8s-node-001"
+              },
+              {
+                "id": "utools-quickweb-1755758526192",
+                "title": "palarm",
+                "url": "https://cloud.bilibili.co/alarm/analysis/alertManage?page=1&size=10&my_alert=false&timeRange=%5B%222025-08-18T16%3A00%3A00.000Z%22%2C%222025-08-19T15%3A59%3A59.999Z%22%5D#sh/sh001/prod"
+              },
+              {
+                "id": "utools-quickweb-1756106008844",
+                "title": "bi观远数据平台",
+                "url": "https://bi.bilibili.co/page/k2662c7ed760444f59a2b6f7?anchor=m0480e83d8f804754b774b19",
+                "icon": "assets/web-icons/d7154e43f75acfbc5af2ea64c0cadf80390c9f6654efdd0ec3ba9e7c794bab26.png"
+              },
+              {
+                "id": "utools-quickweb-1756458833056",
+                "title": "pdatabus",
+                "url": "https://cloud.bilibili.co/databus#sh/sh004/prod"
+              },
+              {
+                "id": "utools-quickweb-1756458896382",
+                "title": "pwatcher",
+                "url": "https://cloud.bilibili.co/watcher/dashboard#sh/sh004/prod"
+              },
+              {
+                "id": "utools-quickweb-1749714663607",
+                "title": "metrics",
+                "url": "http://localhost:8000/metrics"
+              },
+              {
+                "id": "utools-quickweb-1748587089414",
+                "title": "pomega",
+                "url": "https://omega.bilibili.co/#/app",
+                "icon": "assets/web-icons/a8d34567e525c8ad6e6a05b3cf483e5a7dec9e12d666099537568e379b05a507.png"
+              },
+              {
+                "id": "utools-quickweb-1757905633310",
+                "title": "pagile",
+                "url": "https://agileflow.bilibili.co/#/a/infra_rider_cloud-cd-agent/pipeline/pipelineManager",
+                "icon": "assets/web-icons/a8d34567e525c8ad6e6a05b3cf483e5a7dec9e12d666099537568e379b05a507.png"
+              },
+              {
+                "id": "utools-quickweb-1757927911070",
+                "title": "pjob_exe_id",
+                "url": "https://cloud.bilibili.co/job/immediate-task/list/detail?id=283322456#sh/sh004/prod"
+              },
+              {
+                "id": "utools-quickweb-1758013865076",
+                "title": "moni_job",
+                "url": "https://moni.bilibili.co/d/000000451/zi-jian-idcji-chu-jian-kong-v2ban-ben?orgId=1&var-interval=$__auto&from=now-7d&to=now&timezone=browser&var-datasource=000000883&var-instance_name=nddz-tx-sh-prod-all-gs-3"
+              },
+              {
+                "id": "utools-quickweb-1759132359052",
+                "title": "uwatcher",
+                "url": "https://uat-cloud.bilibili.co/watcher#sh/sh001/uat"
+              },
+              {
+                "id": "utools-quickweb-1760003110422",
+                "title": "pclickhouse",
+                "url": "http://berserker.bilibili.co/#/dm/dataSource"
+              },
+              {
+                "id": "utools-quickweb-1760003131115",
+                "title": "uclickhouse",
+                "url": "https://uat-berserker.bilibili.co/#/dm/dataSource"
+              },
+              {
+                "id": "utools-quickweb-1762768029607",
+                "title": "moni_APIGW查询是否接入",
+                "url": "https://moni.bilibili.co/d/anvBzzfnk/apigw-apie7bd91-e585b3?orgId=1&var-datasource=%E5%BA%94%E7%94%A8%E7%9B%91%E6%8E%A7&var-app=infra.api-gw.open-api-gateway&var-service=open.mall.mall-c-search&var-basepath=%2Fmagic-c-search%2F&from=2025-11-05T16:00:00.000Z&to=2025-11-06T15:59:59.000Z&timezone=browser&var-env=prod&var-zone=$__all&var-basePath=$__all&var-path=$__all&var-instance=$__all"
+              },
+              {
+                "id": "utools-quickweb-1764149514487",
+                "title": "boss_nyx下载",
+                "url": "https://cloud.bilibili.co/boss/bucket/detail/5859372?action=File&prefix=artifact%2F"
+              },
+              {
+                "id": "utools-quickweb-1764149561468",
+                "title": "boss_前端下载目录",
+                "url": "https://cloud.bilibili.co/boss/bucket/detail/69693133?action=File&prefix="
+              },
+              {
+                "id": "utools-quickweb-1764150682163",
+                "title": "job_sshd_config",
+                "url": "https://cloud.bilibili.co/job/script/list/detail?uid=6857286452b84b4fb94ewrrq2u#sh/sh004/prod"
+              },
+              {
+                "id": "utools-quickweb-1764656775205",
+                "title": "json对比",
+                "url": "https://www.huatools.com/json-diff/"
+              },
+              {
+                "id": "utools-quickweb-1764837950682",
+                "title": "superset-ck",
+                "url": "http://olap-superset.bilibili.co/superset/sqllab/"
+              },
+              {
+                "id": "utools-quickweb-1767599272706",
+                "title": "railgun",
+                "url": "http://railgun.bilibili.co/#/overview1/cron"
+              },
+              {
+                "id": "utools-quickweb-1768901486200",
+                "title": "umoni",
+                "url": "https://uat-monitor.bilibili.co/explore?schemaVersion=1&panes=%7B%22e85%22%3A%7B%22datasource%22%3A%22000000090%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22sum%28increase%28nginx_rs_status%7Bcluster%21%7E%5C%22fat-slb%7Cshylf-pre-slb%7Cshjd-pre-slb%7Cwebcdn-prometheus%5C%22%2Cdomain%3D%5C%22pgc.gateway.view%5C%22%2Ckey_type%3D%5C%22http_5xx%5C%22%7D%5B2m%5D%29%29+by+%28zone%29%22%2C%22range%22%3Atrue%2C%22instant%22%3Atrue%2C%22datasource%22%3A%7B%22type%22%3A%22prometheus%22%2C%22uid%22%3A%22000000090%22%7D%2C%22editorMode%22%3A%22code%22%2C%22legendFormat%22%3A%22__auto%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-5m%22%2C%22to%22%3A%22now%22%7D%7D%7D&orgId=1"
+              },
+              {
+                "id": "utools-quickweb-1768903425461",
+                "title": "huiyi",
+                "url": "https://administration.biliapi.net/f1-space/web/index.html#/home/meeting/reserve"
+              },
+              {
+                "id": "utools-quickweb-1774237972654",
+                "title": "ualarm",
+                "url": "https://uat-cloud.bilibili.co/alarm"
+              },
+              {
+                "id": "utools-quickweb-1774355926247",
+                "title": "uchange",
+                "url": "https://uat-cloud.bilibili.co/changePilot#sh/sh004/uat"
+              },
+              {
+                "id": "utools-quickweb-1774493924994",
+                "title": "udatabus",
+                "url": "https://uat-cloud.bilibili.co/databus/admintopic#sh/sh004/uat"
+              },
+              {
+                "id": "utools-quickweb-1774601673105",
+                "title": "uerc",
+                "url": "https://uat-cloud.bilibili.co/faultCenter/faultSceneDetail.html?id=276#sh/sh001/uat"
+              },
+              {
+                "id": "utools-quickweb-1775737538213",
+                "title": "dejavu",
+                "url": "https://dejavu.bilibili.co/project?current=1&pageSize=10"
+              },
+              {
+                "id": "utools-quickweb-1776665977969",
+                "title": "pbrc",
+                "url": "https://cloud.bilibili.co/brc/brc-sub/event-management/list#sh/sh004/prod"
+              },
+              {
+                "id": "utools-quickweb-1776666451123",
+                "title": "ubrc",
+                "url": "https://uat-cloud.bilibili.co/brc/brc-sub/event-management/list#sh/sh001/uat"
+              },
+              {
+                "id": "utools-quickweb-1776846503571",
+                "title": "unew-api",
+                "url": "http://uat-cloud-cd.bilibili.co/api-mng/"
+              },
+              {
+                "id": "utools-quickweb-1776846538866",
+                "title": "ulangfuse",
+                "url": "http://uat-cloud-cd.bilibili.co/langfuse/project/cml7n96ri0005xw0hmssqgebx"
+              },
+              {
+                "id": "utools-quickweb-1778644190371",
+                "title": "utempus",
+                "url": "https://uat-cloud.bilibili.co/tempus#sh/sh004/uat"
+              }
+            ]
           }
         ]
       }

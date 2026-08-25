@@ -7,7 +7,8 @@ const state = {
   mode: "structure",
   module: "core",
   dirty: false,
-  expanded: new Set()
+  expanded: new Set(),
+  draggingId: ""
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -18,14 +19,21 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
 
 function iconHtml(node, className = "tree-icon") {
   const raw = String(node?.icon || "").trim();
-  if (/^https?:\/\//i.test(raw)) {
+  const isImage = /^https?:\/\//i.test(raw)
+    || /^data:image\//i.test(raw)
+    || /^(?:\.\/|\/)?assets\/[^?#]+\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i.test(raw);
+  if (isImage) {
     const simpleIcon = raw.match(/^https:\/\/cdn\.simpleicons\.org\/([^/?#]+)/i);
     const fallback = simpleIcon
       ? `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${encodeURIComponent(simpleIcon[1])}.svg`
       : "";
-    return `<span class="${className}"><img src="${esc(raw)}" ${fallback ? `data-fallback="${esc(fallback)}"` : ""} referrerpolicy="no-referrer" alt="" /></span>`;
+    return `<span class="${className} image-icon"><img src="${esc(raw)}" ${fallback ? `data-fallback="${esc(fallback)}"` : ""} referrerpolicy="no-referrer" alt="" /></span>`;
   }
-  return `<span class="${className}">${esc(raw || "□")}</span>`;
+  if (raw) return `<span class="${className} text-icon">${esc(raw)}</span>`;
+  const glyph = node?.url
+    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 4.5h7l3 3v12h-11v-15Z"/><path d="M14.5 4.5v3h3M9.5 12h5M9.5 15h4"/></svg>`
+    : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l1.7 2h9.3v9.5h-17V7.5Z"/><path d="M3.5 7.5V5h6l1.7 2h6.3v2.5"/></svg>`;
+  return `<span class="${className} glyph-icon">${glyph}</span>`;
 }
 
 function normalizeConfig(config) {
@@ -180,7 +188,8 @@ function renderTree() {
     return;
   }
   tree.innerHTML = entries.map(({ node, level }) => `
-    <div class="tree-row ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0">
+    <div class="tree-row ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0" aria-grabbed="${state.draggingId === node.id}">
+      <span class="tree-drag-handle" draggable="true" title="拖拽移动节点" aria-label="拖拽移动 ${esc(node.title || node.id)}"><i></i><i></i><i></i><i></i><i></i><i></i></span>
       ${node.children?.length ? `<button class="tree-toggle" data-toggle-node="${esc(node.id)}" aria-expanded="${state.expanded.has(node.id)}" aria-label="${state.expanded.has(node.id) ? "收缩" : "展开"}"></button>` : `<span class="tree-toggle-spacer"></span>`}
       ${iconHtml(node)}
       <span class="tree-copy"><strong>${esc(node.title || node.id)}</strong><small>${node.url ? "页面" : `${node.children?.length || 0} 个下级`}</small></span>
@@ -356,6 +365,56 @@ function moveSelected(direction) {
   [siblings[context.index], siblings[nextIndex]] = [siblings[nextIndex], siblings[context.index]];
   markDirty("排序已调整");
   render();
+}
+
+function nodeContains(root, nodeId) {
+  if (root.id === nodeId) return true;
+  return (root.children || []).some((child) => nodeContains(child, nodeId));
+}
+
+function moveNodeByDrop(sourceId, targetId, position) {
+  const source = nodeEntries().find((entry) => entry.node.id === sourceId);
+  const target = nodeEntries().find((entry) => entry.node.id === targetId);
+  if (!source || !target || sourceId === targetId) return false;
+  if (nodeContains(source.node, targetId)) {
+    toast("不能把目录移动到自己的下级中", true);
+    return false;
+  }
+
+  const sourceSiblings = source.parent ? source.parent.children : webItems();
+  const [movingNode] = sourceSiblings.splice(source.index, 1);
+  const nextTarget = nodeEntries().find((entry) => entry.node.id === targetId);
+  if (!nextTarget) {
+    sourceSiblings.splice(source.index, 0, movingNode);
+    return false;
+  }
+
+  if (position === "inside") {
+    nextTarget.node.children ||= [];
+    nextTarget.node.children.push(movingNode);
+    state.expanded.add(nextTarget.node.id);
+  } else {
+    const targetSiblings = nextTarget.parent ? nextTarget.parent.children : webItems();
+    targetSiblings.splice(nextTarget.index + (position === "after" ? 1 : 0), 0, movingNode);
+  }
+
+  state.selectedId = movingNode.id;
+  markDirty("目录结构已调整");
+  render();
+  return true;
+}
+
+function clearDropIndicators() {
+  document.querySelectorAll(".tree-row.drop-before, .tree-row.drop-inside, .tree-row.drop-after")
+    .forEach((row) => row.classList.remove("drop-before", "drop-inside", "drop-after"));
+}
+
+function dropPositionFor(row, clientY) {
+  const rect = row.getBoundingClientRect();
+  const ratio = (clientY - rect.top) / Math.max(rect.height, 1);
+  if (ratio < 0.28) return "before";
+  if (ratio > 0.72) return "after";
+  return "inside";
 }
 
 function readJsonEditor() {
@@ -535,6 +594,45 @@ document.addEventListener("keydown", (event) => {
     renderTree();
     renderSelected();
   }
+});
+
+document.addEventListener("dragstart", (event) => {
+  const handle = event.target.closest?.(".tree-drag-handle");
+  const row = handle?.closest("[data-node-id]");
+  if (!row) return;
+  state.draggingId = row.dataset.nodeId;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", state.draggingId);
+  requestAnimationFrame(() => row.classList.add("dragging"));
+});
+
+document.addEventListener("dragover", (event) => {
+  const row = event.target.closest?.("[data-node-id]");
+  if (!row || !state.draggingId || row.dataset.nodeId === state.draggingId) return;
+  const source = nodeEntries().find((entry) => entry.node.id === state.draggingId)?.node;
+  if (!source || nodeContains(source, row.dataset.nodeId)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  const position = dropPositionFor(row, event.clientY);
+  clearDropIndicators();
+  row.classList.add(`drop-${position}`);
+  row.dataset.dropPosition = position;
+});
+
+document.addEventListener("drop", (event) => {
+  const row = event.target.closest?.("[data-node-id]");
+  const sourceId = state.draggingId || event.dataTransfer.getData("text/plain");
+  if (!row || !sourceId) return;
+  event.preventDefault();
+  const position = row.dataset.dropPosition || dropPositionFor(row, event.clientY);
+  clearDropIndicators();
+  moveNodeByDrop(sourceId, row.dataset.nodeId, position);
+});
+
+document.addEventListener("dragend", () => {
+  document.querySelectorAll(".tree-row.dragging").forEach((row) => row.classList.remove("dragging"));
+  clearDropIndicators();
+  state.draggingId = "";
 });
 
 document.addEventListener("input", (event) => {

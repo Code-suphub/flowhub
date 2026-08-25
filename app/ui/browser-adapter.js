@@ -112,8 +112,7 @@ if (!window.weborg) {
         type: "page",
         breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
       }));
-      return (query ? pages.filter((page) => `${page.title || ""} ${page.url || ""} ${page.breadcrumb} ${page.note || ""}`.toLowerCase().includes(query)) : pages)
-        .slice(0, limit)
+      return window.FlowHubWebSearch.rankWebPages(pages, query, limit)
         .map((record) => ({ ...record, pluginId: id }));
     }
     return [];
