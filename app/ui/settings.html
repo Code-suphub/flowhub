@@ -490,8 +490,10 @@
               <div class="toolbar">
                 <button class="button" data-action="add-child">＋ 添加子节点</button>
                 <button class="button" data-action="add-sibling">在同级添加</button>
-                <button class="button" data-action="move-up">上移</button>
-                <button class="button" data-action="move-down">下移</button>
+                <button class="button" id="moveTopBtn" data-action="move-top" title="移到当前同级顶部">移到顶部</button>
+                <button class="button" id="moveUpBtn" data-action="move-up" title="在当前同级中上移一位">上移</button>
+                <button class="button" id="moveDownBtn" data-action="move-down" title="在当前同级中下移一位">下移</button>
+                <button class="button" id="moveBottomBtn" data-action="move-bottom" title="移到当前同级底部">移到底部</button>
                 <button class="button danger" data-action="delete">删除节点</button>
               </div>
               <div id="nodeEditor"></div>

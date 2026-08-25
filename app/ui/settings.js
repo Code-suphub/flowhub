@@ -305,6 +305,7 @@ function render() {
   renderSettingsFields();
   renderTree();
   renderSelected();
+  updateMoveActions();
   syncJson();
   renderMode();
   renderModule();
@@ -365,6 +366,34 @@ function moveSelected(direction) {
   [siblings[context.index], siblings[nextIndex]] = [siblings[nextIndex], siblings[context.index]];
   markDirty("排序已调整");
   render();
+}
+
+function moveSelectedToBoundary(boundary) {
+  const context = selectedContext();
+  if (!context) return;
+  const siblings = context.parent ? context.parent.children : webItems();
+  const targetIndex = boundary === "top" ? 0 : siblings.length - 1;
+  if (context.index === targetIndex) return toast(boundary === "top" ? "已经在当前同级顶部" : "已经在当前同级底部");
+  const [node] = siblings.splice(context.index, 1);
+  if (boundary === "top") siblings.unshift(node);
+  else siblings.push(node);
+  markDirty(boundary === "top" ? "已移到当前同级顶部" : "已移到当前同级底部");
+  render();
+}
+
+function updateMoveActions() {
+  const context = selectedContext();
+  const siblings = context ? (context.parent ? context.parent.children : webItems()) : [];
+  const states = {
+    moveTopBtn: !context || context.index === 0,
+    moveUpBtn: !context || context.index === 0,
+    moveDownBtn: !context || context.index === siblings.length - 1,
+    moveBottomBtn: !context || context.index === siblings.length - 1
+  };
+  Object.entries(states).forEach(([id, disabled]) => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = disabled;
+  });
 }
 
 function nodeContains(root, nodeId) {
@@ -527,6 +556,8 @@ function handleAction(action) {
   if (action === "delete") return deleteSelected();
   if (action === "move-up") return moveSelected(-1);
   if (action === "move-down") return moveSelected(1);
+  if (action === "move-top") return moveSelectedToBoundary("top");
+  if (action === "move-bottom") return moveSelectedToBoundary("bottom");
   if (action === "save") return save();
   if (action === "reload") return reload();
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
@@ -582,6 +613,7 @@ document.addEventListener("click", (event) => {
     state.selectedId = nodeId;
     renderTree();
     renderSelected();
+    updateMoveActions();
   }
 });
 
@@ -593,6 +625,7 @@ document.addEventListener("keydown", (event) => {
     state.selectedId = row.dataset.nodeId;
     renderTree();
     renderSelected();
+    updateMoveActions();
   }
 });
 
