@@ -8,8 +8,12 @@ const state = {
   module: "core",
   dirty: false,
   expanded: new Set(),
-  draggingId: ""
+  draggingId: "",
+  draftSavedAt: 0
 };
+
+const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
+let draftTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -154,13 +158,66 @@ function newNode() {
   return { id: uniqueId(), title: "新建节点", children: [] };
 }
 
+function draftStorageKey(configFile = state.configFile) {
+  const identity = String(configFile?.activePath || configFile?.resolvedPath || configFile?.defaultPath || "default");
+  return `${DRAFT_KEY_PREFIX}${identity}`;
+}
+
+function readDraft(configFile = state.configFile) {
+  try {
+    const raw = localStorage.getItem(draftStorageKey(configFile));
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn("[FlowHub] 无法读取配置草稿", error);
+    return null;
+  }
+}
+
+function clearDraft(key = draftStorageKey()) {
+  clearTimeout(draftTimer);
+  draftTimer = null;
+  try { localStorage.removeItem(key); }
+  catch (error) { console.warn("[FlowHub] 无法清除配置草稿", error); }
+  state.draftSavedAt = 0;
+}
+
+function persistDraftNow() {
+  clearTimeout(draftTimer);
+  draftTimer = null;
+  if (!state.dirty || !state.config) return;
+  try {
+    const savedAt = Date.now();
+    localStorage.setItem(draftStorageKey(), JSON.stringify({
+      version: 1,
+      savedAt,
+      config: state.config,
+      selectedId: state.selectedId,
+      expanded: [...state.expanded],
+      module: state.module,
+      mode: state.mode,
+      jsonText: state.mode === "json" ? $("#jsonEditor")?.value || "" : ""
+    }));
+    state.draftSavedAt = savedAt;
+    updateStatus();
+  } catch (error) {
+    console.warn("[FlowHub] 无法保存配置草稿", error);
+  }
+}
+
+function scheduleDraftSave() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(persistDraftNow, 120);
+}
+
 function markDirty(message = "有未保存修改") {
   state.dirty = true;
+  state.draftSavedAt = 0;
   const status = $("#status");
   status.textContent = message;
   status.classList.add("dirty");
   const saveButton = $("#saveBtn");
   if (saveButton) saveButton.disabled = false;
+  scheduleDraftSave();
 }
 
 let toastTimer;
@@ -175,7 +232,10 @@ function toast(message, error = false) {
 
 function updateStatus() {
   const status = $("#status");
-  status.textContent = state.dirty ? "有未保存修改" : "已保存";
+  status.textContent = state.dirty ? (state.draftSavedAt ? "草稿已自动保存" : "有未保存修改") : "已保存";
+  status.title = state.dirty && state.draftSavedAt
+    ? `草稿保存于 ${new Date(state.draftSavedAt).toLocaleTimeString()}，尚未写入正式配置`
+    : "";
   status.classList.toggle("dirty", state.dirty);
   $("#saveBtn").disabled = !state.dirty;
 }
@@ -456,6 +516,7 @@ function readJsonEditor() {
 
 async function save() {
   try {
+    const previousDraftKey = draftStorageKey();
     if (state.mode === "json") state.config = clone(readJsonEditor());
     normalizeConfig(state.config);
     const result = await window.weborg.saveConfig(state.config);
@@ -463,6 +524,7 @@ async function save() {
     state.config = result.config || state.config;
     [state.plugins, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     state.dirty = false;
+    clearDraft(previousDraftKey);
     render();
     toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 个插件启动失败` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
   } catch (error) {
@@ -473,6 +535,7 @@ async function save() {
 async function reload() {
   if (state.dirty && !window.confirm("当前有未保存修改，确定重新读取并丢弃这些修改吗？")) return;
   try {
+    clearDraft();
     [state.plugins, state.config, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     normalizeConfig(state.config);
     state.dirty = false;
@@ -728,11 +791,36 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") window.close();
 });
 
+window.addEventListener("beforeunload", persistDraftNow);
+
 Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]).then(([plugins, config, clipboardStorage, configFile]) => {
   state.plugins = plugins || [];
-  state.config = clone(normalizeConfig(config));
   state.clipboardStorage = clipboardStorage;
   state.configFile = configFile;
+  const loadedConfig = clone(normalizeConfig(config));
+  const draft = readDraft(configFile);
+  let draftConfig = null;
+  try { if (draft?.config) draftConfig = clone(normalizeConfig(draft.config)); }
+  catch (error) { console.warn("[FlowHub] 配置草稿已损坏，已忽略", error); }
+  const hasConfigChanges = draftConfig && JSON.stringify(draftConfig) !== JSON.stringify(loadedConfig);
+  const hasJsonChanges = draft?.mode === "json"
+    && String(draft.jsonText || "").trim()
+    && draft.jsonText !== JSON.stringify(loadedConfig, null, 2);
+  if ((hasConfigChanges || hasJsonChanges) && window.confirm(`检测到 ${new Date(draft.savedAt || Date.now()).toLocaleString()} 的未保存配置草稿，是否恢复？`)) {
+    state.config = draftConfig || loadedConfig;
+    state.selectedId = String(draft.selectedId || "");
+    state.expanded = new Set(Array.isArray(draft.expanded) ? draft.expanded : []);
+    state.module = ["core", "web", "clipboard", "app"].includes(draft.module) ? draft.module : "core";
+    state.mode = draft.mode === "json" ? "json" : "structure";
+    state.dirty = true;
+    state.draftSavedAt = Number(draft.savedAt) || Date.now();
+    render();
+    if (state.mode === "json" && draft.jsonText) $("#jsonEditor").value = draft.jsonText;
+    toast("已恢复未保存的配置草稿");
+    return;
+  }
+  if (draft) clearDraft(draftStorageKey(configFile));
+  state.config = loadedConfig;
   expandAll();
   render();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));
