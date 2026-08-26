@@ -15,6 +15,7 @@ const state = {
 };
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
+const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 let draftTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -46,6 +47,27 @@ function normalizeConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
   if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
   if (config.core.configPath !== undefined && typeof config.core.configPath !== "string") throw new Error("配置文件位置必须是字符串");
+  const configuredShortcuts = config.core.scopeShortcuts;
+  if (configuredShortcuts !== undefined && (!configuredShortcuts || typeof configuredShortcuts !== "object" || Array.isArray(configuredShortcuts))) throw new Error("范围快捷键必须是对象");
+  const scopeShortcuts = { ...DEFAULT_SCOPE_SHORTCUTS, ...(configuredShortcuts || {}) };
+  const usedShortcuts = new Map();
+  const modifierAliases = { option: "alt", control: "ctrl", cmd: "meta", command: "meta", cmdorctrl: "commandorcontrol" };
+  const modifiers = new Set(["shift", "alt", "ctrl", "meta", "commandorcontrol"]);
+  for (const [scope, shortcut] of Object.entries(scopeShortcuts)) {
+    if (!(scope in DEFAULT_SCOPE_SHORTCUTS)) continue;
+    if (typeof shortcut !== "string") throw new Error(`${scope} 的范围快捷键必须是字符串`);
+    const normalized = shortcut.replace(/\s+/g, "").toLowerCase();
+    if (!normalized) continue;
+    const parts = normalized.split("+").filter(Boolean).map((part) => modifierAliases[part] || part);
+    const keys = parts.filter((part) => !modifiers.has(part));
+    if (keys.length !== 1 || (!parts.some((part) => modifiers.has(part)) && !/^f(?:[1-9]|1\d|2[0-4])$/.test(keys[0]))) {
+      throw new Error(`${scope} 的范围快捷键格式无效：${shortcut}`);
+    }
+    const canonical = [...new Set(parts.filter((part) => modifiers.has(part)))].sort().join("+") + `+${keys[0]}`;
+    if (usedShortcuts.has(canonical)) throw new Error(`范围快捷键重复：${shortcut}`);
+    usedShortcuts.set(canonical, scope);
+  }
+  config.core.scopeShortcuts = scopeShortcuts;
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   config.plugins.memo ||= { enabled: true, settings: {} };
   config.plugins.memo.settings ||= {};
@@ -381,6 +403,9 @@ function renderSelected() {
 function renderSettingsFields() {
   $("#coreHotkey").value = state.config?.core?.hotkey || "Alt+Space";
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
+  document.querySelectorAll("[data-core-scope-shortcut]").forEach((input) => {
+    input.value = state.config?.core?.scopeShortcuts?.[input.dataset.coreScopeShortcut] ?? DEFAULT_SCOPE_SHORTCUTS[input.dataset.coreScopeShortcut] ?? "";
+  });
   renderConfigPath();
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   renderClipboardStorage();
@@ -922,6 +947,14 @@ document.addEventListener("input", (event) => {
   if (coreField) {
     state.config.core ||= {};
     state.config.core[coreField] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
+    markDirty();
+    return;
+  }
+  const shortcutScope = event.target.dataset.coreScopeShortcut;
+  if (shortcutScope) {
+    state.config.core ||= {};
+    state.config.core.scopeShortcuts ||= { ...DEFAULT_SCOPE_SHORTCUTS };
+    state.config.core.scopeShortcuts[shortcutScope] = event.target.value;
     markDirty();
     return;
   }

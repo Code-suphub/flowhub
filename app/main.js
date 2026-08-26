@@ -19,6 +19,7 @@ if (fs.existsSync(LEGACY_USER_DATA_PATH)) app.setPath("userData", LEGACY_USER_DA
 
 const BUNDLED_CONFIG_PATH = path.join(__dirname, "..", "config.json");
 const CONFIG_LOCATOR_PATH = path.join(app.getPath("userData"), "config-location.json");
+const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
 function defaultConfigPath() {
   return app.isPackaged ? path.join(app.getPath("userData"), "config.json") : BUNDLED_CONFIG_PATH;
@@ -153,7 +154,27 @@ function readConfig() {
     if (CONFIG_PATH !== BUNDLED_CONFIG_PATH) {
       try { return JSON.parse(fs.readFileSync(BUNDLED_CONFIG_PATH, "utf8")); } catch {}
     }
-    return { core: { hotkey: "Alt+Space", launchAtLogin: false, configPath: "" }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: true, settings: {} } } };
+    return { core: { hotkey: "Alt+Space", launchAtLogin: false, configPath: "", scopeShortcuts: { ...DEFAULT_SCOPE_SHORTCUTS } }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: true, settings: {} } } };
+  }
+}
+
+function validateScopeShortcuts(scopeShortcuts) {
+  if (scopeShortcuts === undefined) return;
+  if (!scopeShortcuts || typeof scopeShortcuts !== "object" || Array.isArray(scopeShortcuts)) throw new Error("范围快捷键必须是对象");
+  const modifierAliases = { option: "alt", control: "ctrl", cmd: "meta", command: "meta", cmdorctrl: "commandorcontrol" };
+  const modifiers = new Set(["shift", "alt", "ctrl", "meta", "commandorcontrol"]);
+  const used = new Set();
+  for (const scope of Object.keys(DEFAULT_SCOPE_SHORTCUTS)) {
+    const shortcut = scopeShortcuts[scope];
+    if (shortcut === undefined) continue;
+    if (typeof shortcut !== "string") throw new Error(`${scope} 的范围快捷键必须是字符串`);
+    const parts = shortcut.replace(/\s+/g, "").toLowerCase().split("+").filter(Boolean).map((part) => modifierAliases[part] || part);
+    if (!parts.length) continue;
+    const keys = parts.filter((part) => !modifiers.has(part));
+    if (keys.length !== 1 || (!parts.some((part) => modifiers.has(part)) && !/^f(?:[1-9]|1\d|2[0-4])$/.test(keys[0]))) throw new Error(`${scope} 的范围快捷键格式无效：${shortcut}`);
+    const canonical = [...new Set(parts.filter((part) => modifiers.has(part)))].sort().join("+") + `+${keys[0]}`;
+    if (used.has(canonical)) throw new Error(`范围快捷键重复：${shortcut}`);
+    used.add(canonical);
   }
 }
 
@@ -165,6 +186,7 @@ function validateConfig(config) {
   const configuredConfigPath = config.core.configPath;
   if (configuredConfigPath !== undefined && typeof configuredConfigPath !== "string") throw new Error("配置文件位置必须是字符串");
   if (String(configuredConfigPath || "").trim() && !path.isAbsolute(configuredConfigPath.trim())) throw new Error("配置文件位置必须是绝对路径");
+  validateScopeShortcuts(config.core.scopeShortcuts);
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");

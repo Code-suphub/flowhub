@@ -10,6 +10,7 @@ let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
 const PLUGIN_PAGE_SIZE = 30;
+const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
 const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], appHasMore: true, appLoading: false, memoResults: [], memoHasMore: true, memoLoading: false, usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
@@ -42,6 +43,31 @@ function iconHtml(n) {
 }
 function setConfig(config) {
   state.config = config;
+}
+
+function eventMatchesShortcut(event, shortcut) {
+  const parts = String(shortcut || "").replace(/\s+/g, "").toLowerCase().split("+").filter(Boolean);
+  if (!parts.length) return false;
+  const aliases = { option: "alt", control: "ctrl", cmd: "meta", command: "meta", commandorcontrol: "commandorcontrol", cmdorctrl: "commandorcontrol" };
+  const normalized = parts.map((part) => aliases[part] || part);
+  const key = normalized.find((part) => !["shift", "alt", "ctrl", "meta", "commandorcontrol"].includes(part));
+  if (!key) return false;
+  const commandOrControl = normalized.includes("commandorcontrol");
+  const expectedCtrl = normalized.includes("ctrl");
+  const expectedMeta = normalized.includes("meta");
+  if (event.shiftKey !== normalized.includes("shift") || event.altKey !== normalized.includes("alt")) return false;
+  if (commandOrControl) {
+    if (!event.ctrlKey && !event.metaKey) return false;
+  } else if (event.ctrlKey !== expectedCtrl || event.metaKey !== expectedMeta) return false;
+  const codeKey = String(event.code || "").replace(/^Digit/, "").replace(/^Key/, "").toLowerCase();
+  const eventKey = String(event.key || "").toLowerCase();
+  const expectedKey = key === "space" ? " " : key;
+  return eventKey === expectedKey || codeKey === key;
+}
+
+function scopeForShortcut(event) {
+  const configured = { ...DEFAULT_SCOPE_SHORTCUTS, ...(state.config?.core?.scopeShortcuts || {}) };
+  return Object.entries(configured).find(([scope, shortcut]) => scopeOrder.includes(scope) && eventMatchesShortcut(event, shortcut))?.[0] || "";
 }
 function pathText(page) {
   if (typeof page?.path === "string") return page.path;
@@ -480,6 +506,12 @@ window.weborg.onConfig(async (cfg) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); window.close(); }
+  const shortcutScope = scopeForShortcut(e);
+  if (shortcutScope) {
+    setScope(shortcutScope);
+    e.preventDefault();
+    return;
+  }
   if (e.key === "Tab") {
     e.preventDefault();
     if (!scopeTabHeld) {

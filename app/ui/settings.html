@@ -212,6 +212,8 @@
       .settings-block.wide { grid-column: 1 / -1; min-height: 0; }
       .settings-block-title { color: var(--ink); font-size: 12px; font-weight: 700; }
       .settings-block .permission-row { margin-top: 2px; }
+      .scope-shortcut-grid { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 10px; }
+      .scope-shortcut-grid .field { min-width: 0; }
       .storage-path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
       .storage-path-row input { min-width: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
       .storage-actions { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -409,6 +411,7 @@
         .storage-overview { grid-column: 1 / -1; }
         .clipboard-settings-grid { grid-template-columns: 1fr; }
         .settings-block.wide { grid-column: auto; }
+        .scope-shortcut-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       }
     </style>
   </head>
@@ -498,6 +501,17 @@
               <div class="clipboard-settings-grid">
                 <div class="settings-block"><div class="settings-block-title">全局快捷键</div><div class="field"><label for="coreHotkey">唤出 FlowHub</label><input id="coreHotkey" data-core-field="hotkey" placeholder="Alt+Space" /><div class="field-hint">使用 Electron Accelerator 格式，例如 Alt+Space、CommandOrControl+Space。</div></div></div>
                 <div class="settings-block"><div class="settings-block-title">系统启动</div><label class="switch-field"><input id="coreLaunchAtLogin" type="checkbox" data-core-field="launchAtLogin" />登录后自动启动 FlowHub</label><div class="field-hint">打包后的 App 保存时会同步 macOS 登录项。</div></div>
+                <div class="settings-block wide">
+                  <div class="settings-block-title">搜索范围快捷键</div>
+                  <div class="scope-shortcut-grid">
+                    <div class="field"><label for="scopeShortcutAll">全部</label><input id="scopeShortcutAll" data-core-scope-shortcut="all" placeholder="Shift+1" /></div>
+                    <div class="field"><label for="scopeShortcutClipboard">剪切板</label><input id="scopeShortcutClipboard" data-core-scope-shortcut="clipboard" placeholder="Shift+2" /></div>
+                    <div class="field"><label for="scopeShortcutApp">应用</label><input id="scopeShortcutApp" data-core-scope-shortcut="app" placeholder="Shift+3" /></div>
+                    <div class="field"><label for="scopeShortcutWeb">网页</label><input id="scopeShortcutWeb" data-core-scope-shortcut="web" placeholder="Shift+4" /></div>
+                    <div class="field"><label for="scopeShortcutMemo">备忘录</label><input id="scopeShortcutMemo" data-core-scope-shortcut="memo" placeholder="Shift+5" /></div>
+                  </div>
+                  <div class="field-hint">支持 Shift、Ctrl、Alt、Command 和 CommandOrControl；留空可停用对应快捷键。</div>
+                </div>
                 <div class="settings-block wide config-path-block">
                   <div class="settings-block-title">配置文件位置</div>
                   <div class="field">
