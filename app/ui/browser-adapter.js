@@ -18,9 +18,9 @@ if (!window.weborg) {
     { title: "DataGrip", path: "/Applications/DataGrip.app", hay: "datagrip database 数据库" }
   ];
 
-  async function getApplications(query = "", limit = 12) {
+  async function getApplications(query = "", limit = 12, offset = 0) {
     try {
-      const response = await fetch(`/__weborg/apps?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`, { cache: "no-store" });
+      const response = await fetch(`/__weborg/apps?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取应用失败：${response.status}`);
       return result.applications || [];
@@ -29,7 +29,7 @@ if (!window.weborg) {
       const keyword = String(query).trim().toLowerCase();
       return fallbackApplications
         .filter((application) => !keyword || `${application.title} ${application.hay}`.toLowerCase().includes(keyword))
-        .slice(0, limit);
+        .slice(offset, offset + limit);
     }
   }
 
@@ -104,7 +104,7 @@ if (!window.weborg) {
       return (result.records || []).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "app") {
-      return (await getApplications(query, limit)).map((record) => ({ ...record, pluginId: id }));
+      return (await getApplications(query, limit, Number(request.offset) || 0)).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "web") {
       const pages = flattenPages((await getConfig()).plugins?.web?.settings?.items || []).map((page) => ({
@@ -112,14 +112,14 @@ if (!window.weborg) {
         type: "page",
         breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
       }));
-      return window.FlowHubWebSearch.rankWebPages(pages, query, limit)
+      return window.FlowHubWebSearch.rankWebPages(pages, query, limit, Number(request.offset) || 0)
         .map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "memo") {
       const config = await getConfig();
       const configuredItems = config.plugins?.memo?.settings?.items;
       const items = Array.isArray(configuredItems) ? configuredItems : window.FlowHubMemoCatalog.cloneDefaults();
-      return window.FlowHubMemoCatalog.rankMemos(items, query, limit)
+      return window.FlowHubMemoCatalog.rankMemos(items, query, limit, Number(request.offset) || 0)
         .map((record) => ({ ...record, pluginId: id }));
     }
     return [];

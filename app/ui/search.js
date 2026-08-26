@@ -9,8 +9,9 @@ const keyboardHint = document.getElementById("keyboardHint");
 let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
+const PLUGIN_PAGE_SIZE = 30;
 
-const state = { config: null, plugins: [], webResults: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], memoResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], appHasMore: true, appLoading: false, memoResults: [], memoHasMore: true, memoLoading: false, usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let webSearchToken = 0;
@@ -48,7 +49,7 @@ function pathText(page) {
   return (page?.path || []).map((x) => x.title).join(" / ");
 }
 function pageMatches() {
-  return state.webResults.slice(0, 12);
+  return state.webResults;
 }
 
 function formatBytes(bytes) {
@@ -119,12 +120,12 @@ function matches() {
   const memos = pluginEnabled("memo") ? memoMatches() : [];
   const usages = usageMatches();
   if (state.scope === "web") {
-    if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)].slice(0, 12);
+    if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)];
     return pages;
   }
   if (state.scope === "clipboard") return clips;
   if (state.scope === "app") {
-    if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(apps, usages)].slice(0, 12);
+    if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(apps, usages)];
     return apps;
   }
   if (state.scope === "memo") return memos;
@@ -338,10 +339,19 @@ function render({ preserveScroll = false } = {}) {
   const previousScrollTop = preserveScroll ? resultsEl.scrollTop : 0;
   if (!state.config) { resultsEl.innerHTML = `<div class="empty">配置加载中…</div>`; return; }
   const m = matches();
-  if (!m.length) { resultsEl.innerHTML = `<div class="empty">没有匹配项</div>`; return; }
+  const paging = state.scope === "clipboard"
+    ? { loading: state.clipboardLoading, hasMore: state.clipboardHasMore }
+    : state.scope === "app"
+      ? { loading: state.appLoading, hasMore: state.appHasMore }
+      : state.scope === "web"
+        ? { loading: state.webLoading, hasMore: state.webHasMore }
+        : state.scope === "memo"
+          ? { loading: state.memoLoading, hasMore: state.memoHasMore }
+          : null;
+  if (!m.length) { resultsEl.innerHTML = `<div class="empty">${paging?.loading ? "正在加载…" : "没有匹配项"}</div>`; return; }
   resultsEl.innerHTML = renderResults(m);
-  if (state.scope === "clipboard" && (state.clipboardLoading || !state.clipboardHasMore)) {
-    resultsEl.insertAdjacentHTML("beforeend", `<div class="clipboard-load-status">${state.clipboardLoading ? "正在加载更多…" : "已经到底了"}</div>`);
+  if (paging && (paging.loading || !paging.hasMore)) {
+    resultsEl.insertAdjacentHTML("beforeend", `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>`);
   }
   if (preserveScroll) {
     resultsEl.scrollTop = previousScrollTop;
@@ -386,8 +396,21 @@ function invalidateClipboardPaging() {
   state.clipboardHasMore = false;
 }
 
+function invalidatePluginPaging() {
+  appSearchToken += 1;
+  webSearchToken += 1;
+  memoSearchToken += 1;
+  state.appLoading = false;
+  state.webLoading = false;
+  state.memoLoading = false;
+  state.appHasMore = false;
+  state.webHasMore = false;
+  state.memoHasMore = false;
+}
+
 function setScope(scope) {
   invalidateClipboardPaging();
+  invalidatePluginPaging();
   state.scope = scope;
   state.index = 0;
   document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
@@ -538,37 +561,82 @@ async function refreshClipboard({ append = false } = {}) {
   }
 }
 
-async function refreshApps() {
+async function refreshApps({ append = false } = {}) {
   if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
+  if (append && (state.scope !== "app" || state.appLoading || !state.appHasMore)) return;
   const token = ++appSearchToken;
+  const limit = state.scope === "app" ? PLUGIN_PAGE_SIZE : 12;
+  const offset = append ? state.appResults.length : 0;
+  state.appLoading = true;
+  if (!append) state.appHasMore = true;
+  if (append) render({ preserveScroll: true });
   try {
-    const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit: 12 });
+    const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit, offset });
     if (token !== appSearchToken) return;
-    state.appResults = applications || [];
-    render();
-  } catch {}
+    const next = applications || [];
+    const existing = new Set(state.appResults.map((item) => item.path || item.id));
+    state.appResults = append ? [...state.appResults, ...next.filter((item) => !existing.has(item.path || item.id))] : next;
+    state.appHasMore = next.length === limit;
+  } catch {
+    if (!append) state.appResults = [];
+  } finally {
+    if (token === appSearchToken) {
+      state.appLoading = false;
+      render({ preserveScroll: append });
+    }
+  }
 }
 
-async function refreshWeb() {
+async function refreshWeb({ append = false } = {}) {
   if (!pluginEnabled("web") || !["all", "web"].includes(state.scope)) return;
+  if (append && (state.scope !== "web" || state.webLoading || !state.webHasMore)) return;
   const token = ++webSearchToken;
+  const limit = state.scope === "web" ? PLUGIN_PAGE_SIZE : 12;
+  const offset = append ? state.webResults.length : 0;
+  state.webLoading = true;
+  if (!append) state.webHasMore = true;
+  if (append) render({ preserveScroll: true });
   try {
-    const pages = await window.weborg?.pluginSearch("web", { query: state.query, limit: 12 });
+    const pages = await window.weborg?.pluginSearch("web", { query: state.query, limit, offset });
     if (token !== webSearchToken) return;
-    state.webResults = pages || [];
-    render();
-  } catch {}
+    const next = pages || [];
+    const existing = new Set(state.webResults.map((item) => item.id || item.url));
+    state.webResults = append ? [...state.webResults, ...next.filter((item) => !existing.has(item.id || item.url))] : next;
+    state.webHasMore = next.length === limit;
+  } catch {
+    if (!append) state.webResults = [];
+  } finally {
+    if (token === webSearchToken) {
+      state.webLoading = false;
+      render({ preserveScroll: append });
+    }
+  }
 }
 
-async function refreshMemos() {
+async function refreshMemos({ append = false } = {}) {
   if (!pluginEnabled("memo") || !["all", "memo"].includes(state.scope)) return;
+  if (append && (state.scope !== "memo" || state.memoLoading || !state.memoHasMore)) return;
   const token = ++memoSearchToken;
+  const limit = state.scope === "memo" ? PLUGIN_PAGE_SIZE : 12;
+  const offset = append ? state.memoResults.length : 0;
+  state.memoLoading = true;
+  if (!append) state.memoHasMore = true;
+  if (append) render({ preserveScroll: true });
   try {
-    const memos = await window.weborg?.pluginSearch("memo", { query: state.query, limit: state.scope === "memo" ? 50 : 12 });
+    const memos = await window.weborg?.pluginSearch("memo", { query: state.query, limit, offset });
     if (token !== memoSearchToken) return;
-    state.memoResults = memos || [];
-    render();
-  } catch {}
+    const next = memos || [];
+    const existing = new Set(state.memoResults.map((item) => item.id));
+    state.memoResults = append ? [...state.memoResults, ...next.filter((item) => !existing.has(item.id))] : next;
+    state.memoHasMore = next.length === limit;
+  } catch {
+    if (!append) state.memoResults = [];
+  } finally {
+    if (token === memoSearchToken) {
+      state.memoLoading = false;
+      render({ preserveScroll: append });
+    }
+  }
 }
 
 async function refreshUsage() {
@@ -595,13 +663,18 @@ function queueClipboardRefresh(delay = 180) {
 
 q.addEventListener("input", () => {
   invalidateClipboardPaging();
+  invalidatePluginPaging();
   state.query = q.value;
   state.index = 0;
   render();
   queueClipboardRefresh();
 });
 resultsEl.addEventListener("scroll", () => {
-  if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight < 160) void refreshClipboard({ append: true });
+  if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight >= 160) return;
+  if (state.scope === "clipboard") void refreshClipboard({ append: true });
+  else if (state.scope === "app") void refreshApps({ append: true });
+  else if (state.scope === "web") void refreshWeb({ append: true });
+  else if (state.scope === "memo") void refreshMemos({ append: true });
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
 scopeRow?.addEventListener("click", (event) => {
@@ -654,8 +727,11 @@ async function initialize() {
   state.clipboardResults = records || [];
   state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
   state.appResults = applications || [];
+  state.appHasMore = state.appResults.length === 12;
   state.webResults = pages || [];
+  state.webHasMore = state.webResults.length === 12;
   state.memoResults = memos || [];
+  state.memoHasMore = state.memoResults.length === 12;
   state.usageSections = usageSections || { frequent: [], recent: [] };
   render();
   focusSearch();

@@ -52,15 +52,16 @@
     return { page, index, tier: 4, detail: urlTokens };
   }
 
-  function rankWebPages(pages, query, limit = 12) {
-    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  function rankWebPages(pages, query, limit = 12, offset = 0) {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
+    const safeOffset = Math.max(0, Number(offset) || 0);
     const normalizedQuery = normalize(query);
-    if (!normalizedQuery) return (pages || []).slice(0, safeLimit);
+    if (!normalizedQuery) return (pages || []).slice(safeOffset, safeOffset + safeLimit);
     return (pages || [])
       .map((page, index) => rankPage(page, normalizedQuery, index))
       .filter(Boolean)
       .sort((left, right) => left.tier - right.tier || left.detail - right.detail || left.index - right.index)
-      .slice(0, safeLimit)
+      .slice(safeOffset, safeOffset + safeLimit)
       .map((entry) => entry.page);
   }
 

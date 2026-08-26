@@ -24,8 +24,8 @@ function createMemoRuntime({ activate }) {
       usesDefaults = !Array.isArray(items);
       configuredItems = (usesDefaults ? cloneDefaults() : items).map(normalizeMemo);
     },
-    search({ query = "", limit = 12 } = {}) {
-      return rankMemos(configuredItems, query, limit);
+    search({ query = "", limit = 12, offset = 0 } = {}) {
+      return rankMemos(configuredItems, query, limit, offset);
     },
     actions: {
       activate: ({ content }) => activate(String(content || "")),

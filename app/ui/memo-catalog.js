@@ -182,13 +182,14 @@
     return score;
   }
 
-  function rankMemos(items, query = "", limit = 12) {
+  function rankMemos(items, query = "", limit = 12, offset = 0) {
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
+    const safeOffset = Math.max(0, Number(offset) || 0);
     return (items || [])
       .map((item, index) => ({ item, index, score: scoreMemo(item, query) }))
       .filter((entry) => entry.score >= 0)
       .sort((left, right) => right.score - left.score || left.index - right.index)
-      .slice(0, safeLimit)
+      .slice(safeOffset, safeOffset + safeLimit)
       .map(({ item }) => ({ ...clone(item), type: "memo" }));
   }
 

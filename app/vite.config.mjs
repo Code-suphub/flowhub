@@ -316,12 +316,13 @@ async function readNativeApplicationIcons(filePaths) {
   }
 }
 
-async function searchApplications(query = "", limit = 12) {
+async function searchApplications(query = "", limit = 12, offset = 0) {
   const keyword = String(query || "").trim().toLowerCase();
-  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
+  const safeOffset = Math.max(0, Number(offset) || 0);
   const index = await applications();
   const matches = keyword ? index.filter((application) => application.hay.includes(keyword)) : index;
-  const selected = matches.slice(0, safeLimit);
+  const selected = matches.slice(safeOffset, safeOffset + safeLimit);
   await readNativeApplicationIcons(selected.map((application) => application.path));
   return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
 }
@@ -441,7 +442,7 @@ function localApplicationApi() {
         }
         try {
           const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
-          const applications = await searchApplications(requestUrl.searchParams.get("q") || "", requestUrl.searchParams.get("limit") || 12);
+          const applications = await searchApplications(requestUrl.searchParams.get("q") || "", requestUrl.searchParams.get("limit") || 12, requestUrl.searchParams.get("offset") || 0);
           sendJson(response, 200, { ok: true, applications });
         } catch (error) {
           sendJson(response, 500, { ok: false, reason: error.message, applications: [] });

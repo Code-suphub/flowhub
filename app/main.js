@@ -786,12 +786,13 @@ async function readMacNativeIconsWithRetry(filePaths, cache) {
   if (missingPaths.length) await readMacNativeIcons(missingPaths, cache);
 }
 
-async function searchApplications(query = "", limit = 12) {
+async function searchApplications(query = "", limit = 12, offset = 0) {
   const keyword = String(query || "").trim().toLowerCase();
-  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 12));
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
+  const safeOffset = Math.max(0, Number(offset) || 0);
   const applications = await applicationIndex();
   const matches = keyword ? applications.filter((application) => application.hay.includes(keyword)) : applications;
-  const selected = matches.slice(0, safeLimit);
+  const selected = matches.slice(safeOffset, safeOffset + safeLimit);
   await readMacNativeIconsWithRetry(selected.map((application) => application.path), applicationIconCache);
   return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
 }
@@ -808,9 +809,9 @@ function flattenWebPages(nodes = [], parents = [], result = []) {
   return result;
 }
 
-function searchWebPages(query = "", limit = 12) {
+function searchWebPages(query = "", limit = 12, offset = 0) {
   const pages = flattenWebPages(readConfig().plugins?.web?.settings?.items || []);
-  return rankWebPages(pages, query, limit);
+  return rankWebPages(pages, query, limit, offset);
 }
 
 async function searchUsage(scope = "all", limit = 6) {
@@ -1276,12 +1277,12 @@ async function openLocalApplication(action, usage = {}) {
 
 pluginRegistry
   .register("web", {
-    search: ({ query, limit }) => searchWebPages(query, limit),
+    search: ({ query, limit, offset }) => searchWebPages(query, limit, offset),
     actions: { activate: ({ url, usage }) => openWebPage(url, usage) }
   })
   .register("app", {
     start: () => applicationIndex(),
-    search: ({ query, limit }) => searchApplications(query, limit),
+    search: ({ query, limit, offset }) => searchApplications(query, limit, offset),
     actions: { activate: ({ path: applicationPath, usage }) => openLocalApplication(applicationPath, usage) }
   })
   .register("clipboard", {
