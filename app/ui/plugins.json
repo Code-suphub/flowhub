@@ -39,13 +39,13 @@
   {
     "id": "memo",
     "name": "备忘录",
-    "description": "快速记录与检索备忘内容",
+    "description": "检索并快速粘贴常用命令与技术备忘",
     "icon": "▧",
-    "defaultEnabled": false,
-    "searchable": false,
-    "settingsPanel": "",
-    "settingsHint": "即将支持",
-    "settingsOrder": 20,
+    "defaultEnabled": true,
+    "searchable": true,
+    "settingsPanel": "memo",
+    "settingsHint": "命令速查",
+    "settingsOrder": 40,
     "order": 40
   }
 ]

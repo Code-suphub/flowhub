@@ -1225,7 +1225,7 @@
       "settings": {}
     },
     "memo": {
-      "enabled": false,
+      "enabled": true,
       "settings": {}
     }
   }

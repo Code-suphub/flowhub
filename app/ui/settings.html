@@ -216,6 +216,30 @@
       .storage-path-row input { min-width: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
       .storage-actions { display: flex; flex-wrap: wrap; gap: 7px; }
       .storage-actions .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
+      .memo-workspace { display: grid; grid-template-columns: minmax(230px, .75fr) minmax(0, 1.45fr); gap: 13px; align-items: start; }
+      .memo-library, .memo-editor-card { border: 1px solid var(--line); border-radius: 14px; background: rgba(4, 13, 18, .28); overflow: hidden; }
+      .memo-library-head { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--line); }
+      .memo-library-actions { display: flex; gap: 7px; }
+      .memo-library-actions .button { flex: 1; min-height: 30px; padding: 0 8px; font-size: 11px; }
+      .memo-list { max-height: 470px; overflow: auto; padding: 7px; }
+      .memo-tree-group { display: contents; }
+      .memo-tree-label { min-height: 28px; display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px calc(8px + var(--memo-depth) * 13px); color: var(--muted); }
+      .memo-tree-label strong { font-size: 10px; font-weight: 750; letter-spacing: .02em; }
+      .memo-tree-label small { min-width: 16px; height: 16px; display: grid; place-items: center; margin-left: auto; border-radius: 999px; color: var(--faint); background: rgba(255,255,255,.035); font-size: 8px; }
+      .memo-tree-joint { width: 8px; height: 8px; border-left: 1px solid rgba(143, 213, 183, .28); border-bottom: 1px solid rgba(143, 213, 183, .28); border-radius: 0 0 0 3px; }
+      .memo-list-item { width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 3px 7px; padding: 9px 9px 9px calc(10px + var(--memo-depth) * 13px); border-radius: 9px; color: var(--muted); background: transparent; text-align: left; cursor: pointer; }
+      .memo-list-item:hover { color: var(--ink); background: rgba(255, 255, 255, .045); }
+      .memo-list-item.active { color: var(--ink); background: linear-gradient(100deg, rgba(226, 151, 77, .14), rgba(75, 208, 184, .045)); box-shadow: inset 2px 0 #d99556; }
+      .memo-list-bullet { align-self: center; color: #dda866; font-family: "SFMono-Regular", Menlo, monospace; font-size: 9px; opacity: .85; }
+      .memo-list-item strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+      .memo-list-item code { grid-column: 1 / -1; overflow: hidden; color: var(--faint); font-family: "SFMono-Regular", Menlo, monospace; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+      .memo-editor-card { min-height: 390px; padding: 17px; }
+      .memo-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; margin-bottom: 15px; border-bottom: 1px solid var(--line); }
+      .memo-editor-head div { min-width: 0; display: grid; gap: 3px; }
+      .memo-editor-head span { color: #dca665; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+      .memo-editor-head strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+      .memo-form .memo-content-editor { min-height: 190px; color: #cce0da; font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 11px; line-height: 1.65; tab-size: 2; }
+      .memo-overview .overview-card:last-child strong { color: #e4b878; }
       .empty-editor { padding: 50px 20px; border: 1px dashed rgba(166, 208, 202, .22); border-radius: 15px; color: var(--muted); text-align: center; line-height: 1.7; }
       .empty-editor strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 15px; }
       .json-panel { display: grid; gap: 12px; }
@@ -451,6 +475,16 @@
               <span>扫描 macOS 应用目录，提供原生图标、搜索和快速启动。</span>
             </div>
           </div>
+
+          <div class="module-panel hidden" data-module-panel="memo">
+            <div class="section-label">模块说明</div>
+            <div class="app-card module-summary">
+              <div class="module-summary-mark">▧</div>
+              <strong>命令速查手册</strong>
+              <span>检索数据库、容器和系统运维命令，回车即可粘贴到当前输入位置。</span>
+            </div>
+            <p class="side-note">首次使用内置命令库；编辑任意条目后才会把自定义版本写入主配置。</p>
+          </div>
         </aside>
 
         <main class="editor">
@@ -518,6 +552,28 @@
             <section class="selected-card clipboard-settings-card"><div class="selected-banner"><span class="selected-icon">▣</span><div><strong>应用索引</strong><small>当前版本使用固定的安全目录；后续可在此增加自定义扫描目录与排除规则。</small></div></div></section>
           </div>
 
+          <div class="editor-inner module-panel hidden" data-module-panel="memo">
+            <div class="editor-head">
+              <div><div class="editor-kicker">Field Notes</div><h2>备忘录与命令速查</h2><p>把容易忘记、经常查询的命令整理成可搜索、可直接粘贴的个人手册。</p></div>
+              <span class="module-state">本地配置</span>
+            </div>
+            <div class="clipboard-overview memo-overview">
+              <article class="overview-card"><span>内容数量</span><strong id="memoCountValue">0 条</strong><small>标题、标签和正文均可检索</small></article>
+              <article class="overview-card"><span>分类数量</span><strong id="memoCategoryValue">0 类</strong><small>适合按技术栈组织命令</small></article>
+              <article class="overview-card"><span>数据来源</span><strong id="memoSourceValue">内置命令库</strong><small>自定义后随主配置保存</small></article>
+            </div>
+            <section class="memo-workspace">
+              <div class="memo-library">
+                <div class="memo-library-head">
+                  <input id="memoFilter" placeholder="筛选标题、分类或命令…" />
+                  <div class="memo-library-actions"><button class="button primary" type="button" data-action="add-memo">＋ 新增备忘</button><button class="button" type="button" data-action="reset-memos">恢复内置</button></div>
+                </div>
+                <div class="memo-list" id="memoList"></div>
+              </div>
+              <div class="memo-editor-card" id="memoEditor"></div>
+            </section>
+          </div>
+
           <div class="editor-inner module-panel hidden" data-module-panel="clipboard">
             <div class="editor-head">
               <div>
@@ -567,6 +623,7 @@
     </div>
     <div class="toast" id="toast"></div>
     <script src="web-search.js"></script>
+    <script src="memo-catalog.js"></script>
     <script src="browser-adapter.js"></script>
     <script src="settings.js"></script>
   </body>

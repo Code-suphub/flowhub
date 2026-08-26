@@ -9,7 +9,9 @@ const state = {
   dirty: false,
   expanded: new Set(),
   draggingId: "",
-  draftSavedAt: 0
+  draftSavedAt: 0,
+  selectedMemoId: "",
+  memoFilter: ""
 };
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
@@ -45,6 +47,8 @@ function normalizeConfig(config) {
   if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
   if (config.core.configPath !== undefined && typeof config.core.configPath !== "string") throw new Error("配置文件位置必须是字符串");
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
+  config.plugins.memo ||= { enabled: true, settings: {} };
+  config.plugins.memo.settings ||= {};
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
   const ids = new Set();
@@ -69,6 +73,94 @@ function pluginConfig(id) {
 
 function webItems() {
   return pluginConfig("web")?.settings?.items || [];
+}
+
+function configuredMemoItems() {
+  const items = pluginConfig("memo")?.settings?.items;
+  return Array.isArray(items) ? items : null;
+}
+
+function memoItems() {
+  return configuredMemoItems() || window.FlowHubMemoCatalog?.cloneDefaults?.() || [];
+}
+
+function memoTags(item) {
+  return Array.isArray(item?.tags)
+    ? item.tags
+    : String(item?.tags || "").split(/[,，\n]/).map((tag) => tag.trim()).filter(Boolean);
+}
+
+function memoCategorySegments(item) {
+  return window.FlowHubMemoCatalog?.categorySegments?.(item?.category) || [String(item?.category || "其他")];
+}
+
+function memoCategoryPath(item) {
+  return memoCategorySegments(item).join(" / ");
+}
+
+function memoTree(items) {
+  const root = { children: new Map(), items: [] };
+  for (const item of items) {
+    let branch = root;
+    for (const segment of memoCategorySegments(item)) {
+      if (!branch.children.has(segment)) branch.children.set(segment, { children: new Map(), items: [] });
+      branch = branch.children.get(segment);
+    }
+    branch.items.push(item);
+  }
+  return root;
+}
+
+function renderMemoTreeBranch(branch, depth = 0) {
+  let html = "";
+  for (const [label, child] of branch.children) {
+    const total = countMemoTreeItems(child);
+    html += `<div class="memo-tree-group" style="--memo-depth:${depth}">
+      <div class="memo-tree-label"><span class="memo-tree-joint" aria-hidden="true"></span><strong>${esc(label)}</strong><small>${total}</small></div>
+      ${renderMemoTreeBranch(child, depth + 1)}
+      ${child.items.map((item) => renderMemoListItem(item, depth + 1)).join("")}
+    </div>`;
+  }
+  html += branch.items.map((item) => renderMemoListItem(item, depth)).join("");
+  return html;
+}
+
+function countMemoTreeItems(branch) {
+  let total = branch.items.length;
+  for (const child of branch.children.values()) total += countMemoTreeItems(child);
+  return total;
+}
+
+function renderMemoListItem(item, depth) {
+  return `<button class="memo-list-item${item.id === state.selectedMemoId ? " active" : ""}" style="--memo-depth:${depth}" type="button" data-memo-id="${esc(item.id)}">
+    <span class="memo-list-bullet" aria-hidden="true">›_</span>
+    <strong>${esc(item.title || "未命名备忘")}</strong>
+    <code>${esc(String(item.content || "").split("\n")[0])}</code>
+  </button>`;
+}
+
+function materializeMemoItems() {
+  const memo = pluginConfig("memo");
+  memo.settings ||= {};
+  if (!Array.isArray(memo.settings.items)) memo.settings.items = window.FlowHubMemoCatalog?.cloneDefaults?.() || [];
+  return memo.settings.items;
+}
+
+function ensureMemoSelection(items = memoItems()) {
+  if (!items.some((item) => item.id === state.selectedMemoId)) state.selectedMemoId = items[0]?.id || "";
+}
+
+function selectedMemo(items = memoItems()) {
+  ensureMemoSelection(items);
+  return items.find((item) => item.id === state.selectedMemoId) || null;
+}
+
+function uniqueMemoId() {
+  const ids = new Set(memoItems().map((item) => item.id));
+  let id = `memo-${Date.now().toString(36)}`;
+  let suffix = 2;
+  while (ids.has(id)) id = `memo-${Date.now().toString(36)}-${suffix++}`;
+  return id;
 }
 
 function nodeEntries(nodes = webItems(), level = 0, parent = null, result = []) {
@@ -192,6 +284,8 @@ function persistDraftNow() {
       savedAt,
       config: state.config,
       selectedId: state.selectedId,
+      selectedMemoId: state.selectedMemoId,
+      memoFilter: state.memoFilter,
       expanded: [...state.expanded],
       module: state.module,
       mode: state.mode,
@@ -325,6 +419,35 @@ function renderClipboardSummary() {
   }
 }
 
+function renderMemoSettings() {
+  const items = memoItems();
+  ensureMemoSelection(items);
+  const filter = state.memoFilter.trim().toLowerCase();
+  const visibleItems = filter
+    ? items.filter((item) => [item.title, item.category, item.description, ...memoTags(item), item.content].join(" ").toLowerCase().includes(filter))
+    : items;
+  const categories = new Set(items.map(memoCategoryPath));
+  const selected = selectedMemo(items);
+  if ($("#memoCountValue")) $("#memoCountValue").textContent = `${items.length} 条`;
+  if ($("#memoCategoryValue")) $("#memoCategoryValue").textContent = `${categories.size} 类`;
+  if ($("#memoSourceValue")) $("#memoSourceValue").textContent = configuredMemoItems() ? "自定义库" : "内置命令库";
+  if ($("#memoFilter") && $("#memoFilter").value !== state.memoFilter) $("#memoFilter").value = state.memoFilter;
+  if ($("#memoList")) {
+    $("#memoList").innerHTML = visibleItems.length ? renderMemoTreeBranch(memoTree(visibleItems)) : `<div class="tree-empty">没有匹配的备忘录</div>`;
+  }
+  if ($("#memoEditor")) {
+    $("#memoEditor").innerHTML = selected ? `
+      <div class="memo-editor-head"><div><span>${esc(memoCategoryPath(selected).replaceAll(" / ", "  ›  "))}</span><strong>${esc(selected.title || "未命名备忘")}</strong></div><button class="button danger" type="button" data-action="delete-memo">删除</button></div>
+      <div class="form-grid memo-form">
+        <div class="field"><label>标题</label><input data-memo-field="title" value="${esc(selected.title)}" /></div>
+        <div class="field"><label>目录路径</label><input data-memo-field="category" value="${esc(memoCategoryPath(selected))}" placeholder="编程 / 数据库 / MySQL" /><div class="field-hint">使用 / 分隔层级，例如“编程 / 数据库 / MySQL”。</div></div>
+        <div class="field wide"><label>说明</label><input data-memo-field="description" value="${esc(selected.description)}" placeholder="这条命令用于什么场景" /></div>
+        <div class="field wide"><label>搜索标签</label><input data-memo-field="tags" value="${esc(memoTags(selected).join(", "))}" placeholder="磁盘, 占用, du" /><div class="field-hint">使用逗号分隔；标题、分类、说明、标签和命令正文都会参与搜索。</div></div>
+        <div class="field wide"><label>命令或备忘内容</label><textarea class="memo-content-editor" data-memo-field="content" spellcheck="false">${esc(selected.content)}</textarea></div>
+      </div>` : `<div class="empty-editor"><strong>还没有备忘录</strong>点击“新增备忘”创建第一条内容。</div>`;
+  }
+}
+
 function syncJson() {
   $("#jsonEditor").value = JSON.stringify(state.config || {}, null, 2);
 }
@@ -365,6 +488,7 @@ function render() {
   renderSettingsFields();
   renderTree();
   renderSelected();
+  renderMemoSettings();
   updateMoveActions();
   syncJson();
   renderMode();
@@ -610,6 +734,38 @@ function resetClipboardStorage() {
   renderClipboardStorage();
 }
 
+function addMemo() {
+  const items = materializeMemoItems();
+  const memo = { id: uniqueMemoId(), title: "新建备忘", category: "个人 / 未分类", description: "", tags: [], content: "" };
+  items.unshift(memo);
+  state.selectedMemoId = memo.id;
+  state.memoFilter = "";
+  markDirty("已新增备忘录");
+  renderMemoSettings();
+}
+
+function deleteMemo() {
+  const items = materializeMemoItems();
+  const index = items.findIndex((item) => item.id === state.selectedMemoId);
+  if (index < 0) return;
+  if (!window.confirm(`确定删除“${items[index].title || "未命名备忘"}”吗？`)) return;
+  items.splice(index, 1);
+  state.selectedMemoId = items[index]?.id || items[index - 1]?.id || "";
+  markDirty("已删除备忘录");
+  renderMemoSettings();
+}
+
+function resetMemos() {
+  if (!window.confirm("确定恢复内置命令库吗？所有自定义备忘和修改都会被替换。")) return;
+  const memo = pluginConfig("memo");
+  memo.settings ||= {};
+  delete memo.settings.items;
+  state.selectedMemoId = "";
+  state.memoFilter = "";
+  markDirty("已恢复内置命令库");
+  renderMemoSettings();
+}
+
 function handleAction(action) {
   if (action === "add-root") return addRoot();
   if (action === "expand-all") { expandAll(); return renderTree(); }
@@ -630,6 +786,9 @@ function handleAction(action) {
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();
+  if (action === "add-memo") return addMemo();
+  if (action === "delete-memo") return deleteMemo();
+  if (action === "reset-memos") return resetMemos();
   if (action === "close") return window.close();
   if (action === "format-json") {
     try { $("#jsonEditor").value = JSON.stringify(readJsonEditor(), null, 2); toast("JSON 已格式化"); }
@@ -649,7 +808,7 @@ function handleAction(action) {
 }
 
 function switchModule(module) {
-  if (!["core", "web", "clipboard", "app"].includes(module)) return;
+  if (!["core", "web", "clipboard", "app", "memo"].includes(module)) return;
   state.module = module;
   renderPluginModules();
   renderModule();
@@ -677,6 +836,11 @@ document.addEventListener("click", (event) => {
     renderTree();
     renderSelected();
     updateMoveActions();
+  }
+  const memoId = event.target.closest("[data-memo-id]")?.dataset.memoId;
+  if (memoId) {
+    state.selectedMemoId = memoId;
+    renderMemoSettings();
   }
 });
 
@@ -736,6 +900,11 @@ document.addEventListener("input", (event) => {
     markDirty("JSON 已修改");
     return;
   }
+  if (event.target.id === "memoFilter") {
+    state.memoFilter = event.target.value;
+    renderMemoSettings();
+    return;
+  }
   const pluginId = event.target.dataset.pluginToggle;
   if (pluginId) {
     const config = pluginConfig(pluginId);
@@ -780,7 +949,27 @@ document.addEventListener("input", (event) => {
     markDirty();
     const banner = $(".selected-banner strong");
     if (nodeField === "title" && banner) banner.textContent = value || "未命名节点";
+    return;
   }
+  const memoField = event.target.dataset.memoField;
+  if (memoField) {
+    const items = materializeMemoItems();
+    const memo = items.find((item) => item.id === state.selectedMemoId);
+    if (!memo) return;
+    memo[memoField] = memoField === "tags"
+      ? event.target.value.split(/[,，\n]/).map((tag) => tag.trim()).filter(Boolean)
+      : event.target.value;
+    markDirty();
+  }
+});
+
+document.addEventListener("change", (event) => {
+  if (!event.target.dataset.memoField) return;
+  if (event.target.dataset.memoField === "category") {
+    const memo = materializeMemoItems().find((item) => item.id === state.selectedMemoId);
+    if (memo) memo.category = memoCategoryPath(memo);
+  }
+  renderMemoSettings();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -809,8 +998,10 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   if ((hasConfigChanges || hasJsonChanges) && window.confirm(`检测到 ${new Date(draft.savedAt || Date.now()).toLocaleString()} 的未保存配置草稿，是否恢复？`)) {
     state.config = draftConfig || loadedConfig;
     state.selectedId = String(draft.selectedId || "");
+    state.selectedMemoId = String(draft.selectedMemoId || "");
+    state.memoFilter = String(draft.memoFilter || "");
     state.expanded = new Set(Array.isArray(draft.expanded) ? draft.expanded : []);
-    state.module = ["core", "web", "clipboard", "app"].includes(draft.module) ? draft.module : "core";
+    state.module = ["core", "web", "clipboard", "app", "memo"].includes(draft.module) ? draft.module : "core";
     state.mode = draft.mode === "json" ? "json" : "structure";
     state.dirty = true;
     state.draftSavedAt = Number(draft.savedAt) || Date.now();

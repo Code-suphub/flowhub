@@ -130,6 +130,16 @@
       }
       .r-meta .path { color: var(--accent); }
       .r-kind { flex: 0 0 auto; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
+      .memo-result { position: relative; align-items: flex-start; min-height: 82px; padding: 9px 10px; }
+      .memo-terminal { width: 27px; height: 27px; display: grid; place-items: center; flex: 0 0 27px; margin-top: 12px; border: 1px solid rgba(226, 151, 77, .2); border-radius: 7px; color: #efb971; background: rgba(226, 151, 77, .08); font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 10px; font-weight: 800; }
+      .memo-path { display: flex; align-items: center; gap: 5px; margin-bottom: 2px; color: #8498a4; font-size: 9px; line-height: 1; }
+      .memo-path span:last-child { color: #e5af6b; font-weight: 750; }
+      .memo-path i { color: #50616d; font-style: normal; }
+      .memo-heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
+      .memo-heading .r-title { min-width: 0; }
+      .memo-command { display: -webkit-box; margin-top: 4px; overflow: hidden; color: #c7d8d4; font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 10px; line-height: 1.38; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+      .memo-description { display: block; color: #708594; }
+      .r-kind.memo { color: #dba66e; border-color: rgba(219, 166, 110, .28); }
       .foot { border-top: 1px solid var(--border); padding: 8px 14px; display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
       .foot code { background: #111922; padding: 1px 6px; border-radius: 5px; }
     </style>
@@ -143,7 +153,7 @@
         </div>
       </div>
       <div class="input-wrap">
-        <input id="q" autocomplete="off" placeholder="搜索网页、应用、剪切板内容或目录…" />
+        <input id="q" autocomplete="off" placeholder="搜索网页、应用、剪切板或命令备忘…" />
       </div>
       <div class="scope-row" id="scopeRow" aria-label="搜索范围">
         <span>范围</span>
@@ -162,6 +172,7 @@
       </div>
     </div>
     <script src="web-search.js"></script>
+    <script src="memo-catalog.js"></script>
     <script src="browser-adapter.js"></script>
     <script src="search.js"></script>
   </body>

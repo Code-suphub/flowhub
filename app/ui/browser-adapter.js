@@ -86,7 +86,7 @@ if (!window.weborg) {
     const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
-      available: ["web", "clipboard", "app"].includes(plugin.id),
+      available: ["web", "clipboard", "app", "memo"].includes(plugin.id),
       enabled: config.plugins?.[plugin.id]?.enabled ?? plugin.defaultEnabled !== false
     }));
   }
@@ -115,11 +115,18 @@ if (!window.weborg) {
       return window.FlowHubWebSearch.rankWebPages(pages, query, limit)
         .map((record) => ({ ...record, pluginId: id }));
     }
+    if (id === "memo") {
+      const config = await getConfig();
+      const configuredItems = config.plugins?.memo?.settings?.items;
+      const items = Array.isArray(configuredItems) ? configuredItems : window.FlowHubMemoCatalog.cloneDefaults();
+      return window.FlowHubMemoCatalog.rankMemos(items, query, limit)
+        .map((record) => ({ ...record, pluginId: id }));
+    }
     return [];
   }
 
   async function pluginAction(id, action, payload = {}) {
-    if (id === "clipboard") return { ok: false, preview: true, readonly: true, reason: "浏览器剪切板预览为只读" };
+    if (["clipboard", "memo"].includes(id)) return { ok: false, preview: true, readonly: true, reason: "浏览器预览不能执行粘贴操作" };
     if (id === "web" && action === "activate") {
       window.open(payload.url, "_blank", "noopener,noreferrer");
       usageListeners.forEach((listener) => listener());

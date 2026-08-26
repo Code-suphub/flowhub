@@ -60,6 +60,23 @@ const MAC_NATIVE_ICON_SCRIPT = [
   "console.log(JSON.stringify(result));"
 ].join(" ");
 
+const MAC_APPLICATION_METADATA_SCRIPT = [
+  "ObjC.import('Foundation');",
+  "var args = $.NSProcessInfo.processInfo.arguments;",
+  "var result = [];",
+  "for (var i = 6; i < args.count; i++) {",
+  "  try {",
+  "    var filePath = ObjC.unwrap(args.objectAtIndex(i));",
+  "    var bundle = $.NSBundle.bundleWithPath(filePath);",
+  "    var info = bundle ? (bundle.localizedInfoDictionary || bundle.infoDictionary) : null;",
+  "    var displayValue = info && typeof info.objectForKey === 'function' ? (info.objectForKey('CFBundleDisplayName') || info.objectForKey('CFBundleName')) : null;",
+  "    var identifierValue = bundle ? bundle.bundleIdentifier : null;",
+  "    result.push({ displayName: displayValue ? ObjC.unwrap(displayValue) : '', bundleId: identifierValue ? ObjC.unwrap(identifierValue) : '' });",
+  "  } catch (error) { result.push({ displayName: '', bundleId: '' }); }",
+  "}",
+  "console.log(JSON.stringify(result));"
+].join(" ");
+
 function applicationDirectories() {
   return [
     "/Applications",
@@ -82,15 +99,38 @@ async function scanApplications() {
       const applicationPath = join(directory, entry.name);
       if (seen.has(applicationPath)) continue;
       seen.add(applicationPath);
-      const title = basename(applicationPath, ".app");
       applications.push({
         kind: "app",
-        title,
+        title: basename(applicationPath, ".app"),
+        fileName: entry.name,
         path: applicationPath,
-        hay: `${title} ${entry.name} ${applicationPath}`.toLowerCase()
+        bundleId: ""
       });
     }
   }
+  if (process.platform === "darwin" && applications.length) {
+    try {
+      const { stdout, stderr } = await execFileAsync("osascript", ["-l", "JavaScript", "-e", MAC_APPLICATION_METADATA_SCRIPT, "--", ...applications.map((application) => application.path)], {
+        timeout: 5000,
+        maxBuffer: 4 * 1024 * 1024,
+        encoding: "utf8"
+      });
+      const metadata = JSON.parse(String(stdout || stderr).trim());
+      applications.forEach((application, index) => {
+        const displayName = String(metadata[index]?.displayName || "").trim();
+        const bundleId = String(metadata[index]?.bundleId || "").trim();
+        const packageName = basename(application.path, ".app");
+        application.title = displayName || packageName;
+        application.bundleId = bundleId;
+        application.hay = `${displayName} ${packageName} ${application.fileName} ${bundleId} ${application.path}`.toLowerCase();
+      });
+    } catch {}
+  }
+  applications.forEach((application) => {
+    if (application.hay) return;
+    const packageName = basename(application.path, ".app");
+    application.hay = `${packageName} ${application.fileName} ${application.path}`.toLowerCase();
+  });
   return applications.sort((left, right) => left.title.localeCompare(right.title, "zh-CN"));
 }
 
@@ -298,6 +338,20 @@ function validateConfig(config) {
   const storagePath = config.plugins.clipboard?.settings?.storagePath;
   if (storagePath !== undefined && typeof storagePath !== "string") throw new Error("剪切板存放位置必须是字符串");
   if (String(storagePath || "").trim() && !isAbsolute(storagePath.trim())) throw new Error("剪切板存放位置必须是绝对路径");
+  const memoItems = config.plugins.memo?.settings?.items;
+  if (memoItems !== undefined && !Array.isArray(memoItems)) throw new Error("备忘录插件配置的 items 必须是数组");
+  if (Array.isArray(memoItems)) {
+    const memoIds = new Set();
+    for (const item of memoItems) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("备忘录条目必须是对象");
+      const id = String(item.id || "").trim();
+      if (!id) throw new Error("每条备忘录都需要 id");
+      if (memoIds.has(id)) throw new Error(`备忘录 id 重复：${id}`);
+      if (!String(item.title || "").trim()) throw new Error(`备忘录 ${id} 缺少标题`);
+      if (!String(item.content || "").trim()) throw new Error(`备忘录 ${id} 缺少内容`);
+      memoIds.add(id);
+    }
+  }
   const ids = new Set();
   const visit = (nodes) => {
     for (const node of nodes) {

@@ -10,10 +10,11 @@ let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
 
-const state = { config: null, plugins: [], webResults: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
+const state = { config: null, plugins: [], webResults: [], query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], memoResults: [], usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let webSearchToken = 0;
+let memoSearchToken = 0;
 let usageSearchToken = 0;
 let clipboardSearchTimer = null;
 let scopeTabHeld = false;
@@ -78,6 +79,15 @@ function appMatches() {
   return state.appResults.map((application) => ({ ...application, type: "app" }));
 }
 
+function memoMatches() {
+  return state.memoResults.map((memo) => ({ ...memo, type: "memo" }));
+}
+
+function memoPathHtml(item) {
+  const segments = window.FlowHubMemoCatalog?.categorySegments?.(item?.category) || [item?.category || "其他"];
+  return segments.map((segment, index) => `${index ? `<i aria-hidden="true">›</i>` : ""}<span>${esc(segment)}</span>`).join("");
+}
+
 function usageKey(item) {
   return `${item.type}:${item.usageKey || item.id || item.path || item.url || item.title}`;
 }
@@ -106,6 +116,7 @@ function matches() {
   const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
   const clips = pluginEnabled("clipboard") ? clipboardMatches() : [];
   const apps = pluginEnabled("app") ? appMatches() : [];
+  const memos = pluginEnabled("memo") ? memoMatches() : [];
   const usages = usageMatches();
   if (state.scope === "web") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)].slice(0, 12);
@@ -116,13 +127,15 @@ function matches() {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(apps, usages)].slice(0, 12);
     return apps;
   }
+  if (state.scope === "memo") return memos;
   if (!state.query.trim()) {
     const regularLimit = usages.length ? 4 : 6;
     return [...usages.slice(0, usages.length ? 8 : 0), ...clips.slice(0, regularLimit), ...withoutUsageDuplicates(pages, usages).slice(0, regularLimit)].slice(0, 12);
   }
-  const appResults = state.query.trim() ? apps.slice(0, 4) : [];
-  const regularLimit = appResults.length ? 4 : 6;
-  return [...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
+  const appResults = state.query.trim() ? apps.slice(0, 3) : [];
+  const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
+  const regularLimit = appResults.length || memoResults.length ? 3 : 6;
+  return [...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
 }
 
 function usageIndices(items, section) {
@@ -236,16 +249,33 @@ function renderResults(items) {
 
 function renderResult(item, index, items) {
   const usageSection = renderUsageSection(item, index, items);
+  if (item.type === "memo") {
+    const command = String(item.content || "").split("\n").slice(0, 2).join("\n");
+    return `${usageSection}
+      <div class="result memo-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="memo-terminal" aria-hidden="true">›_</span>
+        <span class="r-body">
+          <span class="memo-path">${memoPathHtml(item)}</span>
+          <span class="memo-heading"><span class="r-title">${esc(item.title || "未命名备忘")}</span></span>
+          <code class="memo-command">${esc(command)}</code>
+          ${item.description ? `<span class="r-meta memo-description">${esc(item.description)}</span>` : ""}
+        </span>
+        <span class="r-kind memo">命令</span>
+      </div>
+    `;
+  }
   if (item.type === "app") {
     const icon = item.iconUrl
       ? `<img src="${esc(item.iconUrl)}" loading="lazy" decoding="async" alt="" />`
       : "▣";
+    const packageName = String(item.fileName || "").replace(/\.app$/i, "");
+    const alias = packageName && packageName !== item.title ? ` · ${esc(packageName)}` : "";
     return `${usageSection}
       <div class="result app-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon app">${icon}</span>
         <span class="r-body">
           <span class="r-title">${esc(item.title || "未命名应用")}</span>
-          <span class="r-meta"><span class="path">应用</span> · ${esc(item.path)}</span>
+          <span class="r-meta"><span class="path">应用</span>${alias} · ${esc(item.path)}</span>
         </span>
         <span class="r-kind">应用</span>
       </div>
@@ -322,8 +352,8 @@ function render({ preserveScroll = false } = {}) {
 }
 
 function choose(page) {
-  const pluginId = page?.pluginId || (page?.type === "clipboard" ? "clipboard" : page?.type === "app" ? "app" : "web");
-  if (pluginId === "clipboard" && document.documentElement.dataset.weborgReadonly === "true") return;
+  const pluginId = page?.pluginId || (page?.type === "clipboard" ? "clipboard" : page?.type === "app" ? "app" : page?.type === "memo" ? "memo" : "web");
+  if (["clipboard", "memo"].includes(pluginId) && document.documentElement.dataset.weborgReadonly === "true") return;
   const usage = pluginId === "app"
     ? { type: "app", title: page.title, path: page.path }
     : { type: "page", id: page.id || page.usageKey, title: page.title, breadcrumb: pathText(page), icon: page.icon || "" };
@@ -331,6 +361,7 @@ function choose(page) {
     id: page.id,
     path: page.path,
     url: normalizeUrl(page.url),
+    content: page.content,
     usage
   });
 }
@@ -366,6 +397,7 @@ function setScope(scope) {
   void refreshClipboard();
   void refreshApps();
   void refreshWeb();
+  void refreshMemos();
   void refreshUsage();
   q?.focus({ preventScroll: true });
 }
@@ -381,6 +413,8 @@ function renderKeyboardHint() {
     keyboardHint.innerHTML = `←→ 类型 · ↑↓ 记录 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴`;
   } else if (state.scope === "all") {
     keyboardHint.innerHTML = `←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
+  } else if (state.scope === "memo") {
+    keyboardHint.innerHTML = `↑↓ 选择 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴命令`;
   } else {
     keyboardHint.innerHTML = `↑↓ 结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
   }
@@ -418,6 +452,7 @@ window.weborg.onConfig(async (cfg) => {
   void refreshClipboard();
   void refreshApps();
   void refreshWeb();
+  void refreshMemos();
 });
 
 document.addEventListener("keydown", (e) => {
@@ -525,6 +560,17 @@ async function refreshWeb() {
   } catch {}
 }
 
+async function refreshMemos() {
+  if (!pluginEnabled("memo") || !["all", "memo"].includes(state.scope)) return;
+  const token = ++memoSearchToken;
+  try {
+    const memos = await window.weborg?.pluginSearch("memo", { query: state.query, limit: state.scope === "memo" ? 50 : 12 });
+    if (token !== memoSearchToken) return;
+    state.memoResults = memos || [];
+    render();
+  } catch {}
+}
+
 async function refreshUsage() {
   if (state.scope === "clipboard" || state.query.trim()) return;
   const token = ++usageSearchToken;
@@ -542,6 +588,7 @@ function queueClipboardRefresh(delay = 180) {
     void refreshClipboard();
     void refreshApps();
     void refreshWeb();
+    void refreshMemos();
     void refreshUsage();
   }, delay);
 }
@@ -595,11 +642,12 @@ async function initialize() {
   const plugins = await window.weborg.listPlugins();
   renderPluginScopes(plugins);
   const enabled = (id) => plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
-  const [cfg, records, applications, pages, usageSections] = await Promise.all([
+  const [cfg, records, applications, pages, memos, usageSections] = await Promise.all([
     window.weborg.getConfig(),
     enabled("clipboard") ? window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }) : [],
     enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: 12 }) : [],
     enabled("web") ? window.weborg.pluginSearch("web", { query: "", limit: 12 }) : [],
+    enabled("memo") ? window.weborg.pluginSearch("memo", { query: "", limit: 12 }) : [],
     window.weborg.searchUsage("all")
   ]);
   setConfig(cfg);
@@ -607,6 +655,7 @@ async function initialize() {
   state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
   state.appResults = applications || [];
   state.webResults = pages || [];
+  state.memoResults = memos || [];
   state.usageSections = usageSections || { frequent: [], recent: [] };
   render();
   focusSearch();

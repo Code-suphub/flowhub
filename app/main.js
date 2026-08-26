@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const { fileURLToPath, pathToFileURL } = require("url");
 const clipboardStore = require("./clipboard-store");
 const { PluginRegistry } = require("./plugins/registry");
+const { createMemoRuntime } = require("./plugins/memo");
 const { rankWebPages } = require("./ui/web-search");
 const pluginRegistry = new PluginRegistry();
 
@@ -87,6 +88,23 @@ const MAC_NATIVE_ICON_SCRIPT = [
   "console.log(JSON.stringify(result));"
 ].join(" ");
 
+const MAC_APPLICATION_METADATA_SCRIPT = [
+  "ObjC.import('Foundation');",
+  "var args = $.NSProcessInfo.processInfo.arguments;",
+  "var result = [];",
+  "for (var i = 6; i < args.count; i++) {",
+  "  try {",
+  "    var filePath = ObjC.unwrap(args.objectAtIndex(i));",
+  "    var bundle = $.NSBundle.bundleWithPath(filePath);",
+  "    var info = bundle ? (bundle.localizedInfoDictionary || bundle.infoDictionary) : null;",
+  "    var displayValue = info && typeof info.objectForKey === 'function' ? (info.objectForKey('CFBundleDisplayName') || info.objectForKey('CFBundleName')) : null;",
+  "    var identifierValue = bundle ? bundle.bundleIdentifier : null;",
+  "    result.push({ displayName: displayValue ? ObjC.unwrap(displayValue) : '', bundleId: identifierValue ? ObjC.unwrap(identifierValue) : '' });",
+  "  } catch (error) { result.push({ displayName: '', bundleId: '' }); }",
+  "}",
+  "console.log(JSON.stringify(result));"
+].join(" ");
+
 function prepareNativePasteHelper() {
   if (process.platform !== "darwin") return Promise.resolve("");
   if (nativePasteHelperPromise) return nativePasteHelperPromise;
@@ -135,7 +153,7 @@ function readConfig() {
     if (CONFIG_PATH !== BUNDLED_CONFIG_PATH) {
       try { return JSON.parse(fs.readFileSync(BUNDLED_CONFIG_PATH, "utf8")); } catch {}
     }
-    return { core: { hotkey: "Alt+Space", launchAtLogin: false, configPath: "" }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: false, settings: {} } } };
+    return { core: { hotkey: "Alt+Space", launchAtLogin: false, configPath: "" }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: true, settings: {} } } };
   }
 }
 
@@ -153,6 +171,20 @@ function validateConfig(config) {
   const storagePath = config.plugins.clipboard?.settings?.storagePath;
   if (storagePath !== undefined && typeof storagePath !== "string") throw new Error("剪切板存放位置必须是字符串");
   if (String(storagePath || "").trim() && !path.isAbsolute(storagePath.trim())) throw new Error("剪切板存放位置必须是绝对路径");
+  const memoItems = config.plugins.memo?.settings?.items;
+  if (memoItems !== undefined && !Array.isArray(memoItems)) throw new Error("备忘录插件配置的 items 必须是数组");
+  if (Array.isArray(memoItems)) {
+    const memoIds = new Set();
+    for (const item of memoItems) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("备忘录条目必须是对象");
+      const id = String(item.id || "").trim();
+      if (!id) throw new Error("每条备忘录都需要 id");
+      if (memoIds.has(id)) throw new Error(`备忘录 id 重复：${id}`);
+      if (!String(item.title || "").trim()) throw new Error(`备忘录 ${id} 缺少标题`);
+      if (!String(item.content || "").trim()) throw new Error(`备忘录 ${id} 缺少内容`);
+      memoIds.add(id);
+    }
+  }
 
   const ids = new Set();
   function visit(nodes) {
@@ -657,13 +689,24 @@ function applicationDirectories() {
   ];
 }
 
-function applicationDisplayName(applicationPath) {
-  // 应用包名通常就是用户看到的名称；避免为每个 app 启动一次 plutil，
-  // 让首次唤出和搜索保持轻量。原生图标仍由 app.getFileIcon 提供。
-  return path.basename(applicationPath, ".app");
+function readMacApplicationMetadata(filePaths) {
+  if (process.platform !== "darwin" || !filePaths.length) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    execFile("osascript", ["-l", "JavaScript", "-e", MAC_APPLICATION_METADATA_SCRIPT, "--", ...filePaths], {
+      timeout: 5000,
+      maxBuffer: 4 * 1024 * 1024,
+      encoding: "utf8"
+    }, (error, stdout, stderr) => {
+      if (error) return resolve([]);
+      try {
+        const parsed = JSON.parse(String(stdout || stderr).trim());
+        resolve(Array.isArray(parsed) ? parsed : []);
+      } catch { resolve([]); }
+    });
+  });
 }
 
-function scanApplications() {
+async function scanApplications() {
   const applications = [];
   const seen = new Set();
   for (const directory of applicationDirectories()) {
@@ -674,15 +717,24 @@ function scanApplications() {
       const applicationPath = path.join(directory, entry.name);
       if (seen.has(applicationPath)) continue;
       seen.add(applicationPath);
-      const title = applicationDisplayName(applicationPath);
       applications.push({
         kind: "app",
-        title,
+        title: path.basename(applicationPath, ".app"),
+        fileName: entry.name,
         path: applicationPath,
-        hay: `${title} ${entry.name} ${applicationPath}`.toLowerCase()
+        bundleId: ""
       });
     }
   }
+  const metadata = await readMacApplicationMetadata(applications.map((application) => application.path));
+  applications.forEach((application, index) => {
+    const displayName = String(metadata[index]?.displayName || "").trim();
+    const bundleId = String(metadata[index]?.bundleId || "").trim();
+    const packageName = path.basename(application.path, ".app");
+    application.title = displayName || packageName;
+    application.bundleId = bundleId;
+    application.hay = `${displayName} ${packageName} ${application.fileName} ${bundleId} ${application.path}`.toLowerCase();
+  });
   return applications.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
 }
 
@@ -1124,6 +1176,20 @@ async function copyClipboardRecord(id) {
   }
 }
 
+async function pasteMemoContent(content) {
+  const value = String(content || "");
+  if (!value.trim()) return { ok: false, reason: "备忘内容为空" };
+  try {
+    clipboard.writeText(value);
+    markOwnClipboardWrite({ kind: "text", content: value, hash: hashBuffer(Buffer.from(value, "utf8")) });
+    hideWindow();
+    const pasteResult = await pasteIntoPreviousApp();
+    return { ok: true, pasted: pasteResult.ok, pasteReason: pasteResult.reason || "" };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+}
+
 async function deleteClipboardRecord(recordId, ownerWindow = null) {
   const record = clipboardStore.get(recordId);
   if (!record) return { ok: false, reason: "剪切板记录不存在或已删除" };
@@ -1239,7 +1305,8 @@ pluginRegistry
         return deleteClipboardRecord(recordId, context.ownerWindow);
       }
     }
-  });
+  })
+  .register("memo", createMemoRuntime({ activate: pasteMemoContent }));
 
 ipcMain.handle("weborg:list-plugins", () => pluginRegistry.list());
 ipcMain.handle("weborg:plugin-search", (event, id, request) => pluginRegistry.search(id, request || {}));
