@@ -18,6 +18,7 @@ module.exports = {
     "preload.js",
     "clipboard-store.js",
     "config-persistence.js",
+    "update-service.js",
     "native/**/*",
     "plugins/**/*",
     "ui/**/*",
@@ -52,9 +53,9 @@ module.exports = {
     ? {
         publish: {
           provider: "github",
-          releaseType: "draft",
+          releaseType: "release",
           channel: "latest",
-          publishAutoUpdate: false,
+          publishAutoUpdate: true,
           ...(githubOwner && githubRepo ? { owner: githubOwner, repo: githubRepo } : {})
         }
       }

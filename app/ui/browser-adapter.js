@@ -200,8 +200,21 @@ if (!window.weborg) {
     async openClipboardStorage() {
       return { ok: false, preview: true, reason: "请在 Electron App 中打开存放目录" };
     },
+    async getUpdateState() {
+      return { supported: false, currentVersion: "0.1.0", status: "unsupported", availableVersion: "", percent: 0, error: "" };
+    },
+    async checkForUpdates() {
+      return { ok: false, preview: true, reason: "浏览器预览不能检查应用更新" };
+    },
+    async downloadUpdate() {
+      return { ok: false, preview: true, reason: "浏览器预览不能下载应用更新" };
+    },
+    async quitAndInstallUpdate() {
+      return { ok: false, preview: true, reason: "浏览器预览不能安装应用更新" };
+    },
     onConfig(listener) { configListeners.add(listener); },
     onClipboardUpdated(listener) { clipboardListeners.add(listener); },
-    onUsageUpdated(listener) { usageListeners.add(listener); }
+    onUsageUpdated(listener) { usageListeners.add(listener); },
+    onUpdateState() { return () => {}; }
   };
 }

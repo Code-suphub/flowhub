@@ -7,10 +7,12 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { fileURLToPath, pathToFileURL } = require("url");
+const { autoUpdater } = require("electron-updater");
 const clipboardStore = require("./clipboard-store");
 const { stripWebCatalogMirror } = require("./config-persistence");
 const { PluginRegistry } = require("./plugins/registry");
 const { createMemoRuntime } = require("./plugins/memo");
+const { createUpdateService } = require("./update-service");
 const { rankWebPages } = require("./ui/web-search");
 const pluginRegistry = new PluginRegistry();
 
@@ -76,6 +78,14 @@ const applicationIconCache = new Map();
 let applicationIndexPromise = null;
 let blurHideTimer = null;
 const CLIPBOARD_PERF_ENABLED = process.env.FLOWHUB_CLIPBOARD_PERF === "1" || process.env.WEBORG_CLIPBOARD_PERF === "1";
+
+function broadcastUpdateState(state) {
+  for (const browserWindow of [settingsWin, win]) {
+    if (browserWindow && !browserWindow.isDestroyed()) browserWindow.webContents.send("weborg:update-state", state);
+  }
+}
+
+const updateService = createUpdateService({ app, autoUpdater, broadcast: broadcastUpdateState });
 
 const MAC_NATIVE_PASTE_SCRIPT = [
   "ObjC.import('CoreGraphics');",
@@ -1099,6 +1109,7 @@ app.whenReady().then(async () => {
   if (!coreState.hotkeyRegistered) {
     console.warn(`[flowhub] 无法注册 ${coreState.hotkey}（可能被系统/其它程序占用）。可在通用设置中修改。`);
   }
+  updateService.scheduleInitialCheck(5000);
 
   // 冒烟测试：设置该环境变量时，启动后立即退出，便于 CI/无 GUI 环境验证主进程能跑通。
   if (process.env.FLOWHUB_SMOKE_TEST === "1" || process.env.WEBORG_SMOKE_TEST === "1") {
@@ -1109,6 +1120,7 @@ app.whenReady().then(async () => {
   app.on("will-quit", () => {
     globalShortcut.unregisterAll();
     pluginRegistry.stopAll();
+    updateService.dispose();
     clipboardStore.close();
   });
 });
@@ -1137,6 +1149,14 @@ ipcMain.handle("weborg:open-accessibility-settings", async () => {
 ipcMain.handle("weborg:get-clipboard-storage-info", () => clipboardStorageInfo());
 
 ipcMain.handle("weborg:get-config-path-info", () => configPathInfo());
+
+ipcMain.handle("weborg:get-update-state", () => updateService.getState());
+
+ipcMain.handle("weborg:check-for-updates", () => updateService.checkForUpdates());
+
+ipcMain.handle("weborg:download-update", () => updateService.downloadUpdate());
+
+ipcMain.handle("weborg:quit-and-install-update", () => updateService.quitAndInstall());
 
 ipcMain.handle("weborg:choose-config-path", async () => {
   const options = {

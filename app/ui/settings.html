@@ -212,6 +212,29 @@
       .settings-block.wide { grid-column: 1 / -1; min-height: 0; }
       .settings-block-title { color: var(--ink); font-size: 12px; font-weight: 700; }
       .settings-block .permission-row { margin-top: 2px; }
+      .update-block { position: relative; overflow: hidden; }
+      .update-block::after {
+        content: ""; position: absolute; right: -52px; top: -72px; width: 180px; height: 180px;
+        border: 1px solid rgba(143, 213, 183, .08); border-radius: 50%; pointer-events: none;
+        box-shadow: 0 0 0 26px rgba(143, 213, 183, .018), 0 0 0 54px rgba(143, 213, 183, .012);
+      }
+      .update-heading { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      .update-title { display: flex; align-items: baseline; gap: 9px; }
+      .update-title strong { color: var(--ink); font-size: 13px; }
+      .update-title code { color: #7d9188; font-family: "SFMono-Regular", Menlo, monospace; font-size: 10px; }
+      .update-badge { padding: 4px 8px; border: 1px solid rgba(143, 213, 183, .14); border-radius: 999px; color: #8fb3a4; background: rgba(143, 213, 183, .04); font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+      .update-badge[data-status="available"], .update-badge[data-status="downloaded"] { color: #b9ead3; border-color: rgba(143, 213, 183, .32); background: rgba(143, 213, 183, .1); }
+      .update-badge[data-status="error"] { color: #f1aaaa; border-color: rgba(240, 154, 154, .24); background: rgba(240, 154, 154, .07); }
+      .update-copy { position: relative; z-index: 1; max-width: 690px; color: #82918b; font-size: 11px; line-height: 1.6; }
+      .update-progress { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+      .update-track { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, .055); }
+      .update-fill { width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4f9f82, #a8e1c7); transition: width .22s ease; }
+      .update-progress small { min-width: 34px; color: #9db2a9; font-family: "SFMono-Regular", Menlo, monospace; font-size: 9px; text-align: right; }
+      .update-footer { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      .update-meta { color: #62736b; font-size: 9px; }
+      .update-actions { display: flex; gap: 7px; }
+      .update-actions .button { min-height: 30px; padding: 0 11px; font-size: 11px; }
+      .update-quick { border-color: rgba(143, 213, 183, .25); color: #b9ead3; background: rgba(143, 213, 183, .075); }
       .scope-shortcut-grid { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 10px; }
       .scope-shortcut-grid .field { min-width: 0; }
       .storage-path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
@@ -427,6 +450,7 @@
         </div>
         <div class="top-actions">
           <span class="status" id="status">已保存</span>
+          <button class="button update-quick hidden" id="updateQuickBtn" data-action="update-primary">发现新版本</button>
           <button class="button" data-action="reload">重新读取</button>
           <button class="button primary" id="saveBtn" data-action="save">保存配置</button>
           <button class="button" data-action="close">关闭</button>
@@ -519,6 +543,23 @@
                     <div class="storage-path-row"><input id="coreConfigPath" readonly /><button class="button" type="button" data-action="choose-config-path">选择…</button></div>
                     <div class="storage-actions"><button class="button" type="button" data-action="open-config-path">在 Finder 中显示</button><button class="button" type="button" data-action="reset-config-path">恢复默认</button></div>
                     <div class="field-hint" id="coreConfigPathHint">保存后切换到新的配置文件；原文件会保留。</div>
+                  </div>
+                </div>
+                <div class="settings-block wide update-block" id="appUpdateBlock">
+                  <div class="update-heading">
+                    <div class="update-title"><strong>FlowHub 更新</strong><code id="currentVersion">v—</code></div>
+                    <span class="update-badge" id="updateBadge" data-status="idle">待检查</span>
+                  </div>
+                  <p class="update-copy" id="updateDescription" role="status">启动后会自动检查 GitHub Release，也可以立即手动检查。</p>
+                  <div class="update-progress hidden" id="updateProgress" role="progressbar" aria-label="更新下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div class="update-track"><div class="update-fill" id="updateProgressFill"></div></div><small id="updateProgressText">0%</small>
+                  </div>
+                  <div class="update-footer">
+                    <span class="update-meta" id="updateMeta">稳定通道 · GitHub Release</span>
+                    <div class="update-actions">
+                      <button class="button" id="checkUpdateBtn" type="button" data-action="check-update">检查更新</button>
+                      <button class="button primary hidden" id="updatePrimaryBtn" type="button" data-action="update-primary">下载更新</button>
+                    </div>
                   </div>
                 </div>
               </div>

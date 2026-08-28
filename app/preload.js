@@ -6,6 +6,10 @@ contextBridge.exposeInMainWorld("weborg", {
   openSettings: () => ipcRenderer.invoke("weborg:open-settings"),
   openAccessibilitySettings: () => ipcRenderer.invoke("weborg:open-accessibility-settings"),
   getConfigPathInfo: () => ipcRenderer.invoke("weborg:get-config-path-info"),
+  getUpdateState: () => ipcRenderer.invoke("weborg:get-update-state"),
+  checkForUpdates: () => ipcRenderer.invoke("weborg:check-for-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("weborg:download-update"),
+  quitAndInstallUpdate: () => ipcRenderer.invoke("weborg:quit-and-install-update"),
   chooseConfigPath: () => ipcRenderer.invoke("weborg:choose-config-path"),
   openConfigPath: () => ipcRenderer.invoke("weborg:open-config-path"),
   getClipboardStorageInfo: () => ipcRenderer.invoke("weborg:get-clipboard-storage-info"),
@@ -24,5 +28,10 @@ contextBridge.exposeInMainWorld("weborg", {
   },
   onUsageUpdated: (cb) => {
     ipcRenderer.on("weborg:usage-updated", () => cb());
+  },
+  onUpdateState: (cb) => {
+    const listener = (event, state) => cb(state);
+    ipcRenderer.on("weborg:update-state", listener);
+    return () => ipcRenderer.removeListener("weborg:update-state", listener);
   }
 });

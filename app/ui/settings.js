@@ -13,7 +13,8 @@ const state = {
   draggingId: "",
   draftSavedAt: 0,
   selectedMemoId: "",
-  memoFilter: ""
+  memoFilter: "",
+  appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" }
 };
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
@@ -447,6 +448,86 @@ function renderSettingsFields() {
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   renderClipboardStorage();
   renderClipboardSummary();
+  renderAppUpdate();
+}
+
+function formatBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const unitIndex = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const size = bytes / (1024 ** unitIndex);
+  return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function renderAppUpdate() {
+  const update = state.appUpdate || {};
+  const currentVersion = String(update.currentVersion || "—");
+  const availableVersion = String(update.availableVersion || "");
+  const percent = Math.max(0, Math.min(100, Number(update.percent) || 0));
+  const labels = {
+    unsupported: "不可用",
+    idle: "待检查",
+    checking: "检查中",
+    available: "发现新版",
+    "not-available": "已是最新",
+    downloading: "下载中",
+    downloaded: "等待安装",
+    installing: "正在重启",
+    error: "检查失败"
+  };
+  const descriptions = {
+    unsupported: "浏览器预览和开发模式不会连接更新服务；安装后的正式版本才会启用。",
+    idle: "启动后会自动检查 GitHub Release，也可以立即手动检查。",
+    checking: "正在连接 GitHub Release 检查最新稳定版本…",
+    available: `发现 FlowHub v${availableVersion || "—"}，确认后开始下载，完成前不会退出当前应用。`,
+    "not-available": `当前 v${currentVersion} 已是最新稳定版本。`,
+    downloading: availableVersion ? `正在下载 FlowHub v${availableVersion}，可以继续使用其他设置。` : "正在下载新版本，可以继续使用其他设置。",
+    downloaded: `FlowHub v${availableVersion || "新版本"} 已下载完成，重启后将自动替换当前版本。`,
+    installing: "正在关闭 FlowHub 并安装新版本…",
+    error: update.error || "无法连接更新服务，请稍后重试。"
+  };
+  const badge = $("#updateBadge");
+  if (!badge) return;
+  $("#currentVersion").textContent = `v${currentVersion}`;
+  badge.textContent = labels[update.status] || "待检查";
+  badge.dataset.status = update.status || "idle";
+  $("#updateDescription").textContent = descriptions[update.status] || descriptions.idle;
+
+  const progress = $("#updateProgress");
+  const showProgress = ["downloading", "downloaded"].includes(update.status);
+  progress.classList.toggle("hidden", !showProgress);
+  progress.setAttribute("aria-valuenow", String(Math.round(percent)));
+  $("#updateProgressFill").style.width = `${percent}%`;
+  $("#updateProgressText").textContent = `${Math.round(percent)}%`;
+
+  let meta = "稳定通道 · GitHub Release";
+  if (update.status === "downloading" && update.total) {
+    meta = `${formatBytes(update.transferred)} / ${formatBytes(update.total)} · ${formatBytes(update.bytesPerSecond)}/s`;
+  } else if (update.checkedAt) {
+    meta = `上次检查 ${new Date(update.checkedAt).toLocaleString()}`;
+  }
+  $("#updateMeta").textContent = meta;
+
+  const checkButton = $("#checkUpdateBtn");
+  checkButton.disabled = !update.supported || ["checking", "downloading", "downloaded", "installing"].includes(update.status);
+  checkButton.textContent = update.status === "checking" ? "正在检查…" : update.status === "error" ? "重新检查" : "检查更新";
+
+  const primaryButton = $("#updatePrimaryBtn");
+  const quickButton = $("#updateQuickBtn");
+  const showPrimary = ["available", "downloading", "downloaded", "installing"].includes(update.status);
+  const primaryLabel = update.status === "available"
+    ? `下载 v${availableVersion || "新版本"}`
+    : update.status === "downloading"
+    ? `下载中 ${Math.round(percent)}%`
+    : update.status === "downloaded"
+    ? "重启并安装"
+    : "正在重启…";
+  for (const button of [primaryButton, quickButton]) {
+    button.classList.toggle("hidden", !showPrimary);
+    button.disabled = ["downloading", "installing"].includes(update.status);
+    button.textContent = primaryLabel;
+  }
 }
 
 function renderConfigPath() {
@@ -745,6 +826,38 @@ async function openAccessibilitySettings() {
   if (!result?.ok) toast(result?.reason || "无法打开系统设置", true);
 }
 
+async function checkAppUpdate() {
+  if (!state.appUpdate?.supported) return toast("安装后的正式版本才支持检查更新", true);
+  state.appUpdate = { ...state.appUpdate, status: "checking", error: "" };
+  renderAppUpdate();
+  const result = await window.weborg.checkForUpdates();
+  if (result?.state) state.appUpdate = result.state;
+  renderAppUpdate();
+  if (!result?.ok) toast(result?.reason || "检查更新失败", true);
+}
+
+async function runPrimaryUpdateAction() {
+  const status = state.appUpdate?.status;
+  if (status === "available") {
+    const result = await window.weborg.downloadUpdate();
+    if (result?.state) state.appUpdate = result.state;
+    renderAppUpdate();
+    if (!result?.ok) toast(result?.reason || "下载更新失败", true);
+    return;
+  }
+  if (status === "downloaded") {
+    if (state.dirty) {
+      toast("请先保存或放弃当前配置修改，再重启安装更新", true);
+      return;
+    }
+    if (!window.confirm("更新已准备完成。现在重启 FlowHub 并安装吗？")) return;
+    const result = await window.weborg.quitAndInstallUpdate();
+    if (result?.state) state.appUpdate = result.state;
+    renderAppUpdate();
+    if (!result?.ok) toast(result?.reason || "无法启动更新安装", true);
+  }
+}
+
 async function chooseConfigPath() {
   const result = await window.weborg.chooseConfigPath();
   if (!result?.ok) {
@@ -862,6 +975,8 @@ function handleAction(action) {
   if (action === "save") return save();
   if (action === "reload") return reload();
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
+  if (action === "check-update") return checkAppUpdate();
+  if (action === "update-primary") return runPrimaryUpdateAction();
   if (action === "choose-config-path") return chooseConfigPath();
   if (action === "open-config-path") return openConfigPath();
   if (action === "reset-config-path") return resetConfigPath();
@@ -1077,12 +1192,21 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") window.close();
 });
 
-window.addEventListener("beforeunload", persistDraftNow);
+const unsubscribeUpdateState = window.weborg.onUpdateState?.((nextState) => {
+  state.appUpdate = nextState || state.appUpdate;
+  renderAppUpdate();
+});
 
-Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]).then(([plugins, config, clipboardStorage, configFile]) => {
+window.addEventListener("beforeunload", () => {
+  persistDraftNow();
+  unsubscribeUpdateState?.();
+});
+
+Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo(), window.weborg.getUpdateState()]).then(([plugins, config, clipboardStorage, configFile, appUpdate]) => {
   state.plugins = plugins || [];
   state.clipboardStorage = clipboardStorage;
   state.configFile = configFile;
+  state.appUpdate = appUpdate || state.appUpdate;
   const loadedConfig = clone(normalizeConfig(config));
   state.savedConfig = clone(loadedConfig);
   const draft = readDraft(configFile);

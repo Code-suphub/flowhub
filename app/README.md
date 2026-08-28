@@ -59,13 +59,15 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-工作流会测试并生成 Intel 与 Apple Silicon 两套 DMG/ZIP，然后上传到 GitHub 的草稿 Release。仓库不配置 Apple Secrets 时仍可发布未签名产物；正式分发建议配置以下 Actions Secrets：
+工作流会测试并生成 Intel 与 Apple Silicon 两套 DMG/ZIP，连同 `latest-mac.yml` 更新清单上传到正式 GitHub Release。已安装的正式版本会在启动后检查稳定通道；发现更高版本时，可在“配置管理 → 通用设置”中查看版本、下载进度，并在下载完成后点击重启安装。更新不会在后台自动下载，也不会打断尚未保存的配置修改。
+
+仓库不配置 Apple Secrets 时仍可构建未签名产物，但 macOS 自动更新的正式分发应使用稳定的 Developer ID 签名并完成 Apple 公证，否则 Gatekeeper 可能阻止新版本正常替换。需要配置以下 Actions Secrets：
 
 - `MAC_CSC_LINK`：Developer ID Application 证书的 `.p12` 文件或其 Base64 内容
 - `MAC_CSC_KEY_PASSWORD`：证书密码
 - `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`：Apple 公证凭据
 
-发布前必须先更新 `app/package.json` 的 `version`；标签不匹配时工作流会主动终止，避免错误覆盖 Release。
+发布前必须先更新 `app/package.json` 的 `version`；标签不匹配时工作流会主动终止，避免错误覆盖 Release。发布后，安装版使用包内生成的 `app-update.yml` 定位当前 GitHub 仓库，并读取 Release 中的 `latest-mac.yml` 判断是否有新版本；浏览器预览与 `npm start` 开发模式不会连接更新服务。
 
 ## 浏览器预览与热更新
 
