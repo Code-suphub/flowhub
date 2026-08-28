@@ -39,7 +39,7 @@ jobs:
       - name: Verify release tag
         run: node scripts/verify-release-tag.mjs "$GITHUB_REF_NAME"
 
-      - name: Build and upload macOS installers
+      - name: Build macOS installers
         run: |
           set -euo pipefail
 
@@ -65,3 +65,38 @@ jobs:
           NOTARIZE_APPLE_ID: ${{ secrets.APPLE_ID }}
           NOTARIZE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           NOTARIZE_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+
+          for ARCH in x64 arm64; do
+            test -f "dist/FlowHub-${VERSION}-mac-${ARCH}.dmg"
+            test -f "dist/FlowHub-${VERSION}-mac-${ARCH}.dmg.blockmap"
+            test -f "dist/FlowHub-${VERSION}-mac-${ARCH}.zip"
+            test -f "dist/FlowHub-${VERSION}-mac-${ARCH}.zip.blockmap"
+            grep -q "FlowHub-${VERSION}-mac-${ARCH}.zip" dist/latest-mac.yml
+          done
+
+      - name: Publish GitHub release
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/FlowHub-${VERSION}-mac-x64.dmg" \
+            "dist/FlowHub-${VERSION}-mac-x64.dmg.blockmap" \
+            "dist/FlowHub-${VERSION}-mac-x64.zip" \
+            "dist/FlowHub-${VERSION}-mac-x64.zip.blockmap" \
+            "dist/FlowHub-${VERSION}-mac-arm64.dmg" \
+            "dist/FlowHub-${VERSION}-mac-arm64.dmg.blockmap" \
+            "dist/FlowHub-${VERSION}-mac-arm64.zip" \
+            "dist/FlowHub-${VERSION}-mac-arm64.zip.blockmap" \
+            dist/latest-mac.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "FlowHub ${VERSION}" \
+            --generate-notes \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
