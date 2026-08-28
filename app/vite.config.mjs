@@ -1,11 +1,15 @@
 import { defineConfig } from "vite";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
+import configPersistence from "./config-persistence.js";
+
+const { stripWebCatalogMirror } = configPersistence;
 
 const appDirectory = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = resolve(appDirectory, "ui");
@@ -244,6 +248,63 @@ async function withClipboardDatabase(callback) {
   }
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
+}
+
+function webCatalogSignature(items) {
+  return createHash("sha256").update(JSON.stringify(canonicalJson(items || []))).digest("hex");
+}
+
+function webCatalogNodeCount(items) {
+  return (items || []).reduce((count, node) => count + 1 + webCatalogNodeCount(node.children || []), 0);
+}
+
+async function readWebCatalog() {
+  return withClipboardDatabase((database) => {
+    const table = databaseRows(database, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'web_catalog_nodes'")[0];
+    if (!table) return [];
+    const stored = databaseRows(database, `
+      SELECT id, parent_id, sort_order, data_json
+      FROM web_catalog_nodes
+      ORDER BY CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END, parent_id, sort_order
+    `);
+    const nodes = new Map(stored.map((row) => {
+      let node = {};
+      try { node = JSON.parse(row.data_json || "{}"); } catch {}
+      node.id = row.id;
+      delete node.children;
+      return [row.id, node];
+    }));
+    const roots = [];
+    for (const row of stored) {
+      const node = nodes.get(row.id);
+      const parent = row.parent_id ? nodes.get(row.parent_id) : null;
+      if (parent) {
+        parent.children ||= [];
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    return roots;
+  });
+}
+
+async function hydrateWebCatalog(config) {
+  const items = await readWebCatalog().catch(() => []);
+  config.plugins ||= {};
+  config.plugins.web ||= { enabled: true, settings: {} };
+  config.plugins.web.settings ||= {};
+  config.plugins.web.settings.items = items;
+  config.plugins.web.settings.catalogStorage = "sqlite";
+  config.plugins.web.settings.catalogCount = webCatalogNodeCount(items);
+  config.plugins.web.settings.catalogSignature = webCatalogSignature(items);
+  return config;
+}
+
 async function searchClipboardRecords(query = "", limit = 30, kind = "all", offset = 0) {
   const keyword = String(query || "").trim();
   const normalizedKeyword = keyword.toLowerCase();
@@ -422,7 +483,8 @@ function localConfigApi() {
           }
           const configPath = await activeConfigPath();
           if (request.method === "GET") {
-            sendJson(response, 200, JSON.parse(await readFile(configPath, "utf8")));
+            const config = JSON.parse(await readFile(configPath, "utf8"));
+            sendJson(response, 200, await hydrateWebCatalog(config));
             return;
           }
           if (request.method === "POST") {
@@ -434,10 +496,15 @@ function localConfigApi() {
             const currentStoragePath = String(currentConfig.plugins?.clipboard?.settings?.storagePath || "").trim();
             const nextStoragePath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
             if (currentStoragePath !== nextStoragePath) throw new Error("请在 Electron App 中修改剪切板存放位置");
+            const storedItems = await readWebCatalog();
+            if (webCatalogSignature(config.plugins.web.settings.items) !== webCatalogSignature(storedItems)) {
+              throw new Error("浏览器预览不能修改 SQLite 网页目录，请在 Electron App 的设置中编辑");
+            }
+            const persistedConfig = stripWebCatalogMirror(config);
             const temporaryPath = `${configPath}.vite-${process.pid}`;
-            await writeFile(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+            await writeFile(temporaryPath, `${JSON.stringify(persistedConfig, null, 2)}\n`, "utf8");
             await rename(temporaryPath, configPath);
-            sendJson(response, 200, { ok: true, config });
+            sendJson(response, 200, { ok: true, config: await hydrateWebCatalog(persistedConfig) });
             return;
           }
           response.statusCode = 405;

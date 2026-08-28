@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { pathToFileURL } = require("url");
 const initSqlJs = require("sql.js");
 
@@ -9,6 +10,7 @@ let dataDir = "";
 let imageDir = "";
 let dbPath = "";
 const searchCache = new Map();
+let webCatalogCache = null;
 const imageBufferCache = new Map();
 let imageBufferCacheBytes = 0;
 let persistTimer = null;
@@ -203,6 +205,25 @@ async function open(storageDirectory) {
       ON usage_records(target_type, last_used_at DESC);
     CREATE INDEX IF NOT EXISTS usage_records_score
       ON usage_records(target_type, use_count DESC, last_used_at DESC);
+    CREATE TABLE IF NOT EXISTS web_catalog_nodes (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      sort_order INTEGER NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      url TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      data_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS web_catalog_nodes_parent_order
+      ON web_catalog_nodes(parent_id, sort_order);
+    CREATE INDEX IF NOT EXISTS web_catalog_nodes_title
+      ON web_catalog_nodes(title);
+    CREATE INDEX IF NOT EXISTS web_catalog_nodes_url
+      ON web_catalog_nodes(url);
+    CREATE TABLE IF NOT EXISTS web_catalog_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   const columns = rows("PRAGMA table_info(clipboard_records)");
   if (!columns.some((column) => column.name === "file_paths")) {
@@ -215,6 +236,110 @@ async function open(storageDirectory) {
     db.run("ALTER TABLE clipboard_records ADD COLUMN file_types TEXT");
   }
   persistNow();
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
+}
+
+function webCatalogSignature(items) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalJson(items || []))).digest("hex");
+}
+
+function webCatalogCount() {
+  if (!db) return 0;
+  return Number(first("SELECT COUNT(*) AS count FROM web_catalog_nodes")?.count || 0);
+}
+
+function webCatalogStoredSignature() {
+  if (!db) return "";
+  return String(first("SELECT value FROM web_catalog_meta WHERE key = 'signature'")?.value || "");
+}
+
+function invalidateWebCatalogCache() {
+  webCatalogCache = null;
+}
+
+function webCatalogItems(clone = true) {
+  if (!db) return [];
+  if (webCatalogCache) return clone ? cloneJson(webCatalogCache) : webCatalogCache;
+
+  const stored = rows(`
+    SELECT id, parent_id, sort_order, data_json
+    FROM web_catalog_nodes
+    ORDER BY CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END, parent_id, sort_order
+  `);
+  const nodes = new Map();
+  for (const row of stored) {
+    let node = {};
+    try { node = JSON.parse(row.data_json || "{}"); } catch {}
+    node.id = row.id;
+    delete node.children;
+    nodes.set(row.id, node);
+  }
+
+  const roots = [];
+  for (const row of stored) {
+    const node = nodes.get(row.id);
+    const parent = row.parent_id ? nodes.get(row.parent_id) : null;
+    if (parent) {
+      parent.children ||= [];
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  webCatalogCache = roots;
+  return clone ? cloneJson(roots) : roots;
+}
+
+function replaceWebCatalog(items = []) {
+  if (!db) throw new Error("FlowHub 数据库尚未初始化");
+  if (!Array.isArray(items)) throw new Error("网页目录必须是数组");
+  const signature = webCatalogSignature(items);
+  const now = new Date().toISOString();
+  let count = 0;
+  db.run("BEGIN");
+  try {
+    db.run("DELETE FROM web_catalog_nodes");
+    const visit = (nodes, parentId = null) => {
+      nodes.forEach((node, sortOrder) => {
+        const data = { ...node };
+        delete data.children;
+        db.run(
+          `INSERT INTO web_catalog_nodes(id, parent_id, sort_order, title, url, note, data_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [String(node.id), parentId, sortOrder, String(node.title || ""), String(node.url || ""), String(node.note || ""), JSON.stringify(data)]
+        );
+        count += 1;
+        visit(node.children || [], String(node.id));
+      });
+    };
+    visit(items);
+    db.run("INSERT OR REPLACE INTO web_catalog_meta(key, value) VALUES ('signature', ?)", [signature]);
+    db.run("INSERT OR REPLACE INTO web_catalog_meta(key, value) VALUES ('updated_at', ?)", [now]);
+    db.run("COMMIT");
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
+  }
+  invalidateWebCatalogCache();
+  persistNow();
+  return { count, signature, updatedAt: now };
+}
+
+function initializeWebCatalog(items = []) {
+  const count = webCatalogCount();
+  if (!count && Array.isArray(items) && items.length) {
+    return { migrated: true, ...replaceWebCatalog(items) };
+  }
+  return { migrated: false, count, signature: webCatalogStoredSignature() };
 }
 
 function isReady() {
@@ -525,6 +650,7 @@ function close() {
   }
   db = null;
   invalidateSearchCache();
+  invalidateWebCatalogCache();
   imageBufferCache.clear();
   imageBufferCacheBytes = 0;
 }
@@ -538,11 +664,17 @@ module.exports = {
   get,
   getFilePaths,
   getImageBuffer,
+  initializeWebCatalog,
   isReady,
   open,
   recordUsage,
   remove,
+  replaceWebCatalog,
   search,
   storagePath,
-  usageSections
+  usageSections,
+  webCatalogCount,
+  webCatalogItems,
+  webCatalogSignature,
+  webCatalogStoredSignature
 };

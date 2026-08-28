@@ -1,5 +1,6 @@
 const state = {
   config: null,
+  savedConfig: null,
   plugins: [],
   configFile: null,
   clipboardStorage: null,
@@ -7,6 +8,7 @@ const state = {
   mode: "structure",
   module: "core",
   dirty: false,
+  jsonDirty: false,
   expanded: new Set(),
   draggingId: "",
   draftSavedAt: 0,
@@ -304,6 +306,7 @@ function persistDraftNow() {
     localStorage.setItem(draftStorageKey(), JSON.stringify({
       version: 1,
       savedAt,
+      baseSignature: configSignature(state.savedConfig),
       config: state.config,
       selectedId: state.selectedId,
       selectedMemoId: state.selectedMemoId,
@@ -325,9 +328,43 @@ function scheduleDraftSave() {
   draftTimer = setTimeout(persistDraftNow, 120);
 }
 
+function configSignature(config) {
+  const text = JSON.stringify(config || null);
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function configsEqual(left, right) {
+  return JSON.stringify(left || null) === JSON.stringify(right || null);
+}
+
+function jsonTextDiffersFromConfig(text, config) {
+  try {
+    const parsed = clone(normalizeConfig(JSON.parse(text)));
+    return !configsEqual(parsed, config);
+  } catch {
+    return text !== JSON.stringify(config || {}, null, 2);
+  }
+}
+
+function jsonEditorDiffersFromConfig() {
+  const editor = $("#jsonEditor");
+  if (!editor) return false;
+  return jsonTextDiffersFromConfig(editor.value, state.config);
+}
+
 function markDirty(message = "有未保存修改") {
-  state.dirty = true;
+  state.dirty = !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
   state.draftSavedAt = 0;
+  if (!state.dirty) {
+    clearDraft();
+    updateStatus();
+    return;
+  }
   const status = $("#status");
   status.textContent = message;
   status.classList.add("dirty");
@@ -429,7 +466,7 @@ function renderClipboardStorage() {
   $("#clipboardStorageSummary").textContent = resolvedPath;
   $("#clipboardStorageHint").textContent = state.clipboardStorage?.available === false
     ? "浏览器仅用于预览，请在 Electron App 中选择或打开目录。"
-    : "保存配置后切换位置；现有记录会安全复制到新的空目录。";
+    : "保存配置后切换位置；网页目录、使用记录和剪切板数据会安全复制到新的空目录。";
 }
 
 function renderClipboardSummary() {
@@ -473,8 +510,10 @@ function renderMemoSettings() {
   }
 }
 
-function syncJson() {
+function syncJson({ force = false } = {}) {
+  if (state.jsonDirty && !force) return;
   $("#jsonEditor").value = JSON.stringify(state.config || {}, null, 2);
+  if (force) state.jsonDirty = false;
 }
 
 function renderMode() {
@@ -666,11 +705,15 @@ function readJsonEditor() {
 async function save() {
   try {
     const previousDraftKey = draftStorageKey();
-    if (state.mode === "json") state.config = clone(readJsonEditor());
+    if (state.mode === "json") {
+      state.config = clone(readJsonEditor());
+      state.jsonDirty = false;
+    }
     normalizeConfig(state.config);
     const result = await window.weborg.saveConfig(state.config);
     if (!result?.ok) throw new Error(result?.reason || "保存失败");
-    state.config = result.config || state.config;
+    state.config = clone(normalizeConfig(result.config || state.config));
+    state.savedConfig = clone(state.config);
     [state.plugins, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     state.dirty = false;
     clearDraft(previousDraftKey);
@@ -687,6 +730,8 @@ async function reload() {
     clearDraft();
     [state.plugins, state.config, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     normalizeConfig(state.config);
+    state.savedConfig = clone(state.config);
+    state.jsonDirty = false;
     state.dirty = false;
     render();
     toast("已重新读取 config.json");
@@ -791,6 +836,18 @@ function resetMemos() {
   renderMemoSettings();
 }
 
+function closeSettings() {
+  if (document.documentElement.dataset.weborgRuntime !== "browser") {
+    window.close();
+    return;
+  }
+  if (window.opener && !window.opener.closed) {
+    window.close();
+    return;
+  }
+  window.location.assign("/search.html");
+}
+
 function handleAction(action) {
   if (action === "add-root") return addRoot();
   if (action === "expand-all") { expandAll(); return renderTree(); }
@@ -814,14 +871,20 @@ function handleAction(action) {
   if (action === "add-memo") return addMemo();
   if (action === "delete-memo") return deleteMemo();
   if (action === "reset-memos") return resetMemos();
-  if (action === "close") return window.close();
+  if (action === "close") return closeSettings();
   if (action === "format-json") {
-    try { $("#jsonEditor").value = JSON.stringify(readJsonEditor(), null, 2); toast("JSON 已格式化"); }
+    try {
+      $("#jsonEditor").value = JSON.stringify(readJsonEditor(), null, 2);
+      state.jsonDirty = jsonEditorDiffersFromConfig();
+      markDirty("JSON 已格式化");
+      toast("JSON 已格式化");
+    }
     catch (error) { toast(error.message, true); }
   }
   if (action === "apply-json") {
     try {
       state.config = clone(readJsonEditor());
+      state.jsonDirty = false;
       expandAll();
       ensureSelection();
       markDirty("JSON 已应用");
@@ -852,7 +915,7 @@ document.addEventListener("click", (event) => {
   const mode = event.target.closest("[data-mode]")?.dataset.mode;
   if (mode) {
     state.mode = mode;
-    if (mode === "json") syncJson();
+    if (mode === "json") syncJson({ force: !state.jsonDirty });
     renderMode();
   }
   const nodeId = event.target.closest("[data-node-id]")?.dataset.nodeId;
@@ -922,6 +985,7 @@ document.addEventListener("dragend", () => {
 
 document.addEventListener("input", (event) => {
   if (event.target.id === "jsonEditor") {
+    state.jsonDirty = jsonEditorDiffersFromConfig();
     markDirty("JSON 已修改");
     return;
   }
@@ -1020,6 +1084,7 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   state.clipboardStorage = clipboardStorage;
   state.configFile = configFile;
   const loadedConfig = clone(normalizeConfig(config));
+  state.savedConfig = clone(loadedConfig);
   const draft = readDraft(configFile);
   let draftConfig = null;
   try { if (draft?.config) draftConfig = clone(normalizeConfig(draft.config)); }
@@ -1027,8 +1092,10 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   const hasConfigChanges = draftConfig && JSON.stringify(draftConfig) !== JSON.stringify(loadedConfig);
   const hasJsonChanges = draft?.mode === "json"
     && String(draft.jsonText || "").trim()
-    && draft.jsonText !== JSON.stringify(loadedConfig, null, 2);
-  if ((hasConfigChanges || hasJsonChanges) && window.confirm(`检测到 ${new Date(draft.savedAt || Date.now()).toLocaleString()} 的未保存配置草稿，是否恢复？`)) {
+    && jsonTextDiffersFromConfig(draft.jsonText, draftConfig || loadedConfig);
+  const sourceChanged = draft?.baseSignature && draft.baseSignature !== configSignature(loadedConfig);
+  const recoveryMessage = `检测到 ${new Date(draft?.savedAt || Date.now()).toLocaleString()} 的未保存配置草稿${sourceChanged ? "，且正式配置在草稿保存后发生过变化" : ""}，是否恢复？`;
+  if ((hasConfigChanges || hasJsonChanges) && window.confirm(recoveryMessage)) {
     state.config = draftConfig || loadedConfig;
     state.selectedId = String(draft.selectedId || "");
     state.selectedMemoId = String(draft.selectedMemoId || "");
@@ -1036,15 +1103,21 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     state.expanded = new Set(Array.isArray(draft.expanded) ? draft.expanded : []);
     state.module = ["core", "web", "clipboard", "app", "memo"].includes(draft.module) ? draft.module : "core";
     state.mode = draft.mode === "json" ? "json" : "structure";
-    state.dirty = true;
+    state.dirty = Boolean(hasConfigChanges || hasJsonChanges);
     state.draftSavedAt = Number(draft.savedAt) || Date.now();
     render();
-    if (state.mode === "json" && draft.jsonText) $("#jsonEditor").value = draft.jsonText;
+    if (state.mode === "json" && draft.jsonText) {
+      $("#jsonEditor").value = draft.jsonText;
+      state.jsonDirty = jsonEditorDiffersFromConfig();
+      state.dirty = !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
+      updateStatus();
+    }
     toast("已恢复未保存的配置草稿");
     return;
   }
   if (draft) clearDraft(draftStorageKey(configFile));
   state.config = loadedConfig;
+  state.jsonDirty = false;
   expandAll();
   render();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));

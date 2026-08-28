@@ -8,7 +8,11 @@
   }
 
   function tokensFor(query) {
-    return [...new Set(normalize(query).split(" ").filter(Boolean))];
+    const eastAsian = "\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}";
+    const withScriptBoundaries = normalize(query)
+      .replace(new RegExp(`([a-z0-9])([${eastAsian}])`, "giu"), "$1 $2")
+      .replace(new RegExp(`([${eastAsian}])([a-z0-9])`, "giu"), "$1 $2");
+    return [...new Set(withScriptBoundaries.split(/[\s\-_/.,:：·|]+/u).filter(Boolean))];
   }
 
   function directoryText(page) {

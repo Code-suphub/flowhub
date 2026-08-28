@@ -2,4 +2,9 @@
 .playwright-mcp/
 node_modules/
 *.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.bak
 weborg-*-check.png

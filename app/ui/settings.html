@@ -601,7 +601,7 @@
             <div class="clipboard-overview">
               <article class="overview-card"><span>记录状态</span><strong id="clipboardStatusValue">正在记录</strong><small>监听文本、图片和文件变化</small></article>
               <article class="overview-card"><span>留存时间</span><strong id="clipboardRetentionValue">30 天</strong><small>到期记录会在后台自动清理</small></article>
-              <article class="overview-card storage-overview"><span>数据位置</span><strong id="clipboardStorageMode">默认目录</strong><small id="clipboardStorageSummary">SQLite 与图片文件保存在用户数据目录</small></article>
+              <article class="overview-card storage-overview"><span>数据位置</span><strong id="clipboardStorageMode">默认目录</strong><small id="clipboardStorageSummary">网页目录、使用记录与剪切板共用 SQLite</small></article>
             </div>
 
             <section class="selected-card clipboard-settings-card" id="clipboardSettings">
@@ -615,12 +615,12 @@
                   <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">超过时间的记录会自动清理；填写 0 表示永久保留。</div></div>
                 </div>
                 <div class="settings-block storage-block">
-                  <div class="settings-block-title">记录存放位置</div>
+                  <div class="settings-block-title">共享数据存放位置</div>
                   <div class="field">
-                    <label for="clipboardStoragePath">SQLite 数据库与图片目录</label>
+                    <label for="clipboardStoragePath">FlowHub 数据库与剪切板图片目录</label>
                     <div class="storage-path-row"><input id="clipboardStoragePath" readonly /><button class="button" type="button" data-action="choose-clipboard-storage">选择…</button></div>
                     <div class="storage-actions"><button class="button" type="button" data-action="open-clipboard-storage">在 Finder 中打开</button><button class="button" type="button" data-action="reset-clipboard-storage">恢复默认</button></div>
-                    <div class="field-hint" id="clipboardStorageHint">保存配置后切换位置；现有记录会安全复制到新的空目录。</div>
+                    <div class="field-hint" id="clipboardStorageHint">保存配置后切换位置；网页目录、使用记录和剪切板数据会安全复制到新的空目录。</div>
                   </div>
                 </div>
                 <div class="settings-block wide">

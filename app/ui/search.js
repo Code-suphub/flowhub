@@ -22,6 +22,8 @@ let clipboardSearchTimer = null;
 let scopeTabHeld = false;
 let scopeTabUsedWithArrow = false;
 let scopeTabTapOffset = 1;
+let searchInputComposing = false;
+let searchCompositionEndedAt = -Infinity;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -505,6 +507,8 @@ window.weborg.onConfig(async (cfg) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
+  if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
   if (e.key === "Escape") { e.preventDefault(); window.close(); }
   const shortcutScope = scopeForShortcut(e);
   if (shortcutScope) {
@@ -693,6 +697,13 @@ function queueClipboardRefresh(delay = 180) {
   }, delay);
 }
 
+q.addEventListener("compositionstart", () => {
+  searchInputComposing = true;
+});
+q.addEventListener("compositionend", () => {
+  searchInputComposing = false;
+  searchCompositionEndedAt = performance.now();
+});
 q.addEventListener("input", () => {
   invalidateClipboardPaging();
   invalidatePluginPaging();

@@ -8,6 +8,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { fileURLToPath, pathToFileURL } = require("url");
 const clipboardStore = require("./clipboard-store");
+const { stripWebCatalogMirror } = require("./config-persistence");
 const { PluginRegistry } = require("./plugins/registry");
 const { createMemoRuntime } = require("./plugins/memo");
 const { rankWebPages } = require("./ui/web-search");
@@ -148,7 +149,17 @@ function prepareNativePasteHelper() {
 function readConfig() {
   try {
     const raw = fs.readFileSync(CONFIG_PATH, "utf8");
-    return JSON.parse(raw);
+    const config = JSON.parse(raw);
+    if (clipboardStore.isReady() && clipboardStore.webCatalogCount()) {
+      config.plugins ||= {};
+      config.plugins.web ||= { enabled: true, settings: {} };
+      config.plugins.web.settings ||= {};
+      config.plugins.web.settings.items = clipboardStore.webCatalogItems();
+      config.plugins.web.settings.catalogSignature = clipboardStore.webCatalogStoredSignature();
+      config.plugins.web.settings.catalogStorage = "sqlite";
+      config.plugins.web.settings.catalogCount = clipboardStore.webCatalogCount();
+    }
+    return config;
   } catch (e) {
     console.error("[flowhub] 读取配置失败:", e.message);
     if (CONFIG_PATH !== BUNDLED_CONFIG_PATH) {
@@ -156,6 +167,44 @@ function readConfig() {
     }
     return { core: { hotkey: "Alt+Space", launchAtLogin: false, configPath: "", scopeShortcuts: { ...DEFAULT_SCOPE_SHORTCUTS } }, plugins: { web: { enabled: true, settings: { items: [] } }, clipboard: { enabled: true, settings: { retentionDays: 30, storagePath: "" } }, app: { enabled: true, settings: {} }, memo: { enabled: true, settings: {} } } };
   }
+}
+
+function synchronizeWebCatalog(config) {
+  if (!clipboardStore.isReady()) return { config, changed: false, catalogState: null };
+  const settings = config.plugins?.web?.settings;
+  if (!settings || !Array.isArray(settings.items)) return { config, changed: false, catalogState: null };
+  const jsonSignature = clipboardStore.webCatalogSignature(settings.items);
+  const recordedSignature = String(settings.catalogSignature || "");
+  const databaseCount = clipboardStore.webCatalogCount();
+  const sqlitePrimary = settings.catalogStorage === "sqlite";
+  const hasJsonImport = settings.items.length > 0;
+  let catalogState = null;
+
+  // 首次升级会导入旧 JSON。SQLite 成为主存储后，仓库里的空 items 只表示
+  // “不保存镜像”，不能被解释为清空目录；非空 items 仍可作为显式导入。
+  const shouldImport = hasJsonImport && (
+    !databaseCount
+    || !sqlitePrimary
+    || !recordedSignature
+    || jsonSignature !== recordedSignature
+  );
+  if (shouldImport) {
+    catalogState = clipboardStore.replaceWebCatalog(settings.items);
+  } else {
+    catalogState = {
+      count: databaseCount,
+      signature: clipboardStore.webCatalogStoredSignature() || jsonSignature,
+      migrated: false
+    };
+  }
+
+  settings.items = clipboardStore.webCatalogItems();
+  const nextSignature = catalogState.signature || clipboardStore.webCatalogSignature(settings.items);
+  const changed = hasJsonImport || settings.catalogStorage !== "sqlite";
+  settings.catalogSignature = nextSignature;
+  settings.catalogStorage = "sqlite";
+  settings.catalogCount = Number(catalogState.count || 0);
+  return { config, changed, catalogState };
 }
 
 function validateScopeShortcuts(scopeShortcuts) {
@@ -252,19 +301,20 @@ function writeConfig(config) {
   validateConfig(config);
   const targetPath = resolveConfigPath(config);
   if (targetPath === CONFIG_LOCATOR_PATH) throw new Error("主配置文件不能与配置定位文件使用同一路径");
+  const persistedConfig = clipboardStore.isReady() ? stripWebCatalogMirror(config) : JSON.parse(JSON.stringify(config));
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   // 先写临时文件再替换，避免 app 与 Web 端同时保存时留下半个 JSON 文件。
   const tempPath = `${targetPath}.tmp-${process.pid}`;
-  fs.writeFileSync(tempPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  fs.writeFileSync(tempPath, `${JSON.stringify(persistedConfig, null, 2)}\n`, "utf8");
   fs.renameSync(tempPath, targetPath);
   fs.mkdirSync(path.dirname(CONFIG_LOCATOR_PATH), { recursive: true });
   const locatorTempPath = `${CONFIG_LOCATOR_PATH}.tmp-${process.pid}`;
-  fs.writeFileSync(locatorTempPath, `${JSON.stringify({ configPath: String(config.core?.configPath || "").trim() }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(locatorTempPath, `${JSON.stringify({ configPath: String(persistedConfig.core?.configPath || "").trim() }, null, 2)}\n`, "utf8");
   fs.renameSync(locatorTempPath, CONFIG_LOCATOR_PATH);
   CONFIG_PATH = targetPath;
   clipboardSettingsCache = null;
   clipboardSettingsMtime = 0;
-  return configPathInfo(config);
+  return configPathInfo(persistedConfig);
 }
 
 function defaultClipboardStoragePath() {
@@ -831,9 +881,24 @@ function flattenWebPages(nodes = [], parents = [], result = []) {
   return result;
 }
 
+let webPageIndexCache = { signature: "", pages: [] };
+
+function webPageIndex() {
+  if (!clipboardStore.isReady() || !clipboardStore.webCatalogCount()) {
+    return flattenWebPages(readConfig().plugins?.web?.settings?.items || []);
+  }
+  const signature = clipboardStore.webCatalogStoredSignature();
+  if (signature !== webPageIndexCache.signature) {
+    webPageIndexCache = {
+      signature,
+      pages: flattenWebPages(clipboardStore.webCatalogItems(false))
+    };
+  }
+  return webPageIndexCache.pages;
+}
+
 function searchWebPages(query = "", limit = 12, offset = 0) {
-  const pages = flattenWebPages(readConfig().plugins?.web?.settings?.items || []);
-  return rankWebPages(pages, query, limit, offset);
+  return rankWebPages(webPageIndex(), query, limit, offset);
 }
 
 async function searchUsage(scope = "all", limit = 6) {
@@ -985,11 +1050,18 @@ app.whenReady().then(async () => {
     app.setActivationPolicy("accessory");
   }
 
-  const config = readConfig();
+  let config = readConfig();
   try {
     // 使用记录和剪切板历史目前共用同一个 SQLite。数据库属于 App 核心数据服务，
     // 因此即使剪切板插件停用，常用入口与最近使用仍然可以正常工作。
     await clipboardStore.open(resolveClipboardStoragePath(config));
+    const catalogSync = synchronizeWebCatalog(config);
+    config = catalogSync.config;
+    if (catalogSync.changed) writeConfig(config);
+    config = readConfig();
+    if (catalogSync.catalogState) {
+      console.log(`[flowhub] 网页目录 SQLite 已就绪：${catalogSync.catalogState.count} 个节点`);
+    }
   } catch (error) {
     console.error("[flowhub] 共享数据存储初始化失败:", error.message);
   }
@@ -1094,6 +1166,8 @@ ipcMain.handle("weborg:save-config", async (event, config) => {
   try {
     validateConfig(config);
     const storageState = await switchClipboardStorage(config);
+    const catalogState = clipboardStore.replaceWebCatalog(config.plugins.web.settings.items);
+    config.plugins.web.settings.catalogSignature = catalogState.signature;
     const configState = writeConfig(config);
     const savedConfig = readConfig();
     const failures = await pluginRegistry.applyConfig(savedConfig, { app });
@@ -1102,7 +1176,7 @@ ipcMain.handle("weborg:save-config", async (event, config) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send("weborg:config", savedConfig, lastQuery);
     }
-    return { ok: true, config: savedConfig, pluginFailures: failures, coreState, storageState, configState };
+    return { ok: true, config: savedConfig, pluginFailures: failures, coreState, storageState, configState, catalogState };
   } catch (error) {
     return { ok: false, reason: error.message };
   }
