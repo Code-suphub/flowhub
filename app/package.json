@@ -10,6 +10,9 @@
     "dev:web": "vite --config vite.config.mjs",
     "start:dev": "npm run dev",
     "test": "node --test tests/*.test.js",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build --bundles app,dmg",
     "pack": "env -u GH_TOKEN -u GITHUB_TOKEN CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --dir",
     "dist:mac": "env -u GH_TOKEN -u GITHUB_TOKEN CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.cjs --mac dmg zip --publish never",
     "release:mac": "FLOWHUB_PUBLISH=1 electron-builder --config electron-builder.config.cjs --mac dmg zip --publish never"
@@ -17,6 +20,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "vite": "^7.1.3"

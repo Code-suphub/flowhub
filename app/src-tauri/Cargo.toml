@@ -1,0 +1,25 @@
+[package]
+name = "flowhub-tauri"
+version = "0.1.0"
+description = "FlowHub Tauri migration prototype"
+authors = ["FlowHub contributors"]
+edition = "2021"
+
+[lib]
+name = "flowhub_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+arboard = { version = "3.6.1", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+dirs = "6"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.11.5", features = ["macos-private-api"] }
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-opener = "2.5.4"
+

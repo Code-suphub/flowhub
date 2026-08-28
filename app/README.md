@@ -50,6 +50,28 @@ Intel Mac 将最后一个参数改为 `--x64`。产物写入 `app/dist/`；`npm 
 
 未提供 Apple 开发者证书时可以完成本地构建，但其他 Mac 首次打开会看到 Gatekeeper 警告。签名使用 `CSC_LINK` 与 `CSC_KEY_PASSWORD`；同时提供 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 后，构建会自动公证。
 
+## Tauri 迁移对比版
+
+仓库同时保留 Electron 正式版与 Tauri 2 迁移版。Tauri 版复用同一套搜索和设置界面，已经接入全局快捷键、网页搜索与打开、本机应用搜索与启动、备忘录复制、SQLite 网页目录、常用/最近入口及配置保存。
+
+首次启动 Tauri 版时，会把已有 FlowHub 配置和 `weborg.db` 复制到 `~/Library/Application Support/FlowHub Tauri/`，再从独立副本读写。这样可以验证迁移效果，同时避免 Electron 与 Tauri 同时运行时覆盖同一个 SQLite 文件。仓库 `config.json` 中的网页 `items` 仍保持为空，完整目录只保存在 SQLite。
+
+本地开发与构建：
+
+```bash
+cd app
+npm install
+npm run tauri:dev
+npm run tauri:build
+```
+
+构建产物位于：
+
+- `src-tauri/target/release/bundle/macos/FlowHub Tauri.app`
+- `src-tauri/target/release/bundle/dmg/FlowHub Tauri_0.1.0_aarch64.dmg`
+
+当前迁移版用于评估技术路线，尚未迁移持续剪切板监听、自动粘贴、登录时启动、路径选择器和自动更新。备忘录回车会写入系统剪切板，但不会模拟 `⌘V`；这些能力在 Electron 正式版中保持可用。当前 DMG 使用本机 ad-hoc 签名，未做 Apple 公证。
+
 ## GitHub 自动发布
 
 推送与 `app/package.json` 版本一致的标签会触发 `.github/workflows/release-macos.yml`，例如当前版本：
