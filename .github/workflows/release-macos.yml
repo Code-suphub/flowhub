@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -40,11 +40,28 @@ jobs:
         run: node scripts/verify-release-tag.mjs "$GITHUB_REF_NAME"
 
       - name: Build and upload macOS installers
-        run: npm run release:mac -- --x64 --arm64
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${MAC_CSC_LINK:-}" ]]; then
+            export CSC_LINK="$MAC_CSC_LINK"
+            export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "Apple signing credentials are not configured; publishing unsigned installers."
+          fi
+
+          if [[ -n "${NOTARIZE_APPLE_ID:-}" && -n "${NOTARIZE_APP_PASSWORD:-}" && -n "${NOTARIZE_APPLE_TEAM_ID:-}" ]]; then
+            export APPLE_ID="$NOTARIZE_APPLE_ID"
+            export APPLE_APP_SPECIFIC_PASSWORD="$NOTARIZE_APP_PASSWORD"
+            export APPLE_TEAM_ID="$NOTARIZE_APPLE_TEAM_ID"
+          fi
+
+          npm run release:mac -- --x64 --arm64
         env:
           GH_TOKEN: ${{ github.token }}
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          NOTARIZE_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARIZE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARIZE_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
