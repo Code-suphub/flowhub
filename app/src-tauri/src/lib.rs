@@ -6,22 +6,51 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    process::Command,
+    sync::{OnceLock, RwLock},
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_autostart::ManagerExt as AutostartExt;
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 
+mod clipboard;
+mod updater;
+
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
-struct AppState {
-    root_dir: PathBuf,
+
+#[derive(Clone)]
+struct AppPaths {
     config_path: PathBuf,
     storage_dir: PathBuf,
     db_path: PathBuf,
 }
 
+pub(crate) struct AppState {
+    root_dir: PathBuf,
+    default_config_path: PathBuf,
+    default_storage_dir: PathBuf,
+    paths: RwLock<AppPaths>,
+    application_index: OnceLock<Vec<Value>>,
+}
+
+impl AppState {
+    fn paths(&self) -> AppPaths {
+        self.paths
+            .read()
+            .expect("FlowHub paths lock poisoned")
+            .clone()
+    }
+
+    pub(crate) fn storage_dir(&self) -> PathBuf {
+        self.paths().storage_dir
+    }
+}
+
 fn app_support_dir() -> Result<PathBuf, String> {
     dirs::data_dir()
-        .map(|path| path.join("FlowHub Tauri"))
+        .map(|path| path.join("FlowHub"))
         .ok_or_else(|| "无法确定系统应用数据目录".to_string())
 }
 
@@ -48,7 +77,7 @@ fn legacy_sources() -> Vec<PathBuf> {
     let Some(base) = dirs::data_dir() else {
         return Vec::new();
     };
-    ["FlowHub", "Web Organization", "Electron"]
+    ["FlowHub Tauri", "Web Organization", "Electron"]
         .into_iter()
         .map(|name| base.join(name))
         .collect()
@@ -123,12 +152,30 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
     fs::rename(&temporary, path).map_err(|error| error.to_string())
 }
 
+fn copy_directory_contents(source: &Path, target: &Path) -> Result<(), String> {
+    fs::create_dir_all(target).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_directory_contents(&source_path, &target_path)?;
+        } else if !target_path.exists() {
+            fs::copy(&source_path, &target_path).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn initialize_state() -> Result<AppState, String> {
     let root_dir = app_support_dir()?;
-    let config_path = root_dir.join("config.json");
-    let storage_dir = root_dir.join("clipboard");
-    let db_path = storage_dir.join("weborg.db");
-    fs::create_dir_all(&storage_dir).map_err(|error| error.to_string())?;
+    let default_config_path = root_dir.join("config.json");
+    let default_storage_dir = root_dir.join("clipboard");
+    let locator_path = root_dir.join("config-location.json");
+    let config_path = read_json(&locator_path)
+        .and_then(|locator| configured_path(&locator, &["configPath"]))
+        .filter(|path| path.is_absolute() && path.is_file())
+        .unwrap_or_else(|| default_config_path.clone());
 
     let legacy_config_path = find_legacy_config();
     let legacy_config = legacy_config_path
@@ -142,26 +189,50 @@ fn initialize_state() -> Result<AppState, String> {
             &normalize_migrated_config(legacy_config.clone()),
         )?;
     }
+    let active_config = read_json(&config_path).unwrap_or_else(|| legacy_config.clone());
+    let storage_dir = configured_path(
+        &active_config,
+        &["plugins", "clipboard", "settings", "storagePath"],
+    )
+    .filter(|path| path.is_absolute())
+    .unwrap_or_else(|| default_storage_dir.clone());
+    let db_path = storage_dir.join("weborg.db");
+    fs::create_dir_all(&storage_dir).map_err(|error| error.to_string())?;
     if !db_path.exists() {
         if let Some(source) = find_legacy_database(&legacy_config) {
-            fs::copy(source, &db_path)
-                .map_err(|error| format!("复制现有 FlowHub 数据库失败：{error}"))?;
+            if let Some(source_dir) = source.parent() {
+                copy_directory_contents(source_dir, &storage_dir)
+                    .map_err(|error| format!("复制现有 FlowHub 数据失败：{error}"))?;
+            }
+        }
+    }
+    let image_dir = storage_dir.join("images");
+    for source_root in legacy_sources() {
+        let source_images = source_root.join("clipboard").join("images");
+        if source_images.is_dir() {
+            copy_directory_contents(&source_images, &image_dir)
+                .map_err(|error| format!("复制现有剪贴板图片失败：{error}"))?;
         }
     }
 
     let state = AppState {
         root_dir,
-        config_path,
-        storage_dir,
-        db_path,
+        default_config_path,
+        default_storage_dir,
+        paths: RwLock::new(AppPaths {
+            config_path,
+            storage_dir,
+            db_path,
+        }),
+        application_index: OnceLock::new(),
     };
     initialize_database(&state)?;
     import_json_catalog_if_needed(&state)?;
     Ok(state)
 }
 
-fn database(state: &AppState) -> Result<Connection, String> {
-    Connection::open(&state.db_path).map_err(|error| error.to_string())
+pub(crate) fn database(state: &AppState) -> Result<Connection, String> {
+    Connection::open(state.paths().db_path).map_err(|error| error.to_string())
 }
 
 fn initialize_database(state: &AppState) -> Result<(), String> {
@@ -184,6 +255,23 @@ fn initialize_database(state: &AppState) -> Result<(), String> {
             );
             CREATE INDEX IF NOT EXISTS usage_records_recent ON usage_records(target_type, last_used_at DESC);
             CREATE INDEX IF NOT EXISTS usage_records_score ON usage_records(target_type, use_count DESC, last_used_at DESC);
+            CREATE TABLE IF NOT EXISTS clipboard_records (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              kind TEXT NOT NULL,
+              hash TEXT NOT NULL,
+              content TEXT,
+              file_name TEXT,
+              source_name TEXT,
+              file_paths TEXT,
+              file_types TEXT,
+              size INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              last_seen_at TEXT NOT NULL,
+              copy_count INTEGER NOT NULL DEFAULT 1,
+              UNIQUE(kind, hash)
+            );
+            CREATE INDEX IF NOT EXISTS clipboard_records_recent ON clipboard_records(last_seen_at DESC);
+            CREATE INDEX IF NOT EXISTS clipboard_records_hash ON clipboard_records(hash);
             CREATE TABLE IF NOT EXISTS web_catalog_nodes (
               id TEXT PRIMARY KEY,
               parent_id TEXT,
@@ -286,7 +374,7 @@ fn import_json_catalog_if_needed(state: &AppState) -> Result<(), String> {
     if catalog_count(&connection)? > 0 {
         return Ok(());
     }
-    let Some(config) = read_json(&state.config_path) else {
+    let Some(config) = read_json(&state.paths().config_path) else {
         return Ok(());
     };
     let items = config
@@ -351,8 +439,8 @@ fn catalog_items(connection: &Connection) -> Result<Vec<Value>, String> {
     Ok(build(None, &mut grouped))
 }
 
-fn hydrated_config(state: &AppState) -> Result<Value, String> {
-    let mut config = read_json(&state.config_path)
+pub(crate) fn hydrated_config(state: &AppState) -> Result<Value, String> {
+    let mut config = read_json(&state.paths().config_path)
         .unwrap_or_else(|| serde_json::from_str(DEFAULT_CONFIG).unwrap_or_else(|_| json!({})));
     let connection = database(state)?;
     let items = catalog_items(&connection)?;
@@ -397,6 +485,56 @@ fn ensure_object_path<'a>(
         .ok_or_else(|| "配置节点必须是对象".to_string())
 }
 
+fn apply_autostart(app: &tauri::AppHandle, config: &Value) -> Value {
+    let requested = config
+        .pointer("/core/launchAtLogin")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if cfg!(debug_assertions) {
+        return json!({ "launchAtLogin": requested, "applied": false, "reason": "开发模式不修改登录项" });
+    }
+    let result = if requested {
+        app.autolaunch().enable()
+    } else {
+        app.autolaunch().disable()
+    };
+    match result {
+        Ok(()) => json!({ "launchAtLogin": requested, "applied": true }),
+        Err(error) => {
+            json!({ "launchAtLogin": requested, "applied": false, "reason": error.to_string() })
+        }
+    }
+}
+
+fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
+    let current = state.paths();
+    if current.storage_dir == target {
+        return Ok(json!({ "migrated": false, "activePath": target.to_string_lossy() }));
+    }
+    if target.starts_with(&current.storage_dir) || current.storage_dir.starts_with(target) {
+        return Err("新的存放位置不能与当前数据目录互相嵌套".to_string());
+    }
+    fs::create_dir_all(target).map_err(|error| error.to_string())?;
+    let entries = fs::read_dir(target)
+        .map_err(|error| error.to_string())?
+        .filter_map(Result::ok)
+        .count();
+    let target_db = target.join("weborg.db");
+    if entries > 0 && !target_db.exists() {
+        return Err("所选目录不是空目录，也不包含 FlowHub 数据库".to_string());
+    }
+    let migrated = entries == 0 && current.storage_dir.is_dir();
+    if migrated {
+        copy_directory_contents(&current.storage_dir, target)?;
+    }
+    let mut paths = state.paths.write().expect("FlowHub paths lock poisoned");
+    paths.storage_dir = target.to_path_buf();
+    paths.db_path = target_db;
+    drop(paths);
+    initialize_database(state)?;
+    Ok(json!({ "migrated": migrated, "activePath": target.to_string_lossy() }))
+}
+
 #[tauri::command]
 fn get_config(state: State<'_, AppState>) -> Result<Value, String> {
     hydrated_config(&state)
@@ -417,17 +555,52 @@ fn save_config(
         .cloned()
         .ok_or_else(|| "网页插件配置缺少 items 数组".to_string())?;
     validate_catalog(&items)?;
-    let mut connection = database(&state)?;
-    let count = replace_catalog(&mut connection, &items)?;
+    let target_storage = configured_path(
+        &config,
+        &["plugins", "clipboard", "settings", "storagePath"],
+    )
+    .unwrap_or_else(|| state.default_storage_dir.clone());
+    if !target_storage.is_absolute() {
+        return Ok(json!({ "ok": false, "reason": "剪贴板存放位置必须是绝对路径" }));
+    }
+    let target_config = configured_path(&config, &["core", "configPath"])
+        .unwrap_or_else(|| state.default_config_path.clone());
+    if !target_config.is_absolute() {
+        return Ok(json!({ "ok": false, "reason": "配置文件位置必须是绝对路径" }));
+    }
+    let previous_config = hydrated_config(&state)?;
+    clipboard::stop_monitor(&app);
+    let persisted = (|| -> Result<(Value, usize), String> {
+        let storage_state = switch_storage(&state, &target_storage)?;
+        let mut connection = database(&state)?;
+        let count = replace_catalog(&mut connection, &items)?;
 
-    let settings = ensure_object_path(&mut config, &["plugins", "web", "settings"])?;
-    settings.insert("items".to_string(), Value::Array(Vec::new()));
-    settings.insert(
-        "catalogStorage".to_string(),
-        Value::String("sqlite".to_string()),
-    );
-    settings.insert("catalogCount".to_string(), json!(count));
-    write_json_atomic(&state.config_path, &config)?;
+        let settings = ensure_object_path(&mut config, &["plugins", "web", "settings"])?;
+        settings.insert("items".to_string(), Value::Array(Vec::new()));
+        settings.insert(
+            "catalogStorage".to_string(),
+            Value::String("sqlite".to_string()),
+        );
+        settings.insert("catalogCount".to_string(), json!(count));
+        write_json_atomic(&target_config, &config)?;
+        write_json_atomic(
+            &state.root_dir.join("config-location.json"),
+            &json!({ "configPath": config.pointer("/core/configPath").and_then(Value::as_str).unwrap_or("") }),
+        )?;
+        state
+            .paths
+            .write()
+            .expect("FlowHub paths lock poisoned")
+            .config_path = target_config;
+        Ok((storage_state, count))
+    })();
+    let (storage_state, count) = match persisted {
+        Ok(state) => state,
+        Err(reason) => {
+            let _ = clipboard::apply_config(&app, &previous_config);
+            return Ok(json!({ "ok": false, "reason": reason }));
+        }
+    };
 
     let hydrated = hydrated_config(&state)?;
     let hotkey = hydrated
@@ -435,12 +608,15 @@ fn save_config(
         .and_then(Value::as_str)
         .unwrap_or("Alt+Space");
     let hotkey_state = register_hotkey(&app, hotkey);
+    let autostart_state = apply_autostart(&app, &hydrated);
+    clipboard::apply_config(&app, &hydrated)?;
     let _ = app.emit("flowhub:config", json!({ "config": hydrated, "query": "" }));
     Ok(json!({
         "ok": true,
         "config": hydrated,
         "pluginFailures": [],
-        "coreState": hotkey_state,
+        "coreState": { "hotkey": hotkey_state, "autostart": autostart_state },
+        "storageState": storage_state,
         "catalogState": { "count": count, "storage": "sqlite" }
     }))
 }
@@ -486,9 +662,7 @@ fn application_directories() -> Vec<PathBuf> {
     directories
 }
 
-#[tauri::command]
-fn search_applications(query: String, limit: usize, offset: usize) -> Vec<Value> {
-    let keyword = query.trim().to_lowercase();
+fn scan_applications() -> Vec<Value> {
     let mut seen = HashSet::new();
     let mut applications = Vec::new();
     for directory in application_directories() {
@@ -504,20 +678,79 @@ fn search_applications(query: String, limit: usize, offset: usize) -> Vec<Value>
             {
                 continue;
             }
-            let title = file_name.trim_end_matches(".app").to_string();
-            let hay = format!("{title} {file_name} {}", path.display()).to_lowercase();
-            if keyword.is_empty() || hay.contains(&keyword) {
-                applications.push(json!({
-                    "kind": "app",
-                    "title": title,
-                    "fileName": file_name,
-                    "path": path.to_string_lossy(),
-                    "bundleId": "",
-                    "hay": hay,
-                    "iconUrl": ""
-                }));
+            applications.push(json!({
+                "kind": "app",
+                "title": file_name.trim_end_matches(".app"),
+                "fileName": file_name,
+                "path": path.to_string_lossy(),
+                "bundleId": "",
+                "iconUrl": ""
+            }));
+        }
+    }
+    if cfg!(target_os = "macos") && !applications.is_empty() {
+        const SCRIPT: &str = "ObjC.import('Foundation'); var args=$.NSProcessInfo.processInfo.arguments; var result=[]; for(var i=6;i<args.count;i++){try{var p=ObjC.unwrap(args.objectAtIndex(i));var bundle=$.NSBundle.bundleWithPath(p);var info=bundle?(bundle.localizedInfoDictionary||bundle.infoDictionary):null;var display=info&&typeof info.objectForKey==='function'?(info.objectForKey('CFBundleDisplayName')||info.objectForKey('CFBundleName')):null;var identifier=bundle?bundle.bundleIdentifier:null;result.push({displayName:display?ObjC.unwrap(display):'',bundleId:identifier?ObjC.unwrap(identifier):''});}catch(e){result.push({displayName:'',bundleId:''});}} console.log(JSON.stringify(result));";
+        let paths: Vec<String> = applications
+            .iter()
+            .filter_map(|application| {
+                application
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect();
+        let mut command = Command::new("osascript");
+        command.args(["-l", "JavaScript", "-e", SCRIPT, "--"]);
+        command.args(&paths);
+        if let Ok(output) = command.output() {
+            let text = if output.stdout.is_empty() {
+                output.stderr
+            } else {
+                output.stdout
+            };
+            let metadata: Vec<Value> = serde_json::from_slice(&text).unwrap_or_default();
+            for (index, application) in applications.iter_mut().enumerate() {
+                if let Some(object) = application.as_object_mut() {
+                    let display = metadata
+                        .get(index)
+                        .and_then(|entry| entry.get("displayName"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let bundle_id = metadata
+                        .get(index)
+                        .and_then(|entry| entry.get("bundleId"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if !display.is_empty() {
+                        object.insert("title".to_string(), Value::String(display.to_string()));
+                    }
+                    object.insert("bundleId".to_string(), Value::String(bundle_id.to_string()));
+                }
             }
         }
+    }
+    for application in &mut applications {
+        let title = application
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let file_name = application
+            .get("fileName")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let path = application
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let bundle_id = application
+            .get("bundleId")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let hay = format!("{title} {file_name} {bundle_id} {path}").to_lowercase();
+        application
+            .as_object_mut()
+            .unwrap()
+            .insert("hay".to_string(), Value::String(hay));
     }
     applications.sort_by(|left, right| {
         left.get("title")
@@ -533,10 +766,54 @@ fn search_applications(query: String, limit: usize, offset: usize) -> Vec<Value>
             )
     });
     applications
-        .into_iter()
+}
+
+#[tauri::command]
+fn search_applications(
+    state: State<'_, AppState>,
+    query: String,
+    limit: usize,
+    offset: usize,
+) -> Vec<Value> {
+    let keyword = query.trim().to_lowercase();
+    let applications = state.application_index.get_or_init(scan_applications);
+    let mut selected: Vec<Value> = applications
+        .iter()
+        .filter(|application| {
+            keyword.is_empty()
+                || application
+                    .get("hay")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .contains(&keyword)
+        })
         .skip(offset)
         .take(limit.clamp(1, 100))
-        .collect()
+        .cloned()
+        .collect();
+    let paths: Vec<String> = selected
+        .iter()
+        .filter_map(|application| {
+            application
+                .get("path")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+    let icons = clipboard::native_icon_data_urls(&paths);
+    for application in &mut selected {
+        let path = application
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if let Some(icon) = icons.get(path) {
+            application
+                .as_object_mut()
+                .unwrap()
+                .insert("iconUrl".to_string(), Value::String(icon.clone()));
+        }
+    }
+    selected
 }
 
 fn record_usage(state: &AppState, usage: &Value, fallback: &str) -> Result<(), String> {
@@ -595,7 +872,7 @@ fn record_usage(state: &AppState, usage: &Value, fallback: &str) -> Result<(), S
     Ok(())
 }
 
-fn hide_main(app: &tauri::AppHandle) {
+pub(crate) fn hide_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
@@ -635,18 +912,10 @@ fn activate_target(
         }
         "memo" => {
             let content = payload.get("content").and_then(Value::as_str).unwrap_or("");
-            if content.is_empty() {
-                return Ok(json!({ "ok": false, "reason": "备忘内容为空" }));
-            }
-            let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
-            clipboard
-                .set_text(content.to_string())
-                .map_err(|error| error.to_string())?;
+            return clipboard::paste_text(&app, content);
         }
         _ => {
-            return Ok(
-                json!({ "ok": false, "reason": format!("Tauri 迁移版暂未迁移插件：{plugin_id}") }),
-            )
+            return Ok(json!({ "ok": false, "reason": format!("当前版本不支持插件：{plugin_id}") }))
         }
     }
     let _ = app.emit("flowhub:usage-updated", ());
@@ -776,7 +1045,7 @@ fn open_settings(app: tauri::AppHandle) -> Result<Value, String> {
         return Ok(json!({ "ok": true }));
     }
     WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("FlowHub 设置 · Tauri")
+        .title("FlowHub 设置")
         .inner_size(980.0, 720.0)
         .min_inner_size(820.0, 600.0)
         .center()
@@ -798,42 +1067,106 @@ fn open_accessibility_settings(app: tauri::AppHandle) -> Result<Value, String> {
 
 #[tauri::command]
 fn get_config_path_info(state: State<'_, AppState>) -> Value {
+    let paths = state.paths();
+    let configured = hydrated_config(&state)
+        .ok()
+        .and_then(|config| configured_path(&config, &["core", "configPath"]))
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default();
     json!({
         "available": true,
-        "configuredPath": "",
-        "defaultPath": state.config_path.to_string_lossy(),
-        "resolvedPath": state.config_path.to_string_lossy(),
-        "activePath": state.config_path.to_string_lossy()
+        "configuredPath": configured,
+        "defaultPath": state.default_config_path.to_string_lossy(),
+        "resolvedPath": paths.config_path.to_string_lossy(),
+        "activePath": paths.config_path.to_string_lossy()
     })
 }
 
 #[tauri::command]
 fn get_storage_info(state: State<'_, AppState>) -> Value {
+    let paths = state.paths();
+    let configured = hydrated_config(&state)
+        .ok()
+        .and_then(|config| {
+            configured_path(
+                &config,
+                &["plugins", "clipboard", "settings", "storagePath"],
+            )
+        })
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default();
     json!({
         "available": true,
-        "configuredPath": "",
-        "defaultPath": state.storage_dir.to_string_lossy(),
-        "resolvedPath": state.storage_dir.to_string_lossy(),
-        "activePath": state.storage_dir.to_string_lossy(),
-        "migrated": true,
-        "isolatedCopy": true
+        "configuredPath": configured,
+        "defaultPath": state.default_storage_dir.to_string_lossy(),
+        "resolvedPath": paths.storage_dir.to_string_lossy(),
+        "activePath": paths.storage_dir.to_string_lossy()
     })
 }
 
 #[tauri::command]
+async fn choose_config_path(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let current = state.paths().config_path;
+    let directory = current.parent().unwrap_or(&state.root_dir);
+    let file_name = current
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("config.json");
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("选择 FlowHub 配置文件位置")
+        .set_directory(directory)
+        .set_file_name(file_name)
+        .add_filter("JSON 配置", &["json"])
+        .blocking_save_file();
+    let Some(selected) = selected else {
+        return Ok(json!({ "ok": false, "canceled": true }));
+    };
+    let mut path = selected.into_path().map_err(|error| error.to_string())?;
+    if path.extension().is_none() {
+        path.set_extension("json");
+    }
+    Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+#[tauri::command]
+async fn choose_storage_path(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("选择 FlowHub 数据存放目录")
+        .set_directory(state.paths().storage_dir)
+        .blocking_pick_folder();
+    let Some(selected) = selected else {
+        return Ok(json!({ "ok": false, "canceled": true }));
+    };
+    let path = selected.into_path().map_err(|error| error.to_string())?;
+    Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+#[tauri::command]
 fn open_config_path(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+    let path = state.paths().config_path;
     app.opener()
-        .open_path(state.config_path.to_string_lossy(), None::<&str>)
+        .reveal_item_in_dir(&path)
         .map_err(|error| error.to_string())?;
-    Ok(json!({ "ok": true, "path": state.config_path.to_string_lossy() }))
+    Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
 }
 
 #[tauri::command]
 fn open_storage_path(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+    let path = state.paths().storage_dir;
     app.opener()
-        .open_path(state.storage_dir.to_string_lossy(), None::<&str>)
+        .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|error| error.to_string())?;
-    Ok(json!({ "ok": true, "path": state.storage_dir.to_string_lossy() }))
+    Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
 }
 
 fn toggle_main(app: &tauri::AppHandle) {
@@ -847,6 +1180,7 @@ fn toggle_main(app: &tauri::AppHandle) {
     let _ = window.center();
     let _ = window.show();
     let _ = window.set_focus();
+    let _ = window.eval("window.focusSearch?.()");
     if let Some(state) = app.try_state::<AppState>() {
         if let Ok(config) = hydrated_config(&state) {
             let _ = app.emit("flowhub:config", json!({ "config": config, "query": "" }));
@@ -872,6 +1206,16 @@ fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            toggle_main(app);
+        }))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("FlowHub")
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -886,17 +1230,24 @@ pub fn run() {
             let state = initialize_state().map_err(std::io::Error::other)?;
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
+            app.manage(clipboard::ClipboardRuntime::new());
+            app.manage(updater::UpdateRuntime::new(
+                app.package_info().version.to_string().as_str(),
+            ));
+            clipboard::apply_config(app.handle(), &config).map_err(std::io::Error::other)?;
 
             let hotkey = config
                 .pointer("/core/hotkey")
                 .and_then(Value::as_str)
                 .unwrap_or("Alt+Space");
             let hotkey_state = register_hotkey(app.handle(), hotkey);
+            let autostart_state = apply_autostart(app.handle(), &config);
             println!(
                 "[flowhub-tauri] 数据目录：{}",
                 app.state::<AppState>().root_dir.display()
             );
             println!("[flowhub-tauri] 快捷键状态：{hotkey_state}");
+            println!("[flowhub-tauri] 登录项状态：{autostart_state}");
 
             if let Some(window) = app.get_webview_window("main") {
                 let main_window = window.clone();
@@ -904,6 +1255,14 @@ pub fn run() {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = main_window.hide();
+                    } else if let WindowEvent::Focused(false) = event {
+                        let blur_window = main_window.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(120));
+                            if !blur_window.is_focused().unwrap_or(false) {
+                                let _ = blur_window.hide();
+                            }
+                        });
                     }
                 });
                 if std::env::var("FLOWHUB_TAURI_SHOW_ON_START").as_deref() == Ok("1") {
@@ -919,6 +1278,7 @@ pub fn run() {
                     handle.exit(0);
                 });
             }
+            updater::schedule_initial_check(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -931,9 +1291,60 @@ pub fn run() {
             open_accessibility_settings,
             get_config_path_info,
             get_storage_info,
+            choose_config_path,
+            choose_storage_path,
             open_config_path,
-            open_storage_path
+            open_storage_path,
+            clipboard::search_clipboard,
+            clipboard::activate_clipboard,
+            clipboard::delete_clipboard,
+            updater::get_update_state,
+            updater::check_for_updates,
+            updater::download_update,
+            updater::quit_and_install_update
         ])
         .run(tauri::generate_context!())
-        .expect("FlowHub Tauri failed to run");
+        .expect("FlowHub failed to run");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrated_config_uses_official_default_paths() {
+        let input = json!({
+            "core": { "configPath": "/tmp/legacy.json" },
+            "plugins": {
+                "clipboard": { "settings": { "storagePath": "/tmp/legacy-data" } }
+            }
+        });
+        let migrated = normalize_migrated_config(input);
+        assert_eq!(migrated.pointer("/core/configPath"), Some(&json!("")));
+        assert_eq!(
+            migrated.pointer("/plugins/clipboard/settings/storagePath"),
+            Some(&json!(""))
+        );
+        assert_eq!(migrated.pointer("/core/hotkey"), Some(&json!("Alt+Space")));
+    }
+
+    #[test]
+    fn catalog_validation_rejects_duplicate_ids_at_any_depth() {
+        let duplicate = vec![json!({
+            "id": "same",
+            "children": [{ "id": "same", "title": "duplicate" }]
+        })];
+        assert!(validate_catalog(&duplicate)
+            .expect_err("duplicate ids must fail")
+            .contains("重复"));
+    }
+
+    #[test]
+    fn catalog_validation_accepts_nested_unique_ids() {
+        let catalog = vec![json!({
+            "id": "root",
+            "children": [{ "id": "page", "url": "https://example.com" }]
+        })];
+        assert!(validate_catalog(&catalog).is_ok());
+    }
 }

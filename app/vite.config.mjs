@@ -492,13 +492,13 @@ function localConfigApi() {
             const currentConfig = JSON.parse(await readFile(configPath, "utf8"));
             const currentConfigPath = String(currentConfig.core?.configPath || "").trim();
             const nextConfigPath = String(config.core?.configPath || "").trim();
-            if (currentConfigPath !== nextConfigPath) throw new Error("请在 Electron App 中修改配置文件位置");
+            if (currentConfigPath !== nextConfigPath) throw new Error("请在 FlowHub App 中修改配置文件位置");
             const currentStoragePath = String(currentConfig.plugins?.clipboard?.settings?.storagePath || "").trim();
             const nextStoragePath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
-            if (currentStoragePath !== nextStoragePath) throw new Error("请在 Electron App 中修改剪切板存放位置");
+            if (currentStoragePath !== nextStoragePath) throw new Error("请在 FlowHub App 中修改剪切板存放位置");
             const storedItems = await readWebCatalog();
             if (webCatalogSignature(config.plugins.web.settings.items) !== webCatalogSignature(storedItems)) {
-              throw new Error("浏览器预览不能修改 SQLite 网页目录，请在 Electron App 的设置中编辑");
+              throw new Error("浏览器预览不能修改 SQLite 网页目录，请在 FlowHub App 的设置中编辑");
             }
             const persistedConfig = stripWebCatalogMirror(config);
             const temporaryPath = `${configPath}.vite-${process.pid}`;

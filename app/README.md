@@ -1,157 +1,77 @@
 # FlowHub 桌面启动器
 
-类 uTools 的桌面全局搜索框。不依赖浏览器扩展，作为独立桌面 App 运行：
-按 **Alt+Space** 呼出一个无边框置顶搜索浮窗，输入即可搜索目录/网页/备注，
-回车用系统默认浏览器打开目标页面。自带的 `config.json`（项目根）决定导航内容。
+FlowHub 是基于 Tauri 2 的 macOS 本地启动器。默认按 **Option + Space** 呼出浮窗，可搜索应用、网页目录、剪贴板历史和备忘命令。
 
-## 依赖
+## 开发与运行
 
-- Node.js + npm
-- Electron（作为 devDependency，首次需下载二进制）
-
-## 安装
+需要 Node.js 22+、Rust stable 和 Xcode Command Line Tools。
 
 ```bash
 cd app
 npm install
-```
-
-首次安装 Electron 下载较慢；如网络受限可指定镜像：
-
-```bash
-ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" npm install
-```
-
-## 运行
-
-```bash
-cd app
 npm start
 ```
 
-启动后不会有常驻窗口；按 **Alt+Space** 呼出搜索框：
+App 默认不显示 Dock 图标或常驻主窗口。启动后按 **Option + Space** 呼出；搜索结果用方向键选择，按 `Enter` 执行，按 `Esc` 关闭。
 
-- 输入关键词过滤目录/网页/备注
-- `↑` / `↓` 选择，`Enter` / 点击打开
-- `Esc` 关闭浮窗
-- 点击搜索框右上角的 `⚙` 打开配置管理
+只预览前端页面时可运行 `npm run dev:web`，但浏览器不具备全局快捷键、剪贴板监听、打开本机应用等原生能力。
 
-## 生成 macOS 安装包
+## 本地数据
 
-先执行测试，再为当前 Mac 架构生成未签名的 DMG 与 ZIP：
+首次启动会把旧 Electron 版或 Tauri 验证版的数据安全复制到：
+
+```text
+~/Library/Application Support/FlowHub/
+```
+
+- `config.json` 保存全局和插件配置。
+- `clipboard/weborg.db` 是网页目录、使用记录和剪贴板历史的 SQLite 主存储。
+- `clipboard/images/` 保存剪贴板图片副本。
+- `config-location.json` 只记录自定义配置文件位置。
+
+设置页可以切换配置文件和数据目录。切换到空目录时会复制现有数据，旧目录保留作为可恢复备份。仓库根目录 `config.json` 中的网页 `items` 保持为空，真实网页目录仅存入 SQLite。
+
+## 测试与安装包
 
 ```bash
 cd app
 npm test
-npm run dist:mac -- --arm64
+npm run build
 ```
 
-Intel Mac 将最后一个参数改为 `--x64`。产物写入 `app/dist/`；`npm run pack -- --arm64` 只生成未封装的 `.app`，适合快速冒烟检查。默认配置会作为只读资源放进 App，用户网页目录、剪切板和使用记录仍写入用户数据目录中的 SQLite，不会被打进安装包。
+本机构建会从 `~/.tauri/flowhub.key` 读取 Tauri 更新签名私钥，并从 `~/.tauri/flowhub.key.password` 读取密码。也可使用 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PATH` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 指定。私钥和密码都不能提交到仓库；丢失后已安装版本将无法验证后续更新。
 
-未提供 Apple 开发者证书时可以完成本地构建，但其他 Mac 首次打开会看到 Gatekeeper 警告。签名使用 `CSC_LINK` 与 `CSC_KEY_PASSWORD`；同时提供 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 后，构建会自动公证。
+Apple Silicon 产物默认位于：
 
-## Tauri 迁移对比版
-
-仓库同时保留 Electron 正式版与 Tauri 2 迁移版。Tauri 版复用同一套搜索和设置界面，已经接入全局快捷键、网页搜索与打开、本机应用搜索与启动、备忘录复制、SQLite 网页目录、常用/最近入口及配置保存。
-
-首次启动 Tauri 版时，会把已有 FlowHub 配置和 `weborg.db` 复制到 `~/Library/Application Support/FlowHub Tauri/`，再从独立副本读写。这样可以验证迁移效果，同时避免 Electron 与 Tauri 同时运行时覆盖同一个 SQLite 文件。仓库 `config.json` 中的网页 `items` 仍保持为空，完整目录只保存在 SQLite。
-
-本地开发与构建：
-
-```bash
-cd app
-npm install
-npm run tauri:dev
-npm run tauri:build
+```text
+src-tauri/target/release/bundle/macos/FlowHub.app
+src-tauri/target/release/bundle/dmg/FlowHub_0.1.0_aarch64.dmg
 ```
 
-构建产物位于：
+目前使用 ad-hoc 签名，不需要 Apple 开发者账号；其他 Mac 首次打开可能出现 Gatekeeper 提示。Tauri 更新包签名与 Apple Developer ID 签名相互独立。
 
-- `src-tauri/target/release/bundle/macos/FlowHub Tauri.app`
-- `src-tauri/target/release/bundle/dmg/FlowHub Tauri_0.1.0_aarch64.dmg`
+## GitHub 自动发布与更新
 
-当前迁移版用于评估技术路线，尚未迁移持续剪切板监听、自动粘贴、登录时启动、路径选择器和自动更新。备忘录回车会写入系统剪切板，但不会模拟 `⌘V`；这些能力在 Electron 正式版中保持可用。当前 DMG 使用本机 ad-hoc 签名，未做 Apple 公证。
+在 GitHub 仓库中配置 Actions Secret `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，值分别是本机 `~/.tauri/flowhub.key` 与 `~/.tauri/flowhub.key.password` 的完整内容。
 
-## GitHub 自动发布
+同步修改以下三处版本号后，推送同名标签：
 
-推送与 `app/package.json` 版本一致的标签会触发 `.github/workflows/release-macos.yml`，例如当前版本：
+- `app/package.json`
+- `app/src-tauri/Cargo.toml`
+- `app/src-tauri/tauri.conf.json`
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-工作流会测试并生成 Intel 与 Apple Silicon 两套 DMG/ZIP，连同 `latest-mac.yml` 更新清单上传到正式 GitHub Release。已安装的正式版本会在启动后检查稳定通道；发现更高版本时，可在“配置管理 → 通用设置”中查看版本、下载进度，并在下载完成后点击重启安装。更新不会在后台自动下载，也不会打断尚未保存的配置修改。
+`.github/workflows/release-macos.yml` 会测试并构建 Apple Silicon 和 Intel 两套 DMG，上传签名后的更新包与 `latest.json`。已安装版本启动 5 秒后自动检查 GitHub Release，也可在“配置管理 → 通用设置”中手动检查、下载并重启安装。
 
-仓库不配置 Apple Secrets 时仍可构建未签名产物，但 macOS 自动更新的正式分发应使用稳定的 Developer ID 签名并完成 Apple 公证，否则 Gatekeeper 可能阻止新版本正常替换。需要配置以下 Actions Secrets：
+## 核心能力
 
-- `MAC_CSC_LINK`：Developer ID Application 证书的 `.p12` 文件或其 Base64 内容
-- `MAC_CSC_KEY_PASSWORD`：证书密码
-- `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`：Apple 公证凭据
-
-发布前必须先更新 `app/package.json` 的 `version`；标签不匹配时工作流会主动终止，避免错误覆盖 Release。发布后，安装版使用包内生成的 `app-update.yml` 定位当前 GitHub 仓库，并读取 Release 中的 `latest-mac.yml` 判断是否有新版本；浏览器预览与 `npm start` 开发模式不会连接更新服务。
-
-## 浏览器预览与热更新
-
-调整搜索浮窗或配置管理界面时，使用 Vite 开发模式：
-
-```bash
-cd app
-npm run dev
-```
-
-该命令会同时启动 Electron 和渲染层开发服务器。浏览器也可以直接访问：
-
-- 搜索浮窗：`http://127.0.0.1:5173/search.html`
-- 配置管理：`http://127.0.0.1:5173/settings.html`
-
-HTML、CSS 和渲染层 JavaScript 修改后会自动刷新，Electron 开发窗口与浏览器预览共用同一份页面。浏览器模式会读取真实的 `config.json`，并通过仅绑定 `127.0.0.1` 的开发接口扫描本机应用、提取 macOS 原生图标，以及只读分页查询真实剪切板历史；剪切板首批加载 30 条，滚动接近底部时继续加载。浏览器不能复制、粘贴或删除剪切板记录；全局快捷键、系统剪切板监听、自动粘贴和启动应用等原生能力仍需在 Electron 中验证。
-
-只需要浏览器预览、不启动 Electron 时：
-
-```bash
-npm run dev:web
-```
-
-## 自定义
-
-- **配置结构**：`config.json` 分为 `core` 和 `plugins`。`core` 保存全局快捷键、登录时启动和配置文件位置等 App 配置；每个插件在自己的 `enabled` 和 `settings` 下保存启用状态与专属配置，不再读取旧版顶层字段。网页目录以 SQLite 为唯一持久化主存储，仓库内的 `plugins.web.settings.items` 始终保持为空；Electron 设置页读取时会临时水合完整目录，保存时再写回数据库并剥离 JSON 镜像。旧版非空 `items` 会在首次启动时自动导入，内容签名只保存在数据库内部。通用设置可选择新的 `config.json` 位置、在 Finder 中显示或恢复默认；App 用户目录中的 `config-location.json` 只负责记录当前配置文件的位置。
-- **配置管理**：左侧先显示 App 的通用设置，再按插件清单显示可用插件、启用开关和各自的设置入口。网页插件提供目录结构与 JSON 编辑，剪切板插件提供留存策略，应用插件展示扫描范围，备忘录插件提供命令库的分类浏览与增删改。
-- **内置插件**：网页、应用、剪切板与备忘录通过统一的插件注册中心提供生命周期及 `list / search / action` 能力；搜索范围和设置模块均由 `ui/plugins.json` 生成。清单中的 `defaultEnabled` 只是默认值，用户开关以 `config.json` 为准；未注册运行时的插件会显示为未安装且不可启用。当前只加载随 App 打包并由主进程显式注册的受信任插件，不执行外部目录中的任意 Node.js 代码。
-- **备忘录与命令速查**：默认提供 MySQL、Docker、Bash、Git 和 Kubernetes 常用命令，并用“编程 / 数据库 / MySQL”一类路径组织层级。搜索支持空格分词，并综合标题、目录路径、说明、标签和正文排序；在 Electron 中回车会把完整内容写入剪切板并自动粘贴。内置库不会重复写入配置，只有编辑、新增或删除后才在 `plugins.memo.settings.items` 中保存个人版本。
-- **本地数据**：网页目录、使用记录和剪切板历史共用 Electron 用户数据目录下的 `clipboard/weborg.db`；剪切板图片文件保存在同目录的 `images/`。网页目录存放在规范化的 `web_catalog_nodes` 层级表中，保存时使用事务整体替换并更新内容签名。数据存放位置设置支持选择新目录、恢复默认位置和在 Finder 中打开；切换到空目录时会复制现有数据库与图片，旧目录保留为安全备份。剪切板中相同类型和内容使用 SHA-256 hash 去重，并累计复制次数。
-- **常用与最近入口**：成功打开应用或网页后会写入 App 的共享 SQLite 数据库；使用次数达到 3 次才进入“常用入口”，并按 30 天半衰期计算热度；“最近使用”按最后打开时间排序，和常用入口自动去重。停用剪切板插件只停止系统剪切板监听，不影响使用记录。
-- **快速打开应用**：搜索浮窗会扫描 macOS 的 `/Applications`、`/System/Applications` 和用户应用目录，使用系统原生图标展示应用，回车或点击即可打开；也可以切换到“应用”范围单独搜索。
-- **范围快捷键**：默认使用 `Shift+1` 到 `Shift+5` 切换全部、剪切板、应用、网页和备忘录；可在通用设置中逐项修改或留空停用，切换时搜索框不会失焦。
-- **本地应用**：应用插件通过受控的 `action` 接口调用系统能力启动本机应用。
-
-## 冒烟测试（无 GUI 验证）
-
-```bash
-FLOWHUB_SMOKE_TEST=1 npm start
-```
-
-主进程启动后自动退出，打印全局快捷键注册结果，用于 CI / 无图形环境验证。
-如需避免读取当前个人数据，可同时设置绝对路径形式的 `FLOWHUB_USER_DATA_DIR`。
-
-排查自动粘贴耗时时，可以开启分阶段日志：
-
-```bash
-FLOWHUB_CLIPBOARD_PERF=1 npm start
-```
-
-终端会输出记录查询、内容准备、系统剪切板写入、窗口隐藏、焦点交接和原生粘贴各阶段耗时，不会输出剪切板正文。
-
-## 目录结构
-
-```
-app/
-  plugins/registry.js # 内置插件契约、注册与统一调用入口
-  ui/plugins.json     # 插件清单、排序和设置面板元数据
-  main.js        # Electron 主进程：全局快捷键、窗口、读配置、打开链接
-  preload.js     # contextIsolation 桥接，安全暴露 IPC
-  ui/            # 搜索框界面
-    search.html
-    search.js
-  package.json
-```
+- 网页目录：分类、搜索、编辑并持久化到 SQLite。
+- 本机应用：扫描 macOS 应用目录，显示原生图标并启动。
+- 剪贴板：监听文本、图片和文件，SHA-256 去重，搜索后自动粘贴。
+- 备忘命令：统一搜索 MySQL、Docker、Bash、Git 和 Kubernetes 等内容。
+- 常用/最近：打开应用或网页后写入 SQLite，并按时间衰减计算热度。
+- 系统集成：全局快捷键、失焦隐藏、单实例、登录时启动和应用内更新。

@@ -1,10 +1,9 @@
-// Tauri 迁移层：保留现有页面和 window.weborg 接口，只替换原生能力的实现。
-// 这样 Electron 版仍可继续发布，Tauri 版可以独立验证体积和行为。
+// Tauri 适配层：保留现有页面和 window.weborg 接口，替换原生能力的实现。
 if (!window.weborg && window.__TAURI__?.core?.invoke) {
   document.documentElement.dataset.weborgRuntime = "tauri";
   document.documentElement.dataset.weborgPage = location.pathname.includes("settings") ? "settings" : "search";
   const runtimeMode = document.getElementById("runtimeMode");
-  if (runtimeMode) runtimeMode.textContent = "Tauri 迁移版 · FlowHub";
+  if (runtimeMode) runtimeMode.textContent = "FlowHub";
 
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
@@ -37,18 +36,21 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
-      available: ["web", "app", "memo"].includes(plugin.id),
+      available: ["web", "clipboard", "app", "memo"].includes(plugin.id),
       enabled: config.plugins?.[plugin.id]?.enabled ?? plugin.defaultEnabled !== false
     }));
   }
 
   async function pluginSearch(id, request = {}) {
     const plugin = (await listPlugins()).find((entry) => entry.id === id);
-    if (!plugin?.available) throw new Error(`Tauri 迁移版暂未迁移插件：${id}`);
+    if (!plugin?.available) throw new Error(`当前版本暂不支持插件：${id}`);
     if (!plugin.enabled) throw new Error(`插件未启用：${id}`);
     const query = String(request.query || "").trim();
     const limit = Math.max(1, Number(request.limit) || 12);
     const offset = Math.max(0, Number(request.offset) || 0);
+    if (id === "clipboard") {
+      return invoke("search_clipboard", { query, kind: request.kind || "all", limit, offset });
+    }
     if (id === "app") {
       return (await invoke("search_applications", { query, limit, offset })).map((record) => ({ ...record, pluginId: id }));
     }
@@ -68,20 +70,18 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   }
 
   async function pluginAction(id, action, payload = {}) {
+    if (id === "clipboard" && action === "activate") return invoke("activate_clipboard", { id: Number(payload.id) });
+    if (id === "clipboard" && ["menu", "delete"].includes(action)) {
+      if (!window.confirm("确定删除这条剪贴板记录吗？只会删除历史记录和图片副本，不会删除原始文件。")) {
+        return { ok: false, cancelled: true };
+      }
+      return invoke("delete_clipboard", { id: Number(payload.id) });
+    }
     if (action !== "activate") return { ok: false, reason: `插件 ${id} 不支持操作 ${action}` };
     const result = await invoke("activate_target", { pluginId: id, payload });
     if (result?.ok && ["app", "web"].includes(id)) usageListeners.forEach((listener) => listener());
     return result;
   }
-
-  const unsupportedUpdate = () => ({
-    supported: false,
-    currentVersion: "0.1.0",
-    status: "unsupported",
-    availableVersion: "",
-    percent: 0,
-    error: "Tauri 对比版本暂未接入自动更新"
-  });
 
   window.weborg = {
     getConfig,
@@ -100,15 +100,15 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     openSettings: () => invoke("open_settings"),
     openAccessibilitySettings: () => invoke("open_accessibility_settings"),
     getConfigPathInfo: () => invoke("get_config_path_info"),
-    chooseConfigPath: async () => ({ ok: false, reason: "Tauri 对比版本暂不支持切换配置文件位置" }),
+    chooseConfigPath: () => invoke("choose_config_path"),
     openConfigPath: () => invoke("open_config_path"),
     getClipboardStorageInfo: () => invoke("get_storage_info"),
-    chooseClipboardStorage: async () => ({ ok: false, reason: "Tauri 对比版本使用独立的数据副本，暂不支持切换存放位置" }),
+    chooseClipboardStorage: () => invoke("choose_storage_path"),
     openClipboardStorage: () => invoke("open_storage_path"),
-    getUpdateState: async () => unsupportedUpdate(),
-    checkForUpdates: async () => ({ ok: false, reason: "Tauri 对比版本暂未接入自动更新", state: unsupportedUpdate() }),
-    downloadUpdate: async () => ({ ok: false, reason: "Tauri 对比版本暂未接入自动更新", state: unsupportedUpdate() }),
-    quitAndInstallUpdate: async () => ({ ok: false, reason: "Tauri 对比版本暂未接入自动更新", state: unsupportedUpdate() }),
+    getUpdateState: () => invoke("get_update_state"),
+    checkForUpdates: () => invoke("check_for_updates"),
+    downloadUpdate: () => invoke("download_update"),
+    quitAndInstallUpdate: () => invoke("quit_and_install_update"),
     onConfig(listener) { configListeners.add(listener); return () => configListeners.delete(listener); },
     onClipboardUpdated(listener) { clipboardListeners.add(listener); return () => clipboardListeners.delete(listener); },
     onUsageUpdated(listener) { usageListeners.add(listener); return () => usageListeners.delete(listener); },
@@ -122,4 +122,6 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     configListeners.forEach((listener) => listener(clone(configCache), event.payload?.query || ""));
   });
   void listen("flowhub:usage-updated", () => usageListeners.forEach((listener) => listener()));
+  void listen("flowhub:clipboard-updated", () => clipboardListeners.forEach((listener) => listener()));
+  void listen("flowhub:update-state", (event) => updateListeners.forEach((listener) => listener(event.payload)));
 }

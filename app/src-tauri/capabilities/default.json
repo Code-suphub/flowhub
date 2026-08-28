@@ -5,4 +5,3 @@
   "windows": ["main", "settings"],
   "permissions": ["core:default"]
 }
-

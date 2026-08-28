@@ -1,7 +1,7 @@
 [package]
 name = "flowhub-tauri"
 version = "0.1.0"
-description = "FlowHub Tauri migration prototype"
+description = "FlowHub desktop launcher"
 authors = ["FlowHub contributors"]
 edition = "2021"
 
@@ -13,13 +13,21 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-arboard = { version = "3.6.1", default-features = false }
+base64 = "0.22.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clipboard-rs = "0.3.5"
 dirs = "6"
+enigo = "0.6.1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10.9"
 tauri = { version = "2.11.5", features = ["macos-private-api"] }
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-dialog = "2.7.2"
 tauri-plugin-global-shortcut = "2.3.2"
 tauri-plugin-opener = "2.5.4"
-
+tauri-plugin-single-instance = "2.4.3"
+tauri-plugin-updater = "2.10.1"
+tokio = { version = "1", features = ["time"] }
+url = "2.5.8"

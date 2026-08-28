@@ -1,4 +1,4 @@
-// 普通浏览器没有 Electron preload。这里提供只用于界面开发的兼容层：
+// 普通浏览器没有 Tauri 原生能力。这里提供只用于界面开发的兼容层：
 // 导航配置来自真实 config.json，应用列表来自仅绑定本机的开发接口，
 // 剪切板通过仅绑定 127.0.0.1 的只读接口读取真实历史。
 if (!window.weborg) {
@@ -162,7 +162,7 @@ if (!window.weborg) {
       return { ok: true, preview: true };
     },
     async openAccessibilitySettings() {
-      return { ok: false, preview: true, reason: "请在 Electron App 中打开系统辅助功能设置" };
+      return { ok: false, preview: true, reason: "请在 FlowHub App 中打开系统辅助功能设置" };
     },
     async getConfigPathInfo() {
       try {
@@ -177,10 +177,10 @@ if (!window.weborg) {
       }
     },
     async chooseConfigPath() {
-      return { ok: false, preview: true, reason: "请在 Electron App 中选择配置文件位置" };
+      return { ok: false, preview: true, reason: "请在 FlowHub App 中选择配置文件位置" };
     },
     async openConfigPath() {
-      return { ok: false, preview: true, reason: "请在 Electron App 中打开配置文件位置" };
+      return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },
     async getClipboardStorageInfo() {
       try {
@@ -191,14 +191,14 @@ if (!window.weborg) {
       } catch {
         const config = await getConfig();
         const configuredPath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
-        return { available: false, configuredPath, defaultPath: "Electron 用户数据目录/clipboard", resolvedPath: configuredPath || "Electron 用户数据目录/clipboard", activePath: "" };
+        return { available: false, configuredPath, defaultPath: "FlowHub 用户数据目录/clipboard", resolvedPath: configuredPath || "FlowHub 用户数据目录/clipboard", activePath: "" };
       }
     },
     async chooseClipboardStorage() {
-      return { ok: false, preview: true, reason: "请在 Electron App 中选择存放目录" };
+      return { ok: false, preview: true, reason: "请在 FlowHub App 中选择存放目录" };
     },
     async openClipboardStorage() {
-      return { ok: false, preview: true, reason: "请在 Electron App 中打开存放目录" };
+      return { ok: false, preview: true, reason: "请在 FlowHub App 中打开存放目录" };
     },
     async getUpdateState() {
       return { supported: false, currentVersion: "0.1.0", status: "unsupported", availableVersion: "", percent: 0, error: "" };

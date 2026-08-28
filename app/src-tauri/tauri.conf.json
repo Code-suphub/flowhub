@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "FlowHub Tauri",
+  "productName": "FlowHub",
   "version": "0.1.0",
-  "identifier": "cn.ac.camellia.flowhub.tauri",
+  "identifier": "cn.ac.camellia.flowhub",
   "build": {
     "beforeDevCommand": "npm run dev:web -- --port 5174",
     "devUrl": "http://127.0.0.1:5174",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "FlowHub Tauri",
+        "title": "FlowHub",
         "url": "search.html",
         "width": 620,
         "height": 520,
@@ -37,7 +37,8 @@
     "category": "Productivity",
     "copyright": "Copyright © 2026 FlowHub contributors",
     "shortDescription": "A fast local launcher for apps and web bookmarks",
-    "longDescription": "FlowHub Tauri migration prototype",
+    "longDescription": "FlowHub is a fast local launcher for apps, web bookmarks, clipboard history and memos.",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -49,6 +50,14 @@
       "minimumSystemVersion": "10.15",
       "infoPlist": "Info.plist",
       "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5QUM2NURBNENCNUNGQTMKUldTano3Vk0ybVdzNmFYcE02K29jOG5SRUN3S29WQXIzeTRTSlg2THBsKzA0b0RaTmtPNUJBbkMK",
+      "endpoints": [
+        "https://github.com/Code-suphub/flowhub/releases/latest/download/latest.json"
+      ]
     }
   }
 }

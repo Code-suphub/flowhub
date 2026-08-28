@@ -535,18 +535,18 @@ function renderConfigPath() {
   const resolvedPath = configuredPath || state.configFile?.defaultPath || state.configFile?.resolvedPath || "项目目录/config.json";
   $("#coreConfigPath").value = resolvedPath;
   $("#coreConfigPathHint").textContent = state.configFile?.available === false
-    ? "浏览器仅用于预览，请在 Electron App 中选择或打开配置文件。"
+    ? "浏览器仅用于预览，请在 FlowHub App 中选择或打开配置文件。"
     : "保存后切换到新的配置文件；原文件会保留。";
 }
 
 function renderClipboardStorage() {
   const configuredPath = String(pluginConfig("clipboard")?.settings?.storagePath || "").trim();
-  const resolvedPath = configuredPath || state.clipboardStorage?.defaultPath || state.clipboardStorage?.resolvedPath || "Electron 用户数据目录/clipboard";
+  const resolvedPath = configuredPath || state.clipboardStorage?.defaultPath || state.clipboardStorage?.resolvedPath || "FlowHub 用户数据目录/clipboard";
   $("#clipboardStoragePath").value = resolvedPath;
   $("#clipboardStorageMode").textContent = configuredPath ? "自定义目录" : "默认目录";
   $("#clipboardStorageSummary").textContent = resolvedPath;
   $("#clipboardStorageHint").textContent = state.clipboardStorage?.available === false
-    ? "浏览器仅用于预览，请在 Electron App 中选择或打开目录。"
+    ? "浏览器仅用于预览，请在 FlowHub App 中选择或打开目录。"
     : "保存配置后切换位置；网页目录、使用记录和剪切板数据会安全复制到新的空目录。";
 }
 
