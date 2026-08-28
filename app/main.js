@@ -1,7 +1,7 @@
 // FlowHub 桌面启动器 - 主进程
 // 类 uTools：Alt+空格 呼出全局搜索浮窗；搜索目录/网页/备注；回车用系统浏览器打开；
 // 可配置"打开本地应用/命令"。不依赖浏览器扩展。
-const { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, screen } = require("electron");
+const { app, BrowserWindow, ClipboardItem, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, screen } = require("electron");
 const { execFile, execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -15,8 +15,14 @@ const { rankWebPages } = require("./ui/web-search");
 const pluginRegistry = new PluginRegistry();
 
 // 产品重命名后继续读取 Web Organization 的历史数据；新安装使用 FlowHub 默认目录。
+// 冒烟测试可通过独立目录运行，避免与正在使用的个人数据库发生并发写入。
+const USER_DATA_OVERRIDE = String(process.env.FLOWHUB_USER_DATA_DIR || "").trim();
 const LEGACY_USER_DATA_PATH = path.join(app.getPath("appData"), "Web Organization");
-if (fs.existsSync(LEGACY_USER_DATA_PATH)) app.setPath("userData", LEGACY_USER_DATA_PATH);
+if (USER_DATA_OVERRIDE && path.isAbsolute(USER_DATA_OVERRIDE)) {
+  app.setPath("userData", path.resolve(USER_DATA_OVERRIDE));
+} else if (fs.existsSync(LEGACY_USER_DATA_PATH)) {
+  app.setPath("userData", LEGACY_USER_DATA_PATH);
+}
 
 const BUNDLED_CONFIG_PATH = path.join(__dirname, "..", "config.json");
 const CONFIG_LOCATOR_PATH = path.join(app.getPath("userData"), "config-location.json");
@@ -35,6 +41,16 @@ function locatedConfigPath() {
 }
 
 let CONFIG_PATH = locatedConfigPath();
+
+function seedPackagedConfig() {
+  if (!app.isPackaged || fs.existsSync(CONFIG_PATH) || !fs.existsSync(BUNDLED_CONFIG_PATH)) return;
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+    fs.copyFileSync(BUNDLED_CONFIG_PATH, CONFIG_PATH);
+  } catch (error) {
+    console.warn("[flowhub] 无法初始化用户配置，将继续读取内置默认配置:", error.message);
+  }
+}
 
 let win = null;
 let settingsWin = null;
@@ -423,30 +439,35 @@ function clipboardPerfTimer(recordId) {
   };
 }
 
+const osClipboardMime = (format) => `electron application/osclipboard;format="${format}"`;
 const FILE_CLIPBOARD_FORMATS = [
-  "public.file-url",
-  "NSFilenamesPboardType",
-  "NSFilesPromisePboardType",
   "text/uri-list",
   "application/x-file-list",
-  "com.apple.pasteboard.promised-file-url"
+  ...[
+    "public.file-url",
+    "NSFilenamesPboardType",
+    "NSFilesPromisePboardType",
+    "com.apple.pasteboard.promised-file-url"
+  ].map(osClipboardMime)
 ];
 const IMAGE_CLIPBOARD_FORMATS = [
-  "public.png",
-  "public.tiff",
-  "public.jpeg",
-  "public.jpg",
-  "public.gif",
-  "public.bmp",
-  "public.heic",
-  "public.webp",
   "image/png",
   "image/tiff",
   "image/jpeg",
   "image/gif",
   "image/bmp",
   "image/heic",
-  "image/webp"
+  "image/webp",
+  ...[
+    "public.png",
+    "public.tiff",
+    "public.jpeg",
+    "public.jpg",
+    "public.gif",
+    "public.bmp",
+    "public.heic",
+    "public.webp"
+  ].map(osClipboardMime)
 ];
 
 function isImageClipboardFormat(format) {
@@ -454,26 +475,26 @@ function isImageClipboardFormat(format) {
 }
 
 function clipboardImageFormatSignature(formats) {
-  return [...new Set([
-    ...formats.filter(isImageClipboardFormat),
-    ...IMAGE_CLIPBOARD_FORMATS
-  ])].filter((format) => hasClipboardFormat(format, formats)).sort().join("|");
+  return [...new Set(formats.filter(isImageClipboardFormat))].sort().join("|");
 }
 
-function hasClipboardFormat(format, formats) {
-  if (formats.includes(format)) return true;
-  try { return clipboard.has(format); } catch { return false; }
+function clipboardTypes(items) {
+  return [...new Set(items.flatMap((item) => Array.isArray(item?.types) ? item.types : []))];
 }
 
-function readClipboardFormat(format) {
-  try {
-    const buffer = clipboard.readBuffer(format);
-    if (Buffer.isBuffer(buffer) && buffer.length) return buffer;
-  } catch {}
-  try {
-    const value = clipboard.read(format);
-    if (value) return Buffer.from(value, "utf8");
-  } catch {}
+async function readClipboardFormat(items, format) {
+  for (const item of items) {
+    if (!item?.types?.includes(format)) continue;
+    try {
+      const value = await item.getType(format);
+      if (value instanceof Blob) {
+        const buffer = Buffer.from(await value.arrayBuffer());
+        if (buffer.length) return buffer;
+      } else if (value) {
+        return Buffer.from(String(value.url || value), "utf8");
+      }
+    } catch {}
+  }
   return Buffer.alloc(0);
 }
 
@@ -537,12 +558,11 @@ function parseFileClipboardData(buffer) {
   return [...new Set(values.map(filePathFromValue).filter(Boolean))];
 }
 
-function readFileClipboardPayload(formats) {
-  // macOS 某些 Finder 文件类型不会出现在 availableFormats()/has()，但仍可通过原生 UTI 读取。
+async function readFileClipboardPayload(items, formats) {
   const fileFormats = [...new Set([
     ...FILE_CLIPBOARD_FORMATS,
     ...formats.filter((format) => /uri-list|file-url|filenames|filename/i.test(String(format || "")))
-  ])].filter((format) => process.platform === "darwin" || formats.includes(format) || hasClipboardFormat(format, formats));
+  ])].filter((format) => formats.includes(format));
   if (!fileFormats.length) {
     lastClipboardFileData = "";
     cachedClipboardFiles = null;
@@ -552,7 +572,7 @@ function readFileClipboardPayload(formats) {
   const fileSources = [];
   const candidatePaths = [];
   for (const format of fileFormats) {
-    const buffer = readClipboardFormat(format);
+    const buffer = await readClipboardFormat(items, format);
     const raw = buffer.toString("utf8");
     if (!raw) continue;
     const filePaths = parseFileClipboardData(buffer);
@@ -587,7 +607,8 @@ function readFileClipboardPayload(formats) {
     return cachedClipboardFiles;
   }
   try {
-    const bookmark = clipboard.readBookmark();
+    const bookmarkItem = items.find((item) => item?.types?.includes("electron application/bookmark"));
+    const bookmark = bookmarkItem ? await bookmarkItem.getType("electron application/bookmark") : null;
     const bookmarkPath = filePathFromValue(bookmark?.url);
     if (bookmarkPath && !isPlaceholderFilePath(bookmarkPath)) {
       const filePaths = [bookmarkPath];
@@ -603,7 +624,7 @@ function readFileClipboardPayload(formats) {
   return null;
 }
 
-function readImageClipboardPayload(formats, now, filePayload) {
+async function readImageClipboardPayload(items, formats, now, filePayload) {
   const imageFormats = clipboardImageFormatSignature(formats);
   if (!imageFormats) {
     cachedClipboardImage = null;
@@ -612,8 +633,11 @@ function readImageClipboardPayload(formats, now, filePayload) {
   }
   if (imageFormats !== lastClipboardImageFormats || now - lastClipboardImageCheckAt >= 1000) {
     try {
-      const image = clipboard.readImage();
-      if (image.isEmpty()) {
+      const preferredFormats = [...IMAGE_CLIPBOARD_FORMATS, ...formats.filter(isImageClipboardFormat)];
+      const imageFormat = preferredFormats.find((format) => formats.includes(format));
+      const sourceBuffer = imageFormat ? await readClipboardFormat(items, imageFormat) : Buffer.alloc(0);
+      const image = sourceBuffer.length ? nativeImage.createFromBuffer(sourceBuffer) : nativeImage.createEmpty();
+      if (!sourceBuffer.length || image.isEmpty()) {
         cachedClipboardImage = null;
       } else {
         const buffer = image.toPNG();
@@ -660,7 +684,7 @@ function markOwnClipboardWrite(record, imageBuffer = null) {
     return;
   }
   if (record.kind === "image" && imageBuffer) {
-    lastClipboardImageFormats = clipboardImageFormatSignature(clipboard.availableFormats());
+    lastClipboardImageFormats = "image/png";
     lastClipboardImageCheckAt = Date.now();
     cachedClipboardImage = {
       kind: "image",
@@ -676,13 +700,14 @@ function markOwnClipboardWrite(record, imageBuffer = null) {
   }
 }
 
-function readClipboardPayloads(now = Date.now()) {
+async function readClipboardPayloads(now = Date.now()) {
   const payloads = [];
-  const formats = clipboard.availableFormats();
-  const filePayload = readFileClipboardPayload(formats);
-  const imagePayload = readImageClipboardPayload(formats, now, filePayload);
+  const items = await clipboard.read();
+  const formats = clipboardTypes(items);
+  const filePayload = await readFileClipboardPayload(items, formats);
+  const imagePayload = await readImageClipboardPayload(items, formats, now, filePayload);
 
-  const text = clipboard.readText();
+  const text = await clipboard.readText();
   if (text !== lastClipboardText) {
     lastClipboardText = text;
     lastClipboardTextHash = text ? hashBuffer(Buffer.from(text, "utf8")) : "";
@@ -705,7 +730,7 @@ async function pollClipboard() {
       return;
     }
 
-    const payloads = readClipboardPayloads();
+    const payloads = await readClipboardPayloads();
     const signature = payloads.map((payload) => `${payload.kind}:${payload.hash}`).join("|");
     const now = Date.now();
     const isSelfWrite = signature
@@ -1050,6 +1075,7 @@ app.whenReady().then(async () => {
     app.setActivationPolicy("accessory");
   }
 
+  seedPackagedConfig();
   let config = readConfig();
   try {
     // 使用记录和剪切板历史目前共用同一个 SQLite。数据库属于 App 核心数据服务，
@@ -1224,7 +1250,7 @@ async function copyClipboardRecord(id) {
     let imageBuffer = null;
     if (record.kind === "text") {
       perf.mark("prepare");
-      clipboard.writeText(record.content);
+      await clipboard.writeText(record.content);
     } else if (record.kind === "file") {
       const filePaths = clipboardStore.getFilePaths(id).filter((filePath) => fs.existsSync(filePath));
       if (!filePaths.length) {
@@ -1232,25 +1258,18 @@ async function copyClipboardRecord(id) {
         return { ok: false, reason: "文件已不存在或无法访问" };
       }
       const uriList = `${filePaths.map((filePath) => pathToFileURL(filePath).href).join("\r\n")}\r\n`;
-      const escapeXml = (value) => String(value).replace(/[<>&'\"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", "\"": "&quot;" }[char]));
-      const plist = process.platform === "darwin"
-        ? `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><array>${filePaths.map((filePath) => `<string>${escapeXml(filePath)}</string>`).join("")}</array></plist>`
-        : "";
       perf.mark("prepare");
-      clipboard.clear();
-      clipboard.writeBuffer("text/uri-list", Buffer.from(uriList, "utf8"));
-      if (process.platform === "darwin") {
-        clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist, "utf8"));
-      }
+      await clipboard.write([new ClipboardItem({ "text/uri-list": uriList })]);
     } else {
       imageBuffer = clipboardStore.getImageBuffer(id);
       if (!imageBuffer) {
         perf.finish({ ok: false, kind: record.kind, reason: "missing-image" });
         return { ok: false, reason: "图片文件不存在或已损坏" };
       }
-      const image = nativeImage.createFromBuffer(imageBuffer);
       perf.mark("prepare");
-      clipboard.writeImage(image);
+      await clipboard.write([new ClipboardItem({
+        "image/png": new Blob([imageBuffer], { type: "image/png" })
+      })]);
     }
     perf.mark("clipboardWrite");
     markOwnClipboardWrite(record, imageBuffer);
@@ -1277,7 +1296,7 @@ async function pasteMemoContent(content) {
   const value = String(content || "");
   if (!value.trim()) return { ok: false, reason: "备忘内容为空" };
   try {
-    clipboard.writeText(value);
+    await clipboard.writeText(value);
     markOwnClipboardWrite({ kind: "text", content: value, hash: hashBuffer(Buffer.from(value, "utf8")) });
     hideWindow();
     const pasteResult = await pasteIntoPreviousApp();

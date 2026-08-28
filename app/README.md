@@ -36,6 +36,37 @@ npm start
 - `Esc` 关闭浮窗
 - 点击搜索框右上角的 `⚙` 打开配置管理
 
+## 生成 macOS 安装包
+
+先执行测试，再为当前 Mac 架构生成未签名的 DMG 与 ZIP：
+
+```bash
+cd app
+npm test
+npm run dist:mac -- --arm64
+```
+
+Intel Mac 将最后一个参数改为 `--x64`。产物写入 `app/dist/`；`npm run pack -- --arm64` 只生成未封装的 `.app`，适合快速冒烟检查。默认配置会作为只读资源放进 App，用户网页目录、剪切板和使用记录仍写入用户数据目录中的 SQLite，不会被打进安装包。
+
+未提供 Apple 开发者证书时可以完成本地构建，但其他 Mac 首次打开会看到 Gatekeeper 警告。签名使用 `CSC_LINK` 与 `CSC_KEY_PASSWORD`；同时提供 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 后，构建会自动公证。
+
+## GitHub 自动发布
+
+推送与 `app/package.json` 版本一致的标签会触发 `.github/workflows/release-macos.yml`，例如当前版本：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+工作流会测试并生成 Intel 与 Apple Silicon 两套 DMG/ZIP，然后上传到 GitHub 的草稿 Release。仓库不配置 Apple Secrets 时仍可发布未签名产物；正式分发建议配置以下 Actions Secrets：
+
+- `MAC_CSC_LINK`：Developer ID Application 证书的 `.p12` 文件或其 Base64 内容
+- `MAC_CSC_KEY_PASSWORD`：证书密码
+- `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`：Apple 公证凭据
+
+发布前必须先更新 `app/package.json` 的 `version`；标签不匹配时工作流会主动终止，避免错误覆盖 Release。
+
 ## 浏览器预览与热更新
 
 调整搜索浮窗或配置管理界面时，使用 Vite 开发模式：
@@ -77,6 +108,7 @@ FLOWHUB_SMOKE_TEST=1 npm start
 ```
 
 主进程启动后自动退出，打印全局快捷键注册结果，用于 CI / 无图形环境验证。
+如需避免读取当前个人数据，可同时设置绝对路径形式的 `FLOWHUB_USER_DATA_DIR`。
 
 排查自动粘贴耗时时，可以开启分阶段日志：
 
