@@ -76,6 +76,7 @@
       .r-icon.app { color: #b9c9ff; background: rgba(113, 137, 255, .14); font-size: 15px; }
       .r-icon.app img { width: 26px; height: 26px; background: transparent; border-radius: 5px; }
       .r-icon.web-add { color: var(--accent); background: rgba(18, 169, 212, .14); font-size: 22px; }
+      .r-icon.calculation { color: #c8d5dd; background: rgba(200, 213, 221, .10); font-size: 16px; font-weight: 400; }
       .app-result .r-icon, .app-result .r-kind { margin-top: 2px; }
       .clipboard-file-symbol { width: 23px; height: 23px; display: block; }
       .clipboard-file-symbol.folder { color: #63b9e8; }
@@ -130,6 +131,10 @@
         outline: none;
       }
       .r-meta .path { color: var(--accent); }
+      .calculation-result { cursor: default; }
+      .calculation-result .calculation-value { color: #c7d1d8; font-weight: 500; font-size: 15px; letter-spacing: .01em; }
+      .calculation-result .calculation-expression { color: #718390; font-weight: 350; }
+      .r-kind.calculation { color: #91a1ab; border-color: rgba(145, 161, 171, .25); font-weight: 350; }
       .r-kind { flex: 0 0 auto; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
       .memo-result { position: relative; align-items: flex-start; min-height: 82px; padding: 9px 10px; }
       .memo-terminal { width: 27px; height: 27px; display: grid; place-items: center; flex: 0 0 27px; margin-top: 12px; border: 1px solid rgba(226, 151, 77, .2); border-radius: 7px; color: #efb971; background: rgba(226, 151, 77, .08); font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 10px; font-weight: 800; }

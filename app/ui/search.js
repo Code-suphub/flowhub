@@ -35,6 +35,66 @@ function normalizeUrl(url) {
   if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(v)) return `https://${v}`;
   return "";
 }
+
+function calculateExpression(input) {
+  const source = String(input || "").replace(/\s+/g, "");
+  if (!source || !/[+\-*/%]/.test(source) || !/^[0-9+\-*/%().]+$/.test(source)) return null;
+  let cursor = 0;
+  const peek = () => source[cursor] || "";
+  const consume = () => source[cursor++];
+  const parsePrimary = () => {
+    if (peek() === "(") {
+      consume();
+      const value = parseAddSub();
+      if (consume() !== ")") throw new Error("括号不匹配");
+      return value;
+    }
+    const start = cursor;
+    while (/[0-9.]/.test(peek())) consume();
+    if (start === cursor) throw new Error("缺少数字");
+    const value = Number(source.slice(start, cursor));
+    if (!Number.isFinite(value)) throw new Error("数字无效");
+    return value;
+  };
+  const parseUnary = () => {
+    if (peek() === "+") { consume(); return parseUnary(); }
+    if (peek() === "-") { consume(); return -parseUnary(); }
+    return parsePrimary();
+  };
+  const parseMulDiv = () => {
+    let value = parseUnary();
+    while (/[*/%]/.test(peek())) {
+      const operator = consume();
+      const right = parseUnary();
+      if ((operator === "/" || operator === "%") && right === 0) throw new Error("不能除以零");
+      value = operator === "*" ? value * right : operator === "/" ? value / right : value % right;
+    }
+    return value;
+  };
+  const parseAddSub = () => {
+    let value = parseMulDiv();
+    while (/[+\-]/.test(peek())) {
+      const operator = consume();
+      const right = parseMulDiv();
+      value = operator === "+" ? value + right : value - right;
+    }
+    return value;
+  };
+  try {
+    const value = parseAddSub();
+    if (cursor !== source.length || !Number.isFinite(value)) return null;
+    const rounded = Number(value.toPrecision(12));
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+  } catch {
+    return null;
+  }
+}
+
+function calculationSuggestion() {
+  const expression = state.query.trim();
+  const result = calculateExpression(expression);
+  return result === null ? null : { type: "calculation", expression, result, id: `calculation:${expression}` };
+}
 function webAddSuggestion(pages) {
   const url = normalizeUrl(state.query);
   if (!url || pages.some((page) => normalizeUrl(page.url) === url)) return null;
@@ -156,6 +216,7 @@ function withoutUsageDuplicates(items, usedItems) {
 }
 
 function matches() {
+  const calculation = state.scope === "clipboard" ? null : calculationSuggestion();
   const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
   const addWeb = pluginEnabled("web") && state.query.trim() ? webAddSuggestion(pages) : null;
   const clips = pluginEnabled("clipboard") ? clipboardMatches() : [];
@@ -164,12 +225,12 @@ function matches() {
   const usages = usageMatches();
   if (state.scope === "web") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)];
-    return addWeb ? [addWeb, ...pages] : pages;
+    return calculation ? [calculation, ...(addWeb ? [addWeb] : []), ...pages] : (addWeb ? [addWeb, ...pages] : pages);
   }
   if (state.scope === "clipboard") return clips;
   if (state.scope === "app") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(apps, usages)];
-    return apps;
+    return calculation ? [calculation, ...apps] : apps;
   }
   if (state.scope === "memo") return memos;
   if (!state.query.trim()) {
@@ -179,7 +240,7 @@ function matches() {
   const appResults = state.query.trim() ? apps.slice(0, 3) : [];
   const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
   const regularLimit = appResults.length || memoResults.length ? 3 : 6;
-  return [...(addWeb ? [addWeb] : []), ...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
+  return [...(calculation ? [calculation] : []), ...(addWeb ? [addWeb] : []), ...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
 }
 
 function usageIndices(items, section) {
@@ -296,6 +357,18 @@ function renderResults(items) {
 
 function renderResult(item, index, items) {
   const usageSection = renderUsageSection(item, index, items);
+  if (item.type === "calculation") {
+    return `${usageSection}
+      <div class="result calculation-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">＝</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">${esc(item.result)}</span>
+          <span class="r-meta calculation-expression">计算 · ${esc(item.expression)}</span>
+        </span>
+        <span class="r-kind calculation">结果</span>
+      </div>
+    `;
+  }
   if (item.type === "web-add") {
     return `
       <div class="result web-add-result ${index === state.index ? "active" : ""}" data-i="${index}">
@@ -420,6 +493,7 @@ function render({ preserveScroll = false } = {}) {
 }
 
 function choose(page) {
+  if (page?.type === "calculation") return;
   if (page?.type === "web-add") {
     void window.weborg?.openSettings({ initialUrl: normalizeUrl(page.url) });
     return;
