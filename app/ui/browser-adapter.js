@@ -18,9 +18,9 @@ if (!window.weborg) {
     { title: "DataGrip", path: "/Applications/DataGrip.app", hay: "datagrip database 数据库" }
   ];
 
-  async function getApplications(query = "", limit = 12, offset = 0) {
+  async function getApplications(query = "", limit = 12, offset = 0, includeIcons = true) {
     try {
-      const response = await fetch(`/__weborg/apps?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`, { cache: "no-store" });
+      const response = await fetch(`/__weborg/apps?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&icons=${includeIcons ? "1" : "0"}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取应用失败：${response.status}`);
       return result.applications || [];
@@ -31,6 +31,15 @@ if (!window.weborg) {
         .filter((application) => !keyword || `${application.title} ${application.hay}`.toLowerCase().includes(keyword))
         .slice(offset, offset + limit);
     }
+  }
+
+  async function loadAppIcons(paths = []) {
+    const uniquePaths = [...new Set((paths || []).filter(Boolean))];
+    if (!uniquePaths.length) return {};
+    const response = await fetch(`/__weborg/app-icons?paths=${encodeURIComponent(JSON.stringify(uniquePaths))}`, { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.reason || `读取应用图标失败：${response.status}`);
+    return result.icons || {};
   }
 
   let configPromise;
@@ -104,7 +113,7 @@ if (!window.weborg) {
       return (result.records || []).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "app") {
-      return (await getApplications(query, limit, Number(request.offset) || 0)).map((record) => ({ ...record, pluginId: id }));
+      return (await getApplications(query, limit, Number(request.offset) || 0, request.includeIcons !== false)).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "web") {
       const pages = flattenPages((await getConfig()).plugins?.web?.settings?.items || []).map((page) => ({
@@ -155,10 +164,13 @@ if (!window.weborg) {
     },
     listPlugins,
     pluginSearch,
+    loadAppIcons,
     pluginAction,
     searchUsage: usageSections,
-    async openSettings() {
-      window.open("/settings.html", "weborg-settings");
+    async openSettings(options = {}) {
+      const url = String(options.initialUrl || "").trim();
+      const query = url ? `?addUrl=${encodeURIComponent(url)}` : "";
+      window.open(`/settings.html${query}`, "weborg-settings");
       return { ok: true, preview: true };
     },
     async openAccessibilitySettings() {

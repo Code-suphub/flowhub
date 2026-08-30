@@ -16,6 +16,7 @@ const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Sh
 const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
+let appIconSearchToken = 0;
 let webSearchToken = 0;
 let memoSearchToken = 0;
 let usageSearchToken = 0;
@@ -33,6 +34,18 @@ function normalizeUrl(url) {
   if (/^https?:\/\//i.test(v)) return v;
   if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(v)) return `https://${v}`;
   return "";
+}
+function webAddSuggestion(pages) {
+  const url = normalizeUrl(state.query);
+  if (!url || pages.some((page) => normalizeUrl(page.url) === url)) return null;
+  return {
+    type: "web-add",
+    pluginId: "web",
+    title: `添加网页：${url}`,
+    url,
+    id: `add-web:${url}`,
+    usageKey: `add-web:${url}`
+  };
 }
 const noteOf = (n) => String(n?.note || "").trim();
 
@@ -144,13 +157,14 @@ function withoutUsageDuplicates(items, usedItems) {
 
 function matches() {
   const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
+  const addWeb = pluginEnabled("web") && state.query.trim() ? webAddSuggestion(pages) : null;
   const clips = pluginEnabled("clipboard") ? clipboardMatches() : [];
   const apps = pluginEnabled("app") ? appMatches() : [];
   const memos = pluginEnabled("memo") ? memoMatches() : [];
   const usages = usageMatches();
   if (state.scope === "web") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)];
-    return pages;
+    return addWeb ? [addWeb, ...pages] : pages;
   }
   if (state.scope === "clipboard") return clips;
   if (state.scope === "app") {
@@ -165,7 +179,7 @@ function matches() {
   const appResults = state.query.trim() ? apps.slice(0, 3) : [];
   const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
   const regularLimit = appResults.length || memoResults.length ? 3 : 6;
-  return [...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
+  return [...(addWeb ? [addWeb] : []), ...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
 }
 
 function usageIndices(items, section) {
@@ -282,6 +296,18 @@ function renderResults(items) {
 
 function renderResult(item, index, items) {
   const usageSection = renderUsageSection(item, index, items);
+  if (item.type === "web-add") {
+    return `
+      <div class="result web-add-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon web-add">＋</span>
+        <span class="r-body">
+          <span class="r-title">添加到网页配置</span>
+          <span class="r-meta"><span class="path">未找到匹配网页</span> · ${esc(item.url)}</span>
+        </span>
+        <span class="r-kind">添加</span>
+      </div>
+    `;
+  }
   if (item.type === "memo") {
     const command = String(item.content || "").split("\n").slice(0, 2).join("\n");
     return `${usageSection}
@@ -394,6 +420,10 @@ function render({ preserveScroll = false } = {}) {
 }
 
 function choose(page) {
+  if (page?.type === "web-add") {
+    void window.weborg?.openSettings({ initialUrl: normalizeUrl(page.url) });
+    return;
+  }
   const pluginId = page?.pluginId || (page?.type === "clipboard" ? "clipboard" : page?.type === "app" ? "app" : page?.type === "memo" ? "memo" : "web");
   if (["clipboard", "memo"].includes(pluginId) && document.documentElement.dataset.weborgReadonly === "true") return;
   const usage = pluginId === "app"
@@ -432,6 +462,7 @@ function invalidatePluginPaging({ resetPaging = true } = {}) {
   appSearchToken += 1;
   webSearchToken += 1;
   memoSearchToken += 1;
+  appIconSearchToken += 1;
   state.appLoading = false;
   state.webLoading = false;
   state.memoLoading = false;
@@ -458,7 +489,7 @@ function setScope(scope) {
     if (state.clipboardLoadedQuery !== state.query) void refreshClipboard();
   }
   if (scope === "all" || scope === "app") {
-    if (state.appLoadedQuery !== state.query) void refreshApps();
+    if (state.appLoadedQuery !== state.query || (scope === "app" && state.appResults.length < APP_PAGE_SIZE && state.appHasMore === false)) void refreshApps();
   }
   if (scope === "all" || scope === "web") {
     if (state.webLoadedQuery !== state.query) void refreshWeb();
@@ -624,22 +655,29 @@ async function refreshApps({ append = false } = {}) {
   if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
   if (append && (state.scope !== "app" || state.appLoading || !state.appHasMore)) return;
   const token = ++appSearchToken;
+  if (!append) appIconSearchToken += 1;
+  const iconToken = appIconSearchToken;
   // Native app results include PNG data URLs; keep the first transfer small and
   // let the existing scroll pagination fetch the rest on demand.
-  const limit = state.scope === "app" ? APP_PAGE_SIZE : 12;
+  const limit = state.scope === "app" ? APP_PAGE_SIZE : 3;
   const offset = append ? state.appResults.length : 0;
+  // Keep pagination responsive: metadata arrives first, native icons are filled in
+  // asynchronously for the visible page.
+  const includeIcons = false;
   state.appLoading = true;
   if (!append) state.appHasMore = true;
   if (append) render({ preserveScroll: true });
   try {
-    const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit, offset });
+    const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons });
     if (token !== appSearchToken) return;
     const next = applications || [];
     const existing = new Set(state.appResults.map((item) => item.path || item.id));
     state.appResults = append ? [...state.appResults, ...next.filter((item) => !existing.has(item.path || item.id))] : next;
     if (!state.query.trim() && !append) state.emptyResults.app = next.slice();
     state.appLoadedQuery = state.query;
-    state.appHasMore = next.length === limit;
+    state.appHasMore = state.scope === "app" && next.length === limit;
+    render({ preserveScroll: append });
+    void hydrateAppIcons(next, iconToken);
   } catch {
     if (!append) state.appResults = [];
   } finally {
@@ -648,6 +686,22 @@ async function refreshApps({ append = false } = {}) {
       render({ preserveScroll: append });
     }
   }
+}
+
+async function hydrateAppIcons(applications, token) {
+  const paths = (applications || []).map((application) => application.path).filter(Boolean);
+  if (!paths.length || !window.weborg?.loadAppIcons) return;
+  try {
+    const icons = await window.weborg.loadAppIcons(paths);
+    if (token !== appIconSearchToken) return;
+    const update = (application) => {
+      const iconUrl = icons?.[application.path];
+      return iconUrl ? { ...application, iconUrl } : application;
+    };
+    state.appResults = state.appResults.map(update);
+    state.emptyResults.app = state.emptyResults.app.map(update);
+    render({ preserveScroll: true });
+  } catch {}
 }
 
 async function refreshWeb({ append = false } = {}) {
@@ -824,7 +878,7 @@ async function initialize() {
   const [cfg, records, applications, pages, memos, usageSections] = await Promise.all([
     window.weborg.getConfig(),
     enabled("clipboard") ? window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }) : [],
-    enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: 12 }) : [],
+    enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: 3, includeIcons: false }) : [],
     enabled("web") ? window.weborg.pluginSearch("web", { query: "", limit: 12 }) : [],
     enabled("memo") ? window.weborg.pluginSearch("memo", { query: "", limit: 12 }) : [],
     window.weborg.searchUsage("all")
@@ -837,7 +891,7 @@ async function initialize() {
   state.appResults = applications || [];
   state.appLoadedQuery = "";
   state.emptyResults.app = state.appResults.slice();
-  state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
+  state.appHasMore = false;
   state.webResults = pages || [];
   state.webLoadedQuery = "";
   state.emptyResults.web = state.webResults.slice();

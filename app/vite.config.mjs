@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -16,6 +16,7 @@ const uiDirectory = resolve(appDirectory, "ui");
 const defaultConfigPath = resolve(appDirectory, "..", "config.json");
 const execFileAsync = promisify(execFile);
 const applicationIconCache = new Map();
+const applicationIndexPath = join(homedir(), "Library", "Application Support", "FlowHub", "application-index.json");
 let applicationsPromise;
 let sqlJsPromise;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
@@ -139,8 +140,39 @@ async function scanApplications() {
   return applications.sort((left, right) => left.title.localeCompare(right.title, "zh-CN"));
 }
 
+async function applicationFingerprint() {
+  const entries = [];
+  for (const directory of applicationDirectories()) {
+    let children = [];
+    try { children = await readdir(directory, { withFileTypes: true }); } catch { continue; }
+    for (const entry of children) {
+      if (!entry.isDirectory() || !entry.name.toLowerCase().endsWith(".app")) continue;
+      const path = join(directory, entry.name);
+      let modified = "";
+      try { modified = String(Math.floor((await stat(path)).mtimeMs / 1000)); } catch {}
+      entries.push(`${path}:${modified}`);
+    }
+  }
+  return entries.sort().join("\n");
+}
+
+async function loadApplicationIndex() {
+  const fingerprint = await applicationFingerprint();
+  try {
+    const cached = JSON.parse(await readFile(applicationIndexPath, "utf8"));
+    if (cached?.fingerprint === fingerprint && Array.isArray(cached.applications) && cached.applications.length) {
+      return cached.applications;
+    }
+  } catch {}
+  const scanned = await scanApplications();
+  try {
+    await writeFile(applicationIndexPath, `${JSON.stringify({ version: 1, fingerprint, applications: scanned }, null, 2)}\n`, "utf8");
+  } catch {}
+  return scanned;
+}
+
 function applications() {
-  if (!applicationsPromise) applicationsPromise = scanApplications();
+  if (!applicationsPromise) applicationsPromise = loadApplicationIndex();
   return applicationsPromise;
 }
 
@@ -378,15 +410,26 @@ async function readNativeApplicationIcons(filePaths) {
   }
 }
 
-async function searchApplications(query = "", limit = 12, offset = 0) {
+async function searchApplications(query = "", limit = 12, offset = 0, includeIcons = true) {
   const keyword = String(query || "").trim().toLowerCase();
   const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
   const safeOffset = Math.max(0, Number(offset) || 0);
   const index = await applications();
   const matches = keyword ? index.filter((application) => application.hay.includes(keyword)) : index;
   const selected = matches.slice(safeOffset, safeOffset + safeLimit);
-  await readNativeApplicationIcons(selected.map((application) => application.path));
-  return selected.map((application) => ({ ...application, iconUrl: applicationIconCache.get(application.path) || "" }));
+  if (includeIcons) await readNativeApplicationIcons(selected.map((application) => application.path));
+  return selected.map((application) => ({
+    ...application,
+    iconUrl: includeIcons ? (applicationIconCache.get(application.path) || "") : ""
+  }));
+}
+
+async function loadApplicationIcons(paths = []) {
+  const index = await applications();
+  const allowed = new Set(index.map((application) => application.path));
+  const selected = [...new Set(paths)].filter((path) => allowed.has(path));
+  await readNativeApplicationIcons(selected);
+  return Object.fromEntries(selected.map((path) => [path, applicationIconCache.get(path) || ""]));
 }
 
 function validateScopeShortcuts(scopeShortcuts) {
@@ -531,10 +574,30 @@ function localApplicationApi() {
         }
         try {
           const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
-          const applications = await searchApplications(requestUrl.searchParams.get("q") || "", requestUrl.searchParams.get("limit") || 12, requestUrl.searchParams.get("offset") || 0);
+          const applications = await searchApplications(requestUrl.searchParams.get("q") || "", requestUrl.searchParams.get("limit") || 12, requestUrl.searchParams.get("offset") || 0, requestUrl.searchParams.get("icons") !== "0");
           sendJson(response, 200, { ok: true, applications });
         } catch (error) {
           sendJson(response, 500, { ok: false, reason: error.message, applications: [] });
+        }
+      });
+      server.middlewares.use("/__weborg/app-icons", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Method not allowed");
+          return;
+        }
+        try {
+          const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+          const raw = requestUrl.searchParams.get("paths") || "[]";
+          const paths = JSON.parse(raw);
+          const icons = await loadApplicationIcons(Array.isArray(paths) ? paths : []);
+          response.setHeader("Content-Type", "application/json; charset=utf-8");
+          response.end(JSON.stringify({ ok: true, icons }));
+        } catch (error) {
+          response.statusCode = 500;
+          response.setHeader("Content-Type", "application/json; charset=utf-8");
+          response.end(JSON.stringify({ ok: false, reason: error.message }));
         }
       });
     }

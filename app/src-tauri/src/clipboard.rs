@@ -6,12 +6,14 @@ use clipboard_rs::{
     ClipboardWatcherContext, ContentFormat, RustImageData, WatcherShutdown,
 };
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use image::ImageFormat;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
+    io::Cursor,
     path::Path,
     process::Command,
     sync::Mutex,
@@ -323,14 +325,29 @@ pub(crate) fn native_icon_data_urls(paths: &[String]) -> HashMap<String, String>
     paths
         .iter()
         .cloned()
-        .zip(icons.into_iter().map(|icon| {
-            if icon.is_empty() {
-                String::new()
-            } else {
-                format!("data:image/png;base64,{icon}")
-            }
-        }))
+        .zip(icons.into_iter().map(|icon| optimize_icon_data_url(&icon)))
         .collect()
+}
+
+fn optimize_icon_data_url(base64: &str) -> String {
+    if base64.is_empty() {
+        return String::new();
+    }
+    let Ok(bytes) = BASE64.decode(base64) else {
+        return String::new();
+    };
+    let Ok(image) = image::load_from_memory(&bytes) else {
+        return format!("data:image/png;base64,{base64}");
+    };
+    let resized = image.thumbnail(64, 64);
+    let mut output = Cursor::new(Vec::new());
+    if resized.write_to(&mut output, ImageFormat::Png).is_err() {
+        return format!("data:image/png;base64,{base64}");
+    }
+    format!(
+        "data:image/png;base64,{}",
+        BASE64.encode(output.into_inner())
+    )
 }
 
 #[tauri::command]

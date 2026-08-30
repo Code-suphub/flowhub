@@ -14,7 +14,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   let configCache = null;
   let pluginsPromise = null;
 
-  function clone(value) {
+  function cloneValue(value) {
     return JSON.parse(JSON.stringify(value));
   }
 
@@ -28,7 +28,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
 
   async function getConfig() {
     if (!configCache) configCache = await invoke("get_config");
-    return clone(configCache);
+    return cloneValue(configCache);
   }
 
   async function listPlugins() {
@@ -52,7 +52,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       return invoke("search_clipboard", { query, kind: request.kind || "all", limit, offset });
     }
     if (id === "app") {
-      return (await invoke("search_applications", { query, limit, offset })).map((record) => ({ ...record, pluginId: id }));
+      return (await invoke("search_applications", { query, limit, offset, includeIcons: request.includeIcons !== false })).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "web") {
       const pages = flattenPages((await getConfig()).plugins?.web?.settings?.items || []);
@@ -67,6 +67,12 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
         .map((record) => ({ ...record, pluginId: id }));
     }
     return [];
+  }
+
+  async function loadAppIcons(paths = []) {
+    const uniquePaths = [...new Set((paths || []).filter(Boolean))];
+    if (!uniquePaths.length) return {};
+    return invoke("load_application_icons", { paths: uniquePaths });
   }
 
   async function pluginAction(id, action, payload = {}) {
@@ -88,17 +94,18 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     async saveConfig(config) {
       const result = await invoke("save_config", { config });
       if (result?.ok && result.config) {
-        configCache = clone(result.config);
-        configListeners.forEach((listener) => listener(clone(configCache)));
+        configCache = cloneValue(result.config);
+        configListeners.forEach((listener) => listener(cloneValue(configCache)));
       }
       return result;
     },
     listPlugins,
     pluginSearch,
+    loadAppIcons,
     pluginAction,
     hideMain: () => invoke("hide_main_window"),
     searchUsage: (scope = "all") => invoke("search_usage", { scope }),
-    openSettings: () => invoke("open_settings"),
+    openSettings: (options = {}) => invoke("open_settings", { initialUrl: options.initialUrl || null }),
     openAccessibilitySettings: () => invoke("open_accessibility_settings"),
     getConfigPathInfo: () => invoke("get_config_path_info"),
     chooseConfigPath: () => invoke("choose_config_path"),
@@ -119,8 +126,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   void listen("flowhub:config", (event) => {
     const next = event.payload?.config || event.payload;
     if (!next) return;
-    configCache = clone(next);
-    configListeners.forEach((listener) => listener(clone(configCache), event.payload?.query || ""));
+    configCache = cloneValue(next);
+    configListeners.forEach((listener) => listener(cloneValue(configCache), event.payload?.query || ""));
   });
   void listen("flowhub:usage-updated", () => usageListeners.forEach((listener) => listener()));
   void listen("flowhub:clipboard-updated", () => clipboardListeners.forEach((listener) => listener()));

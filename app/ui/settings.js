@@ -5,6 +5,7 @@ const state = {
   configFile: null,
   clipboardStorage: null,
   selectedId: "",
+  pendingAddId: "",
   mode: "structure",
   module: "core",
   dirty: false,
@@ -274,6 +275,64 @@ function uniqueId(base = "new-node") {
 function newNode() {
   return { id: uniqueId(), title: "新建节点", children: [] };
 }
+
+function cancelPendingAdd() {
+  const pendingId = state.pendingAddId;
+  if (!pendingId) return;
+  const context = nodeEntries().find((entry) => entry.node.id === pendingId);
+  if (!context) {
+    state.pendingAddId = "";
+    return render();
+  }
+  const siblings = context.parent ? context.parent.children : webItems();
+  siblings.splice(context.index, 1);
+  state.expanded.delete(pendingId);
+  state.pendingAddId = "";
+  state.selectedId = siblings[context.index]?.id || siblings[context.index - 1]?.id || context.parent?.id || "";
+  markDirty("已取消添加网页");
+  render();
+  toast("已取消添加，不会写入配置");
+}
+
+function prepareAddWebUrl(value) {
+  const url = String(value || "").trim();
+  if (!state.config || !/^https?:\/\//i.test(url)) return;
+  let canonical = url;
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    canonical = parsed.href.replace(/\/$/, "");
+  } catch { return; }
+  const existing = nodeEntries().find(({ node }) => {
+    if (!node.url) return false;
+    try {
+      const parsed = new URL(node.url);
+      parsed.hash = "";
+      return parsed.href.replace(/\/$/, "") === canonical;
+    } catch { return String(node.url).trim() === url; }
+  });
+  if (existing) {
+    state.pendingAddId = "";
+    state.module = "web";
+    state.selectedId = existing.node.id;
+    render();
+    toast("这个链接已经在网页配置中");
+    return;
+  }
+  const node = newNode();
+  let title = canonical;
+  try { title = new URL(canonical).hostname.replace(/^www\./i, "") || canonical; } catch {}
+  node.title = title;
+  node.url = url;
+  webItems().unshift(node);
+  state.pendingAddId = node.id;
+  state.module = "web";
+  state.selectedId = node.id;
+  markDirty("已添加待确认的网页链接");
+  render();
+  toast("链接已填入网页配置，请确认后保存");
+}
+window.prepareAddWebUrl = prepareAddWebUrl;
 
 function draftStorageKey(configFile = state.configFile) {
   const identity = String(configFile?.activePath || configFile?.resolvedPath || configFile?.defaultPath || "default");
@@ -638,6 +697,8 @@ function render() {
   syncJson();
   renderMode();
   renderModule();
+  const cancelAddButton = $("#cancelAddBtn");
+  if (cancelAddButton) cancelAddButton.hidden = !(state.module === "web" && state.pendingAddId);
   updateStatus();
 }
 
@@ -680,6 +741,7 @@ function deleteSelected() {
   if (!window.confirm(message)) return;
   const siblings = context.parent ? context.parent.children : webItems();
   siblings.splice(context.index, 1);
+  if (context.node.id === state.pendingAddId) state.pendingAddId = "";
   state.expanded.delete(context.node.id);
   state.selectedId = siblings[context.index]?.id || siblings[context.index - 1]?.id || context.parent?.id || "";
   markDirty();
@@ -795,6 +857,7 @@ async function save() {
     if (!result?.ok) throw new Error(result?.reason || "保存失败");
     state.config = clone(normalizeConfig(result.config || state.config));
     state.savedConfig = clone(state.config);
+    state.pendingAddId = "";
     [state.plugins, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
     state.dirty = false;
     clearDraft(previousDraftKey);
@@ -961,6 +1024,13 @@ function closeSettings() {
   window.location.assign("/search.html");
 }
 
+function applyInitialWebUrl() {
+  const value = new URLSearchParams(window.location.search).get("addUrl");
+  if (!value) return;
+  window.history.replaceState({}, "", window.location.pathname);
+  prepareAddWebUrl(value);
+}
+
 function handleAction(action) {
   if (action === "add-root") return addRoot();
   if (action === "expand-all") { expandAll(); return renderTree(); }
@@ -968,6 +1038,7 @@ function handleAction(action) {
   if (action === "add-child") return addChild();
   if (action === "add-sibling") return addSibling();
   if (action === "delete") return deleteSelected();
+  if (action === "cancel-add") return cancelPendingAdd();
   if (action === "move-up") return moveSelected(-1);
   if (action === "move-down") return moveSelected(1);
   if (action === "move-top") return moveSelectedToBoundary("top");
@@ -1230,6 +1301,7 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     state.dirty = Boolean(hasConfigChanges || hasJsonChanges);
     state.draftSavedAt = Number(draft.savedAt) || Date.now();
     render();
+    applyInitialWebUrl();
     if (state.mode === "json" && draft.jsonText) {
       $("#jsonEditor").value = draft.jsonText;
       state.jsonDirty = jsonEditorDiffersFromConfig();
@@ -1244,4 +1316,5 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   state.jsonDirty = false;
   expandAll();
   render();
+  applyInitialWebUrl();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));

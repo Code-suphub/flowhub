@@ -9,7 +9,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
-        Arc, Mutex, OnceLock, RwLock,
+        Arc, Mutex, RwLock,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -39,7 +39,10 @@ pub(crate) struct AppState {
     default_config_path: PathBuf,
     default_storage_dir: PathBuf,
     paths: RwLock<AppPaths>,
-    application_index: OnceLock<Vec<Value>>,
+    application_index: RwLock<Vec<Value>>,
+    application_index_path: PathBuf,
+    application_index_needs_refresh: AtomicBool,
+    application_index_refreshing: AtomicBool,
     application_icon_cache: Mutex<HashMap<String, String>>,
 }
 
@@ -177,6 +180,10 @@ fn copy_directory_contents(source: &Path, target: &Path) -> Result<(), String> {
 
 fn initialize_state() -> Result<AppState, String> {
     let root_dir = app_support_dir()?;
+    let application_index_path = root_dir.join("application-index.json");
+    let (cached_application_index, cached_fingerprint) =
+        load_application_cache(&application_index_path);
+    let current_fingerprint = application_fingerprint();
     let default_config_path = root_dir.join("config.json");
     let default_storage_dir = root_dir.join("clipboard");
     let locator_path = root_dir.join("config-location.json");
@@ -232,7 +239,10 @@ fn initialize_state() -> Result<AppState, String> {
             storage_dir,
             db_path,
         }),
-        application_index: OnceLock::new(),
+        application_index: RwLock::new(cached_application_index),
+        application_index_path,
+        application_index_needs_refresh: AtomicBool::new(cached_fingerprint != current_fingerprint),
+        application_index_refreshing: AtomicBool::new(false),
         application_icon_cache: Mutex::new(HashMap::new()),
     };
     initialize_database(&state)?;
@@ -777,15 +787,112 @@ fn scan_applications() -> Vec<Value> {
     applications
 }
 
+fn application_fingerprint() -> String {
+    let mut entries = Vec::new();
+    for directory in application_directories() {
+        let Ok(read_dir) = fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if !path.is_dir() || !file_name.to_lowercase().ends_with(".app") {
+                continue;
+            }
+            let modified = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_secs().to_string())
+                .unwrap_or_default();
+            entries.push(format!("{}:{}", path.to_string_lossy(), modified));
+        }
+    }
+    entries.sort_unstable();
+    entries.join("\n")
+}
+
+fn load_application_cache(path: &Path) -> (Vec<Value>, String) {
+    let Some(value) = read_json(path) else {
+        return (Vec::new(), String::new());
+    };
+    let fingerprint = value
+        .get("fingerprint")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let applications = value
+        .get("applications")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    (applications, fingerprint)
+}
+
+fn persist_application_cache(path: &Path, applications: &[Value], fingerprint: &str) {
+    let value = json!({
+        "version": 1,
+        "fingerprint": fingerprint,
+        "applications": applications
+    });
+    if let Err(error) = write_json_atomic(path, &value) {
+        eprintln!("[flowhub-tauri] 保存应用索引失败：{error}");
+    }
+}
+
+fn refresh_application_index(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    if state
+        .application_index_refreshing
+        .swap(true, AtomicOrdering::AcqRel)
+    {
+        return;
+    }
+    let applications = scan_applications();
+    let fingerprint = application_fingerprint();
+    {
+        let mut index = state
+            .application_index
+            .write()
+            .expect("application index lock poisoned");
+        *index = applications.clone();
+    }
+    persist_application_cache(&state.application_index_path, &applications, &fingerprint);
+    state
+        .application_index_needs_refresh
+        .store(false, AtomicOrdering::Release);
+    state
+        .application_index_refreshing
+        .store(false, AtomicOrdering::Release);
+}
+
 #[tauri::command]
 fn search_applications(
     state: State<'_, AppState>,
     query: String,
     limit: usize,
     offset: usize,
+    include_icons: bool,
 ) -> Vec<Value> {
     let keyword = query.trim().to_lowercase();
-    let applications = state.application_index.get_or_init(scan_applications);
+    let mut applications = state
+        .application_index
+        .read()
+        .expect("application index lock poisoned")
+        .clone();
+    if applications.is_empty() {
+        applications = scan_applications();
+        let fingerprint = application_fingerprint();
+        *state
+            .application_index
+            .write()
+            .expect("application index lock poisoned") = applications.clone();
+        persist_application_cache(&state.application_index_path, &applications, &fingerprint);
+        state
+            .application_index_needs_refresh
+            .store(false, AtomicOrdering::Release);
+    }
     let mut selected: Vec<Value> = applications
         .iter()
         .filter(|application| {
@@ -800,29 +907,39 @@ fn search_applications(
         .take(limit.clamp(1, 100))
         .cloned()
         .collect();
-    let paths: Vec<String> = selected
-        .iter()
-        .filter_map(|application| {
-            application
+    if include_icons {
+        let paths: Vec<String> = selected
+            .iter()
+            .filter_map(|application| {
+                application
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect();
+        let icons = application_icon_data_urls(&state, &paths);
+        for application in &mut selected {
+            let path = application
                 .get("path")
                 .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .collect();
-    let icons = application_icon_data_urls(&state, &paths);
-    for application in &mut selected {
-        let path = application
-            .get("path")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if let Some(icon) = icons.get(path) {
-            application
-                .as_object_mut()
-                .unwrap()
-                .insert("iconUrl".to_string(), Value::String(icon.clone()));
+                .unwrap_or("");
+            if let Some(icon) = icons.get(path) {
+                application
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("iconUrl".to_string(), Value::String(icon.clone()));
+            }
         }
     }
     selected
+}
+
+#[tauri::command]
+fn load_application_icons(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> HashMap<String, String> {
+    application_icon_data_urls(&state, &paths)
 }
 
 /// Resolve native application icons once per path for both app search and usage cards.
@@ -852,7 +969,10 @@ fn application_icon_data_urls(state: &AppState, paths: &[String]) -> HashMap<Str
     if !missing.is_empty() {
         let resolved = clipboard::native_icon_data_urls(&missing);
         for path in missing {
-            cache.insert(path.clone(), resolved.get(&path).cloned().unwrap_or_default());
+            cache.insert(
+                path.clone(),
+                resolved.get(&path).cloned().unwrap_or_default(),
+            );
         }
     }
 
@@ -1052,7 +1172,12 @@ fn search_usage(state: State<'_, AppState>, scope: String) -> Result<Value, Stri
     let icon_paths: Vec<String> = entries
         .iter()
         .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("app"))
-        .filter_map(|entry| entry.get("path").and_then(Value::as_str).map(str::to_string))
+        .filter_map(|entry| {
+            entry
+                .get("path")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .collect();
     let icons = application_icon_data_urls(&state, &icon_paths);
     for entry in &mut entries {
@@ -1122,13 +1247,36 @@ fn number(value: &Value, key: &str) -> f64 {
 }
 
 #[tauri::command]
-fn open_settings(app: tauri::AppHandle) -> Result<Value, String> {
+fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<Value, String> {
+    let initial_url = initial_url.and_then(|value| {
+        let value = value.trim().to_string();
+        match url::Url::parse(&value) {
+            Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => Some(value),
+            _ => None,
+        }
+    });
     if let Some(window) = app.get_webview_window("settings") {
         window.show().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
+        if let Some(url) = initial_url {
+            let argument = serde_json::to_string(&url).map_err(|error| error.to_string())?;
+            window
+                .eval(&format!(
+                    "(function(){{const value={argument}; const apply=()=>{{if(window.prepareAddWebUrl){{window.prepareAddWebUrl(value);}}else{{setTimeout(apply,100);}}}}; apply();}})();"
+                ))
+                .map_err(|error| error.to_string())?;
+        }
         return Ok(json!({ "ok": true }));
     }
-    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
+    let settings_path = initial_url
+        .as_ref()
+        .map(|url| {
+            let mut query = url::form_urlencoded::Serializer::new(String::new());
+            query.append_pair("addUrl", url);
+            format!("settings.html?{}", query.finish())
+        })
+        .unwrap_or_else(|| "settings.html".to_string());
+    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
         .inner_size(980.0, 720.0)
         .min_inner_size(820.0, 600.0)
@@ -1448,6 +1596,14 @@ pub fn run() {
             let state = initialize_state().map_err(std::io::Error::other)?;
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
+            if app
+                .state::<AppState>()
+                .application_index_needs_refresh
+                .load(AtomicOrdering::Acquire)
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || refresh_application_index(&handle));
+            }
             #[cfg(target_os = "macos")]
             if std::env::var("FLOWHUB_TAURI_CUSTOM_HOTKEY").as_deref() == Ok("1") {
                 app.manage(
@@ -1532,6 +1688,7 @@ pub fn run() {
             get_config,
             save_config,
             search_applications,
+            load_application_icons,
             activate_target,
             hide_main_window,
             search_usage,

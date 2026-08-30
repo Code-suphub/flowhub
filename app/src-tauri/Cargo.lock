@@ -1154,6 +1154,7 @@ dependencies = [
  "clipboard-rs",
  "dirs 6.0.0",
  "enigo",
+ "image",
  "objc2",
  "objc2-app-kit",
  "rusqlite",
