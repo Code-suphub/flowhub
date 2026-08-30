@@ -10,9 +10,10 @@ let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
 const PLUGIN_PAGE_SIZE = 30;
+const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, appResults: [], appHasMore: true, appLoading: false, memoResults: [], memoHasMore: true, memoLoading: false, usageSections: { frequent: [], recent: [] }, expandedClipboard: new Set(), usageColumn: 0 };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0 };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let webSearchToken = 0;
@@ -247,8 +248,11 @@ function renderUsageSection(item, index, items) {
 }
 
 function renderUsageTile(item, index) {
+  const appIcon = item.type === "app"
+    ? (item.iconUrl || state.appResults.find((application) => application.path === item.path)?.iconUrl || "")
+    : "";
   const icon = item.type === "app"
-    ? (item.iconUrl ? `<img src="${esc(item.iconUrl)}" loading="lazy" decoding="async" alt="" />` : "▣")
+    ? (appIcon ? `<img src="${esc(appIcon)}" loading="lazy" decoding="async" alt="" />` : "▣")
     : iconHtml(item);
   return `
     <div class="result usage-tile ${item.type === "app" ? "app" : "web"} ${index === state.index ? "active" : ""}" data-i="${index}" title="${esc(item.title || "")}">
@@ -418,38 +422,50 @@ function pluginEnabled(id) {
   return state.plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
 }
 
-function invalidateClipboardPaging() {
+function invalidateClipboardPaging({ resetPaging = true } = {}) {
   clipboardSearchToken += 1;
   state.clipboardLoading = false;
-  state.clipboardHasMore = false;
+  if (resetPaging) state.clipboardHasMore = false;
 }
 
-function invalidatePluginPaging() {
+function invalidatePluginPaging({ resetPaging = true } = {}) {
   appSearchToken += 1;
   webSearchToken += 1;
   memoSearchToken += 1;
   state.appLoading = false;
   state.webLoading = false;
   state.memoLoading = false;
-  state.appHasMore = false;
-  state.webHasMore = false;
-  state.memoHasMore = false;
+  if (resetPaging) {
+    state.appHasMore = false;
+    state.webHasMore = false;
+    state.memoHasMore = false;
+  }
 }
 
 function setScope(scope) {
-  invalidateClipboardPaging();
-  invalidatePluginPaging();
+  invalidateClipboardPaging({ resetPaging: false });
+  invalidatePluginPaging({ resetPaging: false });
   state.scope = scope;
   state.index = 0;
   document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
   clipboardKindRow?.classList.toggle("visible", scope === "clipboard");
   renderKeyboardHint();
   render();
-  void refreshClipboard();
-  void refreshApps();
-  void refreshWeb();
-  void refreshMemos();
-  void refreshUsage();
+  // Scope switches should be instant when the current query is already cached.
+  // Only refresh the active scope when its data is stale; this avoids spawning
+  // several IPC calls (and native icon scans) for every Tab press.
+  if (scope === "all" || scope === "clipboard") {
+    if (state.clipboardLoadedQuery !== state.query) void refreshClipboard();
+  }
+  if (scope === "all" || scope === "app") {
+    if (state.appLoadedQuery !== state.query) void refreshApps();
+  }
+  if (scope === "all" || scope === "web") {
+    if (state.webLoadedQuery !== state.query) void refreshWeb();
+  }
+  if (scope === "all" || scope === "memo") {
+    if (state.memoLoadedQuery !== state.query) void refreshMemos();
+  }
   q?.focus({ preventScroll: true });
 }
 
@@ -590,6 +606,8 @@ async function refreshClipboard({ append = false } = {}) {
     state.clipboardResults = append
       ? [...state.clipboardResults, ...nextRecords.filter((record) => !state.clipboardResults.some((current) => current.id === record.id))]
       : nextRecords;
+    if (!state.query.trim() && !append) state.emptyResults.clipboard = nextRecords.slice();
+    state.clipboardLoadedQuery = state.query;
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
     render({ preserveScroll: append });
   } catch {
@@ -606,7 +624,9 @@ async function refreshApps({ append = false } = {}) {
   if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
   if (append && (state.scope !== "app" || state.appLoading || !state.appHasMore)) return;
   const token = ++appSearchToken;
-  const limit = state.scope === "app" ? PLUGIN_PAGE_SIZE : 12;
+  // Native app results include PNG data URLs; keep the first transfer small and
+  // let the existing scroll pagination fetch the rest on demand.
+  const limit = state.scope === "app" ? APP_PAGE_SIZE : 12;
   const offset = append ? state.appResults.length : 0;
   state.appLoading = true;
   if (!append) state.appHasMore = true;
@@ -617,6 +637,8 @@ async function refreshApps({ append = false } = {}) {
     const next = applications || [];
     const existing = new Set(state.appResults.map((item) => item.path || item.id));
     state.appResults = append ? [...state.appResults, ...next.filter((item) => !existing.has(item.path || item.id))] : next;
+    if (!state.query.trim() && !append) state.emptyResults.app = next.slice();
+    state.appLoadedQuery = state.query;
     state.appHasMore = next.length === limit;
   } catch {
     if (!append) state.appResults = [];
@@ -643,6 +665,8 @@ async function refreshWeb({ append = false } = {}) {
     const next = pages || [];
     const existing = new Set(state.webResults.map((item) => item.id || item.url));
     state.webResults = append ? [...state.webResults, ...next.filter((item) => !existing.has(item.id || item.url))] : next;
+    if (!state.query.trim() && !append) state.emptyResults.web = next.slice();
+    state.webLoadedQuery = state.query;
     state.webHasMore = next.length === limit;
   } catch {
     if (!append) state.webResults = [];
@@ -669,6 +693,8 @@ async function refreshMemos({ append = false } = {}) {
     const next = memos || [];
     const existing = new Set(state.memoResults.map((item) => item.id));
     state.memoResults = append ? [...state.memoResults, ...next.filter((item) => !existing.has(item.id))] : next;
+    if (!state.query.trim() && !append) state.emptyResults.memo = next.slice();
+    state.memoLoadedQuery = state.query;
     state.memoHasMore = next.length === limit;
   } catch {
     if (!append) state.memoResults = [];
@@ -684,16 +710,28 @@ async function refreshUsage() {
   if (state.scope === "clipboard" || state.query.trim()) return;
   const token = ++usageSearchToken;
   try {
-    const sections = await window.weborg?.searchUsage(state.scope);
+    // Keep one complete usage snapshot and filter it client-side per scope.
+    // This prevents a database/icon lookup on every Tab-based scope switch.
+    const sections = await window.weborg?.searchUsage("all");
     if (token !== usageSearchToken) return;
     state.usageSections = sections || { frequent: [], recent: [] };
+    state.usageLoadedScope = "all";
     render();
   } catch {}
 }
 
-function queueClipboardRefresh(delay = 180) {
+function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
   clearTimeout(clipboardSearchTimer);
   clipboardSearchTimer = setTimeout(() => {
+    if (!state.query.trim() && !refreshEmpty) {
+      void refreshUsage();
+      return;
+    }
+    if (!state.query.trim() && refreshEmpty) {
+      void refreshClipboard();
+      void refreshUsage();
+      return;
+    }
     void refreshClipboard();
     void refreshApps();
     void refreshWeb();
@@ -713,6 +751,16 @@ q.addEventListener("input", () => {
   invalidateClipboardPaging();
   invalidatePluginPaging();
   state.query = q.value;
+  if (!state.query.trim()) {
+    state.clipboardResults = state.emptyResults.clipboard.slice();
+    state.appResults = state.emptyResults.app.slice();
+    state.webResults = state.emptyResults.web.slice();
+    state.memoResults = state.emptyResults.memo.slice();
+    state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
+    state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
+    state.webHasMore = state.webResults.length === 12;
+    state.memoHasMore = state.memoResults.length === 12;
+  }
   state.index = 0;
   render();
   queueClipboardRefresh();
@@ -730,7 +778,7 @@ scopeRow?.addEventListener("click", (event) => {
   if (button) setScope(button.dataset.scope);
 });
 document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
-window.weborg.onClipboardUpdated(() => { invalidateClipboardPaging(); queueClipboardRefresh(80); });
+window.weborg.onClipboardUpdated(() => { invalidateClipboardPaging(); queueClipboardRefresh(80, true); });
 window.weborg.onUsageUpdated(() => { void refreshUsage(); });
 resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
@@ -783,14 +831,23 @@ async function initialize() {
   ]);
   setConfig(cfg);
   state.clipboardResults = records || [];
+  state.clipboardLoadedQuery = "";
+  state.emptyResults.clipboard = state.clipboardResults.slice();
   state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
   state.appResults = applications || [];
-  state.appHasMore = state.appResults.length === 12;
+  state.appLoadedQuery = "";
+  state.emptyResults.app = state.appResults.slice();
+  state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
   state.webResults = pages || [];
+  state.webLoadedQuery = "";
+  state.emptyResults.web = state.webResults.slice();
   state.webHasMore = state.webResults.length === 12;
   state.memoResults = memos || [];
+  state.memoLoadedQuery = "";
+  state.emptyResults.memo = state.memoResults.slice();
   state.memoHasMore = state.memoResults.length === 12;
   state.usageSections = usageSections || { frequent: [], recent: [] };
+  state.usageLoadedScope = "all";
   render();
   focusSearch();
 }

@@ -40,6 +40,7 @@ pub(crate) struct AppState {
     default_storage_dir: PathBuf,
     paths: RwLock<AppPaths>,
     application_index: OnceLock<Vec<Value>>,
+    application_icon_cache: Mutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -232,6 +233,7 @@ fn initialize_state() -> Result<AppState, String> {
             db_path,
         }),
         application_index: OnceLock::new(),
+        application_icon_cache: Mutex::new(HashMap::new()),
     };
     initialize_database(&state)?;
     import_json_catalog_if_needed(&state)?;
@@ -807,7 +809,7 @@ fn search_applications(
                 .map(str::to_string)
         })
         .collect();
-    let icons = clipboard::native_icon_data_urls(&paths);
+    let icons = application_icon_data_urls(&state, &paths);
     for application in &mut selected {
         let path = application
             .get("path")
@@ -821,6 +823,50 @@ fn search_applications(
         }
     }
     selected
+}
+
+/// Resolve native application icons once per path for both app search and usage cards.
+/// Icon extraction invokes `osascript`, so keeping this cache in process avoids a
+/// visible delay every time the launcher is shown or the query becomes empty.
+fn application_icon_data_urls(state: &AppState, paths: &[String]) -> HashMap<String, String> {
+    let unique_paths: Vec<String> = paths
+        .iter()
+        .filter(|path| !path.trim().is_empty())
+        .cloned()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if unique_paths.is_empty() {
+        return HashMap::new();
+    }
+
+    let mut cache = state
+        .application_icon_cache
+        .lock()
+        .expect("application icon cache lock poisoned");
+    let missing: Vec<String> = unique_paths
+        .iter()
+        .filter(|path| !cache.contains_key(*path))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        let resolved = clipboard::native_icon_data_urls(&missing);
+        for path in missing {
+            cache.insert(path.clone(), resolved.get(&path).cloned().unwrap_or_default());
+        }
+    }
+
+    unique_paths
+        .into_iter()
+        .filter_map(|path| {
+            let icon = cache.get(&path)?.clone();
+            if icon.is_empty() {
+                None
+            } else {
+                Some((path, icon))
+            }
+        })
+        .collect()
 }
 
 fn record_usage(state: &AppState, usage: &Value, fallback: &str) -> Result<(), String> {
@@ -997,6 +1043,31 @@ fn search_usage(state: State<'_, AppState>, scope: String) -> Result<Value, Stri
             .map_err(|error| error.to_string())?;
         for row in rows {
             entries.push(row.map_err(|error| error.to_string())?);
+        }
+    }
+
+    // Usage records intentionally keep only lightweight metadata in SQLite. Resolve
+    // native icons on read and reuse the process cache shared with app search so
+    // recent/frequent cards render the same icons as normal app results.
+    let icon_paths: Vec<String> = entries
+        .iter()
+        .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("app"))
+        .filter_map(|entry| entry.get("path").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let icons = application_icon_data_urls(&state, &icon_paths);
+    for entry in &mut entries {
+        let Some(path) = entry
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        if let Some(icon) = icons.get(&path) {
+            entry
+                .as_object_mut()
+                .expect("usage entry is an object")
+                .insert("iconUrl".to_string(), Value::String(icon.clone()));
         }
     }
 

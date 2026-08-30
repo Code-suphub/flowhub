@@ -368,6 +368,8 @@ pub fn search_clipboard(
         })
         .map_err(|error| error.to_string())?;
     let keyword = query.trim().to_lowercase();
+    let page_limit = limit.clamp(1, 100);
+    let mut matched_count = 0usize;
     let mut records = Vec::new();
     for row in rows {
         let (
@@ -418,6 +420,14 @@ pub fn search_clipboard(
         if !kind_matches || (!keyword.is_empty() && !hay.contains(&keyword)) {
             continue;
         }
+        if matched_count < offset {
+            matched_count += 1;
+            continue;
+        }
+        if records.len() >= page_limit {
+            break;
+        }
+        matched_count += 1;
         records.push(json!({
             "id": id,
             "kind": record_kind,
@@ -438,11 +448,7 @@ pub fn search_clipboard(
             "pluginId": "clipboard"
         }));
     }
-    let selected: Vec<Value> = records
-        .into_iter()
-        .skip(offset)
-        .take(limit.clamp(1, 100))
-        .collect();
+    let selected = records;
     let icon_paths: Vec<String> = selected
         .iter()
         .filter(|record| record.get("kind").and_then(Value::as_str) == Some("file"))
