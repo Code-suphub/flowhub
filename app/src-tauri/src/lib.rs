@@ -7,7 +7,11 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::{OnceLock, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
+        Arc, Mutex, OnceLock, RwLock,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
@@ -16,9 +20,12 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
+#[cfg(target_os = "macos")]
+mod macos_hotkey;
 mod updater;
 
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
+static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 struct AppPaths {
@@ -879,6 +886,12 @@ pub(crate) fn hide_main(app: &tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn hide_main_window(app: tauri::AppHandle) -> Result<Value, String> {
+    hide_main(&app);
+    Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
 fn activate_target(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -1171,28 +1184,94 @@ fn open_storage_path(app: tauri::AppHandle, state: State<'_, AppState>) -> Resul
 
 fn toggle_main(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[flowhub-tauri] 唤出失败：主窗口不存在");
         return;
     };
-    if window.is_visible().unwrap_or(false) {
+    let visible = window.is_visible().unwrap_or(false);
+    let focused = window.is_focused().unwrap_or(false);
+    eprintln!("[flowhub-tauri] 收到唤出请求，当前可见：{visible}，当前聚焦：{focused}");
+    if visible && focused {
         let _ = window.hide();
         return;
     }
+    let _ = window.set_visible_on_all_workspaces(true);
+    let _ = window.set_always_on_top(true);
     let _ = window.center();
-    let _ = window.show();
-    let _ = window.set_focus();
-    let _ = window.eval("window.focusSearch?.()");
-    if let Some(state) = app.try_state::<AppState>() {
-        if let Ok(config) = hydrated_config(&state) {
-            let _ = app.emit("flowhub:config", json!({ "config": config, "query": "" }));
-        }
+    LAST_MAIN_SHOW_MILLIS.store(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0),
+        AtomicOrdering::Release,
+    );
+    if let Err(error) = window.show() {
+        eprintln!("[flowhub-tauri] 显示主窗口失败：{error}");
     }
+    if let Err(error) = window.set_focus() {
+        eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
+    }
+    #[cfg(target_os = "macos")]
+    bring_macos_window_to_front(&window);
+    // Showing and focusing are dispatched to AppKit. A second focus request after
+    // the show has landed avoids an LSUIElement window remaining visible on a
+    // different Space without becoming the key window.
+    let focus_window = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        if focus_window.is_visible().unwrap_or(false) && !focus_window.is_focused().unwrap_or(false)
+        {
+            let _ = focus_window.set_focus();
+        }
+        eprintln!(
+            "[flowhub-tauri] 唤出完成，可见：{}，聚焦：{}，位置：{:?}",
+            focus_window.is_visible().unwrap_or(false),
+            focus_window.is_focused().unwrap_or(false),
+            focus_window.outer_position().ok()
+        );
+    });
+    // Reset the query and refresh data after the first frame so showing the
+    // launcher is not blocked by four concurrent searches on every hotkey.
+    let _ = window.eval("window.prepareForShow?.()");
+}
+
+#[cfg(target_os = "macos")]
+fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
+    use objc2::{runtime::NSObjectProtocol, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSWindow, NSWindowCollectionBehavior};
+
+    let window = window.clone();
+    let handle = window.app_handle().clone();
+    let _ = handle.run_on_main_thread(move || {
+        let Some(main_thread) = MainThreadMarker::new() else {
+            eprintln!("[flowhub-tauri] AppKit 置前失败：当前不在主线程");
+            return;
+        };
+        let Ok(raw_window) = window.ns_window() else {
+            eprintln!("[flowhub-tauri] AppKit 置前失败：无法获取 NSWindow");
+            return;
+        };
+        let native_window = unsafe { &*(raw_window.cast::<NSWindow>()) };
+        let behavior = native_window.collectionBehavior()
+            | NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        native_window.setCollectionBehavior(behavior);
+        native_window.orderFrontRegardless();
+        native_window.makeKeyAndOrderFront(None);
+
+        let application = NSApplication::sharedApplication(main_thread);
+        if application.respondsToSelector(objc2::sel!(activate)) {
+            application.activate();
+        } else {
+            #[allow(deprecated)]
+            application.activateIgnoringOtherApps(true);
+        }
+    });
 }
 
 fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
-    let _ = app.global_shortcut().unregister_all();
     let parsed = hotkey.parse::<Shortcut>();
     match parsed {
-        Ok(shortcut) => match app.global_shortcut().register(shortcut) {
+        Ok(shortcut) => match register_platform_hotkey(app, shortcut) {
             Ok(()) => json!({ "hotkey": hotkey, "hotkeyRegistered": true }),
             Err(error) => {
                 json!({ "hotkey": hotkey, "hotkeyRegistered": false, "reason": error.to_string() })
@@ -1204,8 +1283,32 @@ fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Result<(), String> {
+    if std::env::var("FLOWHUB_TAURI_CUSTOM_HOTKEY").as_deref() == Ok("1") {
+        eprintln!("[flowhub-tauri] 使用自定义 macOS 热键回退路径");
+        return app
+            .try_state::<macos_hotkey::MacHotkeyRuntime>()
+            .ok_or_else(|| "自定义 macOS 热键运行时未初始化".to_string())?
+            .register(shortcut);
+    }
+    let _ = app.global_shortcut().unregister_all();
+    eprintln!("[flowhub-tauri] 使用官方 global-shortcut 路径");
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Result<(), String> {
+    let _ = app.global_shortcut().unregister_all();
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|error| error.to_string())
+}
+
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             toggle_main(app);
         }))
@@ -1216,20 +1319,71 @@ pub fn run() {
                 .app_name("FlowHub")
                 .build(),
         )
-        .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        toggle_main(app);
+        .plugin(tauri_plugin_opener::init());
+
+    let hotkey_down = Arc::new(AtomicBool::new(false));
+    let last_hotkey_trigger = Arc::new(Mutex::new(None::<Instant>));
+    let builder = builder.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_handler({
+                let hotkey_down = hotkey_down.clone();
+                let last_hotkey_trigger = last_hotkey_trigger.clone();
+                move |app, shortcut, event| {
+                    eprintln!(
+                        "[flowhub-tauri] 官方 global-shortcut 事件：{} {:?}",
+                        shortcut.into_string(),
+                        event.state()
+                    );
+                    match event.state() {
+                        ShortcutState::Pressed => {
+                            // macOS may emit repeated Pressed events while the key
+                            // combination is held. Toggle only on the first edge.
+                            if !hotkey_down.swap(true, AtomicOrdering::AcqRel) {
+                                let now = Instant::now();
+                                let allow_trigger = last_hotkey_trigger
+                                    .lock()
+                                    .map(|mut last| {
+                                        let allow = last
+                                            .map(|previous| {
+                                                now.duration_since(previous).as_millis() >= 250
+                                            })
+                                            .unwrap_or(true);
+                                        if allow {
+                                            *last = Some(now);
+                                        }
+                                        allow
+                                    })
+                                    .unwrap_or(true);
+                                if allow_trigger {
+                                    toggle_main(app);
+                                } else {
+                                    eprintln!("[flowhub-tauri] 忽略快捷键冷却期内的 Pressed 事件");
+                                }
+                            } else {
+                                eprintln!("[flowhub-tauri] 忽略快捷键重复 Pressed 事件");
+                            }
+                        }
+                        ShortcutState::Released => {
+                            hotkey_down.store(false, AtomicOrdering::Release);
+                        }
                     }
-                })
-                .build(),
-        )
+                }
+            })
+            .build(),
+    );
+
+    builder
         .setup(|app| {
             let state = initialize_state().map_err(std::io::Error::other)?;
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
+            #[cfg(target_os = "macos")]
+            if std::env::var("FLOWHUB_TAURI_CUSTOM_HOTKEY").as_deref() == Ok("1") {
+                app.manage(
+                    macos_hotkey::MacHotkeyRuntime::install(app.handle())
+                        .map_err(std::io::Error::other)?,
+                );
+            }
             app.manage(clipboard::ClipboardRuntime::new());
             app.manage(updater::UpdateRuntime::new(
                 app.package_info().version.to_string().as_str(),
@@ -1250,16 +1404,38 @@ pub fn run() {
             println!("[flowhub-tauri] 登录项状态：{autostart_state}");
 
             if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_visible_on_all_workspaces(true);
                 let main_window = window.clone();
+                let main_has_focused = Arc::new(AtomicBool::new(false));
+                let focus_state = main_has_focused.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = main_window.hide();
+                    } else if let WindowEvent::Focused(true) = event {
+                        eprintln!("[flowhub-tauri] 主窗口获得焦点");
+                        focus_state.store(true, AtomicOrdering::Release);
                     } else if let WindowEvent::Focused(false) = event {
+                        eprintln!("[flowhub-tauri] 主窗口失去焦点");
+                        // Ignore the initial/stale blur generated while the
+                        // launcher's hidden window is being created.
+                        if !focus_state.swap(false, AtomicOrdering::AcqRel) {
+                            return;
+                        }
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|duration| duration.as_millis() as u64)
+                            .unwrap_or(0);
+                        let last_show = LAST_MAIN_SHOW_MILLIS.load(AtomicOrdering::Acquire);
+                        if now.saturating_sub(last_show) < 500 {
+                            eprintln!("[flowhub-tauri] 忽略唤醒后的短暂失焦");
+                            return;
+                        }
                         let blur_window = main_window.clone();
                         std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(120));
+                            std::thread::sleep(Duration::from_millis(120));
                             if !blur_window.is_focused().unwrap_or(false) {
+                                eprintln!("[flowhub-tauri] 失焦后隐藏主窗口");
                                 let _ = blur_window.hide();
                             }
                         });
@@ -1286,6 +1462,7 @@ pub fn run() {
             save_config,
             search_applications,
             activate_target,
+            hide_main_window,
             search_usage,
             open_settings,
             open_accessibility_settings,

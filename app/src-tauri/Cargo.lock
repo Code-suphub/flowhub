@@ -1154,6 +1154,8 @@ dependencies = [
  "clipboard-rs",
  "dirs 6.0.0",
  "enigo",
+ "objc2",
+ "objc2-app-kit",
  "rusqlite",
  "serde",
  "serde_json",

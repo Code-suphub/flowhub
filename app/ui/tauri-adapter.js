@@ -96,6 +96,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     listPlugins,
     pluginSearch,
     pluginAction,
+    hideMain: () => invoke("hide_main_window"),
     searchUsage: (scope = "all") => invoke("search_usage", { scope }),
     openSettings: () => invoke("open_settings"),
     openAccessibilitySettings: () => invoke("open_accessibility_settings"),

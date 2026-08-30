@@ -509,7 +509,12 @@ window.weborg.onConfig(async (cfg) => {
 document.addEventListener("keydown", (e) => {
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
-  if (e.key === "Escape") { e.preventDefault(); window.close(); }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (window.weborg?.hideMain) void window.weborg.hideMain();
+    else window.close();
+    return;
+  }
   const shortcutScope = scopeForShortcut(e);
   if (shortcutScope) {
     setScope(shortcutScope);
@@ -751,7 +756,17 @@ resultsEl.addEventListener("click", (e) => {
 resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { const position = usagePosition(matches(), i); if (position) state.usageColumn = position.column; state.index = i; render(); } } });
 
 function focusSearch() { q?.focus(); q?.select(); }
+function prepareForShow() {
+  if (q) q.value = "";
+  state.query = "";
+  state.index = 0;
+  invalidateClipboardPaging();
+  invalidatePluginPaging();
+  render();
+  focusSearch();
+}
 window.focusSearch = focusSearch;
+window.prepareForShow = prepareForShow;
 
 // 初始加载
 async function initialize() {
