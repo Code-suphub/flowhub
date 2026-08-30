@@ -135,6 +135,7 @@
       .calculation-result .calculation-value { color: #c7d1d8; font-weight: 500; font-size: 15px; letter-spacing: .01em; }
       .calculation-result .calculation-expression { color: #718390; font-weight: 350; }
       .r-kind.calculation { color: #91a1ab; border-color: rgba(145, 161, 171, .25); font-weight: 350; }
+      #actionStatus { color: #8fd9bc; font-size: 11px; }
       .r-kind { flex: 0 0 auto; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; }
       .memo-result { position: relative; align-items: flex-start; min-height: 82px; padding: 9px 10px; }
       .memo-terminal { width: 27px; height: 27px; display: grid; place-items: center; flex: 0 0 27px; margin-top: 12px; border: 1px solid rgba(226, 151, 77, .2); border-radius: 7px; color: #efb971; background: rgba(226, 151, 77, .08); font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 10px; font-weight: 800; }
@@ -174,7 +175,7 @@
       <div id="results"></div>
       <div class="foot">
         <span id="keyboardHint">←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开</span>
-        <span id="runtimeMode">FlowHub</span>
+        <span><span id="actionStatus" aria-live="polite"></span> <span id="runtimeMode">FlowHub</span></span>
       </div>
     </div>
     <script src="web-search.js"></script>

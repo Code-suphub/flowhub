@@ -6,6 +6,7 @@ const settingsBtn = document.getElementById("settingsBtn");
 const clipboardKindRow = document.getElementById("clipboardKindRow");
 const scopeRow = document.getElementById("scopeRow");
 const keyboardHint = document.getElementById("keyboardHint");
+const actionStatus = document.getElementById("actionStatus");
 let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
@@ -26,6 +27,7 @@ let scopeTabUsedWithArrow = false;
 let scopeTabTapOffset = 1;
 let searchInputComposing = false;
 let searchCompositionEndedAt = -Infinity;
+let actionStatusTimer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -94,6 +96,29 @@ function calculationSuggestion() {
   const expression = state.query.trim();
   const result = calculateExpression(expression);
   return result === null ? null : { type: "calculation", expression, result, id: `calculation:${expression}` };
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(String(text));
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = String(text);
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("复制失败");
+}
+
+function showActionStatus(message) {
+  if (!actionStatus) return;
+  clearTimeout(actionStatusTimer);
+  actionStatus.textContent = message;
+  actionStatusTimer = setTimeout(() => { actionStatus.textContent = ""; }, 1200);
 }
 function webAddSuggestion(pages) {
   const url = normalizeUrl(state.query);
@@ -493,7 +518,12 @@ function render({ preserveScroll = false } = {}) {
 }
 
 function choose(page) {
-  if (page?.type === "calculation") return;
+  if (page?.type === "calculation") {
+    void copyText(page.result)
+      .then(() => showActionStatus("已复制"))
+      .catch(() => showActionStatus("复制失败"));
+    return;
+  }
   if (page?.type === "web-add") {
     void window.weborg?.openSettings({ initialUrl: normalizeUrl(page.url) });
     return;
