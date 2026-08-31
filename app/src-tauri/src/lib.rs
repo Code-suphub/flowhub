@@ -1542,14 +1542,17 @@ fn toggle_main(app: &tauri::AppHandle) {
             .unwrap_or(0),
         AtomicOrdering::Release,
     );
-    if let Err(error) = window.show() {
-        eprintln!("[flowhub-tauri] 显示主窗口失败：{error}");
-    }
-    if let Err(error) = window.set_focus() {
-        eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
-    }
     #[cfg(target_os = "macos")]
-    bring_macos_window_to_front(&window);
+    show_macos_window(&window);
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Err(error) = window.show() {
+            eprintln!("[flowhub-tauri] 显示主窗口失败：{error}");
+        }
+        if let Err(error) = window.set_focus() {
+            eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
+        }
+    }
     // Showing and focusing are dispatched to AppKit. A second focus request after
     // the show has landed avoids an LSUIElement window remaining visible on a
     // different Space without becoming the key window.
@@ -1573,7 +1576,7 @@ fn toggle_main(app: &tauri::AppHandle) {
 }
 
 #[cfg(target_os = "macos")]
-fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
+fn show_macos_window(window: &tauri::WebviewWindow) {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSWindow, NSWindowCollectionBehavior};
 
@@ -1604,9 +1607,6 @@ fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
                 | NSWindowCollectionBehavior::IgnoresCycle,
         );
         native_window.setCollectionBehavior(behavior);
-        native_window.orderFrontRegardless();
-        native_window.makeKeyAndOrderFront(None);
-
         let application = NSApplication::sharedApplication(main_thread);
         // FlowHub is an LSUIElement/accessory app, so cooperative activation
         // can be ignored while another app owns a fullscreen Space. The
@@ -1614,6 +1614,18 @@ fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
         // reliable path for palette-style accessory windows.
         #[allow(deprecated)]
         application.activateIgnoringOtherApps(true);
+        // Configure the collection behavior before showing or focusing the
+        // window. If AppKit first sees the hidden window on FlowHub's desktop
+        // Space, activating it can switch away from a fullscreen app before
+        // the behavior change takes effect.
+        if let Err(error) = window.show() {
+            eprintln!("[flowhub-tauri] 显示主窗口失败：{error}");
+        }
+        native_window.orderFrontRegardless();
+        native_window.makeKeyAndOrderFront(None);
+        if let Err(error) = window.set_focus() {
+            eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
+        }
     });
 }
 
