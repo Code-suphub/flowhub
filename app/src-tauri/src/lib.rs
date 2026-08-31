@@ -1590,15 +1590,15 @@ fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
         };
         let native_window = unsafe { &*(raw_window.cast::<NSWindow>()) };
         let mut behavior = native_window.collectionBehavior();
-        // Move the launcher into the Space that is active when the shortcut is
-        // pressed. `FullScreenAuxiliary` lets it participate in another app's
-        // fullscreen Space, while `CanJoinAllApplications` prevents AppKit
-        // from treating it as belonging only to FlowHub's Space.  The
-        // transient/ignore-cycle flags match launcher/palette window behavior.
-        behavior.remove(NSWindowCollectionBehavior::CanJoinAllSpaces);
+        // Keep the launcher attached to every Space instead of moving the
+        // user out of a fullscreen app's Space. `FullScreenAuxiliary` lets it
+        // participate in another app's fullscreen Space, while
+        // `CanJoinAllApplications` prevents AppKit from treating it as
+        // belonging only to FlowHub's Space. The transient/ignore-cycle flags
+        // match launcher/palette window behavior.
+        behavior.insert(NSWindowCollectionBehavior::CanJoinAllSpaces);
         behavior.insert(
-            NSWindowCollectionBehavior::MoveToActiveSpace
-                | NSWindowCollectionBehavior::FullScreenAuxiliary
+            NSWindowCollectionBehavior::FullScreenAuxiliary
                 | NSWindowCollectionBehavior::CanJoinAllApplications
                 | NSWindowCollectionBehavior::Transient
                 | NSWindowCollectionBehavior::IgnoresCycle,
