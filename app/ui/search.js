@@ -206,6 +206,25 @@ function dnsSuggestion() {
   return { type: "dns", expression, hostname, result: hostname, answers: resolved?.answers || [], id: `dns:${hostname}` };
 }
 
+function dnsSuggestions() {
+  const base = dnsSuggestion();
+  if (!base) return [];
+  const records = base.answers || [];
+  return [
+    ["CNAME", 5],
+    ["IPv4", 1],
+    ["IPv6", 28]
+  ].map(([family, type]) => {
+    const addresses = records.filter((answer) => Number(answer.type) === type);
+    return {
+      ...base,
+      family,
+      answers: addresses,
+      id: `dns:${base.hostname}:${family}`
+    };
+  });
+}
+
 function dnsRecordType(value) {
   return ({ 1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA" })[Number(value)] || String(value || "?");
 }
@@ -214,7 +233,7 @@ function toolSuggestions() {
   if (!pluginEnabled("tools")) return [];
   const enabled = (key) => state.config?.plugins?.tools?.settings?.[key] !== false;
   return [
-    enabled("dns") ? dnsSuggestion() : null,
+    ...(enabled("dns") ? dnsSuggestions() : []),
     ...(enabled("localIp") ? localIpSuggestions() : []),
     enabled("proxy") ? proxySuggestion() : null,
     enabled("timestamp") ? timestampSuggestion() : null,
@@ -589,7 +608,7 @@ function renderResult(item, index, items) {
       <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon calculation">⌁</span>
         <span class="r-body">
-          <span class="r-title calculation-value">DNS · ${esc(item.hostname)}</span>
+          <span class="r-title calculation-value">DNS · ${esc(item.hostname)} · ${esc(item.family || "记录")}</span>
           ${answerBody}
           <span class="r-meta calculation-expression">${item.answers?.length > 8 ? `还有 ${item.answers.length - 8} 条记录 · ` : ""}回车复制完整记录</span>
         </span>
@@ -790,10 +809,14 @@ function choose(page) {
     }
     void lookupDns(page.hostname)
       .then((response) => {
-        const answers = Array.isArray(response?.Answer) ? response.Answer : [];
-        const text = answers.length
-          ? answers.map((answer) => `${answer.name || page.hostname} ${dnsRecordType(answer.type)} ${answer.data || ""}`.trim()).join("\n")
-          : `${page.hostname}\n无 DNS 记录`;
+        const allAnswers = Array.isArray(response?.Answer) ? response.Answer : [];
+        const familyType = page.family === "CNAME" ? 5 : page.family === "IPv6" ? 28 : page.family === "IPv4" ? 1 : null;
+        const familyAnswers = familyType
+          ? allAnswers.filter((answer) => Number(answer.type) === 5 || Number(answer.type) === familyType)
+          : allAnswers;
+        const text = familyAnswers.length
+          ? familyAnswers.map((answer) => `${answer.name || page.hostname} ${dnsRecordType(answer.type)} ${answer.data || ""}`.trim()).join("\n")
+          : `${page.hostname} · ${page.family || "DNS"}\n无 DNS 记录`;
         return copyText(text);
       })
       .then(() => showActionStatus("DNS 结果已复制"))
