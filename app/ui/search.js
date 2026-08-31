@@ -28,6 +28,7 @@ let clipboardSearchTimer = null;
 let scopeTabHeld = false;
 let scopeTabUsedWithArrow = false;
 let scopeTabTapOffset = 1;
+let initialized = false;
 let searchInputComposing = false;
 let searchCompositionEndedAt = -Infinity;
 let actionStatusTimer = null;
@@ -927,10 +928,10 @@ function setScope(scope) {
   // Only refresh the active scope when its data is stale; this avoids spawning
   // several IPC calls (and native icon scans) for every Tab press.
   if (scope === "all" || scope === "clipboard") {
-    if (state.clipboardLoadedQuery !== state.query) void refreshClipboard();
+    if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
   }
   if (scope === "all" || scope === "app") {
-    if (state.appLoadedQuery !== state.query || (scope === "app" && state.appResults.length < APP_PAGE_SIZE && state.appHasMore === false)) void refreshApps();
+    if (!state.appLoading && (state.appLoadedQuery !== state.query || (scope === "app" && state.appResults.length < APP_PAGE_SIZE && state.appHasMore === false))) void refreshApps();
   }
   if (scope === "all" || scope === "web") {
     if (state.webLoadedQuery !== state.query) void refreshWeb();
@@ -988,10 +989,20 @@ window.weborg.onConfig(async (cfg) => {
   if (!scopeOrder.includes(state.scope)) state.scope = "all";
   renderKeyboardHint();
   render();
-  void refreshClipboard();
-  void refreshApps();
-  void refreshWeb();
-  void refreshMemos();
+  // The initial page load already starts one coordinated Promise.all for the
+  // first pages. A config event can arrive while that work is still pending
+  // (the first hotkey reveal); wait for initialize() to finish so we do not
+  // issue a second set of identical IPC/database requests.
+  if (!initialized) return;
+  // The native side sends the current config every time the launcher is
+  // shown. Do not invalidate already loaded empty-query pages on every
+  // show: doing so made the first scope switch after a restart compete with
+  // four duplicate IPC/database requests. Refresh only stale scopes and let
+  // the clipboard/usage update events handle data changes independently.
+  if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
+  if (state.appLoadedQuery !== state.query && !state.appLoading) void refreshApps();
+  if (state.webLoadedQuery !== state.query && !state.webLoading) void refreshWeb();
+  if (state.memoLoadedQuery !== state.query && !state.memoLoading) void refreshMemos();
 });
 
 document.addEventListener("keydown", (e) => {
@@ -1334,7 +1345,11 @@ async function initialize() {
   const [cfg, records, applications, pages, memos, usageSections] = await Promise.all([
     window.weborg.getConfig(),
     enabled("clipboard") ? window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }) : [],
-    enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: 3, includeIcons: false }) : [],
+    // Prime the same page size used by the dedicated 应用 scope. The all-scope
+    // view only renders usage entries, so loading these extra lightweight
+    // metadata rows here avoids a cold IPC/index request on the first switch
+    // to 应用 after a restart.
+    enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: APP_PAGE_SIZE, includeIcons: false }) : [],
     enabled("web") ? window.weborg.pluginSearch("web", { query: "", limit: 12 }) : [],
     enabled("memo") ? window.weborg.pluginSearch("memo", { query: "", limit: 12 }) : [],
     window.weborg.searchUsage("all")
@@ -1347,7 +1362,7 @@ async function initialize() {
   state.appResults = applications || [];
   state.appLoadedQuery = "";
   state.emptyResults.app = state.appResults.slice();
-  state.appHasMore = false;
+  state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
   state.webResults = pages || [];
   state.webLoadedQuery = "";
   state.emptyResults.web = state.webResults.slice();
@@ -1358,6 +1373,7 @@ async function initialize() {
   state.memoHasMore = state.memoResults.length === 12;
   state.usageSections = usageSections || { frequent: [], recent: [] };
   state.usageLoadedScope = "all";
+  initialized = true;
   render();
   focusSearch();
 }
