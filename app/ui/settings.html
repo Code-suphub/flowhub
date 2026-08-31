@@ -31,7 +31,7 @@
         font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
         font-size: 13px;
       }
-      button, input, textarea { font: inherit; }
+      button, input, textarea, select { font: inherit; }
       button { border: 0; }
       .app { height: 100%; display: flex; flex-direction: column; }
       .topbar {
@@ -103,13 +103,14 @@
       }
       .field { display: grid; align-content: start; gap: 6px; }
       .field label { color: var(--muted); font-size: 11px; }
-      input, textarea {
+      input, textarea, select {
         width: 100%; color: var(--ink); outline: 0; border: 1px solid rgba(166, 208, 202, .15);
         border-radius: 8px; background: rgba(4, 13, 18, .52); transition: .16s ease;
       }
-      input { height: 34px; padding: 0 10px; }
+      input, select { height: 34px; padding: 0 10px; }
       textarea { min-height: 82px; padding: 9px 10px; resize: vertical; line-height: 1.55; }
-      input:focus, textarea:focus { border-color: rgba(75, 208, 184, .7); box-shadow: 0 0 0 3px rgba(75, 208, 184, .1); }
+      input:focus, textarea:focus, select:focus { border-color: rgba(75, 208, 184, .7); box-shadow: 0 0 0 3px rgba(75, 208, 184, .1); }
+      select { appearance: none; cursor: pointer; }
       input[readonly] { color: var(--faint); cursor: not-allowed; }
       .switch-field { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; cursor: pointer; }
       .switch-field input { appearance: none; width: 32px; height: 18px; padding: 0; border-radius: 999px; background: #26363c; cursor: pointer; position: relative; }
@@ -536,6 +537,19 @@
                     <div class="field"><label for="scopeShortcutMemo">备忘录</label><input id="scopeShortcutMemo" data-core-scope-shortcut="memo" placeholder="Shift+5" /></div>
                   </div>
                   <div class="field-hint">支持 Shift、Ctrl、Alt、Command 和 CommandOrControl；留空可停用对应快捷键。</div>
+                </div>
+                <div class="settings-block wide">
+                  <div class="settings-block-title">代理客户端适配</div>
+                  <div class="field">
+                    <label for="proxyAdapter">代理信息来源</label>
+                    <select id="proxyAdapter" data-config-field="proxyAdapter">
+                      <option value="auto">自动检测（推荐）</option>
+                      <option value="mihomo">Mihomo / Clash Party</option>
+                      <option value="clash-rest">Clash REST API（ClashX / Clash Verge / sing-box）</option>
+                      <option value="system">仅读取系统代理</option>
+                    </select>
+                    <div class="field-hint">自动模式会优先检测 Mihomo Unix Socket，再尝试常见 Clash REST API；Surge 等未暴露兼容 API 的客户端仍可使用系统代理和出口 IP 检测。</div>
+                  </div>
                 </div>
                 <div class="settings-block wide config-path-block">
                   <div class="settings-block-title">配置文件位置</div>

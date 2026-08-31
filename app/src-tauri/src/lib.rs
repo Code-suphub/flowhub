@@ -58,8 +58,24 @@ fn mihomo_api(path: &str) -> Option<Value> {
 }
 
 #[cfg(target_os = "macos")]
-fn current_mihomo_node() -> Option<Value> {
-    let payload = mihomo_api("/connections")?;
+fn clash_rest_api(path: &str) -> Option<Value> {
+    use std::net::TcpStream;
+    for port in [9090_u16, 9097, 7897] {
+        let Ok(mut stream) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(700)) else { continue };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+        let request = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        if stream.write_all(request.as_bytes()).is_err() { continue; }
+        let mut bytes = Vec::new();
+        if stream.read_to_end(&mut bytes).is_err() { continue; }
+        let text = String::from_utf8_lossy(&bytes);
+        let Some(body) = text.split("\r\n\r\n").nth(1) else { continue };
+        if let Ok(value) = serde_json::from_str(body) { return Some(value); }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn node_from_connections(payload: &Value) -> Option<Value> {
     let connections = payload.get("connections")?.as_array()?;
     let latest = connections
         .iter()
@@ -78,6 +94,17 @@ fn current_mihomo_node() -> Option<Value> {
         "chains": latest.get("chains").cloned().unwrap_or_else(|| json!([])),
         "observedAt": latest.get("start").and_then(Value::as_str).unwrap_or("")
     }))
+}
+
+#[cfg(target_os = "macos")]
+fn current_proxy_node(adapter: &str) -> Option<Value> {
+    match adapter {
+        "system" => None,
+        "mihomo" => node_from_connections(&mihomo_api("/connections")?),
+        "clash-rest" => node_from_connections(&clash_rest_api("/connections")?),
+        _ => mihomo_api("/connections").and_then(|payload| node_from_connections(&payload))
+            .or_else(|| clash_rest_api("/connections").and_then(|payload| node_from_connections(&payload))),
+    }
 }
 
 pub(crate) struct AppState {
@@ -1109,7 +1136,7 @@ fn hide_main_window(app: tauri::AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn get_proxy_info() -> Result<Value, String> {
+fn get_proxy_info(adapter: Option<String>) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("scutil")
@@ -1134,7 +1161,7 @@ fn get_proxy_info() -> Result<Value, String> {
         };
         let mut result = json!({ "http": proxy("HTTP"), "https": proxy("HTTPS"), "socks": proxy("SOCKS") });
         if let Some(object) = result.as_object_mut() {
-            object.insert("node".to_string(), current_mihomo_node().unwrap_or(Value::Null));
+            object.insert("node".to_string(), current_proxy_node(adapter.as_deref().unwrap_or("auto")).unwrap_or(Value::Null));
         }
         return Ok(result);
     }

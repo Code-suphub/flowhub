@@ -20,6 +20,7 @@ const state = {
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
+const PROXY_ADAPTERS = new Set(["auto", "mihomo", "clash-rest", "system"]);
 let draftTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -77,6 +78,7 @@ function normalizeConfig(config) {
   config.plugins.memo.settings ||= {};
   config.plugins.tools ||= { enabled: true, settings: {} };
   config.plugins.tools.settings ||= {};
+  if (!PROXY_ADAPTERS.has(config.plugins.tools.settings.proxyAdapter)) config.plugins.tools.settings.proxyAdapter = "auto";
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
   const ids = new Set();
@@ -506,6 +508,8 @@ function renderSettingsFields() {
     input.value = state.config?.core?.scopeShortcuts?.[input.dataset.coreScopeShortcut] ?? DEFAULT_SCOPE_SHORTCUTS[input.dataset.coreScopeShortcut] ?? "";
   });
   renderConfigPath();
+  const proxyAdapter = $("#proxyAdapter");
+  if (proxyAdapter) proxyAdapter.value = pluginConfig("tools")?.settings?.proxyAdapter || "auto";
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   renderClipboardStorage();
   renderClipboardSummary();
@@ -1217,6 +1221,11 @@ document.addEventListener("input", (event) => {
       clipboard.settings ||= {};
       const days = Number(event.target.value);
       clipboard.settings.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
+    } else if (configField === "proxyAdapter") {
+      const tools = pluginConfig("tools");
+      if (!tools) return;
+      tools.settings ||= {};
+      tools.settings.proxyAdapter = PROXY_ADAPTERS.has(event.target.value) ? event.target.value : "auto";
     } else {
       return;
     }
@@ -1249,6 +1258,14 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.dataset.configField === "proxyAdapter") {
+    const tools = pluginConfig("tools");
+    if (!tools) return;
+    tools.settings ||= {};
+    tools.settings.proxyAdapter = PROXY_ADAPTERS.has(event.target.value) ? event.target.value : "auto";
+    markDirty();
+    return;
+  }
   if (!event.target.dataset.memoField) return;
   if (event.target.dataset.memoField === "category") {
     const memo = materializeMemoItems().find((item) => item.id === state.selectedMemoId);

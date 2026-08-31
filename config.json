@@ -29,7 +29,9 @@
     },
     "tools": {
       "enabled": true,
-      "settings": {}
+      "settings": {
+        "proxyAdapter": "auto"
+      }
     }
   }
 }

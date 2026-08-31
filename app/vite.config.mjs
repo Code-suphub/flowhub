@@ -680,8 +680,18 @@ function localNetworkApi() {
     return null;
   }
 
-  async function currentMihomoNode() {
-    const payload = await mihomoApi("/connections");
+  async function clashRestApi(apiPath) {
+    if (process.platform !== "darwin") return null;
+    for (const port of [9090, 9097, 7897]) {
+      try {
+        const { stdout } = await execFileAsync("curl", ["--noproxy", "*", "-sS", "--max-time", "1", `http://127.0.0.1:${port}${apiPath}`], { timeout: 1500, maxBuffer: 8 * 1024 * 1024, encoding: "utf8" });
+        return JSON.parse(String(stdout || ""));
+      } catch {}
+    }
+    return null;
+  }
+
+  function nodeFromConnections(payload) {
     const connections = Array.isArray(payload?.connections) ? payload.connections : [];
     const latest = connections
       .filter((connection) => connection?.metadata?.remoteDestination)
@@ -693,6 +703,13 @@ function localNetworkApi() {
       chains: Array.isArray(latest.chains) ? latest.chains : [],
       observedAt: latest.start || ""
     };
+  }
+
+  async function currentProxyNode(adapter = "auto") {
+    if (adapter === "system") return null;
+    if (adapter === "mihomo") return nodeFromConnections(await mihomoApi("/connections"));
+    if (adapter === "clash-rest") return nodeFromConnections(await clashRestApi("/connections"));
+    return nodeFromConnections(await mihomoApi("/connections")) || nodeFromConnections(await clashRestApi("/connections"));
   }
 
   return {
@@ -713,7 +730,9 @@ function localNetworkApi() {
             host: values[`${name}Proxy`] || "",
             port: values[`${name}Port`] || ""
           });
-          sendJson(response, 200, { http: proxy("HTTP"), https: proxy("HTTPS"), socks: proxy("SOCKS"), node: await currentMihomoNode() });
+          const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+          const adapter = requestUrl.searchParams.get("adapter") || "auto";
+          sendJson(response, 200, { http: proxy("HTTP"), https: proxy("HTTPS"), socks: proxy("SOCKS"), node: await currentProxyNode(adapter) });
         } catch (error) {
           sendJson(response, 500, { ok: false, error: error.message || "代理检测失败" });
         }

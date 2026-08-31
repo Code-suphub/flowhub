@@ -76,7 +76,9 @@ if (!window.weborg) {
   }
 
   async function lookupProxy() {
-    const response = await fetch("/__weborg/proxy", { cache: "no-store" });
+    const config = await getConfig();
+    const adapter = config?.plugins?.tools?.settings?.proxyAdapter || "auto";
+    const response = await fetch(`/__weborg/proxy?adapter=${encodeURIComponent(adapter)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`代理检测失败：${response.status}`);
     return response.json();
   }

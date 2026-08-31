@@ -109,7 +109,9 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   }
 
   async function lookupProxy() {
-    const details = await invoke("get_proxy_info");
+    const config = await getConfig();
+    const adapter = config?.plugins?.tools?.settings?.proxyAdapter || "auto";
+    const details = await invoke("get_proxy_info", { adapter });
     try {
       const ip = await lookupLocalIp();
       return { ...details, egressIp: ip?.ipv4 || ip?.ipv6 || "" };
