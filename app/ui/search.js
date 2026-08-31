@@ -211,9 +211,9 @@ function dnsSuggestions() {
   if (!base) return [];
   const records = base.answers || [];
   return [
-    ["CNAME", 5],
     ["IPv4", 1],
-    ["IPv6", 28]
+    ["IPv6", 28],
+    ["CNAME", 5]
   ].map(([family, type]) => {
     const addresses = records.filter((answer) => Number(answer.type) === type);
     return {
@@ -812,7 +812,7 @@ function choose(page) {
         const allAnswers = Array.isArray(response?.Answer) ? response.Answer : [];
         const familyType = page.family === "CNAME" ? 5 : page.family === "IPv6" ? 28 : page.family === "IPv4" ? 1 : null;
         const familyAnswers = familyType
-          ? allAnswers.filter((answer) => Number(answer.type) === 5 || Number(answer.type) === familyType)
+          ? allAnswers.filter((answer) => Number(answer.type) === familyType)
           : allAnswers;
         const text = familyAnswers.length
           ? familyAnswers.map((answer) => `${answer.name || page.hostname} ${dnsRecordType(answer.type)} ${answer.data || ""}`.trim()).join("\n")
