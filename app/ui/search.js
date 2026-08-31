@@ -586,17 +586,25 @@ function renderResult(item, index, items) {
   if (item.type === "proxy") {
     const details = item.details;
     const formatEndpoint = (entry) => entry?.enabled && entry.host ? `${entry.host}:${entry.port || ""}` : "未启用";
-    const endpointText = details
-      ? `HTTP ${formatEndpoint(details.http)} · HTTPS ${formatEndpoint(details.https)} · SOCKS ${formatEndpoint(details.socks)}`
-      : "正在读取系统代理…";
-    const egress = details?.egressIp ? ` · 出口 IP ${details.egressIp}` : "";
-    const node = details?.node?.remoteAddress ? ` · 节点 ${details.node.nodeName || "当前连接"} (${details.node.remoteAddress})` : "";
+    const rows = details ? [
+      ["HTTP", formatEndpoint(details.http)],
+      ["HTTPS", formatEndpoint(details.https)],
+      ["SOCKS", formatEndpoint(details.socks)],
+      details.egressIp ? ["出口 IP", details.egressIp] : null,
+      details.node?.remoteAddress ? ["当前节点", `${details.node.nodeName || "当前连接"} · ${details.node.remoteAddress}`] : null
+    ].filter(Boolean) : [];
+    const body = details?.error
+      ? `<span class="proxy-line"><span class="proxy-value">${esc(details.error)}</span></span>`
+      : details
+        ? `<div class="proxy-details">${rows.map(([label, value]) => `<span class="proxy-line"><span class="proxy-label">${esc(label)}</span><span class="proxy-value" title="${esc(value)}">${esc(value)}</span></span>`).join("")}</div>`
+        : `<span class="proxy-line"><span class="proxy-value">正在读取系统代理…</span></span>`;
     return `${usageSection}
-      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+      <div class="result calculation-result proxy-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon calculation">⇄</span>
         <span class="r-body">
           <span class="r-title calculation-value">代理信息</span>
-          <span class="r-meta calculation-expression">${esc(endpointText + egress + node)} · 回车复制详情</span>
+          ${body}
+          <span class="r-meta calculation-expression proxy-hint">回车复制详情</span>
         </span>
         <span class="r-kind calculation">工具</span>
       </div>
