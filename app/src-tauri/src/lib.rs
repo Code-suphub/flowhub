@@ -19,11 +19,27 @@ use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
+#[cfg(target_os = "macos")]
+use tauri_nspanel::{
+    tauri_panel, CollectionBehavior, ManagerExt as PanelManagerExt, PanelLevel, StyleMask,
+    WebviewWindowExt,
+};
 
 mod clipboard;
 #[cfg(target_os = "macos")]
 mod macos_hotkey;
 mod updater;
+
+#[cfg(target_os = "macos")]
+tauri_panel! {
+    panel!(FlowHubLauncherPanel {
+        config: {
+            can_become_key_window: true,
+            can_become_main_window: false,
+            is_floating_panel: true
+        }
+    })
+}
 
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
 static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
@@ -1533,6 +1549,7 @@ fn toggle_main(app: &tauri::AppHandle) {
     // currently active fullscreen app.
     #[cfg(not(target_os = "macos"))]
     let _ = window.set_visible_on_all_workspaces(true);
+    #[cfg(not(target_os = "macos"))]
     let _ = window.set_always_on_top(true);
     let _ = window.center();
     LAST_MAIN_SHOW_MILLIS.store(
@@ -1553,10 +1570,12 @@ fn toggle_main(app: &tauri::AppHandle) {
             eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
         }
     }
-    // Showing and focusing are dispatched to AppKit. A second focus request after
-    // the show has landed avoids an LSUIElement window remaining visible on a
-    // different Space without becoming the key window.
+    // Showing and focusing are dispatched to the windowing system. A second
+    // focus request is only needed for regular windows; the macOS NSPanel is
+    // non-activating and makes itself key without switching Spaces.
+    #[cfg(not(target_os = "macos"))]
     let focus_window = window.clone();
+    #[cfg(not(target_os = "macos"))]
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(40));
         if focus_window.is_visible().unwrap_or(false) && !focus_window.is_focused().unwrap_or(false)
@@ -1577,56 +1596,37 @@ fn toggle_main(app: &tauri::AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn show_macos_window(window: &tauri::WebviewWindow) {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplication, NSWindow, NSWindowCollectionBehavior};
-
-    let window = window.clone();
     let handle = window.app_handle().clone();
+    let panel_handle = handle.clone();
     let _ = handle.run_on_main_thread(move || {
-        let Some(main_thread) = MainThreadMarker::new() else {
-            eprintln!("[flowhub-tauri] AppKit 置前失败：当前不在主线程");
-            return;
-        };
-        let Ok(raw_window) = window.ns_window() else {
-            eprintln!("[flowhub-tauri] AppKit 置前失败：无法获取 NSWindow");
-            return;
-        };
-        let native_window = unsafe { &*(raw_window.cast::<NSWindow>()) };
-        let mut behavior = native_window.collectionBehavior();
-        // Keep the launcher attached to every Space instead of moving the
-        // user out of a fullscreen app's Space. `FullScreenAuxiliary` lets it
-        // participate in another app's fullscreen Space, while
-        // `CanJoinAllApplications` prevents AppKit from treating it as
-        // belonging only to FlowHub's Space. The transient/ignore-cycle flags
-        // match launcher/palette window behavior.
-        behavior.insert(NSWindowCollectionBehavior::CanJoinAllSpaces);
-        behavior.insert(
-            NSWindowCollectionBehavior::FullScreenAuxiliary
-                | NSWindowCollectionBehavior::CanJoinAllApplications
-                | NSWindowCollectionBehavior::Transient
-                | NSWindowCollectionBehavior::IgnoresCycle,
-        );
-        native_window.setCollectionBehavior(behavior);
-        let application = NSApplication::sharedApplication(main_thread);
-        // FlowHub is an LSUIElement/accessory app, so cooperative activation
-        // can be ignored while another app owns a fullscreen Space. The
-        // explicit activation call is deprecated by Apple but remains the
-        // reliable path for palette-style accessory windows.
-        #[allow(deprecated)]
-        application.activateIgnoringOtherApps(true);
-        // Configure the collection behavior before showing or focusing the
-        // window. If AppKit first sees the hidden window on FlowHub's desktop
-        // Space, activating it can switch away from a fullscreen app before
-        // the behavior change takes effect.
-        if let Err(error) = window.show() {
-            eprintln!("[flowhub-tauri] 显示主窗口失败：{error}");
-        }
-        native_window.orderFrontRegardless();
-        native_window.makeKeyAndOrderFront(None);
-        if let Err(error) = window.set_focus() {
-            eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
+        match panel_handle.get_webview_panel("main") {
+            Ok(panel) => panel.show_and_make_key(),
+            Err(error) => eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}"),
         }
     });
+}
+
+#[cfg(target_os = "macos")]
+fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let panel = window
+        .to_panel::<FlowHubLauncherPanel>()
+        .map_err(|error| error.to_string())?;
+    panel.set_level(PanelLevel::PopUpMenu.value());
+    panel.set_floating_panel(true);
+    panel.set_hides_on_deactivate(false);
+    // A non-activating NSPanel can become the key window and receive search
+    // input without activating FlowHub or switching away from another app's
+    // fullscreen Space.
+    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+    panel.set_collection_behavior(
+        CollectionBehavior::new()
+            .full_screen_auxiliary()
+            .can_join_all_spaces()
+            .transient()
+            .ignores_cycle()
+            .into(),
+    );
+    Ok(())
 }
 
 fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
@@ -1681,6 +1681,9 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init());
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
 
     let hotkey_down = Arc::new(AtomicBool::new(false));
     let last_hotkey_trigger = Arc::new(Mutex::new(None::<Instant>));
@@ -1773,6 +1776,8 @@ pub fn run() {
             println!("[flowhub-tauri] 登录项状态：{autostart_state}");
 
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                configure_macos_panel(&window).map_err(std::io::Error::other)?;
                 #[cfg(not(target_os = "macos"))]
                 let _ = window.set_visible_on_all_workspaces(true);
                 let main_window = window.clone();
