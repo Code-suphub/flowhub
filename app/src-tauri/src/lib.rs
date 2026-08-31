@@ -1527,6 +1527,11 @@ fn toggle_main(app: &tauri::AppHandle) {
         let _ = window.hide();
         return;
     }
+    // On macOS, the native collection behavior is configured below.  The
+    // generic Tauri helper maps to `CanJoinAllSpaces`, which can leave an
+    // agent window on the desktop Space instead of the Space containing the
+    // currently active fullscreen app.
+    #[cfg(not(target_os = "macos"))]
     let _ = window.set_visible_on_all_workspaces(true);
     let _ = window.set_always_on_top(true);
     let _ = window.center();
@@ -1569,7 +1574,7 @@ fn toggle_main(app: &tauri::AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
-    use objc2::{runtime::NSObjectProtocol, MainThreadMarker};
+    use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSWindow, NSWindowCollectionBehavior};
 
     let window = window.clone();
@@ -1584,20 +1589,31 @@ fn bring_macos_window_to_front(window: &tauri::WebviewWindow) {
             return;
         };
         let native_window = unsafe { &*(raw_window.cast::<NSWindow>()) };
-        let behavior = native_window.collectionBehavior()
-            | NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        let mut behavior = native_window.collectionBehavior();
+        // Move the launcher into the Space that is active when the shortcut is
+        // pressed. `FullScreenAuxiliary` lets it participate in another app's
+        // fullscreen Space, while `CanJoinAllApplications` prevents AppKit
+        // from treating it as belonging only to FlowHub's Space.  The
+        // transient/ignore-cycle flags match launcher/palette window behavior.
+        behavior.remove(NSWindowCollectionBehavior::CanJoinAllSpaces);
+        behavior.insert(
+            NSWindowCollectionBehavior::MoveToActiveSpace
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::CanJoinAllApplications
+                | NSWindowCollectionBehavior::Transient
+                | NSWindowCollectionBehavior::IgnoresCycle,
+        );
         native_window.setCollectionBehavior(behavior);
         native_window.orderFrontRegardless();
         native_window.makeKeyAndOrderFront(None);
 
         let application = NSApplication::sharedApplication(main_thread);
-        if application.respondsToSelector(objc2::sel!(activate)) {
-            application.activate();
-        } else {
-            #[allow(deprecated)]
-            application.activateIgnoringOtherApps(true);
-        }
+        // FlowHub is an LSUIElement/accessory app, so cooperative activation
+        // can be ignored while another app owns a fullscreen Space. The
+        // explicit activation call is deprecated by Apple but remains the
+        // reliable path for palette-style accessory windows.
+        #[allow(deprecated)]
+        application.activateIgnoringOtherApps(true);
     });
 }
 
@@ -1745,6 +1761,7 @@ pub fn run() {
             println!("[flowhub-tauri] 登录项状态：{autostart_state}");
 
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(not(target_os = "macos"))]
                 let _ = window.set_visible_on_all_workspaces(true);
                 let main_window = window.clone();
                 let main_has_focused = Arc::new(AtomicBool::new(false));
