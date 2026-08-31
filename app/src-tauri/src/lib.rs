@@ -150,6 +150,11 @@ fn normalize_migrated_config(mut config: Value) -> Value {
             settings.insert("storagePath".to_string(), Value::String(String::new()));
         }
     }
+    if let Some(plugins) = plugins.as_object_mut() {
+        plugins
+            .entry("tools")
+            .or_insert_with(|| json!({"enabled": true, "settings": {}}));
+    }
     config
 }
 
@@ -1058,6 +1063,38 @@ fn hide_main_window(app: tauri::AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn get_proxy_info() -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("scutil")
+            .arg("--proxy")
+            .output()
+            .map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            return Err("无法读取 macOS 系统代理".to_string());
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let values: HashMap<String, String> = text
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .map(|(key, value)| (key.trim().to_string(), value.trim().to_string()))
+            .collect();
+        let proxy = |name: &str| {
+            json!({
+                "enabled": values.get(&format!("{name}Enable")).map(|value| value == "1").unwrap_or(false),
+                "host": values.get(&format!("{name}Proxy")).cloned().unwrap_or_default(),
+                "port": values.get(&format!("{name}Port")).cloned().unwrap_or_default()
+            })
+        };
+        return Ok(json!({ "http": proxy("HTTP"), "https": proxy("HTTPS"), "socks": proxy("SOCKS") }));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(json!({ "http": { "enabled": false, "host": "", "port": "" }, "https": { "enabled": false, "host": "", "port": "" }, "socks": { "enabled": false, "host": "", "port": "" } }))
+    }
+}
+
+#[tauri::command]
 fn activate_target(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -1691,6 +1728,7 @@ pub fn run() {
             load_application_icons,
             activate_target,
             hide_main_window,
+            get_proxy_info,
             search_usage,
             open_settings,
             open_accessibility_settings,
@@ -1731,6 +1769,7 @@ mod tests {
             Some(&json!(""))
         );
         assert_eq!(migrated.pointer("/core/hotkey"), Some(&json!("Alt+Space")));
+        assert_eq!(migrated.pointer("/plugins/tools/enabled"), Some(&json!(true)));
     }
 
     #[test]

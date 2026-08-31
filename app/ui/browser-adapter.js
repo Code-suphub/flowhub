@@ -42,6 +42,45 @@ if (!window.weborg) {
     return result.icons || {};
   }
 
+  async function lookupDns(hostname) {
+    const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`DNS 查询失败：${response.status}`);
+    return response.json();
+  }
+
+  async function lookupLocalIp() {
+    const local = await fetch("/__weborg/local-ip", { cache: "no-store" });
+    if (local.ok) {
+      const body = await local.json();
+      if (body?.ipv4 || body?.ipv6) return body;
+    }
+    const readIp = async (endpoint) => {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) throw new Error("IP endpoint unavailable");
+      const text = (await response.text()).trim();
+      try { return JSON.parse(text).ip || ""; } catch { return text; }
+    };
+    const [ipv4, ipv6] = await Promise.allSettled([readIp("https://api4.ipify.org?format=json"), readIp("https://api6.ipify.org?format=json")]);
+    if (ipv4.status === "fulfilled" || ipv6.status === "fulfilled") {
+      return { ipv4: ipv4.status === "fulfilled" ? ipv4.value : "", ipv6: ipv6.status === "fulfilled" ? ipv6.value : "" };
+    }
+    for (const endpoint of ["https://ifconfig.me/ip", "https://icanhazip.com", "https://api.ipify.org?format=json"]) {
+      try {
+        const fallback = await fetch(endpoint, { cache: "no-store" });
+        if (!fallback.ok) continue;
+        const text = (await fallback.text()).trim();
+        try { return { ipv4: JSON.parse(text).ip || "" }; } catch { return { ipv4: text }; }
+      } catch {}
+    }
+    throw new Error("本机 IP 查询失败");
+  }
+
+  async function lookupProxy() {
+    const response = await fetch("/__weborg/proxy", { cache: "no-store" });
+    if (!response.ok) throw new Error(`代理检测失败：${response.status}`);
+    return response.json();
+  }
+
   let configPromise;
   function getConfig() {
     if (!configPromise) {
@@ -95,7 +134,7 @@ if (!window.weborg) {
     const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
-      available: ["web", "clipboard", "app", "memo"].includes(plugin.id),
+      available: ["web", "clipboard", "app", "memo", "tools"].includes(plugin.id),
       enabled: config.plugins?.[plugin.id]?.enabled ?? plugin.defaultEnabled !== false
     }));
   }
@@ -165,6 +204,9 @@ if (!window.weborg) {
     listPlugins,
     pluginSearch,
     loadAppIcons,
+    lookupDns,
+    lookupLocalIp,
+    lookupProxy,
     pluginAction,
     searchUsage: usageSections,
     async openSettings(options = {}) {

@@ -663,9 +663,83 @@ function localClipboardApi() {
   };
 }
 
+function localNetworkApi() {
+  return {
+    name: "flowhub-local-network-api",
+    configureServer(server) {
+      server.middlewares.use("/__weborg/proxy", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Method not allowed");
+          return;
+        }
+        try {
+          const { stdout } = await execFileAsync("scutil", ["--proxy"], { timeout: 3000, encoding: "utf8" });
+          const values = Object.fromEntries(String(stdout || "").split("\n").map((line) => line.match(/^\s*([A-Za-z0-9]+)\s*:\s*(.*)\s*$/)).filter(Boolean).map((match) => [match[1], match[2]]));
+          const proxy = (name) => ({
+            enabled: values[`${name}Enable`] === "1",
+            host: values[`${name}Proxy`] || "",
+            port: values[`${name}Port`] || ""
+          });
+          sendJson(response, 200, { http: proxy("HTTP"), https: proxy("HTTPS"), socks: proxy("SOCKS") });
+        } catch (error) {
+          sendJson(response, 500, { ok: false, error: error.message || "代理检测失败" });
+        }
+      });
+      server.middlewares.use("/__weborg/local-ip", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Method not allowed");
+          return;
+        }
+        let geo = {};
+        try {
+          const result = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(6000) });
+          if (result.ok) geo = await result.json();
+        } catch {}
+        const fetchIp = async (endpoint) => {
+          const result = await fetch(endpoint, { signal: AbortSignal.timeout(6000) });
+          if (!result.ok) throw new Error("IP endpoint unavailable");
+          const text = (await result.text()).trim();
+          try { return JSON.parse(text).ip || ""; } catch { return text; }
+        };
+        const [ipv4, ipv6] = await Promise.allSettled([
+          fetchIp("https://api4.ipify.org?format=json"),
+          fetchIp("https://api6.ipify.org?format=json")
+        ]);
+        const body = {
+          ...geo,
+          ipv4: ipv4.status === "fulfilled" ? ipv4.value : "",
+          ipv6: ipv6.status === "fulfilled" ? ipv6.value : ""
+        };
+        if (!body.ipv4) {
+          for (const endpoint of ["https://ifconfig.me/ip", "https://icanhazip.com"]) {
+            try {
+              const result = await fetch(endpoint, { signal: AbortSignal.timeout(6000) });
+              if (result.ok) {
+                body.ipv4 = (await result.text()).trim();
+                break;
+              }
+            } catch {}
+          }
+        }
+        if (body.ipv4 || body.ipv6) {
+          response.setHeader("content-type", "application/json; charset=utf-8");
+          response.setHeader("cache-control", "no-store");
+          response.end(JSON.stringify(body));
+          return;
+        }
+        sendJson(response, 502, { ok: false, error: "本机 IP 查询失败" });
+      });
+    }
+  };
+}
+
 export default defineConfig({
   root: uiDirectory,
-  plugins: [localConfigApi(), localApplicationApi(), localClipboardApi()],
+  plugins: [localConfigApi(), localApplicationApi(), localClipboardApi(), localNetworkApi()],
   server: {
     host: "127.0.0.1",
     port: 5173,

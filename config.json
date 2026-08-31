@@ -26,6 +26,10 @@
     "memo": {
       "enabled": true,
       "settings": {}
+    },
+    "tools": {
+      "enabled": true,
+      "settings": {}
     }
   }
 }

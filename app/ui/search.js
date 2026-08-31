@@ -14,13 +14,16 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0 };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, localIpResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
 let webSearchToken = 0;
 let memoSearchToken = 0;
 let usageSearchToken = 0;
+let dnsSearchToken = 0;
+let localIpSearchToken = 0;
+let proxySearchToken = 0;
 let clipboardSearchTimer = null;
 let scopeTabHeld = false;
 let scopeTabUsedWithArrow = false;
@@ -28,6 +31,9 @@ let scopeTabTapOffset = 1;
 let searchInputComposing = false;
 let searchCompositionEndedAt = -Infinity;
 let actionStatusTimer = null;
+let dnsSearchTimer = null;
+let localIpSearchTimer = null;
+let proxySearchTimer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -96,6 +102,116 @@ function calculationSuggestion() {
   const expression = state.query.trim();
   const result = calculateExpression(expression);
   return result === null ? null : { type: "calculation", expression, result, id: `calculation:${expression}` };
+}
+
+function formatTimestamp(value, unit) {
+  const raw = BigInt(value);
+  const milliseconds = unit === "s" ? raw * 1000n : unit === "ms" ? raw : unit === "us" ? raw / 1000n : raw / 1000000n;
+  const numericMilliseconds = Number(milliseconds);
+  if (!Number.isFinite(numericMilliseconds)) return null;
+  const date = new Date(numericMilliseconds);
+  const year = date.getUTCFullYear();
+  if (date.getTime() < Date.UTC(2000, 0, 1) || date.getTime() > Date.UTC(2100, 0, 1) || year < 2000 || year > 2100) return null;
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function timestampSuggestion() {
+  const expression = state.query.trim();
+  if (!/^(?:\d{10}|\d{13}|\d{16}|\d{19})$/.test(expression)) return null;
+  const unit = expression.length === 10 ? "s" : expression.length === 13 ? "ms" : expression.length === 16 ? "us" : "ns";
+  const result = formatTimestamp(expression, unit);
+  return result ? { type: "timestamp", expression, result, unit, id: `timestamp:${expression}` } : null;
+}
+
+function decodeBase64Url(value) {
+  const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const bytes = Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function jwtSuggestion() {
+  const expression = state.query.trim();
+  if (expression.length > 16384 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(expression)) return null;
+  try {
+    const header = JSON.parse(decodeBase64Url(expression.split(".")[0]));
+    const payload = JSON.parse(decodeBase64Url(expression.split(".")[1]));
+    if (!header || typeof header !== "object" || !payload || typeof payload !== "object") return null;
+    return { type: "jwt", expression, result: JSON.stringify({ header, payload }, null, 2), header, payload, id: `jwt:${expression}` };
+  } catch {
+    return null;
+  }
+}
+
+function ipSuggestion() {
+  const expression = state.query.trim();
+  const ipv4 = expression.split(".").length === 4
+    && expression.split(".").every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+  const ipv6Segments = expression.split(":");
+  const ipv6NonEmpty = ipv6Segments.filter(Boolean);
+  const ipv6Compressed = expression.includes("::");
+  const ipv6 = expression.includes(":")
+    && /^[0-9a-f:]+$/i.test(expression)
+    && expression.length <= 45
+    && (expression.match(/::/g) || []).length <= 1
+    && ipv6NonEmpty.length <= 8
+    && (ipv6Compressed ? ipv6NonEmpty.length < 8 : ipv6Segments.length === 8)
+    && ipv6NonEmpty.every((segment) => segment.length <= 4);
+  if (!ipv4 && !ipv6) return null;
+  return { type: "ip", expression, result: expression, id: `ip:${expression}` };
+}
+
+function isLocalIpQuery(expression = state.query) {
+  return /^(?:本机\s*ip|我的\s*ip|my\s*ip|local\s*ip)$/i.test(String(expression).trim());
+}
+
+function localIpSuggestions() {
+  const expression = state.query.trim();
+  if (!isLocalIpQuery(expression)) return [];
+  const details = state.localIpResult;
+  return ["IPv4", "IPv6"].map((family) => ({
+    type: "local-ip",
+    family,
+    expression,
+    result: details?.[family.toLowerCase()] || `${family} 不可用`,
+    details,
+    id: `local-ip:${family}`
+  }));
+}
+
+function proxySuggestion() {
+  const expression = state.query.trim();
+  if (!/^(?:代理|代理信息|proxy|proxy\s+info)$/i.test(expression)) return null;
+  return { type: "proxy", expression, details: state.proxyResult, result: "代理信息", id: "proxy-info" };
+}
+
+function dnsSuggestion() {
+  const expression = state.query.trim();
+  if (!/^dns\s+/i.test(expression)) return null;
+  const input = expression.replace(/^dns\s+/i, "").trim();
+  if (!input) return null;
+  let hostname = input;
+  try {
+    hostname = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`).hostname;
+  } catch {
+    return null;
+  }
+  if (!hostname || !/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(hostname)) return null;
+  const resolved = state.dnsResult?.hostname === hostname ? state.dnsResult : null;
+  return { type: "dns", expression, hostname, result: hostname, answers: resolved?.answers || [], id: `dns:${hostname}` };
+}
+
+function dnsRecordType(value) {
+  return ({ 1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA" })[Number(value)] || String(value || "?");
+}
+
+function toolSuggestions() {
+  if (!pluginEnabled("tools")) return [];
+  return [dnsSuggestion(), ...localIpSuggestions(), proxySuggestion(), timestampSuggestion(), jwtSuggestion(), ipSuggestion(), calculationSuggestion()].filter(Boolean);
 }
 
 async function copyText(text) {
@@ -241,7 +357,7 @@ function withoutUsageDuplicates(items, usedItems) {
 }
 
 function matches() {
-  const calculation = state.scope === "clipboard" ? null : calculationSuggestion();
+  const tools = state.scope === "clipboard" ? [] : toolSuggestions();
   const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
   const addWeb = pluginEnabled("web") && state.query.trim() ? webAddSuggestion(pages) : null;
   const clips = pluginEnabled("clipboard") ? clipboardMatches() : [];
@@ -250,12 +366,12 @@ function matches() {
   const usages = usageMatches();
   if (state.scope === "web") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(pages, usages)];
-    return calculation ? [calculation, ...(addWeb ? [addWeb] : []), ...pages] : (addWeb ? [addWeb, ...pages] : pages);
+    return tools.length ? [...tools, ...(addWeb ? [addWeb] : []), ...pages] : (addWeb ? [addWeb, ...pages] : pages);
   }
   if (state.scope === "clipboard") return clips;
   if (state.scope === "app") {
     if (!state.query.trim()) return [...usages, ...withoutUsageDuplicates(apps, usages)];
-    return calculation ? [calculation, ...apps] : apps;
+    return tools.length ? [...tools, ...apps] : apps;
   }
   if (state.scope === "memo") return memos;
   if (!state.query.trim()) {
@@ -265,7 +381,7 @@ function matches() {
   const appResults = state.query.trim() ? apps.slice(0, 3) : [];
   const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
   const regularLimit = appResults.length || memoResults.length ? 3 : 6;
-  return [...(calculation ? [calculation] : []), ...(addWeb ? [addWeb] : []), ...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
+  return [...tools, ...(addWeb ? [addWeb] : []), ...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
 }
 
 function usageIndices(items, section) {
@@ -394,6 +510,97 @@ function renderResult(item, index, items) {
       </div>
     `;
   }
+  if (item.type === "timestamp") {
+    return `${usageSection}
+      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">◷</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">${esc(item.result)}</span>
+          <span class="r-meta calculation-expression">时间戳 · ${esc(item.expression)}（${esc(item.unit)}）</span>
+        </span>
+        <span class="r-kind calculation">转换</span>
+      </div>
+    `;
+  }
+  if (item.type === "jwt") {
+    const subject = item.payload?.sub || item.payload?.iss || "header + payload";
+    return `${usageSection}
+      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">◇</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">JWT 解析</span>
+          <span class="r-meta calculation-expression">${esc(subject)} · 回车复制 JSON</span>
+        </span>
+        <span class="r-kind calculation">工具</span>
+      </div>
+    `;
+  }
+  if (item.type === "ip") {
+    return `${usageSection}
+      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">⌁</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">${esc(item.result)}</span>
+          <span class="r-meta calculation-expression">IP 地址 · 回车复制</span>
+        </span>
+        <span class="r-kind calculation">识别</span>
+      </div>
+    `;
+  }
+  if (item.type === "local-ip") {
+    const details = item.details;
+    const location = [details?.city, details?.region, details?.country_name].filter(Boolean).join(" · ");
+    const address = details?.[item.family.toLowerCase()];
+    const infoText = details?.error
+      ? "查询失败 · 请检查网络"
+      : address
+        ? `${location || "公网地址"} · 回车复制详情`
+        : details ? `当前网络未提供 ${item.family} 地址` : "正在查询本机 IP…";
+    return `${usageSection}
+      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">⌁</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">${esc(item.family)} · ${esc(address || item.result)}</span>
+          <span class="r-meta calculation-expression">${esc(infoText)}</span>
+        </span>
+        <span class="r-kind calculation">本机 IP</span>
+      </div>
+    `;
+  }
+  if (item.type === "dns") {
+    const dnsResolved = state.dnsResult?.hostname === item.hostname;
+    const answerText = item.answers?.length
+      ? item.answers.slice(0, 3).map((answer) => `${dnsRecordType(answer.type)} ${answer.data || ""}`.trim()).join(" · ")
+      : dnsResolved ? "无 DNS 记录" : "正在查询 DNS…";
+    return `${usageSection}
+      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">⌁</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">DNS · ${esc(item.hostname)}</span>
+          <span class="r-meta calculation-expression">${esc(answerText)} · 回车复制完整记录</span>
+        </span>
+        <span class="r-kind calculation">工具</span>
+      </div>
+    `;
+  }
+  if (item.type === "proxy") {
+    const details = item.details;
+    const formatEndpoint = (entry) => entry?.enabled && entry.host ? `${entry.host}:${entry.port || ""}` : "未启用";
+    const endpointText = details
+      ? `HTTP ${formatEndpoint(details.http)} · HTTPS ${formatEndpoint(details.https)} · SOCKS ${formatEndpoint(details.socks)}`
+      : "正在读取系统代理…";
+    const egress = details?.egressIp ? ` · 出口 IP ${details.egressIp}` : "";
+    return `${usageSection}
+      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">⇄</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">代理信息</span>
+          <span class="r-meta calculation-expression">${esc(endpointText + egress)} · 回车复制详情</span>
+        </span>
+        <span class="r-kind calculation">工具</span>
+      </div>
+    `;
+  }
   if (item.type === "web-add") {
     return `
       <div class="result web-add-result ${index === state.index ? "active" : ""}" data-i="${index}">
@@ -518,10 +725,56 @@ function render({ preserveScroll = false } = {}) {
 }
 
 function choose(page) {
-  if (page?.type === "calculation") {
+  if (["calculation", "timestamp", "jwt", "ip"].includes(page?.type)) {
     void copyText(page.result)
       .then(() => showActionStatus("已复制"))
       .catch(() => showActionStatus("复制失败"));
+    return;
+  }
+  if (page?.type === "local-ip") {
+    const lookupLocalIp = window.weborg?.lookupLocalIp;
+    if (typeof lookupLocalIp !== "function") {
+      showActionStatus("本机 IP 查询不可用");
+      return;
+    }
+    const copyResult = (details) => {
+      const text = details?.ipv4 || details?.ipv6 || details?.ip
+        ? [`IPv4: ${details.ipv4 || "无"}`, `IPv6: ${details.ipv6 || "无"}`, details.city && `城市: ${details.city}`, details.region && `区域: ${details.region}`, details.country_name && `国家/地区: ${details.country_name}`, details.org && `运营商: ${details.org}`].filter(Boolean).join("\n")
+        : "本机 IP 查询失败";
+      return copyText(text);
+    };
+    void lookupLocalIp().then(copyResult).then(() => showActionStatus("本机 IP 已复制")).catch(() => showActionStatus("本机 IP 查询失败"));
+    return;
+  }
+  if (page?.type === "proxy") {
+    const lookupProxy = window.weborg?.lookupProxy;
+    if (typeof lookupProxy !== "function") {
+      showActionStatus("代理检测不可用");
+      return;
+    }
+    void lookupProxy().then((details) => {
+      const endpoint = (name, entry) => `${name}: ${entry?.enabled && entry.host ? `${entry.host}:${entry.port || ""}` : "未启用"}`;
+      const text = [endpoint("HTTP", details?.http), endpoint("HTTPS", details?.https), endpoint("SOCKS", details?.socks), details?.egressIp && `出口 IP: ${details.egressIp}`].filter(Boolean).join("\n");
+      return copyText(text);
+    }).then(() => showActionStatus("代理信息已复制")).catch(() => showActionStatus("代理检测失败"));
+    return;
+  }
+  if (page?.type === "dns") {
+    const lookupDns = window.weborg?.lookupDns;
+    if (typeof lookupDns !== "function") {
+      showActionStatus("DNS 查询不可用");
+      return;
+    }
+    void lookupDns(page.hostname)
+      .then((response) => {
+        const answers = Array.isArray(response?.Answer) ? response.Answer : [];
+        const text = answers.length
+          ? answers.map((answer) => `${answer.name || page.hostname} ${dnsRecordType(answer.type)} ${answer.data || ""}`.trim()).join("\n")
+          : `${page.hostname}\n无 DNS 记录`;
+        return copyText(text);
+      })
+      .then(() => showActionStatus("DNS 结果已复制"))
+      .catch(() => showActionStatus("DNS 查询失败"));
     return;
   }
   if (page?.type === "web-add") {
@@ -542,13 +795,79 @@ function choose(page) {
   });
 }
 
+function queueDnsLookup() {
+  clearTimeout(dnsSearchTimer);
+  const token = ++dnsSearchToken;
+  state.dnsResult = null;
+  const suggestion = dnsSuggestion();
+  if (!suggestion || typeof window.weborg?.lookupDns !== "function") return;
+  dnsSearchTimer = setTimeout(async () => {
+    try {
+      const response = await window.weborg.lookupDns(suggestion.hostname);
+      if (token !== dnsSearchToken || state.query.trim() !== suggestion.expression) return;
+      state.dnsResult = {
+        hostname: suggestion.hostname,
+        answers: Array.isArray(response?.Answer) ? response.Answer : []
+      };
+      render();
+    } catch {
+      if (token === dnsSearchToken) {
+        state.dnsResult = { hostname: suggestion.hostname, answers: [] };
+        render();
+      }
+    }
+  }, 220);
+}
+
+function queueLocalIpLookup() {
+  clearTimeout(localIpSearchTimer);
+  const token = ++localIpSearchToken;
+  state.localIpResult = null;
+  const expression = state.query.trim();
+  if (!isLocalIpQuery(expression) || typeof window.weborg?.lookupLocalIp !== "function") return;
+  localIpSearchTimer = setTimeout(async () => {
+    try {
+      const result = await window.weborg.lookupLocalIp();
+      if (token !== localIpSearchToken || state.query.trim() !== expression) return;
+      state.localIpResult = result?.ipv4 || result?.ipv6 || result?.ip ? result : { error: "查询失败" };
+      render();
+    } catch {
+      if (token === localIpSearchToken) {
+        state.localIpResult = { error: "查询失败" };
+        render();
+      }
+    }
+  }, 220);
+}
+
+function queueProxyLookup() {
+  clearTimeout(proxySearchTimer);
+  const token = ++proxySearchToken;
+  state.proxyResult = null;
+  const suggestion = proxySuggestion();
+  if (!suggestion || typeof window.weborg?.lookupProxy !== "function") return;
+  proxySearchTimer = setTimeout(async () => {
+    try {
+      const details = await window.weborg.lookupProxy();
+      if (token !== proxySearchToken || state.query.trim() !== suggestion.expression) return;
+      state.proxyResult = details || { error: "检测失败" };
+      render();
+    } catch {
+      if (token === proxySearchToken) {
+        state.proxyResult = { error: "检测失败" };
+        render();
+      }
+    }
+  }, 220);
+}
+
 function renderPluginScopes(plugins) {
-  state.plugins = (plugins || []).filter((plugin) => plugin.enabled && plugin.available && plugin.searchable).sort((a, b) => a.order - b.order);
-  scopeOrder = ["all", ...state.plugins.map((plugin) => plugin.id)];
+  state.plugins = (plugins || []).filter((plugin) => plugin.enabled && plugin.available).sort((a, b) => a.order - b.order);
+  scopeOrder = ["all", ...state.plugins.filter((plugin) => plugin.searchable).map((plugin) => plugin.id)];
   scopeRow.querySelectorAll("[data-scope]").forEach((button) => button.remove());
   scopeRow.insertAdjacentHTML("beforeend", [
     `<button class="scope-button active" data-scope="all">全部</button>`,
-    ...state.plugins.map((plugin) => `<button class="scope-button" data-scope="${esc(plugin.id)}">${esc(plugin.name)}</button>`)
+    ...state.plugins.filter((plugin) => plugin.searchable).map((plugin) => `<button class="scope-button" data-scope="${esc(plugin.id)}">${esc(plugin.name)}</button>`)
   ].join(""));
 }
 
@@ -909,6 +1228,9 @@ q.addEventListener("input", () => {
   invalidateClipboardPaging();
   invalidatePluginPaging();
   state.query = q.value;
+  queueDnsLookup();
+  queueLocalIpLookup();
+  queueProxyLookup();
   if (!state.query.trim()) {
     state.clipboardResults = state.emptyResults.clipboard.slice();
     state.appResults = state.emptyResults.app.slice();
@@ -966,6 +1288,18 @@ function prepareForShow() {
   if (q) q.value = "";
   state.query = "";
   state.index = 0;
+  clearTimeout(dnsSearchTimer);
+  clearTimeout(localIpSearchTimer);
+  clearTimeout(proxySearchTimer);
+  dnsSearchToken += 1;
+  localIpSearchToken += 1;
+  proxySearchToken += 1;
+  state.dnsResult = null;
+  state.localIpResult = null;
+  state.proxyResult = null;
+  clearTimeout(dnsSearchTimer);
+  dnsSearchToken += 1;
+  state.dnsResult = null;
   invalidateClipboardPaging();
   invalidatePluginPaging();
   render();

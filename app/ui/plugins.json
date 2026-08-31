@@ -47,5 +47,17 @@
     "settingsHint": "命令速查",
     "settingsOrder": 40,
     "order": 40
+  },
+  {
+    "id": "tools",
+    "name": "智能工具",
+    "description": "识别计算表达式、时间戳和 JWT 等固定格式内容",
+    "icon": "✦",
+    "defaultEnabled": true,
+    "searchable": false,
+    "settingsPanel": "",
+    "settingsHint": "识别设置",
+    "settingsOrder": 50,
+    "order": 50
   }
 ]

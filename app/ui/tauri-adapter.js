@@ -36,7 +36,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
-      available: ["web", "clipboard", "app", "memo"].includes(plugin.id),
+      available: ["web", "clipboard", "app", "memo", "tools"].includes(plugin.id),
       enabled: config.plugins?.[plugin.id]?.enabled ?? plugin.defaultEnabled !== false
     }));
   }
@@ -75,6 +75,49 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     return invoke("load_application_icons", { paths: uniquePaths });
   }
 
+  async function lookupDns(hostname) {
+    const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`DNS 查询失败：${response.status}`);
+    return response.json();
+  }
+
+  async function lookupLocalIp() {
+    let geo = {};
+    try {
+      const response = await fetch("https://ipapi.co/json/", { cache: "no-store" });
+      if (response.ok) geo = await response.json();
+    } catch {}
+    const readIp = async (endpoint) => {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) throw new Error("IP endpoint unavailable");
+      const text = (await response.text()).trim();
+      try { return JSON.parse(text).ip || ""; } catch { return text; }
+    };
+    const [ipv4, ipv6] = await Promise.allSettled([readIp("https://api4.ipify.org?format=json"), readIp("https://api6.ipify.org?format=json")]);
+    if (ipv4.status === "fulfilled" || ipv6.status === "fulfilled") {
+      return { ...geo, ipv4: ipv4.status === "fulfilled" ? ipv4.value : "", ipv6: ipv6.status === "fulfilled" ? ipv6.value : "" };
+    }
+    for (const endpoint of ["https://ifconfig.me/ip", "https://icanhazip.com", "https://api.ipify.org?format=json", "https://api64.ipify.org?format=json"]) {
+      try {
+        const response = await fetch(endpoint, { cache: "no-store" });
+        if (!response.ok) continue;
+        const text = (await response.text()).trim();
+        try { return { ...geo, ipv4: JSON.parse(text).ip || "" }; } catch { return { ...geo, ipv4: text }; }
+      } catch {}
+    }
+    throw new Error("本机 IP 查询失败");
+  }
+
+  async function lookupProxy() {
+    const details = await invoke("get_proxy_info");
+    try {
+      const ip = await lookupLocalIp();
+      return { ...details, egressIp: ip?.ipv4 || ip?.ipv6 || "" };
+    } catch {
+      return details;
+    }
+  }
+
   async function pluginAction(id, action, payload = {}) {
     if (id === "clipboard" && action === "activate") return invoke("activate_clipboard", { id: Number(payload.id) });
     if (id === "clipboard" && ["menu", "delete"].includes(action)) {
@@ -102,6 +145,9 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     listPlugins,
     pluginSearch,
     loadAppIcons,
+    lookupDns,
+    lookupLocalIp,
+    lookupProxy,
     pluginAction,
     hideMain: () => invoke("hide_main_window"),
     searchUsage: (scope = "all") => invoke("search_usage", { scope }),

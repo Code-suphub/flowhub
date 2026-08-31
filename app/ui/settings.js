@@ -75,6 +75,8 @@ function normalizeConfig(config) {
   if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
   config.plugins.memo ||= { enabled: true, settings: {} };
   config.plugins.memo.settings ||= {};
+  config.plugins.tools ||= { enabled: true, settings: {} };
+  config.plugins.tools.settings ||= {};
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
   const ids = new Set();
