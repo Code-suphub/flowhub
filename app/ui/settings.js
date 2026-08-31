@@ -12,6 +12,7 @@ const state = {
   jsonDirty: false,
   expanded: new Set(),
   draggingId: "",
+  treeFilter: "",
   draftSavedAt: 0,
   selectedMemoId: "",
   memoFilter: "",
@@ -223,6 +224,23 @@ function visibleNodeEntries(nodes = webItems(), level = 0, parent = null, result
     }
   });
   return result;
+}
+
+function filteredNodeEntries() {
+  const query = state.treeFilter.trim().toLowerCase();
+  if (!query) return visibleNodeEntries();
+  const collect = (nodes, level = 0, parent = null) => {
+    const result = [];
+    for (const [index, node] of nodes.entries()) {
+      const childResult = collect(node.children || [], level + 1, node);
+      const text = [node.title, node.id, node.url, node.note].filter(Boolean).join(" ").toLowerCase();
+      if (text.includes(query) || childResult.length) {
+        result.push({ node, level, parent, index }, ...childResult);
+      }
+    }
+    return result;
+  };
+  return collect(webItems());
 }
 
 function expandAll() {
@@ -452,6 +470,7 @@ function markDirty(message = "有未保存修改") {
 }
 
 let toastTimer;
+let allowUnload = false;
 function toast(message, error = false) {
   const element = $("#toast");
   element.textContent = message;
@@ -463,19 +482,27 @@ function toast(message, error = false) {
 
 function updateStatus() {
   const status = $("#status");
-  status.textContent = state.dirty ? (state.draftSavedAt ? "草稿已自动保存" : "有未保存修改") : "已保存";
+  const message = state.dirty ? (state.draftSavedAt ? "草稿已自动保存" : "有未保存修改") : "已保存";
+  status.textContent = message;
   status.title = state.dirty && state.draftSavedAt
     ? `草稿保存于 ${new Date(state.draftSavedAt).toLocaleTimeString()}，尚未写入正式配置`
     : "";
   status.classList.toggle("dirty", state.dirty);
-  $("#saveBtn").disabled = !state.dirty;
+  const actionbarStatus = $("#actionbarStatus");
+  if (actionbarStatus) actionbarStatus.textContent = message;
+  const saveButton = $("#saveBtn");
+  if (saveButton) saveButton.disabled = !state.dirty;
 }
 
 function renderTree() {
   const tree = $("#tree");
-  const entries = visibleNodeEntries();
+  const entries = filteredNodeEntries();
+  const filterCount = $("#treeFilterCount");
+  if (filterCount) filterCount.textContent = state.treeFilter.trim() ? `${entries.length} 项` : "";
   if (!entries.length) {
-    tree.innerHTML = `<div class="tree-empty">还没有目录节点。<br />点击右上角 ＋ 添加一级目录。</div>`;
+    tree.innerHTML = state.treeFilter.trim()
+      ? `<div class="tree-empty">没有匹配的目录或页面。<br />可以尝试标题、域名或节点 ID。</div>`
+      : `<div class="tree-empty">还没有目录节点。<br />点击右上角 ＋ 添加一级目录。</div>`;
     return;
   }
   tree.innerHTML = entries.map(({ node, level }) => `
@@ -502,13 +529,21 @@ function renderSelected() {
         ${iconHtml(node, "selected-icon")}
         <div><strong>${esc(node.title || "未命名节点")}</strong><small>${esc(pathFor(node.id))}</small></div>
       </div>
-      <div class="form-grid">
-        <div class="field"><label>标题</label><input data-node-field="title" value="${esc(node.title || "")}" /></div>
-        <div class="field"><label>节点 ID</label><input readonly value="${esc(node.id)}" /><div class="field-hint">ID 用于目录定位，JSON 模式可手动调整。</div></div>
-        <div class="field wide"><label>页面链接 URL</label><input data-node-field="url" value="${esc(node.url || "")}" placeholder="https://example.com/" /><div class="field-hint">没有 URL 时作为目录节点；有 URL 时可直接打开，也可以同时保留子节点。</div></div>
-        <div class="field"><label>图标（Emoji 或图片 URL）</label><input data-node-field="icon" value="${esc(node.icon || "")}" placeholder="☁ 或 https://..." /></div>
-        <div class="field"><label>强调色</label><input data-node-field="accent" value="${esc(node.accent || "#4bd0b8")}" placeholder="#4bd0b8" /></div>
-        <div class="field wide"><label>备注</label><textarea data-node-field="note" placeholder="可选：显示在搜索结果或页面说明中">${esc(node.note || "")}</textarea></div>
+      <div class="form-section">
+        <div class="form-section-head"><strong>基础信息</strong><small>决定搜索结果中的名称与打开行为</small></div>
+        <div class="form-grid">
+          <div class="field"><label>标题</label><input data-node-field="title" value="${esc(node.title || "")}" /></div>
+          <div class="field"><label>节点 ID</label><input readonly value="${esc(node.id)}" /><div class="field-hint">用于目录定位；需要修改时请切换 JSON 模式。</div></div>
+          <div class="field wide"><label>页面链接 URL</label><input data-node-field="url" value="${esc(node.url || "")}" placeholder="https://example.com/" /><div class="field-hint">留空时作为目录；填写后可以直接打开，同时仍可保留子节点。</div></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-head"><strong>外观与说明</strong><small>可选，不影响节点打开</small></div>
+        <div class="form-grid">
+          <div class="field"><label>图标（Emoji 或图片 URL）</label><input data-node-field="icon" value="${esc(node.icon || "")}" placeholder="☁ 或 https://..." /></div>
+          <div class="field"><label>强调色</label><input data-node-field="accent" value="${esc(node.accent || "#4bd0b8")}" placeholder="#4bd0b8" /></div>
+          <div class="field wide"><label>备注</label><textarea data-node-field="note" placeholder="可选：显示在搜索结果或页面说明中">${esc(node.note || "")}</textarea></div>
+        </div>
       </div>
     </div>
   `;
@@ -698,13 +733,13 @@ function renderModule() {
 
 function renderPluginModules() {
   const plugins = [...state.plugins].sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
-  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><span>通用设置</span><small>${state.module === "core" ? "当前模块" : "App 配置"}</small></button>`;
+  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">F</i><span class="module-nav-copy"><strong>通用设置</strong><small>${state.module === "core" ? "当前模块" : "App 配置"}</small></span></button>`;
   const pluginButtons = plugins.map((plugin) => {
     const moduleId = plugin.settingsPanel || "";
     const active = moduleId === state.module;
     const disabled = !plugin.available || !moduleId;
     const hint = active ? "当前模块" : !plugin.available ? "未安装" : plugin.enabled ? plugin.settingsHint : "已停用";
-    return `<div class="plugin-module-row"><button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""}><span>${esc(plugin.settingsName || plugin.name)}</span><small>${esc(hint || "")}</small></button><label class="plugin-enable" title="${plugin.available ? (plugin.enabled ? "停用插件" : "启用插件") : "插件未安装"}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
+    return `<div class="plugin-module-row"><button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""}><i class="module-nav-icon">${esc(plugin.icon || "·")}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button><label class="plugin-enable" title="${plugin.available ? (plugin.enabled ? "停用插件" : "启用插件") : "插件未安装"}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
   }).join("");
   $("#moduleSwitcher").innerHTML = coreButton + pluginButtons;
 }
@@ -1036,6 +1071,8 @@ function resetMemos() {
 }
 
 function closeSettings() {
+  if (state.dirty && !window.confirm("当前有未保存修改，确定关闭设置吗？修改仍会保留在本地草稿中。")) return;
+  allowUnload = true;
   if (document.documentElement.dataset.weborgRuntime !== "browser") {
     window.close();
     return;
@@ -1203,6 +1240,11 @@ document.addEventListener("input", (event) => {
     renderMemoSettings();
     return;
   }
+  if (event.target.id === "treeFilter") {
+    state.treeFilter = event.target.value;
+    renderTree();
+    return;
+  }
   const pluginId = event.target.dataset.pluginToggle;
   if (pluginId) {
     const config = pluginConfig(pluginId);
@@ -1267,7 +1309,7 @@ document.addEventListener("input", (event) => {
     if (value.trim()) node[nodeField] = value;
     else delete node[nodeField];
     markDirty();
-    const banner = $(".selected-banner strong");
+    const banner = $("#nodeEditor .selected-banner strong");
     if (nodeField === "title" && banner) banner.textContent = value || "未命名节点";
     return;
   }
@@ -1305,7 +1347,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     save();
   }
-  if (event.key === "Escape") window.close();
+  if (event.key === "Escape") closeSettings();
 });
 
 const unsubscribeUpdateState = window.weborg.onUpdateState?.((nextState) => {
@@ -1313,9 +1355,13 @@ const unsubscribeUpdateState = window.weborg.onUpdateState?.((nextState) => {
   renderAppUpdate();
 });
 
-window.addEventListener("beforeunload", () => {
+window.addEventListener("beforeunload", (event) => {
   persistDraftNow();
   unsubscribeUpdateState?.();
+  if (state.dirty && !allowUnload) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
 });
 
 Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo(), window.weborg.getUpdateState()]).then(([plugins, config, clipboardStorage, configFile, appUpdate]) => {
