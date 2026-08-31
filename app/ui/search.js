@@ -590,12 +590,13 @@ function renderResult(item, index, items) {
       ? `HTTP ${formatEndpoint(details.http)} · HTTPS ${formatEndpoint(details.https)} · SOCKS ${formatEndpoint(details.socks)}`
       : "正在读取系统代理…";
     const egress = details?.egressIp ? ` · 出口 IP ${details.egressIp}` : "";
+    const node = details?.node?.remoteAddress ? ` · 节点 ${details.node.nodeName || "当前连接"} (${details.node.remoteAddress})` : "";
     return `${usageSection}
       <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon calculation">⇄</span>
         <span class="r-body">
           <span class="r-title calculation-value">代理信息</span>
-          <span class="r-meta calculation-expression">${esc(endpointText + egress)} · 回车复制详情</span>
+          <span class="r-meta calculation-expression">${esc(endpointText + egress + node)} · 回车复制详情</span>
         </span>
         <span class="r-kind calculation">工具</span>
       </div>
@@ -754,7 +755,7 @@ function choose(page) {
     }
     void lookupProxy().then((details) => {
       const endpoint = (name, entry) => `${name}: ${entry?.enabled && entry.host ? `${entry.host}:${entry.port || ""}` : "未启用"}`;
-      const text = [endpoint("HTTP", details?.http), endpoint("HTTPS", details?.https), endpoint("SOCKS", details?.socks), details?.egressIp && `出口 IP: ${details.egressIp}`].filter(Boolean).join("\n");
+      const text = [endpoint("HTTP", details?.http), endpoint("HTTPS", details?.https), endpoint("SOCKS", details?.socks), details?.egressIp && `出口 IP: ${details.egressIp}`, details?.node?.remoteAddress && `当前连接节点: ${details.node.nodeName || "未知"} (${details.node.remoteAddress})`].filter(Boolean).join("\n");
       return copyText(text);
     }).then(() => showActionStatus("代理信息已复制")).catch(() => showActionStatus("代理检测失败"));
     return;

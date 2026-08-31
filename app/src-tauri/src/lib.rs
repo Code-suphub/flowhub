@@ -5,6 +5,7 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -32,6 +33,51 @@ struct AppPaths {
     config_path: PathBuf,
     storage_dir: PathBuf,
     db_path: PathBuf,
+}
+
+#[cfg(target_os = "macos")]
+fn mihomo_api(path: &str) -> Option<Value> {
+    use std::os::unix::net::UnixStream;
+    let entries = fs::read_dir("/tmp").ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with("mihomo-party-") || !name.ends_with(".sock") {
+            continue;
+        }
+        let Ok(mut stream) = UnixStream::connect(entry.path()) else { continue };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+        let request = format!("GET {path} HTTP/1.1\r\nHost: mihomo\r\nConnection: close\r\n\r\n");
+        if stream.write_all(request.as_bytes()).is_err() { continue; }
+        let mut bytes = Vec::new();
+        if stream.read_to_end(&mut bytes).is_err() { continue; }
+        let text = String::from_utf8_lossy(&bytes);
+        let Some(body) = text.split("\r\n\r\n").nth(1) else { continue };
+        if let Ok(value) = serde_json::from_str(body) { return Some(value); }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn current_mihomo_node() -> Option<Value> {
+    let payload = mihomo_api("/connections")?;
+    let connections = payload.get("connections")?.as_array()?;
+    let latest = connections
+        .iter()
+        .filter(|connection| {
+            connection
+                .pointer("/metadata/remoteDestination")
+                .and_then(Value::as_str)
+                .map(|value| !value.is_empty())
+                .unwrap_or(false)
+        })
+        .max_by_key(|connection| connection.get("start").and_then(Value::as_str).unwrap_or(""))?;
+    let metadata = latest.get("metadata")?;
+    Some(json!({
+        "nodeName": latest.get("chains").and_then(Value::as_array).and_then(|chains| chains.first()).and_then(Value::as_str).unwrap_or(""),
+        "remoteAddress": metadata.get("remoteDestination").and_then(Value::as_str).unwrap_or(""),
+        "chains": latest.get("chains").cloned().unwrap_or_else(|| json!([])),
+        "observedAt": latest.get("start").and_then(Value::as_str).unwrap_or("")
+    }))
 }
 
 pub(crate) struct AppState {
@@ -1086,7 +1132,11 @@ fn get_proxy_info() -> Result<Value, String> {
                 "port": values.get(&format!("{name}Port")).cloned().unwrap_or_default()
             })
         };
-        return Ok(json!({ "http": proxy("HTTP"), "https": proxy("HTTPS"), "socks": proxy("SOCKS") }));
+        let mut result = json!({ "http": proxy("HTTP"), "https": proxy("HTTPS"), "socks": proxy("SOCKS") });
+        if let Some(object) = result.as_object_mut() {
+            object.insert("node".to_string(), current_mihomo_node().unwrap_or(Value::Null));
+        }
+        return Ok(result);
     }
     #[cfg(not(target_os = "macos"))]
     {

@@ -664,6 +664,37 @@ function localClipboardApi() {
 }
 
 function localNetworkApi() {
+  async function mihomoApi(apiPath) {
+    if (process.platform !== "darwin") return null;
+    let entries = [];
+    try { entries = await readdir("/tmp", { withFileTypes: true }); } catch { return null; }
+    const sockets = entries
+      .filter((entry) => entry.isSocket?.() && /^mihomo-party-.*\.sock$/.test(entry.name))
+      .map((entry) => join("/tmp", entry.name));
+    for (const socket of sockets) {
+      try {
+        const { stdout } = await execFileAsync("curl", ["--unix-socket", socket, "-sS", "--max-time", "2", `http://mihomo${apiPath}`], { timeout: 3000, maxBuffer: 8 * 1024 * 1024, encoding: "utf8" });
+        return JSON.parse(String(stdout || ""));
+      } catch {}
+    }
+    return null;
+  }
+
+  async function currentMihomoNode() {
+    const payload = await mihomoApi("/connections");
+    const connections = Array.isArray(payload?.connections) ? payload.connections : [];
+    const latest = connections
+      .filter((connection) => connection?.metadata?.remoteDestination)
+      .sort((left, right) => String(right.start || "").localeCompare(String(left.start || "")))[0];
+    if (!latest) return null;
+    return {
+      nodeName: Array.isArray(latest.chains) && latest.chains.length ? latest.chains[0] : "",
+      remoteAddress: latest.metadata.remoteDestination,
+      chains: Array.isArray(latest.chains) ? latest.chains : [],
+      observedAt: latest.start || ""
+    };
+  }
+
   return {
     name: "flowhub-local-network-api",
     configureServer(server) {
@@ -682,7 +713,7 @@ function localNetworkApi() {
             host: values[`${name}Proxy`] || "",
             port: values[`${name}Port`] || ""
           });
-          sendJson(response, 200, { http: proxy("HTTP"), https: proxy("HTTPS"), socks: proxy("SOCKS") });
+          sendJson(response, 200, { http: proxy("HTTP"), https: proxy("HTTPS"), socks: proxy("SOCKS"), node: await currentMihomoNode() });
         } catch (error) {
           sendJson(response, 500, { ok: false, error: error.message || "代理检测失败" });
         }
