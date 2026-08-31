@@ -26,9 +26,11 @@ const TOOL_SETTINGS = {
   timestamp: "时间戳转换",
   jwt: "JWT 解析",
   dns: "DNS 解析",
+  dnsIpGeo: "DNS 自动查询 IP 归属地",
+  cloudflare: "Cloudflare 检测",
   localIp: "本机 IP 查询",
   proxy: "代理信息检测",
-  ip: "IP 地址识别"
+  ip: "IP 识别与归属地"
 };
 let draftTimer = null;
 

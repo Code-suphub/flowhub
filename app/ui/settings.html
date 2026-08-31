@@ -606,11 +606,13 @@
                 <label class="switch-field"><input type="checkbox" data-tool-setting="timestamp" />时间戳转换</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="jwt" />JWT 解析</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="dns" />DNS 解析</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="dnsIpGeo" />DNS 自动查询 IP 归属地</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="cloudflare" />Cloudflare 检测</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="localIp" />本机 IP 查询</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="proxy" />代理信息检测</label>
-                <label class="switch-field"><input type="checkbox" data-tool-setting="ip" />IP 地址识别</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="ip" />IP 识别与归属地</label>
               </div>
-              <div class="field-hint">时间戳、JWT、DNS 和 IP 仅在输入符合明确格式时出现；代理和本机 IP 查询会在匹配对应关键词时触发。</div>
+              <div class="field-hint">时间戳、JWT、DNS 和 IP 仅在输入符合明确格式时出现；DNS 自动归属地每个域名最多查询 2 个公网地址并缓存 10 分钟；Cloudflare 检测仅在选中结果并按回车时发起请求。</div>
             </section>
           </div>
 

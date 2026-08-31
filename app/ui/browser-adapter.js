@@ -83,6 +83,24 @@ if (!window.weborg) {
     throw new Error("本机 IP 查询失败");
   }
 
+  async function lookupIp(ip) {
+    const address = String(ip || "").trim();
+    if (!address) throw new Error("IP 地址为空");
+    const response = await fetch(`/__weborg/ip?ip=${encodeURIComponent(address)}`, { cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.error) throw new Error(body?.reason || `IP 查询失败：${response.status}`);
+    return body;
+  }
+
+  async function inspectCloudflare(hostname) {
+    const value = String(hostname || "").trim();
+    if (!value) throw new Error("域名为空");
+    const response = await fetch(`/__weborg/cloudflare?hostname=${encodeURIComponent(value)}`, { cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.error) throw new Error(body?.reason || `Cloudflare 检测失败：${response.status}`);
+    return body;
+  }
+
   async function lookupProxy() {
     const config = await getConfig();
     const adapter = config?.plugins?.tools?.settings?.proxyAdapter || "auto";
@@ -216,6 +234,8 @@ if (!window.weborg) {
     loadAppIcons,
     lookupDns,
     lookupLocalIp,
+    lookupIp,
+    inspectCloudflare,
     lookupProxy,
     pluginAction,
     searchUsage: usageSections,

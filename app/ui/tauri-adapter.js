@@ -116,6 +116,65 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     throw new Error("本机 IP 查询失败");
   }
 
+  function normalizeIpLocation(body) {
+    return {
+      ip: body?.ip || "",
+      version: body?.version || body?.type || "",
+      city: body?.city || "",
+      region: body?.region || "",
+      country_name: body?.country_name || body?.country || "",
+      org: body?.org || body?.connection?.org || body?.connection?.isp || "",
+      asn: body?.asn || body?.connection?.asn || "",
+      timezone: typeof body?.timezone === "string" ? body.timezone : body?.timezone?.id || ""
+    };
+  }
+
+  async function lookupIp(ip) {
+    const address = String(ip || "").trim();
+    if (!address) throw new Error("IP 地址为空");
+    const encoded = encodeURIComponent(address);
+    const providers = [
+      `https://ipwho.is/${encoded}`,
+      `https://ipapi.co/${encoded}/json/`
+    ];
+    let lastError = "IP 查询失败";
+    for (const endpoint of providers) {
+      try {
+        const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(6000) });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || body?.error || body?.success === false) {
+          lastError = body?.reason || body?.message || `IP 查询失败：${response.status}`;
+          continue;
+        }
+        return normalizeIpLocation(body);
+      } catch (error) {
+        lastError = error?.message || lastError;
+      }
+    }
+    throw new Error(lastError);
+  }
+
+  async function inspectCloudflare(hostname) {
+    const value = String(hostname || "").trim();
+    if (!value) throw new Error("域名为空");
+    const response = await fetch(`https://${value}/`, {
+      method: "GET",
+      redirect: "manual",
+      headers: { accept: "text/html,application/xhtml+xml" },
+      signal: AbortSignal.timeout(6000)
+    });
+    const headers = Object.fromEntries([...response.headers.entries()].map(([key, item]) => [key.toLowerCase(), item]));
+    const evidence = [];
+    if (headers.server?.toLowerCase().includes("cloudflare")) evidence.push("server: cloudflare");
+    if (headers["cf-ray"]) evidence.push("cf-ray");
+    if (headers["cf-cache-status"]) evidence.push("cf-cache-status");
+    if (headers["cf-mitigated"]) evidence.push(`cf-mitigated: ${headers["cf-mitigated"]}`);
+    const cloudflare = evidence.length > 0;
+    const challenge = Boolean(headers["cf-mitigated"]) || (cloudflare && [403, 429].includes(response.status));
+    response.body?.cancel?.();
+    return { status: response.status, cloudflare, challenge, evidence };
+  }
+
   async function lookupProxy() {
     const config = await getConfig();
     const adapter = config?.plugins?.tools?.settings?.proxyAdapter || "auto";
@@ -157,6 +216,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     loadAppIcons,
     lookupDns,
     lookupLocalIp,
+    lookupIp,
+    inspectCloudflare,
     lookupProxy,
     pluginAction,
     hideMain: () => invoke("hide_main_window"),

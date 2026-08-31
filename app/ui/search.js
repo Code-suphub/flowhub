@@ -14,7 +14,7 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, localIpResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null, localIpResult: null, ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
@@ -22,7 +22,9 @@ let webSearchToken = 0;
 let memoSearchToken = 0;
 let usageSearchToken = 0;
 let dnsSearchToken = 0;
+const dnsIpCache = new Map();
 let localIpSearchToken = 0;
+let ipSearchToken = 0;
 let proxySearchToken = 0;
 let clipboardSearchTimer = null;
 let scopeTabHeld = false;
@@ -34,6 +36,7 @@ let searchCompositionEndedAt = -Infinity;
 let actionStatusTimer = null;
 let dnsSearchTimer = null;
 let localIpSearchTimer = null;
+let ipSearchTimer = null;
 let proxySearchTimer = null;
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -150,20 +153,36 @@ function jwtSuggestion() {
 
 function ipSuggestion() {
   const expression = state.query.trim();
-  const ipv4 = expression.split(".").length === 4
-    && expression.split(".").every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
-  const ipv6Segments = expression.split(":");
+  const address = expression.replace(/^ip\s+/i, "").trim();
+  if (!address || /^ip$/i.test(expression)) return null;
+  const ipv4 = address.split(".").length === 4
+    && address.split(".").every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+  const ipv6Segments = address.split(":");
   const ipv6NonEmpty = ipv6Segments.filter(Boolean);
-  const ipv6Compressed = expression.includes("::");
-  const ipv6 = expression.includes(":")
-    && /^[0-9a-f:]+$/i.test(expression)
-    && expression.length <= 45
-    && (expression.match(/::/g) || []).length <= 1
+  const ipv6Compressed = address.includes("::");
+  const ipv6 = address.includes(":")
+    && /^[0-9a-f:]+$/i.test(address)
+    && address.length <= 45
+    && (address.match(/::/g) || []).length <= 1
     && ipv6NonEmpty.length <= 8
     && (ipv6Compressed ? ipv6NonEmpty.length < 8 : ipv6Segments.length === 8)
     && ipv6NonEmpty.every((segment) => segment.length <= 4);
   if (!ipv4 && !ipv6) return null;
-  return { type: "ip", expression, result: expression, id: `ip:${expression}` };
+  const details = state.ipResult?.address === address ? state.ipResult : null;
+  return { type: "ip", expression, address, result: address, details, id: `ip:${address}` };
+}
+
+function isPrivateIp(address) {
+  const value = String(address || "").toLowerCase();
+  if (value === "::1" || value === "localhost" || value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe80:") || value.startsWith("ff")) return true;
+  const parts = value.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) return false;
+  return parts[0] === 10
+    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+    || (parts[0] === 192 && parts[1] === 168)
+    || parts[0] === 127
+    || (parts[0] === 169 && parts[1] === 254)
+    || parts[0] >= 224;
 }
 
 function isLocalIpQuery(expression = state.query) {
@@ -229,11 +248,71 @@ function dnsRecordType(value) {
   return ({ 1: "A", 2: "NS", 5: "CNAME", 6: "SOA", 12: "PTR", 15: "MX", 16: "TXT", 28: "AAAA" })[Number(value)] || String(value || "?");
 }
 
+function dnsIpGeoEnabled() {
+  return pluginEnabled("tools") && state.config?.plugins?.tools?.settings?.dnsIpGeo !== false;
+}
+
+function cloudflareSuggestion() {
+  const base = dnsSuggestion();
+  if (!base) return null;
+  const records = state.dnsResult?.hostname === base.hostname ? state.dnsResult.answers || [] : [];
+  const cnameEvidence = records
+    .filter((answer) => Number(answer.type) === 5 && /cloudflare|cdnjs|workers.dev/i.test(String(answer.data || "")))
+    .map((answer) => String(answer.data || ""));
+  const details = state.cloudflareResult?.hostname === base.hostname ? state.cloudflareResult : null;
+  return { ...base, type: "cloudflare", details, cnameEvidence, id: `cloudflare:${base.hostname}` };
+}
+
+function dnsPublicAddresses(answers) {
+  return [...new Set((answers || [])
+    .filter((answer) => [1, 28].includes(Number(answer.type)) && answer.data && !isPrivateIp(answer.data))
+    .map((answer) => String(answer.data).trim()))].slice(0, 2);
+}
+
+async function enrichDnsIpResults(hostname, answers, token) {
+  if (!dnsIpGeoEnabled() || typeof window.weborg?.lookupIp !== "function") return;
+  const addresses = dnsPublicAddresses(answers);
+  if (!addresses.length) return;
+  const pending = [];
+  const next = { ...state.dnsIpResults };
+  for (const address of addresses) {
+    const cached = dnsIpCache.get(address);
+    if (cached && cached.expiresAt > Date.now()) {
+      next[address] = cached.details;
+      continue;
+    }
+    pending.push(window.weborg.lookupIp(address)
+      .then((details) => {
+        const value = details || { error: "查询失败" };
+        dnsIpCache.set(address, { details: value, expiresAt: Date.now() + 10 * 60 * 1000 });
+        return [address, value];
+      })
+      .catch(() => {
+        const value = { error: "查询失败" };
+        dnsIpCache.set(address, { details: value, expiresAt: Date.now() + 30 * 1000 });
+        return [address, value];
+      }));
+  }
+  if (!pending.length) {
+    if (token === dnsSearchToken && state.dnsResult?.hostname === hostname) {
+      state.dnsIpResults = next;
+      render();
+    }
+    return;
+  }
+  const results = await Promise.all(pending);
+  if (token !== dnsSearchToken || state.dnsResult?.hostname !== hostname) return;
+  for (const [address, details] of results) next[address] = details;
+  state.dnsIpResults = next;
+  render();
+}
+
 function toolSuggestions() {
   if (!pluginEnabled("tools")) return [];
   const enabled = (key) => state.config?.plugins?.tools?.settings?.[key] !== false;
   return [
     ...(enabled("dns") ? dnsSuggestions() : []),
+    enabled("cloudflare") ? cloudflareSuggestion() : null,
     ...(enabled("localIp") ? localIpSuggestions() : []),
     enabled("proxy") ? proxySuggestion() : null,
     enabled("timestamp") ? timestampSuggestion() : null,
@@ -565,14 +644,29 @@ function renderResult(item, index, items) {
     `;
   }
   if (item.type === "ip") {
+    const details = item.details;
+    const location = [details?.city, details?.region, details?.country_name].filter(Boolean).join(" · ");
+    const detailsBody = details?.private
+      ? `<span class="ip-empty">私有地址 · 无公网归属地</span>`
+      : details?.error
+        ? `<span class="ip-empty">查询失败 · 请检查网络</span>`
+        : details
+          ? `<span class="ip-details">${[
+              location && ["位置", location],
+              details.org && ["组织", details.org],
+              details.asn && ["ASN", details.asn],
+              details.timezone && ["时区", details.timezone]
+            ].filter(Boolean).map(([label, value]) => `<span class="ip-line"><span class="ip-label">${esc(label)}</span><span class="ip-value" title="${esc(value)}">${esc(value)}</span></span>`).join("") || `<span class="ip-empty">归属地未知</span>`}</span>`
+          : `<span class="ip-empty">正在查询 IP 归属地…</span>`;
     return `${usageSection}
-      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+      <div class="result calculation-result ip-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon calculation">⌁</span>
         <span class="r-body">
           <span class="r-title calculation-value">${esc(item.result)}</span>
-          <span class="r-meta calculation-expression">IP 地址 · 回车复制</span>
+          ${detailsBody}
+          <span class="r-meta calculation-expression">回车复制详情</span>
         </span>
-        <span class="r-kind calculation">识别</span>
+        <span class="r-kind calculation">IP 归属地</span>
       </div>
     `;
   }
@@ -599,7 +693,16 @@ function renderResult(item, index, items) {
   if (item.type === "dns") {
     const dnsResolved = state.dnsResult?.hostname === item.hostname;
     const answerRows = item.answers?.length
-      ? item.answers.slice(0, 8).map((answer) => `<span class="dns-line"><span class="dns-label">${esc(dnsRecordType(answer.type))}</span><span class="dns-value" title="${esc(answer.data || "")}">${esc(answer.data || "")}</span></span>`).join("")
+      ? item.answers.slice(0, 8).map((answer) => {
+          const address = String(answer.data || "");
+          const geo = [1, 28].includes(Number(answer.type)) && dnsIpGeoEnabled() ? state.dnsIpResults[address] : null;
+          const geoText = geo?.error
+            ? "归属地查询失败"
+            : geo
+              ? [geo.city, geo.region, geo.country_name].filter(Boolean).join(" · ") || "归属地未知"
+              : [1, 28].includes(Number(answer.type)) && dnsIpGeoEnabled() ? "正在查询归属地…" : "";
+          return `<span class="dns-line"><span class="dns-label">${esc(dnsRecordType(answer.type))}</span><span class="dns-value" title="${esc(address)}"><span>${esc(address)}</span>${geoText ? `<small class="dns-geo">${esc(geoText)}</small>` : ""}</span></span>`;
+        }).join("")
       : "";
     const answerBody = answerRows
       ? `<span class="dns-details">${answerRows}</span>`
@@ -613,6 +716,36 @@ function renderResult(item, index, items) {
           <span class="r-meta calculation-expression">${item.answers?.length > 8 ? `还有 ${item.answers.length - 8} 条记录 · ` : ""}回车复制完整记录</span>
         </span>
         <span class="r-kind calculation">工具</span>
+      </div>
+    `;
+  }
+  if (item.type === "cloudflare") {
+    const details = item.details;
+    const status = details?.challenge
+      ? "检测到 Cloudflare 挑战或拦截"
+      : details?.cloudflare
+        ? `检测到 Cloudflare · HTTP ${details.status || "?"}`
+        : details
+          ? `未发现 Cloudflare 特征 · HTTP ${details.status || "?"}`
+          : item.cnameEvidence?.length
+            ? "DNS 记录疑似经过 Cloudflare · 回车确认"
+            : "回车检测 Cloudflare 与拦截状态";
+    const evidence = details?.evidence?.length
+      ? details.evidence.join("、")
+      : item.cnameEvidence?.length
+        ? `CNAME: ${item.cnameEvidence.join("、")}`
+        : details
+          ? "未发现响应头特征"
+          : "不会自动发起 HTTP 请求";
+    return `${usageSection}
+      <div class="result calculation-result cloudflare-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon calculation">⌁</span>
+        <span class="r-body">
+          <span class="r-title calculation-value">Cloudflare · ${esc(item.hostname)}</span>
+          <span class="r-meta calculation-expression">${esc(status)}</span>
+          <span class="cloudflare-evidence">${esc(evidence)}</span>
+        </span>
+        <span class="r-kind calculation">检测</span>
       </div>
     `;
   }
@@ -767,10 +900,59 @@ function render({ preserveScroll = false } = {}) {
 }
 
 function choose(page) {
-  if (["calculation", "timestamp", "jwt", "ip"].includes(page?.type)) {
+  if (["calculation", "timestamp", "jwt"].includes(page?.type)) {
     void copyText(page.result)
       .then(() => showActionStatus("已复制"))
       .catch(() => showActionStatus("复制失败"));
+    return;
+  }
+  if (page?.type === "ip") {
+    const lookupIp = window.weborg?.lookupIp;
+    const formatDetails = (details) => {
+      if (details?.private) return `${page.address}\n私有地址，无法查询公网归属地`;
+      if (details?.error) return `${page.address}\nIP 归属地查询失败`;
+      return [
+        `IP: ${page.address}`,
+        details?.version && `版本: ${details.version}`,
+        [details?.city, details?.region, details?.country_name].filter(Boolean).length ? `位置: ${[details.city, details.region, details.country_name].filter(Boolean).join(" · ")}` : null,
+        details?.org && `组织: ${details.org}`,
+        details?.asn && `ASN: ${details.asn}`,
+        details?.timezone && `时区: ${details.timezone}`
+      ].filter(Boolean).join("\n");
+    };
+    if (isPrivateIp(page.address)) {
+      void copyText(formatDetails({ private: true })).then(() => showActionStatus("私有 IP 信息已复制")).catch(() => showActionStatus("复制失败"));
+      return;
+    }
+    if (page.details && !page.details.error) {
+      void copyText(formatDetails(page.details)).then(() => showActionStatus("IP 归属地已复制")).catch(() => showActionStatus("复制失败"));
+      return;
+    }
+    if (typeof lookupIp !== "function") {
+      void copyText(page.address).then(() => showActionStatus("IP 地址已复制")).catch(() => showActionStatus("复制失败"));
+      return;
+    }
+    void lookupIp(page.address)
+      .then((details) => copyText(formatDetails(details)))
+      .then(() => showActionStatus("IP 归属地已复制"))
+      .catch(() => showActionStatus("IP 查询失败"));
+    return;
+  }
+  if (page?.type === "cloudflare") {
+    const inspectCloudflare = window.weborg?.inspectCloudflare;
+    if (typeof inspectCloudflare !== "function") {
+      showActionStatus("Cloudflare 检测不可用");
+      return;
+    }
+    void inspectCloudflare(page.hostname)
+      .then((details) => {
+        if (state.query.trim() === page.expression) {
+          state.cloudflareResult = { hostname: page.hostname, ...details };
+          render();
+        }
+        showActionStatus(details?.challenge ? "检测到 Cloudflare 拦截或挑战" : "Cloudflare 检测完成");
+      })
+      .catch(() => showActionStatus("Cloudflare 检测失败"));
     return;
   }
   if (page?.type === "local-ip") {
@@ -845,6 +1027,8 @@ function queueDnsLookup() {
   clearTimeout(dnsSearchTimer);
   const token = ++dnsSearchToken;
   state.dnsResult = null;
+  state.dnsIpResults = {};
+  state.cloudflareResult = null;
   const suggestion = dnsSuggestion();
   if (!suggestion || typeof window.weborg?.lookupDns !== "function") return;
   dnsSearchTimer = setTimeout(async () => {
@@ -856,6 +1040,7 @@ function queueDnsLookup() {
         answers: Array.isArray(response?.Answer) ? response.Answer : []
       };
       render();
+      void enrichDnsIpResults(suggestion.hostname, state.dnsResult.answers, token);
     } catch {
       if (token === dnsSearchToken) {
         state.dnsResult = { hostname: suggestion.hostname, answers: [] };
@@ -884,6 +1069,32 @@ function queueLocalIpLookup() {
       }
     }
   }, 220);
+}
+
+function queueIpLookup() {
+  clearTimeout(ipSearchTimer);
+  const token = ++ipSearchToken;
+  state.ipResult = null;
+  const suggestion = ipSuggestion();
+  if (!suggestion || isPrivateIp(suggestion.address) || typeof window.weborg?.lookupIp !== "function") {
+    if (suggestion && isPrivateIp(suggestion.address)) {
+      state.ipResult = { address: suggestion.address, private: true };
+    }
+    return;
+  }
+  ipSearchTimer = setTimeout(async () => {
+    try {
+      const details = await window.weborg.lookupIp(suggestion.address);
+      if (token !== ipSearchToken || state.query.trim() !== suggestion.expression) return;
+      state.ipResult = { address: suggestion.address, ...details };
+      render();
+    } catch {
+      if (token === ipSearchToken) {
+        state.ipResult = { address: suggestion.address, error: "查询失败" };
+        render();
+      }
+    }
+  }, 260);
 }
 
 function queueProxyLookup() {
@@ -1286,6 +1497,7 @@ q.addEventListener("input", () => {
   state.query = q.value;
   queueDnsLookup();
   queueLocalIpLookup();
+  queueIpLookup();
   queueProxyLookup();
   if (!state.query.trim()) {
     state.clipboardResults = state.emptyResults.clipboard.slice();

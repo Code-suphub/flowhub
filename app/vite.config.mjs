@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { isIP } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -508,6 +509,55 @@ function sendJson(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+function normalizeIpLocation(body) {
+  return {
+    ip: body?.ip || "",
+    version: body?.version || body?.type || "",
+    city: body?.city || "",
+    region: body?.region || "",
+    country_name: body?.country_name || body?.country || "",
+    org: body?.org || body?.connection?.org || body?.connection?.isp || "",
+    asn: body?.asn || body?.connection?.asn || "",
+    timezone: typeof body?.timezone === "string" ? body.timezone : body?.timezone?.id || ""
+  };
+}
+
+async function lookupIpLocation(address) {
+  const encoded = encodeURIComponent(address);
+  const providers = [
+    `https://ipwho.is/${encoded}`,
+    `https://ipapi.co/${encoded}/json/`
+  ];
+  let lastError = "IP 查询失败";
+  for (const endpoint of providers) {
+    try {
+      const response = await fetch(endpoint, { signal: AbortSignal.timeout(6000) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body?.error || body?.success === false) {
+        lastError = body?.reason || body?.message || `IP 查询失败：${response.status}`;
+        continue;
+      }
+      return normalizeIpLocation(body);
+    } catch (error) {
+      lastError = error?.message || lastError;
+    }
+  }
+  throw new Error(lastError);
+}
+
+function cloudflareResponseDetails(response) {
+  const headers = Object.fromEntries([...response.headers.entries()].map(([key, value]) => [key.toLowerCase(), value]));
+  const evidence = [];
+  if (headers.server?.toLowerCase().includes("cloudflare")) evidence.push("server: cloudflare");
+  if (headers["cf-ray"]) evidence.push("cf-ray");
+  if (headers["cf-cache-status"]) evidence.push("cf-cache-status");
+  if (headers["cf-mitigated"]) evidence.push(`cf-mitigated: ${headers["cf-mitigated"]}`);
+  const cloudflare = evidence.length > 0;
+  const challenge = Boolean(headers["cf-mitigated"]) || (cloudflare && [403, 429].includes(response.status));
+  response.body?.cancel?.();
+  return { status: response.status, cloudflare, challenge, evidence };
+}
+
 function localConfigApi() {
   return {
     name: "weborg-local-config-api",
@@ -782,6 +832,46 @@ function localNetworkApi() {
           return;
         }
         sendJson(response, 502, { ok: false, error: "本机 IP 查询失败" });
+      });
+      server.middlewares.use("/__weborg/ip", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Method not allowed");
+          return;
+        }
+        try {
+          const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+          const address = String(requestUrl.searchParams.get("ip") || "").trim();
+          if (!isIP(address)) throw new Error("IP 地址格式无效");
+          sendJson(response, 200, await lookupIpLocation(address));
+        } catch (error) {
+          sendJson(response, 400, { ok: false, error: true, reason: error.message || "IP 查询失败" });
+        }
+      });
+      server.middlewares.use("/__weborg/cloudflare", async (request, response) => {
+        if (request.method !== "GET") {
+          response.statusCode = 405;
+          response.setHeader("allow", "GET");
+          response.end("Method not allowed");
+          return;
+        }
+        try {
+          const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+          const hostname = String(requestUrl.searchParams.get("hostname") || "").trim().toLowerCase();
+          if (isIP(hostname) || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || !/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(hostname)) {
+            throw new Error("域名格式无效");
+          }
+          const result = await fetch(`https://${hostname}/`, {
+            method: "GET",
+            redirect: "manual",
+            headers: { accept: "text/html,application/xhtml+xml" },
+            signal: AbortSignal.timeout(6000)
+          });
+          sendJson(response, 200, cloudflareResponseDetails(result));
+        } catch (error) {
+          sendJson(response, 400, { ok: false, error: true, reason: error.message || "Cloudflare 检测失败" });
+        }
       });
     }
   };

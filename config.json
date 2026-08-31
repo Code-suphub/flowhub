@@ -35,6 +35,8 @@
         "timestamp": true,
         "jwt": true,
         "dns": true,
+        "dnsIpGeo": true,
+        "cloudflare": true,
         "localIp": true,
         "proxy": true,
         "ip": true

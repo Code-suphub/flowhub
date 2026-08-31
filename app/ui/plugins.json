@@ -51,7 +51,7 @@
   {
     "id": "tools",
     "name": "智能工具",
-    "description": "识别计算表达式、时间戳和 JWT 等固定格式内容",
+    "description": "识别计算表达式、时间戳、JWT、DNS、IP 归属地和 Cloudflare 状态",
     "icon": "✦",
     "defaultEnabled": true,
     "searchable": false,
