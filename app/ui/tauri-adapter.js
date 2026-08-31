@@ -76,9 +76,17 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   }
 
   async function lookupDns(hostname) {
-    const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=A`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`DNS 查询失败：${response.status}`);
-    return response.json();
+    const queries = await Promise.allSettled(["A", "AAAA"].map(async (type) => {
+      const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=${type}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`DNS 查询失败：${response.status}`);
+      return response.json();
+    }));
+    const answers = queries
+      .filter((query) => query.status === "fulfilled")
+      .flatMap((query) => query.value?.Answer || []);
+    if (!answers.length && queries.every((query) => query.status !== "fulfilled")) throw new Error("DNS 查询失败");
+    const unique = [...new Map(answers.map((answer) => [`${answer.name || ""}|${answer.type}|${answer.data || ""}`, answer])).values()];
+    return { ...(queries.find((query) => query.status === "fulfilled")?.value || {}), Answer: unique };
   }
 
   async function lookupLocalIp() {

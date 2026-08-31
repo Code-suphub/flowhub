@@ -579,15 +579,19 @@ function renderResult(item, index, items) {
   }
   if (item.type === "dns") {
     const dnsResolved = state.dnsResult?.hostname === item.hostname;
-    const answerText = item.answers?.length
-      ? item.answers.slice(0, 3).map((answer) => `${dnsRecordType(answer.type)} ${answer.data || ""}`.trim()).join(" · ")
-      : dnsResolved ? "无 DNS 记录" : "正在查询 DNS…";
+    const answerRows = item.answers?.length
+      ? item.answers.slice(0, 8).map((answer) => `<span class="dns-line"><span class="dns-label">${esc(dnsRecordType(answer.type))}</span><span class="dns-value" title="${esc(answer.data || "")}">${esc(answer.data || "")}</span></span>`).join("")
+      : "";
+    const answerBody = answerRows
+      ? `<span class="dns-details">${answerRows}</span>`
+      : `<span class="dns-empty">${dnsResolved ? "无 DNS 记录" : "正在查询 DNS…"}</span>`;
     return `${usageSection}
       <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
         <span class="r-icon calculation">⌁</span>
         <span class="r-body">
           <span class="r-title calculation-value">DNS · ${esc(item.hostname)}</span>
-          <span class="r-meta calculation-expression">${esc(answerText)} · 回车复制完整记录</span>
+          ${answerBody}
+          <span class="r-meta calculation-expression">${item.answers?.length > 8 ? `还有 ${item.answers.length - 8} 条记录 · ` : ""}回车复制完整记录</span>
         </span>
         <span class="r-kind calculation">工具</span>
       </div>
