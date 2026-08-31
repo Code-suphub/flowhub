@@ -21,6 +21,15 @@ const state = {
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 const PROXY_ADAPTERS = new Set(["auto", "mihomo", "clash-rest", "system"]);
+const TOOL_SETTINGS = {
+  calculator: "计算表达式",
+  timestamp: "时间戳转换",
+  jwt: "JWT 解析",
+  dns: "DNS 解析",
+  localIp: "本机 IP 查询",
+  proxy: "代理信息检测",
+  ip: "IP 地址识别"
+};
 let draftTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -79,6 +88,9 @@ function normalizeConfig(config) {
   config.plugins.tools ||= { enabled: true, settings: {} };
   config.plugins.tools.settings ||= {};
   if (!PROXY_ADAPTERS.has(config.plugins.tools.settings.proxyAdapter)) config.plugins.tools.settings.proxyAdapter = "auto";
+  Object.keys(TOOL_SETTINGS).forEach((key) => {
+    if (typeof config.plugins.tools.settings[key] !== "boolean") config.plugins.tools.settings[key] = true;
+  });
   const items = config.plugins.web?.settings?.items;
   if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
   const ids = new Set();
@@ -510,6 +522,9 @@ function renderSettingsFields() {
   renderConfigPath();
   const proxyAdapter = $("#proxyAdapter");
   if (proxyAdapter) proxyAdapter.value = pluginConfig("tools")?.settings?.proxyAdapter || "auto";
+  document.querySelectorAll("[data-tool-setting]").forEach((input) => {
+    input.checked = pluginConfig("tools")?.settings?.[input.dataset.toolSetting] !== false;
+  });
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   renderClipboardStorage();
   renderClipboardSummary();
@@ -1088,7 +1103,7 @@ function handleAction(action) {
 }
 
 function switchModule(module) {
-  if (!["core", "web", "clipboard", "app", "memo"].includes(module)) return;
+  if (!["core", "web", "clipboard", "app", "memo", "tools"].includes(module)) return;
   state.module = module;
   renderPluginModules();
   renderModule();
@@ -1197,6 +1212,15 @@ document.addEventListener("input", (event) => {
     renderPluginModules();
     renderModule();
     renderClipboardSummary();
+    return;
+  }
+  const toolSetting = event.target.dataset.toolSetting;
+  if (toolSetting && Object.prototype.hasOwnProperty.call(TOOL_SETTINGS, toolSetting)) {
+    const tools = pluginConfig("tools");
+    if (!tools) return;
+    tools.settings ||= {};
+    tools.settings[toolSetting] = event.target.checked;
+    markDirty();
     return;
   }
   const coreField = event.target.dataset.coreField;
@@ -1315,7 +1339,7 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     state.selectedMemoId = String(draft.selectedMemoId || "");
     state.memoFilter = String(draft.memoFilter || "");
     state.expanded = new Set(Array.isArray(draft.expanded) ? draft.expanded : []);
-    state.module = ["core", "web", "clipboard", "app", "memo"].includes(draft.module) ? draft.module : "core";
+    state.module = ["core", "web", "clipboard", "app", "memo", "tools"].includes(draft.module) ? draft.module : "core";
     state.mode = draft.mode === "json" ? "json" : "structure";
     state.dirty = Boolean(hasConfigChanges || hasJsonChanges);
     state.draftSavedAt = Number(draft.savedAt) || Date.now();

@@ -94,6 +94,8 @@
       .module-button span { font-weight: 700; }
       .module-button small { color: var(--faint); font-size: 10px; }
       .module-panel.hidden { display: none; }
+      .tool-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
+      .tool-settings-grid .switch-field { min-height: 30px; }
       .app-card { display: grid; gap: 11px; margin-bottom: 22px; }
       .module-summary { gap: 9px; color: var(--muted); line-height: 1.55; }
       .module-summary strong { color: var(--ink); font-size: 13px; }
@@ -515,6 +517,16 @@
             </div>
             <p class="side-note">首次使用内置命令库；编辑任意条目后才会把自定义版本写入主配置。</p>
           </div>
+
+          <div class="module-panel hidden" data-module-panel="tools">
+            <div class="section-label">模块说明</div>
+            <div class="app-card module-summary">
+              <div class="module-summary-mark">✦</div>
+              <strong>智能工具</strong>
+              <span>只对格式明确的输入提供辅助结果，不会把普通文本强行转换成编码或哈希。</span>
+            </div>
+            <p class="side-note">关闭某项后，它不会出现在搜索结果中；所有工具默认开启。</p>
+          </div>
         </aside>
 
         <main class="editor">
@@ -579,6 +591,26 @@
                   </div>
                 </div>
               </div>
+            </section>
+          </div>
+
+          <div class="editor-inner module-panel hidden" data-module-panel="tools">
+            <div class="editor-head">
+              <div><div class="editor-kicker">FlowHub Tools</div><h2>智能工具</h2><p>按需开启格式识别和本地网络查询能力，默认全部开启。</p></div>
+              <span class="module-state">已启用</span>
+            </div>
+            <section class="selected-card clipboard-settings-card">
+              <div class="selected-banner"><span class="selected-icon">✦</span><div><strong>工具开关</strong><small>关闭后对应能力不会参与搜索，也不会发起查询。</small></div></div>
+              <div class="tool-settings-grid">
+                <label class="switch-field"><input type="checkbox" data-tool-setting="calculator" />计算表达式</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="timestamp" />时间戳转换</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="jwt" />JWT 解析</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="dns" />DNS 解析</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="localIp" />本机 IP 查询</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="proxy" />代理信息检测</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="ip" />IP 地址识别</label>
+              </div>
+              <div class="field-hint">时间戳、JWT、DNS 和 IP 仅在输入符合明确格式时出现；代理和本机 IP 查询会在匹配对应关键词时触发。</div>
             </section>
           </div>
 

@@ -30,7 +30,14 @@
     "tools": {
       "enabled": true,
       "settings": {
-        "proxyAdapter": "auto"
+        "proxyAdapter": "auto",
+        "calculator": true,
+        "timestamp": true,
+        "jwt": true,
+        "dns": true,
+        "localIp": true,
+        "proxy": true,
+        "ip": true
       }
     }
   }

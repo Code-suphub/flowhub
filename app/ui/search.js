@@ -211,7 +211,16 @@ function dnsRecordType(value) {
 
 function toolSuggestions() {
   if (!pluginEnabled("tools")) return [];
-  return [dnsSuggestion(), ...localIpSuggestions(), proxySuggestion(), timestampSuggestion(), jwtSuggestion(), ipSuggestion(), calculationSuggestion()].filter(Boolean);
+  const enabled = (key) => state.config?.plugins?.tools?.settings?.[key] !== false;
+  return [
+    enabled("dns") ? dnsSuggestion() : null,
+    ...(enabled("localIp") ? localIpSuggestions() : []),
+    enabled("proxy") ? proxySuggestion() : null,
+    enabled("timestamp") ? timestampSuggestion() : null,
+    enabled("jwt") ? jwtSuggestion() : null,
+    enabled("ip") ? ipSuggestion() : null,
+    enabled("calculator") ? calculationSuggestion() : null
+  ].filter(Boolean);
 }
 
 async function copyText(text) {

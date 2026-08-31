@@ -55,7 +55,7 @@
     "icon": "✦",
     "defaultEnabled": true,
     "searchable": false,
-    "settingsPanel": "",
+    "settingsPanel": "tools",
     "settingsHint": "识别设置",
     "settingsOrder": 50,
     "order": 50
