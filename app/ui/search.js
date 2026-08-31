@@ -1363,6 +1363,11 @@ async function initialize() {
   state.appLoadedQuery = "";
   state.emptyResults.app = state.appResults.slice();
   state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
+  // The startup prefetch now uses the dedicated app-page size to avoid a cold
+  // query when switching scopes. Resolve those same rows' native icons in the
+  // background so the app list does not remain on placeholder glyphs merely
+  // because its metadata was already cached.
+  void hydrateAppIcons(state.appResults, ++appIconSearchToken);
   state.webResults = pages || [];
   state.webLoadedQuery = "";
   state.emptyResults.web = state.webResults.slice();
