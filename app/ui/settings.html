@@ -451,9 +451,148 @@
       .field-hint { color: #65756e; line-height: 1.5; }
       .permission-copy strong { color: #b7c1bd; }
       .status::before { background: #81d5b3; box-shadow: 0 0 0 4px rgba(129, 213, 179, .08); }
+      .module-tabs-bar {
+        min-height: 52px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 7px 20px;
+        overflow: visible;
+        border-bottom: 1px solid rgba(211, 231, 220, .08);
+        background: rgba(12, 21, 25, .88);
+        scrollbar-width: none;
+      }
+      .module-tabs-bar::-webkit-scrollbar { display: none; }
+      .module-tabs-title { flex: 0 0 auto; color: #5e7068; font-size: 9px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      .module-tabs-bar .module-switcher { min-width: max-content; display: flex; align-items: center; gap: 7px; margin: 0; }
+      .module-nav-group { display: flex; align-items: center; gap: 3px; padding-right: 12px; border-right: 1px solid rgba(211, 231, 220, .075); }
+      .module-nav-group:last-child { padding-right: 0; border-right: 0; }
+      .module-nav-group-label { margin-right: 3px; color: #53655d; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+      .module-tabs-bar .module-button {
+        width: auto;
+        min-width: 0;
+        min-height: 34px;
+        gap: 7px;
+        padding: 5px 9px;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        background: transparent;
+      }
+      .module-tabs-bar .module-button.active { border-color: rgba(143, 213, 183, .22); background: rgba(111, 193, 159, .11); box-shadow: inset 0 -2px #79c8aa; }
+      .module-tabs-bar .module-button:not(:disabled):hover { background: rgba(255, 255, 255, .045); }
+      .module-tabs-bar .module-nav-icon { width: 22px; height: 22px; border-radius: 6px; }
+      .module-tabs-bar .module-nav-copy { display: block; }
+      .module-tabs-bar .module-nav-copy strong { font-size: 11px; }
+      .module-tabs-bar .module-nav-copy small { display: none; }
+      .module-nav-menu { position: relative; }
+      .module-nav-menu > summary { list-style: none; }
+      .module-nav-menu > summary::-webkit-details-marker { display: none; }
+      .module-nav-menu-trigger {
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 7px;
+        min-width: 88px;
+        padding: 5px 9px;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .module-nav-menu-trigger:hover, .module-nav-menu[open] > .module-nav-menu-trigger { color: var(--ink); background: rgba(255, 255, 255, .045); }
+      .module-nav-menu.current > .module-nav-menu-trigger { color: var(--ink); border-color: rgba(143, 213, 183, .22); background: rgba(111, 193, 159, .11); box-shadow: inset 0 -2px #79c8aa; }
+      .module-nav-menu-trigger strong { font-size: 11px; }
+      .module-nav-menu-chevron { color: #61736b; font-size: 10px; transition: transform .16s ease; }
+      .module-nav-menu[open] .module-nav-menu-chevron { transform: rotate(180deg); }
+      .module-nav-popover {
+        position: absolute;
+        z-index: 80;
+        top: calc(100% + 7px);
+        left: -5px;
+        min-width: 154px;
+        display: grid;
+        gap: 3px;
+        padding: 6px;
+        border: 1px solid rgba(211, 231, 220, .12);
+        border-radius: 11px;
+        background: rgba(10, 18, 22, .98);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, .34);
+      }
+      .module-nav-popover .module-button { width: 100%; min-height: 36px; }
+      .module-tabs-bar .module-switcher > .module-button { min-width: 104px; }
+      .module-management-block { min-height: 0; }
+      .plugin-control-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 11px 0 10px; }
+      .plugin-control-group { overflow: hidden; border: 1px solid rgba(211, 231, 220, .085); border-radius: 10px; background: rgba(3, 10, 13, .28); }
+      .plugin-control-group-head { display: grid; gap: 2px; padding: 10px 11px 8px; }
+      .plugin-control-group-head strong { color: #b9c8c1; font-size: 11px; }
+      .plugin-control-group-head small { color: #5f7068; font-size: 9px; }
+      .plugin-control-item { min-height: 52px; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 38px; align-items: center; gap: 9px; padding: 7px 9px; border-top: 1px solid rgba(211, 231, 220, .065); }
+      .plugin-control-item:hover { background: rgba(143, 213, 183, .035); }
+      .plugin-control-icon { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; color: #9dd9c0; background: rgba(143, 213, 183, .075); font-size: 11px; }
+      .plugin-control-copy { min-width: 0; display: grid; gap: 2px; }
+      .plugin-control-copy strong, .plugin-control-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .plugin-control-copy strong { color: #c4d0cb; font-size: 11px; }
+      .plugin-control-copy small { color: #65766f; font-size: 9px; }
+      .plugin-control-item .plugin-enable { width: 38px; height: 32px; }
+      .plugin-shortcut { display: grid; gap: 2px; }
+      .plugin-shortcut span { color: #566860; font-size: 8px; }
+      .plugin-shortcut input { width: 72px; min-height: 28px; padding: 4px 7px; font-size: 10px; }
+      .scope-master-row { min-height: 48px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 94px; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid rgba(143, 213, 183, .1); border-radius: 10px; background: rgba(143, 213, 183, .035); }
+      .scope-master-row .plugin-shortcut input { width: 94px; }
+      .core-settings-card {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        align-items: start;
+        gap: 0 16px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .core-settings-card > .selected-banner { grid-column: 2; margin-bottom: 16px; }
+      .core-settings-card > .clipboard-settings-grid { grid-column: 2; overflow: hidden; gap: 0; border: 1px solid rgba(211, 231, 220, .085); border-radius: 11px; background: rgba(4, 11, 14, .22); }
+      .core-settings-card .settings-block { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+      .core-settings-card [data-core-section-panel="general"] + [data-core-section-panel="general"] { border-left: 1px solid rgba(211, 231, 220, .075); }
+      .core-settings-card [data-core-section-panel="system"] + [data-core-section-panel="system"] { border-top: 1px solid rgba(211, 231, 220, .075); }
+      .core-section-tabs { grid-column: 1; grid-row: 1 / span 2; position: sticky; top: 12px; display: flex; flex-direction: column; align-items: stretch; gap: 3px; margin: 0; padding: 0 12px 0 0; border: 0; border-right: 1px solid rgba(211, 231, 220, .075); border-radius: 0; background: transparent; }
+      .core-section-tab { min-height: 36px; display: flex; align-items: center; gap: 7px; padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; color: #71827a; background: transparent; font-size: 10px; font-weight: 680; text-align: left; cursor: pointer; transition: .16s ease; }
+      .core-section-tab::before { width: 20px; height: 20px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 5px; color: #78978a; background: rgba(143, 213, 183, .06); font-size: 8px; }
+      .core-section-tab[data-core-section="general"]::before { content: "F"; }
+      .core-section-tab[data-core-section="search"]::before { content: "⌘"; }
+      .core-section-tab[data-core-section="network"]::before { content: "↗"; }
+      .core-section-tab[data-core-section="system"]::before { content: "⌂"; }
+      .core-section-tab:hover { color: #b8c7c0; background: rgba(255, 255, 255, .03); }
+      .core-section-tab.active { color: #d8e5df; border-color: rgba(143, 213, 183, .12); background: rgba(111, 193, 159, .075); box-shadow: inset 2px 0 #79c8aa; }
+      .core-section-tab.active::before { color: #a9dec6; background: rgba(143, 213, 183, .11); }
+      .core-editor-head { justify-content: flex-start; margin-bottom: 16px; }
+      .core-editor-title { min-width: 0; }
+      .core-editor-title-row { display: flex; align-items: center; gap: 12px; }
+      .core-editor-title-row .module-state { padding-block: 5px; }
+      [data-core-section-panel].hidden { display: none; }
+      .workspace { grid-template-columns: 310px minmax(0, 1fr); }
+      .workspace.single-pane { grid-template-columns: minmax(0, 1fr); }
+      .workspace.single-pane .sidebar { display: none; }
+      .workspace.single-pane .editor { padding-inline: clamp(28px, 5vw, 72px); }
+      .workspace.single-pane .editor-inner { margin-inline: auto; }
+      .sidebar { padding: 20px 15px 30px; }
+      .sidebar .module-summary { margin-top: 2px; }
+      .tree-summary { display: block; margin: 4px 0 0 11px; color: #6c7d75; font-size: 9px; }
+      .editor { padding: 28px 38px 42px; }
+      .editor-inner { width: min(1120px, 100%); }
+      #structurePanel > .toolbar { position: sticky; z-index: 10; top: -1px; padding: 8px 0 10px; background: linear-gradient(180deg, rgba(13, 22, 26, .98) 72%, rgba(13, 22, 26, 0)); backdrop-filter: blur(12px); }
+      #structurePanel .selected-card { background: rgba(15, 25, 29, .82); }
+      .settings-actionbar { position: relative; z-index: 20; }
 
       @media (max-width: 760px) {
-        .workspace { grid-template-columns: 235px minmax(0, 1fr); }
+        .core-settings-card { display: block; }
+        .core-settings-card > .selected-banner { margin-bottom: 16px; }
+        .core-section-tabs { position: static; flex-direction: row; margin-bottom: 16px; padding: 4px; }
+        .core-section-tab { min-height: 32px; flex: 1; justify-content: center; padding: 5px 8px; text-align: center; }
+        .core-section-tab::before { display: none; }
+        .core-section-tab.active { box-shadow: inset 0 -2px #79c8aa; }
+        .core-settings-card [data-core-section-panel="general"] + [data-core-section-panel="general"] { border-top: 1px solid rgba(211, 231, 220, .075); border-left: 0; }
+        .workspace { grid-template-columns: 250px minmax(0, 1fr); }
         .editor { padding: 22px 18px 28px; }
         .form-grid { grid-template-columns: 1fr; }
         .form-grid .wide { grid-column: auto; }
@@ -466,11 +605,19 @@
         .toolbar-group.danger-group { margin-left: 0; }
       }
       @media (max-width: 980px) {
+        .module-tabs-bar { padding-inline: 14px; }
+        .module-tabs-title { display: none; }
+        .plugin-control-groups { grid-template-columns: 1fr; }
+        .workspace { grid-template-columns: 270px minmax(0, 1fr); }
         .clipboard-overview { grid-template-columns: 1fr 1fr; }
         .storage-overview { grid-column: 1 / -1; }
         .clipboard-settings-grid { grid-template-columns: 1fr; }
         .settings-block.wide { grid-column: auto; }
         .scope-shortcut-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      }
+      @media (min-width: 761px) and (max-width: 980px) {
+        .core-settings-card > .clipboard-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .core-settings-card [data-core-section-panel].wide { grid-column: 1 / -1; }
       }
     </style>
   </head>
@@ -491,12 +638,13 @@
         </div>
       </header>
 
+      <nav class="module-tabs-bar" aria-label="设置模块">
+        <span class="module-tabs-title">设置模块</span>
+        <div class="module-switcher" id="moduleSwitcher"></div>
+      </nav>
+
       <div class="workspace">
         <aside class="sidebar">
-          <div class="section-label">功能模块</div>
-          <p class="side-note module-nav-note">选择模块查看设置；右侧开关控制模块是否参与搜索。</p>
-          <div class="module-switcher" id="moduleSwitcher"></div>
-
           <div class="module-panel" data-module-panel="core">
             <div class="section-label">应用配置</div>
             <div class="app-card module-summary">
@@ -508,7 +656,7 @@
 
           <div class="module-panel" data-module-panel="web">
             <div class="tree-heading">
-              <div class="section-label">目录结构</div>
+              <div><div class="section-label">目录结构</div><small class="tree-summary" id="treeSummary"></small></div>
               <div class="tree-actions">
                 <button class="mini-button" data-action="expand-all" title="全部展开">⊞</button>
                 <button class="mini-button" data-action="collapse-all" title="全部收缩">⊟</button>
@@ -562,27 +710,31 @@
 
         <main class="editor">
           <div class="editor-inner module-panel" data-module-panel="core">
-            <div class="editor-head">
-              <div><div class="editor-kicker">FlowHub Core</div><h2>通用设置</h2><p>这些配置属于 App 本身，不依赖任何插件。</p></div>
-              <span class="module-state">运行中</span>
+            <div class="editor-head core-editor-head">
+              <div class="core-editor-title"><div class="editor-kicker">FlowHub Core</div><div class="core-editor-title-row"><h2>通用设置</h2><span class="module-state">运行中</span></div><p>这些配置属于 App 本身，不依赖任何插件。</p></div>
             </div>
-            <section class="selected-card clipboard-settings-card">
-              <div class="selected-banner"><span class="selected-icon">F</span><div><strong>启动与唤出</strong><small>修改快捷键后保存即可立即生效。</small></div></div>
+            <section class="selected-card clipboard-settings-card core-settings-card">
+              <div class="selected-banner"><span class="selected-icon" id="coreSectionIcon">F</span><div><strong id="coreSectionTitle">启动与唤出</strong><small id="coreSectionDescription">修改快捷键后保存即可立即生效。</small></div></div>
+              <nav class="core-section-tabs" aria-label="通用设置分类">
+                <button class="core-section-tab active" type="button" data-core-section="general">基础</button>
+                <button class="core-section-tab" type="button" data-core-section="search">搜索</button>
+                <button class="core-section-tab" type="button" data-core-section="network">网络</button>
+                <button class="core-section-tab" type="button" data-core-section="system">系统</button>
+              </nav>
               <div class="clipboard-settings-grid">
-                <div class="settings-block"><div class="settings-block-title">全局快捷键</div><div class="field"><label for="coreHotkey">唤出 FlowHub</label><input id="coreHotkey" data-core-field="hotkey" placeholder="Alt+Space" /><div class="field-hint">使用系统快捷键格式，例如 Alt+Space、CommandOrControl+Space。</div></div></div>
-                <div class="settings-block"><div class="settings-block-title">系统启动</div><label class="switch-field"><input id="coreLaunchAtLogin" type="checkbox" data-core-field="launchAtLogin" />登录后自动启动 FlowHub</label><div class="field-hint">打包后的 App 保存时会同步 macOS 登录项。</div></div>
-                <div class="settings-block wide">
-                  <div class="settings-block-title">搜索范围快捷键</div>
-                  <div class="scope-shortcut-grid">
-                    <div class="field"><label for="scopeShortcutAll">全部</label><input id="scopeShortcutAll" data-core-scope-shortcut="all" placeholder="Shift+1" /></div>
-                    <div class="field"><label for="scopeShortcutClipboard">剪切板</label><input id="scopeShortcutClipboard" data-core-scope-shortcut="clipboard" placeholder="Shift+2" /></div>
-                    <div class="field"><label for="scopeShortcutApp">应用</label><input id="scopeShortcutApp" data-core-scope-shortcut="app" placeholder="Shift+3" /></div>
-                    <div class="field"><label for="scopeShortcutWeb">网页</label><input id="scopeShortcutWeb" data-core-scope-shortcut="web" placeholder="Shift+4" /></div>
-                    <div class="field"><label for="scopeShortcutMemo">备忘录</label><input id="scopeShortcutMemo" data-core-scope-shortcut="memo" placeholder="Shift+5" /></div>
+                <div class="settings-block" data-core-section-panel="general"><div class="settings-block-title">全局快捷键</div><div class="field"><label for="coreHotkey">唤出 FlowHub</label><input id="coreHotkey" data-core-field="hotkey" placeholder="Alt+Space" /><div class="field-hint">使用系统快捷键格式，例如 Alt+Space、CommandOrControl+Space。</div></div></div>
+                <div class="settings-block" data-core-section-panel="general"><div class="settings-block-title">系统启动</div><label class="switch-field"><input id="coreLaunchAtLogin" type="checkbox" data-core-field="launchAtLogin" />登录后自动启动 FlowHub</label><div class="field-hint">打包后的 App 保存时会同步 macOS 登录项。</div></div>
+                <div class="settings-block wide module-management-block hidden" data-core-section-panel="search">
+                  <div class="settings-block-title">搜索入口与快捷键</div>
+                  <div class="scope-master-row">
+                    <i class="plugin-control-icon">⌘</i>
+                    <span class="plugin-control-copy"><strong>全部结果</strong><small>在所有已启用来源中搜索</small></span>
+                    <label class="plugin-shortcut" for="scopeShortcutAll"><span>范围键</span><input id="scopeShortcutAll" data-core-scope-shortcut="all" placeholder="Shift+1" /></label>
                   </div>
-                  <div class="field-hint">支持 Shift、Ctrl、Alt、Command 和 CommandOrControl；留空可停用对应快捷键。</div>
+                  <div class="plugin-control-groups" id="corePluginControls"></div>
+                  <div class="field-hint">每一行同时管理是否参与搜索和范围快捷键；留空可停用快捷键，关闭模块不会删除已有数据。</div>
                 </div>
-                <div class="settings-block wide">
+                <div class="settings-block wide hidden" data-core-section-panel="network">
                   <div class="settings-block-title">代理客户端适配</div>
                   <div class="field">
                     <label for="proxyAdapter">代理信息来源</label>
@@ -595,7 +747,7 @@
                     <div class="field-hint">自动模式会优先检测 Mihomo Unix Socket，再尝试常见 Clash REST API；Surge 等未暴露兼容 API 的客户端仍可使用系统代理和出口 IP 检测。</div>
                   </div>
                 </div>
-                <div class="settings-block wide config-path-block">
+                <div class="settings-block wide config-path-block hidden" data-core-section-panel="system">
                   <div class="settings-block-title">配置文件位置</div>
                   <div class="field">
                     <label for="coreConfigPath">FlowHub 主配置文件</label>
@@ -604,7 +756,7 @@
                     <div class="field-hint" id="coreConfigPathHint">保存后切换到新的配置文件；原文件会保留。</div>
                   </div>
                 </div>
-                <div class="settings-block wide update-block" id="appUpdateBlock">
+                <div class="settings-block wide update-block hidden" id="appUpdateBlock" data-core-section-panel="system">
                   <div class="update-heading">
                     <div class="update-title"><strong>FlowHub 更新</strong><code id="currentVersion">v—</code></div>
                     <span class="update-badge" id="updateBadge" data-status="idle">待检查</span>

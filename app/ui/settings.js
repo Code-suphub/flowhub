@@ -16,6 +16,7 @@ const state = {
   draftSavedAt: 0,
   selectedMemoId: "",
   memoFilter: "",
+  coreSection: "general",
   appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" }
 };
 
@@ -496,9 +497,17 @@ function updateStatus() {
 
 function renderTree() {
   const tree = $("#tree");
+  const allEntries = nodeEntries();
   const entries = filteredNodeEntries();
   const filterCount = $("#treeFilterCount");
   if (filterCount) filterCount.textContent = state.treeFilter.trim() ? `${entries.length} 项` : "";
+  const treeSummary = $("#treeSummary");
+  if (treeSummary) {
+    const pageCount = allEntries.filter(({ node }) => node.url).length;
+    treeSummary.textContent = state.treeFilter.trim()
+      ? `${entries.length} 项匹配 · 共 ${allEntries.length} 个节点`
+      : `${allEntries.length - pageCount} 个目录 · ${pageCount} 个页面`;
+  }
   if (!entries.length) {
     tree.innerHTML = state.treeFilter.trim()
       ? `<div class="tree-empty">没有匹配的目录或页面。<br />可以尝试标题、域名或节点 ID。</div>`
@@ -721,6 +730,8 @@ function renderMode() {
 }
 
 function renderModule() {
+  const workspace = document.querySelector(".workspace");
+  workspace?.classList.toggle("single-pane", state.module !== "web");
   document.querySelectorAll("[data-module-panel]").forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.modulePanel !== state.module);
   });
@@ -731,17 +742,69 @@ function renderModule() {
   });
 }
 
+function renderCoreSection() {
+  const sections = {
+    general: { icon: "F", title: "启动与唤出", description: "修改快捷键或登录启动设置，保存后立即生效。" },
+    search: { icon: "⌘", title: "搜索入口", description: "集中管理搜索来源、启停状态和范围快捷键。" },
+    network: { icon: "↗", title: "网络与代理", description: "选择 FlowHub 读取本机代理状态的方式。" },
+    system: { icon: "⌂", title: "数据与更新", description: "管理主配置文件位置并检查 FlowHub 更新。" }
+  };
+  if (!sections[state.coreSection]) state.coreSection = "general";
+  document.querySelectorAll("[data-core-section]").forEach((button) => {
+    const active = button.dataset.coreSection === state.coreSection;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-core-section-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.coreSectionPanel !== state.coreSection);
+  });
+  const section = sections[state.coreSection];
+  $("#coreSectionIcon").textContent = section.icon;
+  $("#coreSectionTitle").textContent = section.title;
+  $("#coreSectionDescription").textContent = section.description;
+}
+
 function renderPluginModules() {
   const plugins = [...state.plugins].sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
-  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">F</i><span class="module-nav-copy"><strong>通用设置</strong><small>${state.module === "core" ? "当前模块" : "App 配置"}</small></span></button>`;
-  const pluginButtons = plugins.map((plugin) => {
+  const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  const pluginButton = (plugin) => {
     const moduleId = plugin.settingsPanel || "";
     const active = moduleId === state.module;
     const disabled = !plugin.available || !moduleId;
-    const hint = active ? "当前模块" : !plugin.available ? "未安装" : plugin.enabled ? plugin.settingsHint : "已停用";
-    return `<div class="plugin-module-row"><button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""}><i class="module-nav-icon">${esc(plugin.icon || "·")}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button><label class="plugin-enable" title="${plugin.available ? (plugin.enabled ? "停用插件" : "启用插件") : "插件未安装"}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
+    const hint = !plugin.available ? "未安装" : !plugin.enabled ? "已停用" : plugin.settingsHint;
+    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""} title="${esc(hint || plugin.name)}"><i class="module-nav-icon">${esc(plugin.icon || "·")}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button>`;
+  };
+  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">F</i><span class="module-nav-copy"><strong>通用设置</strong><small>App 配置</small></span></button>`;
+  const categoryMenu = (label, icon, ids) => {
+    const items = ids.map((id) => pluginsById.get(id)).filter(Boolean);
+    const activePlugin = items.find((plugin) => plugin.settingsPanel === state.module);
+    const title = activePlugin ? `${label} · 当前为${activePlugin.settingsName || activePlugin.name}` : `${label} · ${items.length} 个模块`;
+    return `<details class="module-nav-menu${activePlugin ? " current" : ""}"><summary class="module-nav-menu-trigger" title="${esc(title)}"><i class="module-nav-icon">${esc(activePlugin?.icon || icon)}</i><strong>${esc(label)}</strong><span class="module-nav-menu-chevron">⌄</span></summary><div class="module-nav-popover">${items.map(pluginButton).join("")}</div></details>`;
+  };
+  $("#moduleSwitcher").innerHTML = [
+    coreButton,
+    categoryMenu("入口", "◇", ["web", "app"]),
+    categoryMenu("文本", "▤", ["clipboard", "memo"]),
+    categoryMenu("工具", "✦", ["tools"])
+  ].join("");
+
+  const controls = $("#corePluginControls");
+  if (!controls) return;
+  const controlGroups = [
+    { label: "入口", description: "网页与本机应用", ids: ["web", "app"] },
+    { label: "文本", description: "剪切板与备忘录", ids: ["clipboard", "memo"] },
+    { label: "工具", description: "格式识别与网络查询", ids: ["tools"] }
+  ];
+  controls.innerHTML = controlGroups.map((group) => {
+    const items = group.ids.map((id) => pluginsById.get(id)).filter(Boolean).map((plugin) => {
+      const hint = !plugin.available ? "插件未安装" : plugin.description || plugin.settingsHint || "";
+      const shortcut = Object.prototype.hasOwnProperty.call(DEFAULT_SCOPE_SHORTCUTS, plugin.id)
+        ? `<label class="plugin-shortcut" for="scopeShortcut${esc(plugin.id)}"><span>范围键</span><input id="scopeShortcut${esc(plugin.id)}" data-core-scope-shortcut="${esc(plugin.id)}" value="${esc(state.config?.core?.scopeShortcuts?.[plugin.id] ?? DEFAULT_SCOPE_SHORTCUTS[plugin.id] ?? "")}" placeholder="${esc(DEFAULT_SCOPE_SHORTCUTS[plugin.id] || "")}" /></label>`
+        : `<span></span>`;
+      return `<div class="plugin-control-item" title="${esc(hint)}"><i class="plugin-control-icon">${esc(plugin.icon || "·")}</i><span class="plugin-control-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(plugin.settingsHint || hint)}</small></span>${shortcut}<label class="plugin-enable" title="${plugin.enabled ? "停用" : "启用"}${esc(plugin.name)}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
+    }).join("");
+    return `<section class="plugin-control-group"><header class="plugin-control-group-head"><strong>${esc(group.label)}</strong><small>${esc(group.description)}</small></header>${items}</section>`;
   }).join("");
-  $("#moduleSwitcher").innerHTML = coreButton + pluginButtons;
 }
 
 function render() {
@@ -755,6 +818,7 @@ function render() {
   syncJson();
   renderMode();
   renderModule();
+  renderCoreSection();
   const cancelAddButton = $("#cancelAddBtn");
   if (cancelAddButton) cancelAddButton.hidden = !(state.module === "web" && state.pendingAddId);
   updateStatus();
@@ -1149,6 +1213,12 @@ function switchModule(module) {
 }
 
 document.addEventListener("click", (event) => {
+  const coreSection = event.target.closest("[data-core-section]")?.dataset.coreSection;
+  if (coreSection) {
+    state.coreSection = coreSection;
+    renderCoreSection();
+    return;
+  }
   const module = event.target.closest("[data-module]")?.dataset.module;
   if (module) {
     switchModule(module);
