@@ -10,6 +10,8 @@ const state = {
   searchIndex: 0,
   openTarget: "current"
 };
+let searchCatalogSource = null;
+let searchCatalog = [];
 
 const escapeHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
@@ -116,11 +118,14 @@ async function openExtensionSurface(targetSurface) {
 function searchMatches() {
   const keyword = state.search.trim().toLowerCase();
   if (!keyword) return [];
-  return flatten(allItems())
-    .map((page) => ({
+  if (searchCatalogSource !== state.config) {
+    searchCatalogSource = state.config;
+    searchCatalog = flatten(allItems()).map((page) => ({
       ...page,
       haystack: `${page.title || ""} ${page.url || ""} ${pathText(page)} ${noteText(page)}`.toLowerCase()
-    }))
+    }));
+  }
+  return searchCatalog
     .filter((page) => page.haystack.includes(keyword))
     .slice(0, 10);
 }
@@ -164,6 +169,18 @@ function renderSearchResults() {
       `).join("")}
     </div>
   `;
+}
+
+function updateSearchResults() {
+  const input = app.querySelector("#searchInput");
+  const current = app.querySelector(".search-results");
+  const html = renderSearchResults();
+  if (!html) {
+    current?.remove();
+    return;
+  }
+  if (current) current.outerHTML = html;
+  else input?.insertAdjacentHTML("afterend", html);
 }
 
 function renderNodeCards(nodes, emptyTitle = "当前没有下级页面", emptyBody = "可以在 Web 管理台配置。") {
@@ -352,8 +369,7 @@ document.addEventListener("input", (event) => {
   if (event.target.id !== "searchInput") return;
   state.search = event.target.value;
   state.searchIndex = 0;
-  render();
-  document.querySelector("#searchInput")?.focus();
+  updateSearchResults();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -362,14 +378,12 @@ document.addEventListener("keydown", (event) => {
   if (!inputFocused || !matches.length) return;
   if (event.key === "ArrowDown") {
     state.searchIndex = Math.min(state.searchIndex + 1, matches.length - 1);
-    render();
-    document.querySelector("#searchInput")?.focus();
+    updateSearchResults();
     event.preventDefault();
   }
   if (event.key === "ArrowUp") {
     state.searchIndex = Math.max(state.searchIndex - 1, 0);
-    render();
-    document.querySelector("#searchInput")?.focus();
+    updateSearchResults();
     event.preventDefault();
   }
   if (event.key === "Enter") {

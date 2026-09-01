@@ -12,7 +12,10 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   const usageListeners = new Set();
   const updateListeners = new Set();
   let configCache = null;
+  let webPageIndex = null;
   let pluginsPromise = null;
+  const applicationIconCache = new Map();
+  const applicationIconInflight = new Map();
 
   function cloneValue(value) {
     return JSON.parse(JSON.stringify(value));
@@ -26,14 +29,26 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     });
   }
 
-  async function getConfig() {
+  async function ensureConfig() {
     if (!configCache) configCache = await invoke("get_config");
-    return cloneValue(configCache);
+    return configCache;
+  }
+
+  async function getConfig() {
+    return cloneValue(await ensureConfig());
+  }
+
+  async function indexedWebPages() {
+    if (!webPageIndex) {
+      const config = await ensureConfig();
+      webPageIndex = flattenPages(config.plugins?.web?.settings?.items || []);
+    }
+    return webPageIndex;
   }
 
   async function listPlugins() {
     if (!pluginsPromise) pluginsPromise = fetch("/plugins.json", { cache: "no-store" }).then((response) => response.json());
-    const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
+    const [plugins, config] = await Promise.all([pluginsPromise, ensureConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
       available: ["web", "clipboard", "app", "memo", "tools"].includes(plugin.id),
@@ -55,7 +70,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       return (await invoke("search_applications", { query, limit, offset, includeIcons: request.includeIcons !== false })).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "web") {
-      const pages = flattenPages((await getConfig()).plugins?.web?.settings?.items || []);
+      const pages = await indexedWebPages();
       return window.FlowHubWebSearch.rankWebPages(pages, query, limit, offset)
         .map((record) => ({ ...record, pluginId: id }));
     }
@@ -72,7 +87,24 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   async function loadAppIcons(paths = []) {
     const uniquePaths = [...new Set((paths || []).filter(Boolean))];
     if (!uniquePaths.length) return {};
-    return invoke("load_application_icons", { paths: uniquePaths });
+    const missingPaths = uniquePaths.filter((path) => !applicationIconCache.has(path) && !applicationIconInflight.has(path));
+    if (missingPaths.length) {
+      const request = invoke("load_application_icons", { paths: missingPaths }).catch(() => ({}));
+      for (const path of missingPaths) {
+        const pending = request
+          .then((icons) => {
+            const icon = icons?.[path] || "";
+            if (icon) applicationIconCache.set(path, icon);
+            return icon;
+          })
+          .finally(() => {
+            if (applicationIconInflight.get(path) === pending) applicationIconInflight.delete(path);
+          });
+        applicationIconInflight.set(path, pending);
+      }
+    }
+    const entries = await Promise.all(uniquePaths.map(async (path) => [path, applicationIconCache.get(path) || await applicationIconInflight.get(path) || ""]));
+    return Object.fromEntries(entries.filter(([, icon]) => icon));
   }
 
   async function lookupDns(hostname) {
@@ -207,6 +239,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       const result = await invoke("save_config", { config });
       if (result?.ok && result.config) {
         configCache = cloneValue(result.config);
+        webPageIndex = null;
         configListeners.forEach((listener) => listener(cloneValue(configCache)));
       }
       return result;
@@ -214,6 +247,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     listPlugins,
     pluginSearch,
     loadAppIcons,
+    loadClipboardAssets: (ids = []) => invoke("load_clipboard_assets", { ids }),
     lookupDns,
     lookupLocalIp,
     lookupIp,
@@ -244,6 +278,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     const next = event.payload?.config || event.payload;
     if (!next) return;
     configCache = cloneValue(next);
+    webPageIndex = null;
     configListeners.forEach((listener) => listener(cloneValue(configCache), event.payload?.query || ""));
   });
   void listen("flowhub:usage-updated", () => usageListeners.forEach((listener) => listener()));

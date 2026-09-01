@@ -24,13 +24,13 @@
                 {
                   "id": "aliyun-ecs",
                   "title": "ECS 实例",
-                  "url": "mock://aliyun/ecs",
+                  "url": "https://ecs.console.aliyun.com/",
                   "accent": "#0AA9DB"
                 },
                 {
                   "id": "aliyun-oss",
                   "title": "OSS 存储",
-                  "url": "mock://aliyun/oss",
+                  "url": "https://oss.console.aliyun.com/",
                   "accent": "#1FB4A2"
                 },
                 {
@@ -39,8 +39,7 @@
                   "url": "https://www.aliyun.com/",
                   "accent": "#FFAA1A"
                 }
-              ],
-              "url": "http://wave.bilibiligame.co/wave/application/create-publish?cmdb_app_id=game.tzd.tts&page_size=10&page_num=1"
+              ]
             },
             {
               "id": "tencent",
@@ -49,129 +48,13 @@
                 {
                   "id": "tencent-cvm",
                   "title": "CVM 主机",
-                  "url": "mock://tencent/cvm",
+                  "url": "https://console.cloud.tencent.com/cvm",
                   "accent": "#0AA9DB"
                 },
                 {
                   "id": "tencent-home",
                   "title": "腾讯云官网",
                   "url": "https://cloud.tencent.com/",
-                  "accent": "#1FB4A2"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "private-cloud",
-          "title": "私有云",
-          "children": [
-            {
-              "id": "hudi",
-              "title": "虎迪云",
-              "children": [
-                {
-                  "id": "hudi-node",
-                  "title": "节点资源",
-                  "url": "mock://hudi/node",
-                  "accent": "#1FB4A2"
-                },
-                {
-                  "id": "hudi-billing",
-                  "title": "费用中心",
-                  "url": "mock://hudi/billing",
-                  "accent": "#FFAA1A"
-                }
-              ]
-            },
-            {
-              "id": "edge",
-              "title": "边缘节点",
-              "children": [
-                {
-                  "id": "edge-status",
-                  "title": "节点状态",
-                  "url": "mock://edge/status",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "edge-route",
-                  "title": "线路调度",
-                  "url": "mock://edge/route",
-                  "accent": "#1FB4A2"
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "ops",
-      "title": "运维平台",
-      "icon": "⌘",
-      "children": [
-        {
-          "id": "observe",
-          "title": "可观测",
-          "children": [
-            {
-              "id": "metrics",
-              "title": "指标与日志",
-              "children": [
-                {
-                  "id": "grafana",
-                  "title": "Grafana",
-                  "url": "mock://ops/grafana",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "logs",
-                  "title": "日志检索",
-                  "url": "mock://ops/logs",
-                  "accent": "#1FB4A2"
-                }
-              ]
-            },
-            {
-              "id": "alerts",
-              "title": "告警",
-              "children": [
-                {
-                  "id": "alert-rules",
-                  "title": "告警规则",
-                  "url": "mock://ops/alert-rules",
-                  "accent": "#FFAA1A"
-                },
-                {
-                  "id": "alert-history",
-                  "title": "告警历史",
-                  "url": "mock://ops/alert-history",
-                  "accent": "#DE3030"
-                }
-              ]
-            }
-          ],
-          "url": "https://www.openprice.cc/card-products"
-        },
-        {
-          "id": "delivery",
-          "title": "发布交付",
-          "children": [
-            {
-              "id": "pipeline",
-              "title": "流水线",
-              "children": [
-                {
-                  "id": "jenkins",
-                  "title": "Jenkins",
-                  "url": "mock://ops/jenkins",
-                  "accent": "#0AA9DB"
-                },
-                {
-                  "id": "argo",
-                  "title": "Argo CD",
-                  "url": "mock://ops/argo",
                   "accent": "#1FB4A2"
                 }
               ]
@@ -199,18 +82,6 @@
               "id": "reports",
               "title": "报表与任务",
               "children": [
-                {
-                  "id": "bi",
-                  "title": "BI 报表",
-                  "url": "mock://biz/bi",
-                  "accent": "#1FB4A2"
-                },
-                {
-                  "id": "warehouse",
-                  "title": "数仓任务",
-                  "url": "mock://biz/warehouse",
-                  "accent": "#0AA9DB"
-                },
                 {
                   "id": "huohuo-home",
                   "title": "逸刻时光",

@@ -23,6 +23,8 @@
     f12Hijack: false,
     debug: []
   };
+  let searchCatalogSource = null;
+  let searchCatalog = [];
 
   // ---- 调试日志 ----
   let debugConsoleVisible = false;
@@ -401,8 +403,15 @@
   function searchMatches() {
     const keyword = state.query.trim().toLowerCase();
     if (!keyword) return [];
-    return collectNodes(rootItems())
-      .filter((node) => `${node.title || ""} ${node.url || ""} ${pathText(node.path)} ${noteText(node)}`.toLowerCase().includes(keyword))
+    if (searchCatalogSource !== state.config) {
+      searchCatalogSource = state.config;
+      searchCatalog = collectNodes(rootItems()).map((node) => ({
+        ...node,
+        searchText: `${node.title || ""} ${node.url || ""} ${pathText(node.path)} ${noteText(node)}`.toLowerCase()
+      }));
+    }
+    return searchCatalog
+      .filter((node) => node.searchText.includes(keyword))
       .slice(0, 12);
   }
 
@@ -630,6 +639,18 @@
     `).join("")}</div>`;
   }
 
+  function updateNavigationView() {
+    const label = shadow.querySelector(".section-label");
+    const content = shadow.querySelector(".navigation-content");
+    if (!label || !content) return render();
+    const isSearching = Boolean(state.query.trim());
+    const root = activeRoot();
+    label.textContent = isSearching ? "查询结果" : `${root?.title || "分类"}的目录结构`;
+    content.innerHTML = isSearching
+      ? renderResults()
+      : `<div class="tree">${root ? renderTree(root.children || []) : `<div class="empty">暂无分类</div>`}</div>`;
+  }
+
   function render() {
     host.classList.toggle("open", state.mode === "open");
     // 记住面板正文(.body)当前的滚动位置，避免全量重绘后"跳到顶部"。
@@ -674,7 +695,7 @@
             `).join("")}
           </div>
           <div class="section-label">${isSearching ? "查询结果" : `${escapeHtml(root?.title || "分类")}的目录结构`}</div>
-          ${isSearching ? renderResults() : `<div class="tree">${root ? renderTree(root.children || []) : `<div class="empty">暂无分类</div>`}</div>`}
+          <div class="navigation-content">${isSearching ? renderResults() : `<div class="tree">${root ? renderTree(root.children || []) : `<div class="empty">暂无分类</div>`}</div>`}</div>
         </div>
       </section>
       ${debugConsoleVisible ? renderDebugConsole() : ""}
@@ -861,8 +882,7 @@
     if (!event.target.classList.contains("search")) return;
     state.query = event.target.value;
     state.searchIndex = 0;
-    render();
-    shadow.querySelector(".search")?.focus();
+    updateNavigationView();
   });
 
   shadow.addEventListener("keydown", (event) => {
@@ -871,13 +891,11 @@
     if (!results.length) return;
     if (event.key === "ArrowDown") {
       state.searchIndex = Math.min(state.searchIndex + 1, results.length - 1);
-      render();
-      shadow.querySelector(".search")?.focus();
+      updateNavigationView();
       event.preventDefault();
     } else if (event.key === "ArrowUp") {
       state.searchIndex = Math.max(state.searchIndex - 1, 0);
-      render();
-      shadow.querySelector(".search")?.focus();
+      updateNavigationView();
       event.preventDefault();
     } else if (event.key === "Enter") {
       selectNode(results[state.searchIndex].id);

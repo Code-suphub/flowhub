@@ -52,7 +52,7 @@ function iconHtml(node, className = "tree-icon") {
     const fallback = simpleIcon
       ? `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${encodeURIComponent(simpleIcon[1])}.svg`
       : "";
-    return `<span class="${className} image-icon"><img src="${esc(raw)}" ${fallback ? `data-fallback="${esc(fallback)}"` : ""} referrerpolicy="no-referrer" alt="" /></span>`;
+    return `<span class="${className} image-icon"><img src="${esc(raw)}" ${fallback ? `data-fallback="${esc(fallback)}"` : ""} width="23" height="23" loading="lazy" decoding="async" referrerpolicy="no-referrer" alt="" /></span>`;
   }
   if (raw) return `<span class="${className} text-icon">${esc(raw)}</span>`;
   const glyph = node?.url
@@ -246,6 +246,10 @@ function filteredNodeEntries() {
 
 function expandAll() {
   state.expanded = new Set(nodeEntries().filter(({ node }) => node.children?.length).map(({ node }) => node.id));
+}
+
+function expandInitialTree() {
+  state.expanded = new Set(webItems().filter((node) => node.children?.length).map((node) => node.id));
 }
 
 function collapseAll() {
@@ -1475,7 +1479,7 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   if (draft) clearDraft(draftStorageKey(configFile));
   state.config = loadedConfig;
   state.jsonDirty = false;
-  expandAll();
+  expandInitialTree();
   render();
   applyInitialWebUrl();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));

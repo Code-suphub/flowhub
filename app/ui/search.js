@@ -14,7 +14,7 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null, localIpResult: null, ipResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null, localIpResult: null, ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
@@ -38,6 +38,13 @@ let dnsSearchTimer = null;
 let localIpSearchTimer = null;
 let ipSearchTimer = null;
 let proxySearchTimer = null;
+let inputRenderFrame = null;
+let webInputSearchFrame = null;
+let lastResultsHtml = "";
+let webIconTimer = null;
+let showUncachedWebIcons = false;
+const loadedWebIcons = new Set();
+const failedWebIcons = new Set();
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -363,8 +370,20 @@ function iconHtml(n) {
   const isImage = /^https?:\/\//i.test(raw)
     || /^data:image\//i.test(raw)
     || /^(?:\.\/|\/)?assets\/[^?#]+\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i.test(raw);
-  if (isImage) return `<img src="${esc(raw)}" alt="" />`;
+  if (isImage) {
+    if (failedWebIcons.has(raw) || (!showUncachedWebIcons && !loadedWebIcons.has(raw))) return "⌁";
+    return `<img src="${esc(raw)}" data-web-icon="${esc(raw)}" width="22" height="22" loading="lazy" decoding="async" alt="" />`;
+  }
   return esc(raw || "⌁");
+}
+
+function deferUncachedWebIcons(delay = 260) {
+  showUncachedWebIcons = false;
+  clearTimeout(webIconTimer);
+  webIconTimer = setTimeout(() => {
+    showUncachedWebIcons = true;
+    render({ preserveScroll: true });
+  }, delay);
 }
 function setConfig(config) {
   state.config = config;
@@ -875,7 +894,14 @@ function renderResult(item, index, items) {
 
 function render({ preserveScroll = false } = {}) {
   const previousScrollTop = preserveScroll ? resultsEl.scrollTop : 0;
-  if (!state.config) { resultsEl.innerHTML = `<div class="empty">配置加载中…</div>`; return; }
+  if (!state.config) {
+    const html = `<div class="empty">配置加载中…</div>`;
+    if (html !== lastResultsHtml) {
+      resultsEl.innerHTML = html;
+      lastResultsHtml = html;
+    }
+    return;
+  }
   const m = matches();
   const paging = state.scope === "clipboard"
     ? { loading: state.clipboardLoading, hasMore: state.clipboardHasMore }
@@ -886,11 +912,14 @@ function render({ preserveScroll = false } = {}) {
         : state.scope === "memo"
           ? { loading: state.memoLoading, hasMore: state.memoHasMore }
           : null;
-  if (!m.length) { resultsEl.innerHTML = `<div class="empty">${paging?.loading ? "正在加载…" : "没有匹配项"}</div>`; return; }
-  resultsEl.innerHTML = renderResults(m);
-  if (paging && (paging.loading || !paging.hasMore)) {
-    resultsEl.insertAdjacentHTML("beforeend", `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>`);
+  const html = !m.length
+    ? `<div class="empty">${paging?.loading ? "正在加载…" : "没有匹配项"}</div>`
+    : `${renderResults(m)}${paging && (paging.loading || !paging.hasMore) ? `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>` : ""}`;
+  if (html !== lastResultsHtml) {
+    resultsEl.innerHTML = html;
+    lastResultsHtml = html;
   }
+  if (!m.length) return;
   if (preserveScroll) {
     resultsEl.scrollTop = previousScrollTop;
     return;
@@ -1169,7 +1198,7 @@ function setScope(scope) {
     if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
   }
   if (scope === "all" || scope === "app") {
-    if (!state.appLoading && (state.appLoadedQuery !== state.query || (scope === "app" && state.appResults.length < APP_PAGE_SIZE && state.appHasMore === false))) void refreshApps();
+    if (!state.appLoading && (state.appLoadedQuery !== state.query || (scope === "app" && state.appLoadedLimit < APP_PAGE_SIZE))) void refreshApps();
   }
   if (scope === "all" || scope === "web") {
     if (state.webLoadedQuery !== state.query) void refreshWeb();
@@ -1331,6 +1360,7 @@ async function refreshClipboard({ append = false } = {}) {
     state.clipboardLoadedQuery = state.query;
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
     render({ preserveScroll: append });
+    void hydrateClipboardAssets(nextRecords, token, append);
   } catch {
     if (!append) state.clipboardResults = [];
   } finally {
@@ -1339,6 +1369,26 @@ async function refreshClipboard({ append = false } = {}) {
       render({ preserveScroll: append });
     }
   }
+}
+
+async function hydrateClipboardAssets(records, token, preserveScroll) {
+  if (!window.weborg?.loadClipboardAssets) return;
+  const imageRecords = (records || []).filter((record) => record.kind === "image").slice(0, 6);
+  const fileRecords = (records || []).filter((record) => record.kind === "file");
+  const ids = [...imageRecords, ...fileRecords]
+    .map((record) => Number(record.id))
+    .filter(Number.isFinite);
+  if (!ids.length) return;
+  const assets = await window.weborg.loadClipboardAssets(ids).catch(() => ({}));
+  if (token !== clipboardSearchToken) return;
+  let changed = false;
+  state.clipboardResults = state.clipboardResults.map((record) => {
+    const asset = assets?.[String(record.id)];
+    if (!asset || (!asset.imageUrl && !asset.fileIconUrl)) return record;
+    changed = true;
+    return { ...record, ...asset };
+  });
+  if (changed) render({ preserveScroll });
 }
 
 async function refreshApps({ append = false } = {}) {
@@ -1364,7 +1414,9 @@ async function refreshApps({ append = false } = {}) {
     const existing = new Set(state.appResults.map((item) => item.path || item.id));
     state.appResults = append ? [...state.appResults, ...next.filter((item) => !existing.has(item.path || item.id))] : next;
     if (!state.query.trim() && !append) state.emptyResults.app = next.slice();
+    const sameLoadedQuery = state.appLoadedQuery === state.query;
     state.appLoadedQuery = state.query;
+    state.appLoadedLimit = append && sameLoadedQuery ? Math.max(state.appLoadedLimit, offset + limit) : limit;
     state.appHasMore = state.scope === "app" && next.length === limit;
     render({ preserveScroll: append });
     void hydrateAppIcons(next, iconToken);
@@ -1379,6 +1431,8 @@ async function refreshApps({ append = false } = {}) {
 }
 
 async function hydrateAppIcons(applications, token) {
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  if (token !== appIconSearchToken) return;
   const paths = (applications || []).map((application) => application.path).filter(Boolean);
   if (!paths.length || !window.weborg?.loadAppIcons) return;
   try {
@@ -1484,6 +1538,14 @@ function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
   }, delay);
 }
 
+function queueWebInputSearch() {
+  if (webInputSearchFrame) return;
+  webInputSearchFrame = requestAnimationFrame(() => {
+    webInputSearchFrame = null;
+    void refreshWeb();
+  });
+}
+
 q.addEventListener("compositionstart", () => {
   searchInputComposing = true;
 });
@@ -1510,9 +1572,29 @@ q.addEventListener("input", () => {
     state.memoHasMore = state.memoResults.length === 12;
   }
   state.index = 0;
-  render();
-  queueClipboardRefresh();
+  const dedicatedWebSearch = state.scope === "web";
+  if ((!dedicatedWebSearch || !state.query.trim()) && !inputRenderFrame) {
+    inputRenderFrame = requestAnimationFrame(() => {
+      inputRenderFrame = null;
+      render();
+    });
+  }
+  deferUncachedWebIcons();
+  if (dedicatedWebSearch && state.query.trim()) {
+    clearTimeout(clipboardSearchTimer);
+    queueWebInputSearch();
+  } else {
+    queueClipboardRefresh();
+  }
 });
+resultsEl.addEventListener("load", (event) => {
+  const icon = event.target.closest?.("img[data-web-icon]");
+  if (icon?.dataset.webIcon) loadedWebIcons.add(icon.dataset.webIcon);
+}, true);
+resultsEl.addEventListener("error", (event) => {
+  const icon = event.target.closest?.("img[data-web-icon]");
+  if (icon?.dataset.webIcon) failedWebIcons.add(icon.dataset.webIcon);
+}, true);
 resultsEl.addEventListener("scroll", () => {
   if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight >= 160) return;
   if (state.scope === "clipboard") void refreshClipboard({ append: true });
@@ -1549,7 +1631,17 @@ resultsEl.addEventListener("click", (e) => {
   const row = e.target.closest(".result");
   if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
 });
-resultsEl.addEventListener("mousemove", (e) => { const row = e.target.closest(".result"); if (row) { const i = +row.dataset.i; if (i !== state.index) { const position = usagePosition(matches(), i); if (position) state.usageColumn = position.column; state.index = i; render(); } } });
+resultsEl.addEventListener("mousemove", (e) => {
+  const row = e.target.closest(".result");
+  if (!row) return;
+  const i = Number(row.dataset.i);
+  if (!Number.isFinite(i) || i === state.index) return;
+  const position = usagePosition(matches(), i);
+  if (position) state.usageColumn = position.column;
+  resultsEl.querySelector(".result.active")?.classList.remove("active");
+  row.classList.add("active");
+  state.index = i;
+});
 
 function focusSearch() { q?.focus(); q?.select(); }
 function prepareForShow() {
@@ -1600,6 +1692,7 @@ async function initialize() {
   state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
   state.appResults = applications || [];
   state.appLoadedQuery = "";
+  state.appLoadedLimit = APP_PAGE_SIZE;
   state.emptyResults.app = state.appResults.slice();
   state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
   // The startup prefetch now uses the dedicated app-page size to avoid a cold
@@ -1619,6 +1712,7 @@ async function initialize() {
   state.usageLoadedScope = "all";
   initialized = true;
   render();
+  deferUncachedWebIcons(320);
   focusSearch();
 }
 

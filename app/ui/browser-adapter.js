@@ -110,14 +110,20 @@ if (!window.weborg) {
   }
 
   let configPromise;
-  function getConfig() {
+  let configCache;
+  let webPageIndex;
+  function ensureConfig() {
     if (!configPromise) {
       configPromise = fetch("/__weborg/config", { cache: "no-store" }).then((response) => {
         if (!response.ok) throw new Error(`读取配置失败：${response.status}`);
         return response.json();
-      });
+      }).then((config) => (configCache = config));
     }
-    return configPromise.then((config) => JSON.parse(JSON.stringify(config)));
+    return configPromise;
+  }
+
+  function getConfig() {
+    return ensureConfig().then((config) => JSON.parse(JSON.stringify(config)));
   }
 
   function flattenPages(nodes, path = []) {
@@ -126,6 +132,18 @@ if (!window.weborg) {
       const current = node.url ? [{ ...node, path: nextPath }] : [];
       return [...current, ...flattenPages(node.children || [], nextPath)];
     });
+  }
+
+  async function indexedWebPages() {
+    if (!webPageIndex) {
+      const config = configCache || await ensureConfig();
+      webPageIndex = flattenPages(config.plugins?.web?.settings?.items || []).map((page) => ({
+        ...page,
+        type: "page",
+        breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
+      }));
+    }
+    return webPageIndex;
   }
 
   async function usageSections(scope = "all") {
@@ -183,11 +201,7 @@ if (!window.weborg) {
       return (await getApplications(query, limit, Number(request.offset) || 0, request.includeIcons !== false)).map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "web") {
-      const pages = flattenPages((await getConfig()).plugins?.web?.settings?.items || []).map((page) => ({
-        ...page,
-        type: "page",
-        breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
-      }));
+      const pages = await indexedWebPages();
       return window.FlowHubWebSearch.rankWebPages(pages, query, limit, Number(request.offset) || 0)
         .map((record) => ({ ...record, pluginId: id }));
     }

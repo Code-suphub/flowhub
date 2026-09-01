@@ -1,6 +1,8 @@
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -15,15 +17,15 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
-use tauri_plugin_autostart::ManagerExt as AutostartExt;
-use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use tauri_plugin_opener::OpenerExt;
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{
     tauri_panel, CollectionBehavior, ManagerExt as PanelManagerExt, PanelLevel, StyleMask,
     WebviewWindowExt,
 };
+use tauri_plugin_autostart::ManagerExt as AutostartExt;
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
 #[cfg(target_os = "macos")]
@@ -60,15 +62,25 @@ fn mihomo_api(path: &str) -> Option<Value> {
         if !name.starts_with("mihomo-party-") || !name.ends_with(".sock") {
             continue;
         }
-        let Ok(mut stream) = UnixStream::connect(entry.path()) else { continue };
+        let Ok(mut stream) = UnixStream::connect(entry.path()) else {
+            continue;
+        };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
         let request = format!("GET {path} HTTP/1.1\r\nHost: mihomo\r\nConnection: close\r\n\r\n");
-        if stream.write_all(request.as_bytes()).is_err() { continue; }
+        if stream.write_all(request.as_bytes()).is_err() {
+            continue;
+        }
         let mut bytes = Vec::new();
-        if stream.read_to_end(&mut bytes).is_err() { continue; }
+        if stream.read_to_end(&mut bytes).is_err() {
+            continue;
+        }
         let text = String::from_utf8_lossy(&bytes);
-        let Some(body) = text.split("\r\n\r\n").nth(1) else { continue };
-        if let Ok(value) = serde_json::from_str(body) { return Some(value); }
+        let Some(body) = text.split("\r\n\r\n").nth(1) else {
+            continue;
+        };
+        if let Ok(value) = serde_json::from_str(body) {
+            return Some(value);
+        }
     }
     None
 }
@@ -77,15 +89,28 @@ fn mihomo_api(path: &str) -> Option<Value> {
 fn clash_rest_api(path: &str) -> Option<Value> {
     use std::net::TcpStream;
     for port in [9090_u16, 9097, 7897] {
-        let Ok(mut stream) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(700)) else { continue };
+        let Ok(mut stream) =
+            TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(700))
+        else {
+            continue;
+        };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
-        let request = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
-        if stream.write_all(request.as_bytes()).is_err() { continue; }
+        let request =
+            format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        if stream.write_all(request.as_bytes()).is_err() {
+            continue;
+        }
         let mut bytes = Vec::new();
-        if stream.read_to_end(&mut bytes).is_err() { continue; }
+        if stream.read_to_end(&mut bytes).is_err() {
+            continue;
+        }
         let text = String::from_utf8_lossy(&bytes);
-        let Some(body) = text.split("\r\n\r\n").nth(1) else { continue };
-        if let Ok(value) = serde_json::from_str(body) { return Some(value); }
+        let Some(body) = text.split("\r\n\r\n").nth(1) else {
+            continue;
+        };
+        if let Ok(value) = serde_json::from_str(body) {
+            return Some(value);
+        }
     }
     None
 }
@@ -102,7 +127,12 @@ fn node_from_connections(payload: &Value) -> Option<Value> {
                 .map(|value| !value.is_empty())
                 .unwrap_or(false)
         })
-        .max_by_key(|connection| connection.get("start").and_then(Value::as_str).unwrap_or(""))?;
+        .max_by_key(|connection| {
+            connection
+                .get("start")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        })?;
     let metadata = latest.get("metadata")?;
     Some(json!({
         "nodeName": latest.get("chains").and_then(Value::as_array).and_then(|chains| chains.first()).and_then(Value::as_str).unwrap_or(""),
@@ -118,8 +148,11 @@ fn current_proxy_node(adapter: &str) -> Option<Value> {
         "system" => None,
         "mihomo" => node_from_connections(&mihomo_api("/connections")?),
         "clash-rest" => node_from_connections(&clash_rest_api("/connections")?),
-        _ => mihomo_api("/connections").and_then(|payload| node_from_connections(&payload))
-            .or_else(|| clash_rest_api("/connections").and_then(|payload| node_from_connections(&payload))),
+        _ => mihomo_api("/connections")
+            .and_then(|payload| node_from_connections(&payload))
+            .or_else(|| {
+                clash_rest_api("/connections").and_then(|payload| node_from_connections(&payload))
+            }),
     }
 }
 
@@ -133,6 +166,7 @@ pub(crate) struct AppState {
     application_index_needs_refresh: AtomicBool,
     application_index_refreshing: AtomicBool,
     application_icon_cache: Mutex<HashMap<String, String>>,
+    application_icon_cache_dir: PathBuf,
 }
 
 impl AppState {
@@ -275,6 +309,8 @@ fn copy_directory_contents(source: &Path, target: &Path) -> Result<(), String> {
 fn initialize_state() -> Result<AppState, String> {
     let root_dir = app_support_dir()?;
     let application_index_path = root_dir.join("application-index.json");
+    let application_icon_cache_dir = root_dir.join("application-icons");
+    fs::create_dir_all(&application_icon_cache_dir).map_err(|error| error.to_string())?;
     let (cached_application_index, cached_fingerprint) =
         load_application_cache(&application_index_path);
     let current_fingerprint = application_fingerprint();
@@ -338,6 +374,7 @@ fn initialize_state() -> Result<AppState, String> {
         application_index_needs_refresh: AtomicBool::new(cached_fingerprint != current_fingerprint),
         application_index_refreshing: AtomicBool::new(false),
         application_icon_cache: Mutex::new(HashMap::new()),
+        application_icon_cache_dir,
     };
     initialize_database(&state)?;
     import_json_catalog_if_needed(&state)?;
@@ -962,13 +999,13 @@ fn refresh_application_index(app: &tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn search_applications(
+async fn search_applications(
     state: State<'_, AppState>,
     query: String,
     limit: usize,
     offset: usize,
     include_icons: bool,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, String> {
     let keyword = query.trim().to_lowercase();
     let mut applications = state
         .application_index
@@ -1025,21 +1062,29 @@ fn search_applications(
             }
         }
     }
-    selected
+    Ok(selected)
 }
 
 #[tauri::command]
-fn load_application_icons(
-    state: State<'_, AppState>,
+async fn load_application_icons(
+    app: tauri::AppHandle,
     paths: Vec<String>,
 ) -> HashMap<String, String> {
-    application_icon_data_urls(&state, &paths)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        application_icon_data_urls(&state, &paths)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Resolve native application icons once per path for both app search and usage cards.
 /// Icon extraction invokes `osascript`, so keeping this cache in process avoids a
 /// visible delay every time the launcher is shown or the query becomes empty.
-fn application_icon_data_urls(state: &AppState, paths: &[String]) -> HashMap<String, String> {
+pub(crate) fn application_icon_data_urls(
+    state: &AppState,
+    paths: &[String],
+) -> HashMap<String, String> {
     let unique_paths: Vec<String> = paths
         .iter()
         .filter(|path| !path.trim().is_empty())
@@ -1051,36 +1096,85 @@ fn application_icon_data_urls(state: &AppState, paths: &[String]) -> HashMap<Str
         return HashMap::new();
     }
 
-    let mut cache = state
-        .application_icon_cache
-        .lock()
-        .expect("application icon cache lock poisoned");
+    let mut result = HashMap::new();
+    {
+        let cache = state
+            .application_icon_cache
+            .lock()
+            .expect("application icon cache lock poisoned");
+        for path in &unique_paths {
+            if let Some(icon) = cache.get(path).filter(|icon| !icon.is_empty()) {
+                result.insert(path.clone(), icon.clone());
+            }
+        }
+    }
+
+    let mut disk_loaded = HashMap::new();
+    for path in unique_paths
+        .iter()
+        .filter(|path| !result.contains_key(*path))
+    {
+        let cache_path = application_icon_cache_path(state, path);
+        if let Ok(bytes) = fs::read(cache_path) {
+            if !bytes.is_empty() {
+                disk_loaded.insert(
+                    path.clone(),
+                    format!("data:image/png;base64,{}", BASE64.encode(bytes)),
+                );
+            }
+        }
+    }
+    if !disk_loaded.is_empty() {
+        state
+            .application_icon_cache
+            .lock()
+            .expect("application icon cache lock poisoned")
+            .extend(disk_loaded.clone());
+        result.extend(disk_loaded);
+    }
+
     let missing: Vec<String> = unique_paths
         .iter()
-        .filter(|path| !cache.contains_key(*path))
+        .filter(|path| !result.contains_key(*path))
         .cloned()
         .collect();
     if !missing.is_empty() {
         let resolved = clipboard::native_icon_data_urls(&missing);
+        let mut cache_updates = HashMap::new();
         for path in missing {
-            cache.insert(
-                path.clone(),
-                resolved.get(&path).cloned().unwrap_or_default(),
-            );
+            let icon = resolved.get(&path).cloned().unwrap_or_default();
+            if let Some(encoded) = icon.strip_prefix("data:image/png;base64,") {
+                if let Ok(bytes) = BASE64.decode(encoded) {
+                    let _ = fs::write(application_icon_cache_path(state, &path), bytes);
+                }
+            }
+            if !icon.is_empty() {
+                result.insert(path.clone(), icon.clone());
+            }
+            cache_updates.insert(path, icon);
         }
+        state
+            .application_icon_cache
+            .lock()
+            .expect("application icon cache lock poisoned")
+            .extend(cache_updates);
     }
 
-    unique_paths
-        .into_iter()
-        .filter_map(|path| {
-            let icon = cache.get(&path)?.clone();
-            if icon.is_empty() {
-                None
-            } else {
-                Some((path, icon))
-            }
-        })
-        .collect()
+    result
+}
+
+fn application_icon_cache_path(state: &AppState, application_path: &str) -> PathBuf {
+    let modified = fs::metadata(application_path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_secs())
+        .unwrap_or_default();
+    let key = format!("{application_path}\0{modified}");
+    let digest = format!("{:x}", Sha256::digest(key.as_bytes()));
+    state
+        .application_icon_cache_dir
+        .join(format!("{digest}.png"))
 }
 
 fn record_usage(state: &AppState, usage: &Value, fallback: &str) -> Result<(), String> {
@@ -1152,7 +1246,13 @@ fn hide_main_window(app: tauri::AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn get_proxy_info(adapter: Option<String>) -> Result<Value, String> {
+async fn get_proxy_info(adapter: Option<String>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || get_proxy_info_blocking(adapter))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn get_proxy_info_blocking(adapter: Option<String>) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("scutil")
@@ -1175,15 +1275,21 @@ fn get_proxy_info(adapter: Option<String>) -> Result<Value, String> {
                 "port": values.get(&format!("{name}Port")).cloned().unwrap_or_default()
             })
         };
-        let mut result = json!({ "http": proxy("HTTP"), "https": proxy("HTTPS"), "socks": proxy("SOCKS") });
+        let mut result =
+            json!({ "http": proxy("HTTP"), "https": proxy("HTTPS"), "socks": proxy("SOCKS") });
         if let Some(object) = result.as_object_mut() {
-            object.insert("node".to_string(), current_proxy_node(adapter.as_deref().unwrap_or("auto")).unwrap_or(Value::Null));
+            object.insert(
+                "node".to_string(),
+                current_proxy_node(adapter.as_deref().unwrap_or("auto")).unwrap_or(Value::Null),
+            );
         }
         return Ok(result);
     }
     #[cfg(not(target_os = "macos"))]
     {
-        Ok(json!({ "http": { "enabled": false, "host": "", "port": "" }, "https": { "enabled": false, "host": "", "port": "" }, "socks": { "enabled": false, "host": "", "port": "" } }))
+        Ok(
+            json!({ "http": { "enabled": false, "host": "", "port": "" }, "https": { "enabled": false, "host": "", "port": "" }, "socks": { "enabled": false, "host": "", "port": "" } }),
+        )
     }
 }
 
@@ -1233,18 +1339,33 @@ fn activate_target(
 }
 
 #[tauri::command]
-fn search_usage(state: State<'_, AppState>, scope: String) -> Result<Value, String> {
-    let connection = database(&state)?;
-    let target_type = match scope.as_str() {
-        "app" => Some("app"),
-        "web" => Some("page"),
-        _ => None,
+async fn search_usage(app: tauri::AppHandle, scope: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        search_usage_blocking(&state, &scope)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn search_usage_blocking(state: &AppState, scope: &str) -> Result<Value, String> {
+    let connection = database(state)?;
+    let target_type = match scope {
+        "app" => "app",
+        "web" => "page",
+        _ => "",
     };
-    let sql = if target_type.is_some() {
-        "SELECT target_type, target_key, title, target_path, url, icon, use_count, first_used_at, last_used_at FROM usage_records WHERE target_type = ?"
-    } else {
-        "SELECT target_type, target_key, title, target_path, url, icon, use_count, first_used_at, last_used_at FROM usage_records"
-    };
+    let sql = "
+        WITH frequent_candidates AS (
+          SELECT target_type, target_key, title, target_path, url, icon, use_count, first_used_at, last_used_at
+          FROM usage_records WHERE (?1 = '' OR target_type = ?1)
+          ORDER BY use_count DESC, last_used_at DESC LIMIT 100
+        ), recent_candidates AS (
+          SELECT target_type, target_key, title, target_path, url, icon, use_count, first_used_at, last_used_at
+          FROM usage_records WHERE (?1 = '' OR target_type = ?1)
+          ORDER BY last_used_at DESC LIMIT 100
+        )
+        SELECT * FROM frequent_candidates UNION SELECT * FROM recent_candidates";
     let mut statement = connection.prepare(sql).map_err(|error| error.to_string())?;
     let mut entries = Vec::new();
     let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<Value> {
@@ -1280,50 +1401,11 @@ fn search_usage(state: State<'_, AppState>, scope: String) -> Result<Value, Stri
             "score": score
         }))
     };
-    if let Some(target_type) = target_type {
-        let rows = statement
-            .query_map([target_type], map_row)
-            .map_err(|error| error.to_string())?;
-        for row in rows {
-            entries.push(row.map_err(|error| error.to_string())?);
-        }
-    } else {
-        let rows = statement
-            .query_map([], map_row)
-            .map_err(|error| error.to_string())?;
-        for row in rows {
-            entries.push(row.map_err(|error| error.to_string())?);
-        }
-    }
-
-    // Usage records intentionally keep only lightweight metadata in SQLite. Resolve
-    // native icons on read and reuse the process cache shared with app search so
-    // recent/frequent cards render the same icons as normal app results.
-    let icon_paths: Vec<String> = entries
-        .iter()
-        .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("app"))
-        .filter_map(|entry| {
-            entry
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .collect();
-    let icons = application_icon_data_urls(&state, &icon_paths);
-    for entry in &mut entries {
-        let Some(path) = entry
-            .get("path")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-        else {
-            continue;
-        };
-        if let Some(icon) = icons.get(&path) {
-            entry
-                .as_object_mut()
-                .expect("usage entry is an object")
-                .insert("iconUrl".to_string(), Value::String(icon.clone()));
-        }
+    let rows = statement
+        .query_map([target_type], map_row)
+        .map_err(|error| error.to_string())?;
+    for row in rows {
+        entries.push(row.map_err(|error| error.to_string())?);
     }
 
     let mut frequent: Vec<Value> = entries
@@ -1361,6 +1443,29 @@ fn search_usage(state: State<'_, AppState>, scope: String) -> Result<Value, Stri
         text_field(right, "lastUsedAt").cmp(&text_field(left, "lastUsedAt"))
     });
     recent.truncate(6);
+
+    // Resolve native icons only for the final cards, not every historical row.
+    let icon_paths: Vec<String> = frequent
+        .iter()
+        .chain(recent.iter())
+        .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("app"))
+        .filter_map(|entry| {
+            entry
+                .get("path")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+    let icons = application_icon_data_urls(state, &icon_paths);
+    for entry in frequent.iter_mut().chain(recent.iter_mut()) {
+        let path = entry.get("path").and_then(Value::as_str).unwrap_or("");
+        if let Some(icon) = icons.get(path) {
+            entry
+                .as_object_mut()
+                .expect("usage entry is an object")
+                .insert("iconUrl".to_string(), Value::String(icon.clone()));
+        }
+    }
     Ok(json!({ "frequent": frequent, "recent": recent }))
 }
 
@@ -1598,11 +1703,9 @@ fn toggle_main(app: &tauri::AppHandle) {
 fn show_macos_window(window: &tauri::WebviewWindow) {
     let handle = window.app_handle().clone();
     let panel_handle = handle.clone();
-    let _ = handle.run_on_main_thread(move || {
-        match panel_handle.get_webview_panel("main") {
-            Ok(panel) => panel.show_and_make_key(),
-            Err(error) => eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}"),
-        }
+    let _ = handle.run_on_main_thread(move || match panel_handle.get_webview_panel("main") {
+        Ok(panel) => panel.show_and_make_key(),
+        Err(error) => eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}"),
     });
 }
 
@@ -1850,6 +1953,7 @@ pub fn run() {
             open_config_path,
             open_storage_path,
             clipboard::search_clipboard,
+            clipboard::load_clipboard_assets,
             clipboard::activate_clipboard,
             clipboard::delete_clipboard,
             updater::get_update_state,
@@ -1880,7 +1984,10 @@ mod tests {
             Some(&json!(""))
         );
         assert_eq!(migrated.pointer("/core/hotkey"), Some(&json!("Alt+Space")));
-        assert_eq!(migrated.pointer("/plugins/tools/enabled"), Some(&json!(true)));
+        assert_eq!(
+            migrated.pointer("/plugins/tools/enabled"),
+            Some(&json!(true))
+        );
     }
 
     #[test]

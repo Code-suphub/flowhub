@@ -1,4 +1,4 @@
-use crate::{database, hide_main, AppState};
+use crate::{application_icon_data_urls, database, hide_main, AppState};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::Utc;
 use clipboard_rs::{
@@ -363,30 +363,57 @@ pub fn search_clipboard(
         .prepare(
             "SELECT id, kind, hash, content, file_name, source_name, file_paths, file_types,
                     size, created_at, last_seen_at, copy_count
-             FROM clipboard_records ORDER BY last_seen_at DESC",
+             FROM clipboard_records
+             WHERE (
+               ?1 = 'all'
+               OR (?1 = 'text' AND kind = 'text')
+               OR (?1 = 'image' AND (
+                 kind = 'image'
+                 OR (kind = 'file' AND json_array_length(COALESCE(file_types, '[]')) > 0
+                   AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(file_types, '[]')) WHERE value <> 'image'))
+               ))
+               OR (?1 = 'file' AND kind = 'file' AND (
+                 json_array_length(COALESCE(file_types, '[]')) = 0
+                 OR EXISTS (SELECT 1 FROM json_each(COALESCE(file_types, '[]')) WHERE value <> 'image')
+               ))
+             )
+             AND (
+               ?2 = '' OR instr(lower(
+                 COALESCE(content, '') || ' ' || COALESCE(source_name, '') || ' '
+                 || COALESCE(file_paths, '') || ' ' || hash
+               ), ?2) > 0
+             )
+             ORDER BY last_seen_at DESC
+             LIMIT ?3 OFFSET ?4",
         )
         .map_err(|error| error.to_string())?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, i64>(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, String>(10)?,
-                row.get::<_, i64>(11)?,
-            ))
-        })
-        .map_err(|error| error.to_string())?;
     let keyword = query.trim().to_lowercase();
+    let normalized_kind = match kind.as_str() {
+        "text" | "image" | "file" => kind.as_str(),
+        _ => "all",
+    };
     let page_limit = limit.clamp(1, 100);
-    let mut matched_count = 0usize;
+    let rows = statement
+        .query_map(
+            params![normalized_kind, keyword, page_limit as i64, offset as i64],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, i64>(8)?,
+                    row.get::<_, String>(9)?,
+                    row.get::<_, String>(10)?,
+                    row.get::<_, i64>(11)?,
+                ))
+            },
+        )
+        .map_err(|error| error.to_string())?;
     let mut records = Vec::new();
     for row in rows {
         let (
@@ -394,7 +421,7 @@ pub fn search_clipboard(
             record_kind,
             hash,
             content,
-            file_name,
+            _file_name,
             source_name,
             file_paths,
             file_types,
@@ -420,31 +447,6 @@ pub fn search_clipboard(
         } else {
             "file".to_string()
         };
-        let kind_matches = match kind.as_str() {
-            "text" => record_kind == "text",
-            "image" => record_kind == "image" || (record_kind == "file" && file_type == "image"),
-            "file" => record_kind == "file" && file_type != "image",
-            _ => true,
-        };
-        let hay = format!(
-            "{} {} {} {}",
-            content.as_deref().unwrap_or(""),
-            source_name.as_deref().unwrap_or(""),
-            file_names.join(" "),
-            hash
-        )
-        .to_lowercase();
-        if !kind_matches || (!keyword.is_empty() && !hay.contains(&keyword)) {
-            continue;
-        }
-        if matched_count < offset {
-            matched_count += 1;
-            continue;
-        }
-        if records.len() >= page_limit {
-            break;
-        }
-        matched_count += 1;
         records.push(json!({
             "id": id,
             "kind": record_kind,
@@ -456,7 +458,7 @@ pub fn search_clipboard(
             "fileCount": paths.len(),
             "fileTypes": types,
             "fileType": file_type,
-            "imageUrl": if record_kind == "image" { image_data_url(&state, file_name.as_deref().unwrap_or("")) } else { String::new() },
+            "imageUrl": "",
             "fileIconUrl": "",
             "size": size,
             "createdAt": created_at,
@@ -465,39 +467,73 @@ pub fn search_clipboard(
             "pluginId": "clipboard"
         }));
     }
-    let selected = records;
-    let icon_paths: Vec<String> = selected
-        .iter()
-        .filter(|record| record.get("kind").and_then(Value::as_str) == Some("file"))
-        .filter_map(|record| {
-            record
-                .get("filePaths")
-                .and_then(Value::as_array)?
-                .first()?
-                .as_str()
-                .map(str::to_string)
-        })
-        .collect();
-    let icons = native_icon_data_urls(&icon_paths);
-    Ok(selected
-        .into_iter()
-        .map(|mut record| {
-            if let Some(path) = record
-                .get("filePaths")
-                .and_then(Value::as_array)
-                .and_then(|paths| paths.first())
-                .and_then(Value::as_str)
-            {
-                if let Some(icon) = icons.get(path) {
-                    record
-                        .as_object_mut()
-                        .unwrap()
-                        .insert("fileIconUrl".to_string(), Value::String(icon.clone()));
-                }
+    Ok(records)
+}
+
+#[tauri::command]
+pub async fn load_clipboard_assets(
+    app: tauri::AppHandle,
+    ids: Vec<i64>,
+) -> Result<HashMap<String, Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let unique_ids: Vec<i64> = ids
+            .into_iter()
+            .take(100)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        if unique_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let connection = database(&state)?;
+        let mut records = Vec::new();
+        let mut statement = connection
+            .prepare("SELECT kind, file_name, file_paths FROM clipboard_records WHERE id = ?")
+            .map_err(|error| error.to_string())?;
+        for id in unique_ids {
+            let record = statement
+                .query_row([id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .optional()
+                .map_err(|error| error.to_string())?;
+            if let Some((kind, file_name, file_paths)) = record {
+                let first_path = parse_string_array(file_paths)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                records.push((id, kind, file_name.unwrap_or_default(), first_path));
             }
-            record
-        })
-        .collect())
+        }
+        let icon_paths: Vec<String> = records
+            .iter()
+            .filter(|(_, kind, _, path)| kind == "file" && !path.is_empty())
+            .map(|(_, _, _, path)| path.clone())
+            .collect();
+        let icons = application_icon_data_urls(&state, &icon_paths);
+        Ok(records
+            .into_iter()
+            .map(|(id, kind, file_name, path)| {
+                let image_url = if kind == "image" {
+                    image_data_url(&state, &file_name)
+                } else {
+                    String::new()
+                };
+                let file_icon_url = icons.get(&path).cloned().unwrap_or_default();
+                (
+                    id.to_string(),
+                    json!({ "imageUrl": image_url, "fileIconUrl": file_icon_url }),
+                )
+            })
+            .collect())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn send_paste() -> Result<(), String> {
