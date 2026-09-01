@@ -21,6 +21,7 @@ let appIconSearchToken = 0;
 let webSearchToken = 0;
 let memoSearchToken = 0;
 let usageSearchToken = 0;
+let allScopeRefreshToken = 0;
 let dnsSearchToken = 0;
 const dnsIpCache = new Map();
 let localIpSearchToken = 0;
@@ -922,10 +923,15 @@ function render({ preserveScroll = false } = {}) {
   if (!m.length) return;
   if (preserveScroll) {
     resultsEl.scrollTop = previousScrollTop;
-    return;
   }
-  const a = resultsEl.querySelector(".result.active");
-  if (a) a.scrollIntoView({ block: "nearest" });
+}
+
+function revealActiveResult() {
+  resultsEl.querySelector(".result.active")?.classList.remove("active");
+  const active = resultsEl.querySelector(`.result[data-i="${state.index}"]`);
+  if (!active) return;
+  active.classList.add("active");
+  active.scrollIntoView({ block: "nearest" });
 }
 
 function choose(page) {
@@ -1183,6 +1189,7 @@ function invalidatePluginPaging({ resetPaging = true } = {}) {
 }
 
 function setScope(scope) {
+  allScopeRefreshToken += 1;
   invalidateClipboardPaging({ resetPaging: false });
   invalidatePluginPaging({ resetPaging: false });
   state.scope = scope;
@@ -1194,16 +1201,22 @@ function setScope(scope) {
   // Scope switches should be instant when the current query is already cached.
   // Only refresh the active scope when its data is stale; this avoids spawning
   // several IPC calls (and native icon scans) for every Tab press.
-  if (scope === "all" || scope === "clipboard") {
+  if (scope === "all") {
+    const stale = (pluginEnabled("clipboard") && state.clipboardLoadedQuery !== state.query)
+      || (pluginEnabled("app") && state.appLoadedQuery !== state.query)
+      || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
+      || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query);
+    if (stale) void refreshAllScopes();
+  } else if (scope === "clipboard") {
     if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
   }
-  if (scope === "all" || scope === "app") {
+  if (scope === "app") {
     if (!state.appLoading && (state.appLoadedQuery !== state.query || (scope === "app" && state.appLoadedLimit < APP_PAGE_SIZE))) void refreshApps();
   }
-  if (scope === "all" || scope === "web") {
+  if (scope === "web") {
     if (state.webLoadedQuery !== state.query) void refreshWeb();
   }
-  if (scope === "all" || scope === "memo") {
+  if (scope === "memo") {
     if (state.memoLoadedQuery !== state.query) void refreshMemos();
   }
   q?.focus({ preventScroll: true });
@@ -1217,7 +1230,7 @@ function moveScope(offset) {
 function renderKeyboardHint() {
   if (!keyboardHint) return;
   if (state.scope === "clipboard") {
-    keyboardHint.innerHTML = `←→ 类型 · ↑↓ 记录 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴`;
+    keyboardHint.innerHTML = `↑↓ 记录 · 点击切换类型 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴`;
   } else if (state.scope === "all") {
     keyboardHint.innerHTML = `←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
   } else if (state.scope === "memo") {
@@ -1242,13 +1255,6 @@ function setClipboardKind(kind) {
   q?.focus({ preventScroll: true });
 }
 
-function moveClipboardKind(offset) {
-  if (state.scope !== "clipboard") return false;
-  const current = Math.max(0, clipboardKinds.indexOf(state.clipboardKind));
-  setClipboardKind(clipboardKinds[(current + offset + clipboardKinds.length) % clipboardKinds.length]);
-  return true;
-}
-
 // 更新配置（主进程每次呼出都会推送）
 window.weborg.onConfig(async (cfg) => {
   setConfig(cfg);
@@ -1266,10 +1272,18 @@ window.weborg.onConfig(async (cfg) => {
   // show: doing so made the first scope switch after a restart compete with
   // four duplicate IPC/database requests. Refresh only stale scopes and let
   // the clipboard/usage update events handle data changes independently.
-  if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
-  if (state.appLoadedQuery !== state.query && !state.appLoading) void refreshApps();
-  if (state.webLoadedQuery !== state.query && !state.webLoading) void refreshWeb();
-  if (state.memoLoadedQuery !== state.query && !state.memoLoading) void refreshMemos();
+  if (state.scope === "all") {
+    const stale = (pluginEnabled("clipboard") && state.clipboardLoadedQuery !== state.query)
+      || (pluginEnabled("app") && state.appLoadedQuery !== state.query)
+      || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
+      || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query);
+    if (stale) void refreshAllScopes();
+  } else {
+    if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
+    if (state.appLoadedQuery !== state.query && !state.appLoading) void refreshApps();
+    if (state.webLoadedQuery !== state.query && !state.webLoading) void refreshWeb();
+    if (state.memoLoadedQuery !== state.query && !state.memoLoading) void refreshMemos();
+  }
 });
 
 document.addEventListener("keydown", (e) => {
@@ -1313,14 +1327,12 @@ document.addEventListener("keydown", (e) => {
       return;
     }
   }
-  if (e.key === "ArrowDown") { moveVertical(m, 1); render(); e.preventDefault(); }
-  else if (e.key === "ArrowUp") { moveVertical(m, -1); render(); e.preventDefault(); }
+  if (e.key === "ArrowDown") { moveVertical(m, 1); revealActiveResult(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
     const offset = e.key === "ArrowRight" ? 1 : -1;
-    if (moveClipboardKind(offset)) {
-      e.preventDefault();
-    } else if (state.scope === "all" && moveUsageHorizontal(m, offset)) {
-      render();
+    if (state.scope === "all" && moveUsageHorizontal(m, offset)) {
+      revealActiveResult();
       e.preventDefault();
     }
   }
@@ -1341,14 +1353,14 @@ window.addEventListener("blur", () => {
   scopeTabUsedWithArrow = false;
 });
 
-async function refreshClipboard({ append = false } = {}) {
+async function refreshClipboard({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("clipboard") || !["all", "clipboard"].includes(state.scope)) return;
   if (append && (state.scope !== "clipboard" || state.clipboardLoading || !state.clipboardHasMore)) return;
   const token = ++clipboardSearchToken;
   const offset = append ? state.clipboardResults.length : 0;
   state.clipboardLoading = true;
   if (!append) state.clipboardHasMore = true;
-  if (append) render({ preserveScroll: true });
+  if (append && !deferRender) render({ preserveScroll: true });
   try {
     const records = await window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset });
     if (token !== clipboardSearchToken) return;
@@ -1359,14 +1371,13 @@ async function refreshClipboard({ append = false } = {}) {
     if (!state.query.trim() && !append) state.emptyResults.clipboard = nextRecords.slice();
     state.clipboardLoadedQuery = state.query;
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
-    render({ preserveScroll: append });
     void hydrateClipboardAssets(nextRecords, token, append);
   } catch {
     if (!append) state.clipboardResults = [];
   } finally {
     if (token === clipboardSearchToken) {
       state.clipboardLoading = false;
-      render({ preserveScroll: append });
+      if (!deferRender) render({ preserveScroll: append });
     }
   }
 }
@@ -1391,7 +1402,7 @@ async function hydrateClipboardAssets(records, token, preserveScroll) {
   if (changed) render({ preserveScroll });
 }
 
-async function refreshApps({ append = false } = {}) {
+async function refreshApps({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
   if (append && (state.scope !== "app" || state.appLoading || !state.appHasMore)) return;
   const token = ++appSearchToken;
@@ -1406,7 +1417,7 @@ async function refreshApps({ append = false } = {}) {
   const includeIcons = false;
   state.appLoading = true;
   if (!append) state.appHasMore = true;
-  if (append) render({ preserveScroll: true });
+  if (append && !deferRender) render({ preserveScroll: true });
   try {
     const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons });
     if (token !== appSearchToken) return;
@@ -1418,14 +1429,13 @@ async function refreshApps({ append = false } = {}) {
     state.appLoadedQuery = state.query;
     state.appLoadedLimit = append && sameLoadedQuery ? Math.max(state.appLoadedLimit, offset + limit) : limit;
     state.appHasMore = state.scope === "app" && next.length === limit;
-    render({ preserveScroll: append });
     void hydrateAppIcons(next, iconToken);
   } catch {
     if (!append) state.appResults = [];
   } finally {
     if (token === appSearchToken) {
       state.appLoading = false;
-      render({ preserveScroll: append });
+      if (!deferRender) render({ preserveScroll: append });
     }
   }
 }
@@ -1448,7 +1458,7 @@ async function hydrateAppIcons(applications, token) {
   } catch {}
 }
 
-async function refreshWeb({ append = false } = {}) {
+async function refreshWeb({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("web") || !["all", "web"].includes(state.scope)) return;
   if (append && (state.scope !== "web" || state.webLoading || !state.webHasMore)) return;
   const token = ++webSearchToken;
@@ -1456,7 +1466,7 @@ async function refreshWeb({ append = false } = {}) {
   const offset = append ? state.webResults.length : 0;
   state.webLoading = true;
   if (!append) state.webHasMore = true;
-  if (append) render({ preserveScroll: true });
+  if (append && !deferRender) render({ preserveScroll: true });
   try {
     const pages = await window.weborg?.pluginSearch("web", { query: state.query, limit, offset });
     if (token !== webSearchToken) return;
@@ -1471,12 +1481,12 @@ async function refreshWeb({ append = false } = {}) {
   } finally {
     if (token === webSearchToken) {
       state.webLoading = false;
-      render({ preserveScroll: append });
+      if (!deferRender) render({ preserveScroll: append });
     }
   }
 }
 
-async function refreshMemos({ append = false } = {}) {
+async function refreshMemos({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("memo") || !["all", "memo"].includes(state.scope)) return;
   if (append && (state.scope !== "memo" || state.memoLoading || !state.memoHasMore)) return;
   const token = ++memoSearchToken;
@@ -1484,7 +1494,7 @@ async function refreshMemos({ append = false } = {}) {
   const offset = append ? state.memoResults.length : 0;
   state.memoLoading = true;
   if (!append) state.memoHasMore = true;
-  if (append) render({ preserveScroll: true });
+  if (append && !deferRender) render({ preserveScroll: true });
   try {
     const memos = await window.weborg?.pluginSearch("memo", { query: state.query, limit, offset });
     if (token !== memoSearchToken) return;
@@ -1499,7 +1509,7 @@ async function refreshMemos({ append = false } = {}) {
   } finally {
     if (token === memoSearchToken) {
       state.memoLoading = false;
-      render({ preserveScroll: append });
+      if (!deferRender) render({ preserveScroll: append });
     }
   }
 }
@@ -1518,6 +1528,20 @@ async function refreshUsage() {
   } catch {}
 }
 
+async function refreshAllScopes() {
+  if (state.scope !== "all") return;
+  const token = ++allScopeRefreshToken;
+  const query = state.query;
+  await Promise.allSettled([
+    refreshClipboard({ deferRender: true }),
+    refreshApps({ deferRender: true }),
+    refreshWeb({ deferRender: true }),
+    refreshMemos({ deferRender: true })
+  ]);
+  if (token !== allScopeRefreshToken || state.scope !== "all" || state.query !== query) return;
+  render();
+}
+
 function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
   clearTimeout(clipboardSearchTimer);
   clipboardSearchTimer = setTimeout(() => {
@@ -1530,10 +1554,13 @@ function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
       void refreshUsage();
       return;
     }
-    void refreshClipboard();
-    void refreshApps();
-    void refreshWeb();
-    void refreshMemos();
+    if (state.scope === "all") void refreshAllScopes();
+    else {
+      void refreshClipboard();
+      void refreshApps();
+      void refreshWeb();
+      void refreshMemos();
+    }
     void refreshUsage();
   }, delay);
 }
@@ -1554,6 +1581,7 @@ q.addEventListener("compositionend", () => {
   searchCompositionEndedAt = performance.now();
 });
 q.addEventListener("input", () => {
+  allScopeRefreshToken += 1;
   invalidateClipboardPaging();
   invalidatePluginPaging();
   state.query = q.value;
