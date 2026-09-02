@@ -847,7 +847,9 @@ function renderMode() {
 }
 
 function renderModule() {
-  const activePlugin = state.plugins.find((plugin) => plugin.settingsPanel === state.module);
+  const activePlugin = state.plugins
+    .map((plugin) => ({ ...plugin, enabled: pluginConfig(plugin.id)?.enabled ?? plugin.enabled }))
+    .find((plugin) => plugin.settingsPanel === state.module);
   if (activePlugin && (!activePlugin.available || !activePlugin.enabled)) {
     state.module = "core";
     state.coreSection = "search";
@@ -887,7 +889,9 @@ function renderCoreSection() {
 }
 
 function renderPluginModules() {
-  const plugins = [...state.plugins].sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
+  const plugins = state.plugins
+    .map((plugin) => ({ ...plugin, enabled: pluginConfig(plugin.id)?.enabled ?? plugin.enabled }))
+    .sort((a, b) => Number(a.settingsOrder || a.order) - Number(b.settingsOrder || b.order));
   const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
   const pluginButton = (plugin) => {
     const moduleId = plugin.settingsPanel || "";
