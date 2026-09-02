@@ -127,6 +127,7 @@ body {
 .module-button.active, .core-section-tab.active { color: var(--ink) !important; border-color: rgba(91, 157, 255, .4) !important; background: rgba(91, 157, 255, .13) !important; }
 .tree-row.active { background: linear-gradient(90deg, rgba(91, 157, 255, .18), rgba(91, 157, 255, .04)) !important; box-shadow: inset 2px 0 var(--accent) !important; }
 .button.primary { color: #14171c !important; background: #fff !important; box-shadow: 0 12px 30px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.82) !important; }
+.button.primary:disabled { color: rgba(234,242,255,.72) !important; background: rgba(255,255,255,.16) !important; border-color: rgba(255,255,255,.24) !important; opacity: 1 !important; box-shadow: none !important; }
 .button { border-color: rgba(255,255,255,.25) !important; background: transparent !important; color: #eaf2ff !important; }
 .button:hover { border-color: rgba(255,255,255,.42) !important; background: rgba(255,255,255,.08) !important; transform: translateY(-1px); }
 .button:active { transform: translateY(0) scale(.985) !important; }
@@ -186,6 +187,10 @@ body {
 .plugin-control-group, .memo-library, .update-block, .storage-overview, .scope-master-row { border-color: rgba(232,238,244,.16) !important; border-radius: 12px !important; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.018)), rgba(40,44,52,.34) !important; }
 .plugin-control-item:has(.shortcut-capture:disabled) { opacity: .48 !important; }
 .shortcut-capture { cursor: pointer !important; caret-color: transparent !important; user-select: none !important; }
+.shortcut-capture { width: 100% !important; min-height: 40px !important; padding: 0 12px !important; border: 1px solid rgba(255,255,255,.16) !important; border-radius: 10px !important; background: rgba(7,8,11,.72) !important; color: var(--text) !important; text-align: left !important; font-weight: 700 !important; }
+.plugin-shortcut .shortcut-capture { width: 72px !important; min-height: 28px !important; padding: 4px 7px !important; font-size: 10px !important; }
+.scope-master-row .plugin-shortcut .shortcut-capture { width: 94px !important; }
+.shortcut-capture:disabled { cursor: not-allowed !important; opacity: .55 !important; }
 .shortcut-capture:focus { border-color: rgba(91,157,255,.78) !important; box-shadow: 0 0 0 3px rgba(91,157,255,.14) !important; }
 .shortcut-capture.has-conflict { border-color: rgba(245,158,11,.82) !important; box-shadow: 0 0 0 3px rgba(245,158,11,.14) !important; }
 .shortcut-conflict { display: block; margin-top: 4px; color: #fbbf24 !important; font-size: 10px; line-height: 1.35; }

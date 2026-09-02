@@ -577,12 +577,17 @@ function renderSelected() {
 }
 
 function renderSettingsFields() {
-  $("#coreHotkey").value = state.config?.core?.hotkey || "Alt+Space";
+  const coreHotkey = $("#coreHotkey");
+  const coreHotkeyValue = state.config?.core?.hotkey || "Alt+Space";
+  if (coreHotkey.matches("button")) coreHotkey.textContent = coreHotkeyValue;
+  else coreHotkey.value = coreHotkeyValue;
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
   if ($("#autoUpdateCheck")) $("#autoUpdateCheck").checked = state.config?.core?.autoUpdateCheck !== false;
   if ($("#autoUpdateInstall")) $("#autoUpdateInstall").checked = state.config?.core?.autoUpdateInstall === true;
   document.querySelectorAll("[data-core-scope-shortcut]").forEach((input) => {
-    input.value = state.config?.core?.scopeShortcuts?.[input.dataset.coreScopeShortcut] ?? DEFAULT_SCOPE_SHORTCUTS[input.dataset.coreScopeShortcut] ?? "";
+    const value = state.config?.core?.scopeShortcuts?.[input.dataset.coreScopeShortcut] ?? DEFAULT_SCOPE_SHORTCUTS[input.dataset.coreScopeShortcut] ?? "";
+    if (input.matches("button")) input.textContent = value || "点击后按键";
+    else input.value = value;
   });
   renderConfigPath();
   const proxyAdapter = $("#proxyAdapter");
@@ -605,6 +610,7 @@ function shortcutFromEvent(event) {
   if (event.metaKey || event.ctrlKey) modifiers.push("CommandOrControl");
   if (event.altKey) modifiers.push("Alt");
   if (event.shiftKey) modifiers.push("Shift");
+  if (!modifiers.length && !/^F(?:[1-9]|1\d|2[0-4])$/i.test(key)) return "";
   return [...modifiers, key].join("+");
 }
 
@@ -642,7 +648,8 @@ function applyCapturedShortcut(input, value) {
     return;
   }
   showShortcutConflict(input);
-  input.value = value;
+  if (input.matches("button")) input.textContent = value;
+  else input.value = value;
   if (input.dataset.coreField === "hotkey") {
     state.config.core ||= {};
     state.config.core.hotkey = value;
@@ -768,8 +775,9 @@ function renderAppUpdate() {
     : "正在重启…";
   for (const button of [primaryButton, quickButton]) {
     button.classList.toggle("hidden", !showPrimary);
+    button.hidden = !showPrimary;
     button.disabled = ["downloading", "installing"].includes(update.status);
-    button.textContent = primaryLabel;
+    button.textContent = showPrimary ? primaryLabel : "检查更新";
   }
 }
 
@@ -926,7 +934,7 @@ function renderPluginModules() {
     const items = group.ids.map((id) => pluginsById.get(id)).filter(Boolean).map((plugin) => {
       const hint = !plugin.available ? "插件未安装" : plugin.description || plugin.settingsHint || "";
       const shortcut = Object.prototype.hasOwnProperty.call(DEFAULT_SCOPE_SHORTCUTS, plugin.id)
-        ? `<label class="plugin-shortcut" for="scopeShortcut${esc(plugin.id)}"><span>范围键</span><input id="scopeShortcut${esc(plugin.id)}" class="shortcut-capture" readonly data-core-scope-shortcut="${esc(plugin.id)}" ${plugin.available && plugin.enabled ? "" : "disabled"} value="${esc(state.config?.core?.scopeShortcuts?.[plugin.id] ?? DEFAULT_SCOPE_SHORTCUTS[plugin.id] ?? "")}" placeholder="点击后按键" /><small class="shortcut-conflict" hidden></small></label>`
+        ? `<label class="plugin-shortcut" for="scopeShortcut${esc(plugin.id)}"><span>范围键</span><button id="scopeShortcut${esc(plugin.id)}" class="shortcut-capture" type="button" data-core-scope-shortcut="${esc(plugin.id)}" ${plugin.available && plugin.enabled ? "" : "disabled"} aria-label="${esc(plugin.settingsName || plugin.name)}范围快捷键">${esc(state.config?.core?.scopeShortcuts?.[plugin.id] ?? DEFAULT_SCOPE_SHORTCUTS[plugin.id] ?? "点击后按键")}</button><small class="shortcut-conflict" hidden></small></label>`
         : `<span></span>`;
       return `<div class="plugin-control-item" title="${esc(hint)}"><i class="plugin-control-icon">${esc(plugin.icon || "·")}</i><span class="plugin-control-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(plugin.settingsHint || hint)}</small></span>${shortcut}<label class="plugin-enable" title="${plugin.enabled ? "停用" : "启用"}${esc(plugin.name)}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
     }).join("");
