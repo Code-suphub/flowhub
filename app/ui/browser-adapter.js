@@ -256,7 +256,14 @@ if (!window.weborg) {
     async openSettings(options = {}) {
       const url = String(options.initialUrl || "").trim();
       const query = url ? `?addUrl=${encodeURIComponent(url)}` : "";
-      window.open(`/settings.html${query}`, "weborg-settings");
+      const settingsPath = `/settings.html${query}`;
+      // The in-app browser preview does not expose window.open. Fall back to
+      // same-tab navigation there; desktop Tauri keeps using its native window.
+      if (document.documentElement.dataset.weborgRuntime !== "browser" && typeof window.open === "function") {
+        const popup = window.open(settingsPath, "weborg-settings");
+        if (popup) return { ok: true, preview: true };
+      }
+      window.location.assign(settingsPath);
       return { ok: true, preview: true };
     },
     async openAccessibilitySettings() {
