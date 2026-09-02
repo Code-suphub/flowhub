@@ -47,3 +47,10 @@ git diff --check
 - 提交信息使用简洁的 Conventional Commits 风格，例如 `perf: ...`、`fix: ...`、`feat: ...`。
 - 推送前确认提交内容、远程仓库和目标标签；推送发布标签会触发 GitHub Actions，应在用户明确要求时执行。
 - 不提交 `node_modules`、构建产物、数据库、日志或本地签名私钥。
+
+## CLI
+
+- `npm run cli -- help` displays available data-management commands.
+- The CLI talks to `http://127.0.0.1:4173` by default; override with `FLOWHUB_URL`.
+- `config set` and `config replace` are write operations; validate JSON before sending changes.
+- Keep CLI output JSON-compatible so it can be piped to `jq` or other scripts.
