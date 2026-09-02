@@ -472,6 +472,12 @@ function markDirty(message = "有未保存修改") {
   status.classList.add("dirty");
   const saveButton = $("#saveBtn");
   if (saveButton) saveButton.disabled = false;
+  const reloadButton = document.querySelector('[data-action="reload"]');
+  if (reloadButton) {
+    reloadButton.disabled = false;
+    reloadButton.textContent = "重置未保存";
+    reloadButton.title = "放弃未保存修改并恢复已保存配置";
+  }
   scheduleDraftSave();
 }
 
@@ -500,8 +506,9 @@ function updateStatus() {
   if (saveButton) saveButton.disabled = !state.dirty;
   const reloadButton = document.querySelector('[data-action="reload"]');
   if (reloadButton) {
-    reloadButton.textContent = state.dirty ? "放弃修改" : "重新加载";
-    reloadButton.title = state.dirty ? "放弃未保存修改并重新加载配置" : "从配置文件重新加载";
+    reloadButton.textContent = "重置未保存";
+    reloadButton.disabled = !state.dirty;
+    reloadButton.title = state.dirty ? "放弃未保存修改并恢复已保存配置" : "当前没有可重置的未保存修改";
   }
 }
 
@@ -1044,7 +1051,8 @@ async function save() {
 }
 
 async function reload() {
-  if (state.dirty && !window.confirm("当前有未保存修改，确定放弃修改并重新加载配置吗？")) return;
+  if (!state.dirty) return;
+  if (!window.confirm("当前有未保存修改，确定重置未保存修改并恢复已保存配置吗？")) return;
   try {
     clearDraft();
     [state.plugins, state.config, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
@@ -1053,7 +1061,7 @@ async function reload() {
     state.jsonDirty = false;
     state.dirty = false;
     render();
-    toast("已重新加载 config.json");
+    toast("已重置未保存修改");
   } catch (error) {
     toast(error.message, true);
   }
