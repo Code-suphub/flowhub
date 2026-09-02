@@ -619,6 +619,7 @@ function renderAppUpdate() {
   };
   const badge = $("#updateBadge");
   if (!badge) return;
+  const isLocalBuild = /(?:-local(?:[.+-]|$)|\+local)/i.test(currentVersion);
   $("#currentVersion").textContent = `v${currentVersion}`;
   badge.textContent = labels[update.status] || "待检查";
   badge.dataset.status = update.status || "idle";
@@ -631,7 +632,7 @@ function renderAppUpdate() {
   $("#updateProgressFill").style.width = `${percent}%`;
   $("#updateProgressText").textContent = `${Math.round(percent)}%`;
 
-  let meta = "稳定通道 · GitHub Release";
+  let meta = isLocalBuild ? "本地迭代版 · 可回退 GitHub Release" : "稳定通道 · GitHub Release";
   if (update.status === "downloading" && update.total) {
     meta = `${formatBytes(update.transferred)} / ${formatBytes(update.total)} · ${formatBytes(update.bytesPerSecond)}/s`;
   } else if (update.checkedAt) {
@@ -641,7 +642,7 @@ function renderAppUpdate() {
 
   const checkButton = $("#checkUpdateBtn");
   checkButton.disabled = !update.supported || ["checking", "downloading", "downloaded", "installing"].includes(update.status);
-  checkButton.textContent = update.status === "checking" ? "正在检查…" : update.status === "error" ? "重新检查" : "检查更新";
+  checkButton.textContent = update.status === "checking" ? "正在检查…" : update.status === "error" ? "重新检查" : isLocalBuild ? "检查正式版" : "检查更新";
 
   const primaryButton = $("#updatePrimaryBtn");
   const quickButton = $("#updateQuickBtn");

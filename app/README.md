@@ -67,6 +67,22 @@ git push origin v0.1.0
 
 `.github/workflows/release-macos.yml` 会测试并构建 Apple Silicon 和 Intel 两套 DMG，上传签名后的更新包与 `latest.json`。已安装版本启动 5 秒后自动检查 GitHub Release，也可在“配置管理 → 通用设置”中手动检查、下载并重启安装。
 
+### 本地迭代与回退
+
+本机开发可以使用本地 Release 构建，不需要修改三个正式版本号文件：
+
+```bash
+npm run build:local
+```
+
+该命令会生成带有 `-local.YYYYMMDDHHmmss` 标记的版本，并复用本机 Tauri 更新签名密钥。安装本地包后，设置页会显示“本地迭代版 · 可回退 GitHub Release”；点击“检查正式版”即可检查并安装 GitHub 最新正式版本。正式版本仍通过 `v*` 标签发布，不会被本地迭代包覆盖。
+
+如果希望构建完成后直接替换 `/Applications/FlowHub.app` 并启动，可使用：
+
+```bash
+npm run build:local:install
+```
+
 ## 核心能力
 
 - 网页目录：分类、搜索、编辑并持久化到 SQLite。
