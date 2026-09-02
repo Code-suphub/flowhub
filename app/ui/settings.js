@@ -17,7 +17,8 @@ const state = {
   selectedMemoId: "",
   memoFilter: "",
   coreSection: "general",
-  appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" }
+  appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" },
+  diagnostics: { enabled: false, available: false, path: "" }
 };
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
@@ -579,6 +580,40 @@ function renderSettingsFields() {
   renderClipboardStorage();
   renderClipboardSummary();
   renderAppUpdate();
+  renderDiagnostics();
+}
+
+function renderDiagnostics() {
+  const diagnostics = state.diagnostics || {};
+  const toggle = $("#diagnosticsEnabled");
+  if (!toggle) return;
+  toggle.checked = diagnostics.enabled === true;
+  toggle.disabled = document.documentElement.dataset.weborgRuntime === "browser";
+  $("#diagnosticsPath").textContent = diagnostics.path || "仅正式 App 可用";
+}
+
+async function toggleDiagnostics(event) {
+  const result = await window.weborg.setDiagnosticsEnabled(event.target.checked);
+  if (!result?.ok && result?.enabled === undefined) {
+    event.target.checked = !event.target.checked;
+    return toast(result?.reason || "无法修改监控设置", true);
+  }
+  state.diagnostics = { ...state.diagnostics, enabled: event.target.checked, path: result.path || state.diagnostics.path, available: true };
+  renderDiagnostics();
+  toast(event.target.checked ? "已开启本地性能监控" : "已关闭本地性能监控");
+}
+
+async function sampleDiagnosticsFromSettings() {
+  const result = await window.weborg.sampleDiagnostics();
+  if (result?.preview || result?.disabled) return toast(result.reason || "监控未开启", true);
+  toast("已记录一次进程性能采样");
+}
+
+async function clearDiagnosticsFromSettings() {
+  if (!window.confirm("确定清理本机性能监控数据吗？不会影响网页、剪切板或备忘录数据。")) return;
+  const result = await window.weborg.clearDiagnostics();
+  if (!result?.ok) return toast(result?.reason || "清理失败", true);
+  toast("性能监控数据已清理");
 }
 
 function formatBytes(value) {
@@ -1183,6 +1218,8 @@ function handleAction(action) {
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
   if (action === "check-update") return checkAppUpdate();
   if (action === "update-primary") return runPrimaryUpdateAction();
+  if (action === "sample-diagnostics") return sampleDiagnosticsFromSettings();
+  if (action === "clear-diagnostics") return clearDiagnosticsFromSettings();
   if (action === "choose-config-path") return chooseConfigPath();
   if (action === "open-config-path") return openConfigPath();
   if (action === "reset-config-path") return resetConfigPath();
@@ -1407,6 +1444,7 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.id === "diagnosticsEnabled") return toggleDiagnostics(event);
   if (event.target.dataset.configField === "proxyAdapter") {
     const tools = pluginConfig("tools");
     if (!tools) return;
@@ -1445,11 +1483,12 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 
-Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo(), window.weborg.getUpdateState()]).then(([plugins, config, clipboardStorage, configFile, appUpdate]) => {
+Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo(), window.weborg.getUpdateState(), window.weborg.getDiagnosticsState()]).then(([plugins, config, clipboardStorage, configFile, appUpdate, diagnostics]) => {
   state.plugins = plugins || [];
   state.clipboardStorage = clipboardStorage;
   state.configFile = configFile;
   state.appUpdate = appUpdate || state.appUpdate;
+  state.diagnostics = diagnostics || state.diagnostics;
   const loadedConfig = clone(normalizeConfig(config));
   state.savedConfig = clone(loadedConfig);
   const draft = readDraft(configFile);
