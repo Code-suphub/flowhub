@@ -7,6 +7,7 @@ const clipboardKindRow = document.getElementById("clipboardKindRow");
 const scopeRow = document.getElementById("scopeRow");
 const keyboardHint = document.getElementById("keyboardHint");
 const actionStatus = document.getElementById("actionStatus");
+const versionBadge = document.getElementById("versionBadge");
 let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
@@ -46,6 +47,16 @@ let webIconTimer = null;
 let showUncachedWebIcons = false;
 const loadedWebIcons = new Set();
 const failedWebIcons = new Set();
+
+function renderVersion(update) {
+  if (!versionBadge) return;
+  const version = String(update?.currentVersion || "").trim();
+  const text = version ? `v${version}` : "浏览器预览";
+  const hasUpdate = update?.status === "available" || update?.status === "downloaded";
+  versionBadge.textContent = text;
+  versionBadge.classList.toggle("update", hasUpdate);
+  versionBadge.title = hasUpdate ? `发现正式版 v${update.availableVersion || "新版本"}` : `当前应用版本：${text}`;
+}
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -1695,13 +1706,14 @@ function prepareForShow() {
 }
 window.focusSearch = focusSearch;
 window.prepareForShow = prepareForShow;
+window.weborg.onUpdateState?.((update) => renderVersion(update));
 
 // 初始加载
 async function initialize() {
   const plugins = await window.weborg.listPlugins();
   renderPluginScopes(plugins);
   const enabled = (id) => plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
-  const [cfg, records, applications, pages, memos, usageSections] = await Promise.all([
+  const [cfg, records, applications, pages, memos, usageSections, update] = await Promise.all([
     window.weborg.getConfig(),
     enabled("clipboard") ? window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }) : [],
     // Prime the same page size used by the dedicated 应用 scope. The all-scope
@@ -1711,9 +1723,11 @@ async function initialize() {
     enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: APP_PAGE_SIZE, includeIcons: false }) : [],
     enabled("web") ? window.weborg.pluginSearch("web", { query: "", limit: 12 }) : [],
     enabled("memo") ? window.weborg.pluginSearch("memo", { query: "", limit: 12 }) : [],
-    window.weborg.searchUsage("all")
+    window.weborg.searchUsage("all"),
+    window.weborg.getUpdateState()
   ]);
   setConfig(cfg);
+  renderVersion(update);
   state.clipboardResults = records || [];
   state.clipboardLoadedQuery = "";
   state.emptyResults.clipboard = state.clipboardResults.slice();
