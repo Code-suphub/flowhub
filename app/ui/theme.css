@@ -82,6 +82,13 @@ body {
 .field label { font-size: 12px !important; }
 .button { min-height: 36px !important; border-radius: 9px !important; }
 .settings-actionbar { padding: 13px 28px 14px !important; }
+/* The core editor is a full-width workspace, not a narrow nested column. */
+.core-settings-card { display: block !important; width: 100% !important; }
+.core-settings-card > .selected-banner { margin-bottom: 20px !important; }
+.core-settings-card > .clipboard-settings-grid { display: grid !important; width: 100% !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 0 !important; }
+.core-section-tabs { position: static !important; display: flex !important; flex-direction: row !important; width: 100% !important; margin: 0 0 16px !important; padding: 4px !important; border: 1px solid var(--line) !important; border-radius: 10px !important; background: rgba(6, 13, 23, .46) !important; }
+.core-section-tab { min-height: 34px !important; flex: 1 !important; justify-content: center !important; padding: 6px 10px !important; border-radius: 7px !important; text-align: center !important; }
+.core-section-tab.active { box-shadow: inset 0 -2px var(--accent) !important; }
 .brand-mark { color: #0b1a2b !important; background: linear-gradient(145deg, #c5e8ff, #6baee3) !important; box-shadow: 0 8px 24px rgba(82, 164, 228, .22) !important; }
 .eyebrow, .editor-kicker { color: var(--accent) !important; }
 .sidebar { background: rgba(9, 17, 28, .68) !important; border-right-color: rgba(205, 224, 244, .13) !important; }
