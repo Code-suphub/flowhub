@@ -763,6 +763,12 @@
                     <div class="field-hint" id="coreConfigPathHint">保存后切换到新的配置文件；原文件会保留。</div>
                   </div>
                 </div>
+                <div class="settings-block wide hidden" data-core-section-panel="system">
+                  <div class="settings-block-title">应用更新策略</div>
+                  <label class="switch-field"><input id="autoUpdateCheck" type="checkbox" data-core-field="autoUpdateCheck" />启动后自动检查正式版</label>
+                  <label class="switch-field"><input id="autoUpdateInstall" type="checkbox" data-core-field="autoUpdateInstall" />检测到更新后自动下载并重启安装</label>
+                  <div class="field-hint">自动安装可能会重启应用，默认关闭；本地迭代版也会按此策略检查正式版。</div>
+                </div>
                 <div class="settings-block wide update-block hidden" id="appUpdateBlock" data-core-section-panel="system">
                   <div class="update-heading">
                     <div class="update-title"><strong>FlowHub 更新</strong><code id="currentVersion">v—</code></div>

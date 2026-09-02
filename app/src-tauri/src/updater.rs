@@ -257,7 +257,14 @@ pub(crate) fn schedule_initial_check(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        let runtime = handle.state::<UpdateRuntime>();
-        let _ = check_for_updates(handle.clone(), runtime).await;
+        let config_path = handle.state::<crate::AppState>().paths().config_path;
+        let config = std::fs::read_to_string(config_path).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok()).unwrap_or_default();
+        if config.pointer("/core/autoUpdateCheck").and_then(Value::as_bool) == Some(false) { return; }
+        let auto_install = config.pointer("/core/autoUpdateInstall").and_then(Value::as_bool).unwrap_or(false);
+        let result = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>()).await.ok();
+        if auto_install && result.as_ref().and_then(|value| value.get("ok")).and_then(Value::as_bool) == Some(true) {
+            let _ = download_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
+            let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>());
+        }
     });
 }

@@ -567,6 +567,8 @@ function renderSelected() {
 function renderSettingsFields() {
   $("#coreHotkey").value = state.config?.core?.hotkey || "Alt+Space";
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
+  if ($("#autoUpdateCheck")) $("#autoUpdateCheck").checked = state.config?.core?.autoUpdateCheck !== false;
+  if ($("#autoUpdateInstall")) $("#autoUpdateInstall").checked = state.config?.core?.autoUpdateInstall === true;
   document.querySelectorAll("[data-core-scope-shortcut]").forEach((input) => {
     input.value = state.config?.core?.scopeShortcuts?.[input.dataset.coreScopeShortcut] ?? DEFAULT_SCOPE_SHORTCUTS[input.dataset.coreScopeShortcut] ?? "";
   });

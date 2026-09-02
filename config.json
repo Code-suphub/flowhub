@@ -2,7 +2,9 @@
   "core": {
     "hotkey": "Alt+Space",
     "launchAtLogin": false,
-    "configPath": ""
+    "configPath": "",
+    "autoUpdateCheck": true,
+    "autoUpdateInstall": false
   },
   "plugins": {
     "web": {
