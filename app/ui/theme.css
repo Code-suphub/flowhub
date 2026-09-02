@@ -196,6 +196,48 @@ body {
 .shortcut-conflict { display: block; margin-top: 4px; color: #fbbf24 !important; font-size: 10px; line-height: 1.35; }
 .module-nav-icon { border: 1px solid rgba(232,238,244,.08) !important; background: linear-gradient(145deg, rgba(255,255,255,.1), rgba(255,255,255,.035)) !important; box-shadow: inset 0 1px rgba(255,255,255,.08) !important; font-family: var(--sans) !important; font-weight: 800 !important; }
 .module-nav-menu-trigger .module-nav-icon { color: var(--mint) !important; }
+/* Layered glass: soft mesh behind translucent surfaces, with a restrained highlight edge. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(52% 46% at 78% 14%, rgba(91,157,255,.14), transparent 72%),
+    radial-gradient(42% 48% at 16% 76%, rgba(52,211,153,.08), transparent 70%),
+    linear-gradient(125deg, rgba(255,255,255,.025), transparent 42%);
+}
+.app { position: relative !important; z-index: 1 !important; isolation: isolate; }
+.topbar, .module-tabs-bar, .settings-actionbar {
+  background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.018)), rgba(20,23,28,.62) !important;
+  backdrop-filter: blur(26px) saturate(145%) brightness(1.08) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(145%) brightness(1.08) !important;
+}
+.module-tabs-bar { box-shadow: inset -1px 0 rgba(255,255,255,.055), inset 0 1px rgba(255,255,255,.045) !important; }
+.core-settings-card > .clipboard-settings-grid,
+.core-settings-card > .clipboard-settings-grid > .settings-block,
+.plugin-control-group, .memo-library, .update-block, .storage-overview, .scope-master-row {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.095), rgba(255,255,255,.018) 46%, rgba(0,0,0,.08)),
+    rgba(40,44,52,.34) !important;
+  backdrop-filter: blur(22px) saturate(132%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(132%) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.11), 0 20px 55px rgba(0,0,0,.12) !important;
+}
+.core-settings-card > .clipboard-settings-grid > .settings-block { box-shadow: inset 0 1px rgba(255,255,255,.09) !important; }
+.selected-card, .app-card, .tree-card, .overview-card {
+  backdrop-filter: blur(24px) saturate(138%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(138%) !important;
+}
+.shortcut-capture, .field input:not([type="checkbox"]):not([type="radio"]), .field textarea, .field select {
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.008)), rgba(7,8,11,.55) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.08), inset 0 -1px rgba(0,0,0,.18) !important;
+}
+.button:not(.primary), .core-section-tab, .module-button {
+  backdrop-filter: blur(14px) saturate(125%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(125%) !important;
+}
 @media (max-width: 700px) {
   .topbar { padding-inline: 15px !important; }
   .top-actions .status { display: none; }
