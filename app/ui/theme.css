@@ -71,7 +71,9 @@ body {
 .module-button { min-height: 44px !important; padding: 9px 11px !important; border-radius: 10px !important; }
 .module-nav-icon { width: 28px !important; height: 28px !important; border-radius: 8px !important; }
 .editor { padding: 32px 38px 42px !important; }
-.editor-inner { width: min(860px, 100%) !important; }
+.editor { min-width: 0 !important; }
+.core-editor-head, .core-settings-card { min-width: 0 !important; }
+.editor-inner { width: min(1080px, 100%) !important; }
 .editor-head { margin-bottom: 26px !important; }
 .editor-head h2 { font-size: 28px !important; }
 .selected-card { padding: 22px !important; border-radius: 18px !important; }
@@ -85,7 +87,9 @@ body {
 /* The core editor is a full-width workspace, not a narrow nested column. */
 .core-settings-card { display: block !important; width: 100% !important; }
 .core-settings-card > .selected-banner { margin-bottom: 20px !important; }
-.core-settings-card > .clipboard-settings-grid { display: grid !important; width: 100% !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 0 !important; }
+.core-settings-card > .clipboard-settings-grid { display: grid !important; width: 100% !important; grid-template-columns: repeat(2, minmax(280px, 1fr)) !important; gap: 0 !important; overflow: visible !important; }
+.core-settings-card > .clipboard-settings-grid > .settings-block { min-width: 0 !important; overflow: hidden; }
+.core-settings-card > .clipboard-settings-grid > .settings-block.wide { grid-column: 1 / -1 !important; }
 .core-section-tabs { position: static !important; display: flex !important; flex-direction: row !important; width: 100% !important; margin: 0 0 16px !important; padding: 4px !important; border: 1px solid var(--line) !important; border-radius: 10px !important; background: rgba(6, 13, 23, .46) !important; }
 .core-section-tab { min-height: 34px !important; flex: 1 !important; justify-content: center !important; padding: 6px 10px !important; border-radius: 7px !important; text-align: center !important; }
 .core-section-tab.active { box-shadow: inset 0 -2px var(--accent) !important; }
