@@ -65,6 +65,7 @@ body {
 .topbar { min-height: 84px !important; padding: 18px 28px !important; }
 .top-actions { gap: 10px !important; }
 .workspace { grid-template-columns: 268px minmax(0, 1fr) !important; }
+.workspace.single-pane { grid-template-columns: minmax(0, 1fr) !important; }
 .sidebar { padding: 24px 16px 30px !important; }
 .module-tabs-bar { padding: 20px 16px 8px !important; background: rgba(7, 8, 11, .42) !important; }
 .module-tabs-title { margin: 0 8px 9px !important; color: var(--faint) !important; font-size: 9px !important; letter-spacing: .14em; text-transform: uppercase; }
