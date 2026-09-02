@@ -621,6 +621,12 @@ function renderAppUpdate() {
   if (!badge) return;
   const isLocalBuild = /(?:-local(?:[.+-]|$)|\+local)/i.test(currentVersion);
   $("#currentVersion").textContent = `v${currentVersion}`;
+  const topbarVersion = $("#topbarVersion");
+  if (topbarVersion) {
+    const visibleVersion = currentVersion === "—" ? "浏览器预览" : `v${currentVersion}`;
+    topbarVersion.textContent = visibleVersion;
+    topbarVersion.title = currentVersion === "—" ? "浏览器预览，不代表已安装的 App 版本" : `当前版本 ${visibleVersion}`;
+  }
   badge.textContent = labels[update.status] || "待检查";
   badge.dataset.status = update.status || "idle";
   $("#updateDescription").textContent = descriptions[update.status] || descriptions.idle;

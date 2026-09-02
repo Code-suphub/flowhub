@@ -63,6 +63,12 @@
       .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(75, 208, 184, .1); }
       .status.dirty { color: #f3d48b; }
       .status.dirty::before { background: #f3b84b; box-shadow: 0 0 0 4px rgba(243, 184, 75, .1); }
+      .version-pill {
+        display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px;
+        border: 1px solid rgba(111, 185, 255, .22); border-radius: 999px;
+        color: var(--blue); background: rgba(111, 185, 255, .07);
+        font-family: "SFMono-Regular", Menlo, monospace; font-size: 10px; white-space: nowrap;
+      }
       .button {
         min-height: 34px; padding: 0 13px; border: 1px solid var(--line); border-radius: 9px;
         color: var(--muted); background: rgba(255, 255, 255, .04); cursor: pointer; transition: .16s ease;
@@ -632,6 +638,7 @@
           </div>
         </div>
         <div class="top-actions">
+          <span class="version-pill" id="topbarVersion" aria-label="当前应用版本">预览版</span>
           <span class="status" id="status">已保存</span>
           <button class="button update-quick hidden" id="updateQuickBtn" data-action="update-primary">发现新版本</button>
           <button class="button" data-action="close">关闭</button>
