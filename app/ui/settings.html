@@ -731,7 +731,7 @@
               </nav>
               <div class="selected-banner"><span class="selected-icon" id="coreSectionIcon">F</span><div><strong id="coreSectionTitle">启动与唤出</strong><small id="coreSectionDescription">修改快捷键后保存即可立即生效。</small></div></div>
               <div class="clipboard-settings-grid">
-                <div class="settings-block" data-core-section-panel="general"><div class="settings-block-title">全局快捷键</div><div class="field"><label for="coreHotkey">唤出 FlowHub</label><input id="coreHotkey" data-core-field="hotkey" placeholder="Alt+Space" /><div class="field-hint">使用系统快捷键格式，例如 Alt+Space、CommandOrControl+Space。</div></div></div>
+                <div class="settings-block" data-core-section-panel="general"><div class="settings-block-title">全局快捷键</div><div class="field"><label for="coreHotkey">唤出 FlowHub</label><input id="coreHotkey" class="shortcut-capture" readonly data-core-field="hotkey" placeholder="点击后按下组合键" /><div class="field-hint">点击输入框后按下组合键，松开即完成设置。</div><small id="coreHotkeyConflict" class="shortcut-conflict" hidden></small></div></div>
                 <div class="settings-block" data-core-section-panel="general"><div class="settings-block-title">系统启动</div><label class="switch-field"><input id="coreLaunchAtLogin" type="checkbox" data-core-field="launchAtLogin" />登录后自动启动 FlowHub</label><div class="field-hint">打包后的 App 保存时会同步 macOS 登录项。</div></div>
                 <div class="settings-block wide module-management-block hidden" data-core-section-panel="search">
                   <div class="settings-block-title">搜索入口与快捷键</div>

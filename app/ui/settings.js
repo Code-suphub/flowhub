@@ -597,6 +597,63 @@ function renderSettingsFields() {
   renderDiagnostics();
 }
 
+function shortcutFromEvent(event) {
+  const rawKey = String(event.key || "");
+  if (!rawKey || ["Shift", "Control", "Alt", "Meta", "CapsLock", "NumLock"].includes(rawKey)) return "";
+  const key = rawKey === " " ? "Space" : rawKey.length === 1 ? rawKey.toUpperCase() : rawKey;
+  const modifiers = [];
+  if (event.metaKey || event.ctrlKey) modifiers.push("CommandOrControl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  return [...modifiers, key].join("+");
+}
+
+function shortcutCanonical(value) {
+  const aliases = { option: "alt", control: "commandorcontrol", ctrl: "commandorcontrol", cmd: "commandorcontrol", command: "commandorcontrol", cmdorctrl: "commandorcontrol" };
+  return String(value || "").replace(/\s+/g, "").toLowerCase().split("+").filter(Boolean).map((part) => aliases[part] || part).sort().join("+");
+}
+
+function shortcutEntries() {
+  const entries = [{ key: "coreHotkey", label: "全局唤出", value: state.config?.core?.hotkey }];
+  const names = { all: "全部结果", web: "网页管理", app: "应用", clipboard: "剪切板", memo: "备忘录" };
+  Object.entries(state.config?.core?.scopeShortcuts || {}).forEach(([key, value]) => entries.push({ key: `scope:${key}`, label: names[key] || key, value }));
+  return entries.filter((entry) => entry.value);
+}
+
+function shortcutConflict(input, value) {
+  const key = input.dataset.coreField === "hotkey" ? "coreHotkey" : `scope:${input.dataset.coreScopeShortcut}`;
+  const canonical = shortcutCanonical(value);
+  return shortcutEntries().find((entry) => entry.key !== key && shortcutCanonical(entry.value) === canonical) || null;
+}
+
+function showShortcutConflict(input, message = "") {
+  input.classList.toggle("has-conflict", Boolean(message));
+  const hint = input.closest("label, .field")?.querySelector(".shortcut-conflict");
+  if (!hint) return;
+  hint.textContent = message;
+  hint.hidden = !message;
+}
+
+function applyCapturedShortcut(input, value) {
+  const conflict = shortcutConflict(input, value);
+  if (conflict) {
+    showShortcutConflict(input, `与${conflict.label}冲突，请换一个组合键`);
+    toast(`${value} 与${conflict.label}冲突`, true);
+    return;
+  }
+  showShortcutConflict(input);
+  input.value = value;
+  if (input.dataset.coreField === "hotkey") {
+    state.config.core ||= {};
+    state.config.core.hotkey = value;
+  } else {
+    state.config.core ||= {};
+    state.config.core.scopeShortcuts ||= { ...DEFAULT_SCOPE_SHORTCUTS };
+    state.config.core.scopeShortcuts[input.dataset.coreScopeShortcut] = value;
+  }
+  markDirty();
+}
+
 function renderDiagnostics() {
   const diagnostics = state.diagnostics || {};
   const toggle = $("#diagnosticsEnabled");
@@ -790,6 +847,11 @@ function renderMode() {
 }
 
 function renderModule() {
+  const activePlugin = state.plugins.find((plugin) => plugin.settingsPanel === state.module);
+  if (activePlugin && (!activePlugin.available || !activePlugin.enabled)) {
+    state.module = "core";
+    state.coreSection = "search";
+  }
   const workspace = document.querySelector(".workspace");
   workspace?.classList.toggle("single-pane", state.module !== "web");
   document.querySelectorAll("[data-module-panel]").forEach((panel) => {
@@ -836,7 +898,8 @@ function renderPluginModules() {
   };
   const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">F</i><span class="module-nav-copy"><strong>通用设置</strong><small>App 配置</small></span></button>`;
   const categoryMenu = (label, icon, ids) => {
-    const items = ids.map((id) => pluginsById.get(id)).filter(Boolean);
+    const items = ids.map((id) => pluginsById.get(id)).filter((plugin) => plugin?.available && plugin.enabled);
+    if (!items.length) return "";
     const activePlugin = items.find((plugin) => plugin.settingsPanel === state.module);
     const title = activePlugin ? `${label} · 当前为${activePlugin.settingsName || activePlugin.name}` : `${label} · ${items.length} 个模块`;
     return `<details class="module-nav-menu${activePlugin ? " current" : ""}"><summary class="module-nav-menu-trigger" title="${esc(title)}"><i class="module-nav-icon">${esc(activePlugin?.icon || icon)}</i><strong>${esc(label)}</strong><span class="module-nav-menu-chevron">⌄</span></summary><div class="module-nav-popover">${items.map(pluginButton).join("")}</div></details>`;
@@ -859,7 +922,7 @@ function renderPluginModules() {
     const items = group.ids.map((id) => pluginsById.get(id)).filter(Boolean).map((plugin) => {
       const hint = !plugin.available ? "插件未安装" : plugin.description || plugin.settingsHint || "";
       const shortcut = Object.prototype.hasOwnProperty.call(DEFAULT_SCOPE_SHORTCUTS, plugin.id)
-        ? `<label class="plugin-shortcut" for="scopeShortcut${esc(plugin.id)}"><span>范围键</span><input id="scopeShortcut${esc(plugin.id)}" data-core-scope-shortcut="${esc(plugin.id)}" value="${esc(state.config?.core?.scopeShortcuts?.[plugin.id] ?? DEFAULT_SCOPE_SHORTCUTS[plugin.id] ?? "")}" placeholder="${esc(DEFAULT_SCOPE_SHORTCUTS[plugin.id] || "")}" /></label>`
+        ? `<label class="plugin-shortcut" for="scopeShortcut${esc(plugin.id)}"><span>范围键</span><input id="scopeShortcut${esc(plugin.id)}" class="shortcut-capture" readonly data-core-scope-shortcut="${esc(plugin.id)}" ${plugin.available && plugin.enabled ? "" : "disabled"} value="${esc(state.config?.core?.scopeShortcuts?.[plugin.id] ?? DEFAULT_SCOPE_SHORTCUTS[plugin.id] ?? "")}" placeholder="点击后按键" /><small class="shortcut-conflict" hidden></small></label>`
         : `<span></span>`;
       return `<div class="plugin-control-item" title="${esc(hint)}"><i class="plugin-control-icon">${esc(plugin.icon || "·")}</i><span class="plugin-control-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(plugin.settingsHint || hint)}</small></span>${shortcut}<label class="plugin-enable" title="${plugin.enabled ? "停用" : "启用"}${esc(plugin.name)}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
     }).join("");
@@ -1312,6 +1375,20 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  const shortcutInput = event.target.closest?.(".shortcut-capture");
+  if (shortcutInput) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      shortcutInput.blur();
+      return;
+    }
+    const shortcut = shortcutFromEvent(event);
+    if (!shortcut) return;
+    event.preventDefault();
+    event.stopPropagation();
+    applyCapturedShortcut(shortcutInput, shortcut);
+    return;
+  }
   const row = event.target.closest?.("[data-node-id]");
   if (!row || event.target.closest("[data-toggle-node]")) return;
   if (event.key === "Enter" || event.key === " ") {
