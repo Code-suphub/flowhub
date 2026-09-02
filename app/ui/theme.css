@@ -91,8 +91,16 @@ body {
 .core-settings-card > .clipboard-settings-grid > .settings-block { min-width: 0 !important; overflow: hidden; }
 .core-settings-card > .clipboard-settings-grid > .settings-block.wide { grid-column: 1 / -1 !important; }
 .core-section-tabs { position: static !important; display: flex !important; flex-direction: row !important; width: 100% !important; margin: 0 0 16px !important; padding: 4px !important; border: 1px solid var(--line) !important; border-radius: 10px !important; background: rgba(6, 13, 23, .46) !important; }
-.core-section-tab { min-height: 34px !important; flex: 1 !important; justify-content: center !important; padding: 6px 10px !important; border-radius: 7px !important; text-align: center !important; }
+.core-section-tab { min-width: 0 !important; min-height: 34px !important; flex: 1 1 0 !important; justify-content: center !important; padding: 6px 10px !important; border-radius: 7px !important; text-align: center !important; white-space: nowrap; }
 .core-section-tab.active { box-shadow: inset 0 -2px var(--accent) !important; }
+@media (max-width: 760px) {
+  .workspace { display: block !important; }
+  .workspace > .sidebar { display: none !important; }
+  .editor { width: 100% !important; padding: 24px 20px 34px !important; }
+  .editor-inner { width: 100% !important; }
+  .core-settings-card > .clipboard-settings-grid { grid-template-columns: 1fr !important; }
+  .core-settings-card > .clipboard-settings-grid > .settings-block { grid-column: 1 / -1 !important; }
+}
 .brand-mark { color: #0b1a2b !important; background: linear-gradient(145deg, #c5e8ff, #6baee3) !important; box-shadow: 0 8px 24px rgba(82, 164, 228, .22) !important; }
 .eyebrow, .editor-kicker { color: var(--accent) !important; }
 .sidebar { background: rgba(9, 17, 28, .68) !important; border-right-color: rgba(205, 224, 244, .13) !important; }
