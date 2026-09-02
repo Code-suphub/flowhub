@@ -308,6 +308,10 @@ if (!window.weborg) {
     async getUpdateState() {
       return { supported: false, currentVersion: "0.1.0", status: "unsupported", availableVersion: "", percent: 0, error: "" };
     },
+    async getDiagnosticsState() { return { enabled: false, available: false, path: "" }; },
+    async setDiagnosticsEnabled() { return { ok: false, preview: true, reason: "浏览器预览不支持监控写入" }; },
+    async sampleDiagnostics() { return { ok: false, preview: true, reason: "浏览器预览不支持监控采样" }; },
+    async clearDiagnostics() { return { ok: false, preview: true, reason: "浏览器预览不支持清理监控数据" }; },
     async checkForUpdates() {
       return { ok: false, preview: true, reason: "浏览器预览不能检查应用更新" };
     },

@@ -28,6 +28,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
+mod diagnostics;
 #[cfg(target_os = "macos")]
 mod macos_hotkey;
 mod updater;
@@ -1948,6 +1949,10 @@ pub fn run() {
             open_accessibility_settings,
             get_config_path_info,
             get_storage_info,
+            diagnostics::get_diagnostics_state,
+            diagnostics::set_diagnostics_enabled,
+            diagnostics::sample_diagnostics,
+            diagnostics::clear_diagnostics,
             choose_config_path,
             choose_storage_path,
             open_config_path,
