@@ -174,7 +174,7 @@ body {
 .module-tabs-bar .module-nav-copy { display: grid !important; }
 .module-tabs-bar .module-nav-copy strong { font-size: 12px !important; }
 .module-tabs-bar .module-nav-copy small { display: block !important; color: var(--faint) !important; }
-.module-nav-popover { top: -7px !important; left: calc(100% + 8px) !important; border: 1px solid rgba(232,238,244,.24) !important; border-radius: 14px !important; background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.022)), rgba(40,44,52,.5) !important; box-shadow: 0 20px 48px rgba(0,0,0,.42) !important; backdrop-filter: blur(22px) saturate(130%) !important; }
+.module-nav-popover { top: calc(100% + 8px) !important; left: 0 !important; width: 100% !important; min-width: 0 !important; border: 1px solid rgba(232,238,244,.24) !important; border-radius: 14px !important; background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.022)), rgba(40,44,52,.5) !important; box-shadow: 0 20px 48px rgba(0,0,0,.42) !important; backdrop-filter: blur(22px) saturate(130%) !important; }
 .plugin-control-group, .memo-library, .update-block, .storage-overview, .scope-master-row { border-color: rgba(232,238,244,.16) !important; border-radius: 12px !important; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.018)), rgba(40,44,52,.34) !important; }
 @media (max-width: 700px) {
   .topbar { padding-inline: 15px !important; }

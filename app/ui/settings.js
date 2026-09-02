@@ -498,6 +498,11 @@ function updateStatus() {
   if (actionbarStatus) actionbarStatus.textContent = message;
   const saveButton = $("#saveBtn");
   if (saveButton) saveButton.disabled = !state.dirty;
+  const reloadButton = document.querySelector('[data-action="reload"]');
+  if (reloadButton) {
+    reloadButton.textContent = state.dirty ? "放弃修改" : "重新加载";
+    reloadButton.title = state.dirty ? "放弃未保存修改并重新加载配置" : "从配置文件重新加载";
+  }
 }
 
 function renderTree() {
@@ -1039,7 +1044,7 @@ async function save() {
 }
 
 async function reload() {
-  if (state.dirty && !window.confirm("当前有未保存修改，确定重新读取并丢弃这些修改吗？")) return;
+  if (state.dirty && !window.confirm("当前有未保存修改，确定放弃修改并重新加载配置吗？")) return;
   try {
     clearDraft();
     [state.plugins, state.config, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
@@ -1048,7 +1053,7 @@ async function reload() {
     state.jsonDirty = false;
     state.dirty = false;
     render();
-    toast("已重新读取 config.json");
+    toast("已重新加载 config.json");
   } catch (error) {
     toast(error.message, true);
   }
