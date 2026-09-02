@@ -1,14 +1,27 @@
-/* FlowHub visual system: dark glass, blue signal accents, high-contrast hierarchy. */
+/* FlowHub visual system: Token Monitor-inspired dark glass primitives. */
 :root {
+  color-scheme: dark;
+  --bg: #14171c;
+  --stage-bg: #07080b;
+  --stage-mid: #11141b;
   --ink: #f3fbf7;
+  --text: #eaf2ff;
+  --text-strong: #f4f8ff;
   --muted: #bac2cd;
   --faint: #8d96a4;
   --accent: #5b9dff;
+  --success: #34d399;
   --accent-strong: #dbeafe;
   --mint: #b7ead4;
-  --surface: rgba(40, 44, 52, .42);
+  --surface: rgba(255,255,255,.05);
   --surface-raised: rgba(40, 44, 52, .5);
+  --surface-border: rgba(255,255,255,.10);
   --line: rgba(232, 238, 244, .16);
+  --btn-primary-bg: #fff;
+  --btn-primary-fg: #14171c;
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: rgba(255,255,255,.25);
+  --btn-secondary-fg: #eaf2ff;
 }
 
 .launcher-brand { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; color: var(--ink); }
@@ -39,7 +52,7 @@ body {
 .input-wrap input#q { height: 56px !important; padding: 0 18px !important; border-radius: 14px !important; font-size: 18px !important; letter-spacing: -.02em; }
 .scope-row { padding: 0 20px 12px !important; gap: 6px !important; }
 .scope-row > span, .clipboard-kind-row > span { margin-right: 4px; font-size: 9px !important; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.scope-button, .clipboard-kind-button { height: 30px !important; padding: 0 12px !important; border-radius: 8px !important; font-size: 11px !important; }
+.scope-button, .clipboard-kind-button { height: 34px !important; padding: 0 13px !important; border-radius: 12px !important; font-size: 11px !important; }
 #results { padding: 0 14px 8px !important; }
 .result { min-height: 58px !important; padding: 10px 12px !important; border-radius: 11px !important; }
 .result.active { transform: translateX(2px); }
@@ -52,7 +65,7 @@ body {
 }
 .input-wrap input#q:focus { border-color: rgba(91, 157, 255, .78) !important; box-shadow: 0 0 0 3px rgba(91, 157, 255, .14) !important; }
 .scope-row, .clipboard-kind-row { color: var(--faint) !important; }
-.scope-button.active, .clipboard-kind-button.active { color: #14171c !important; background: var(--accent) !important; box-shadow: 0 4px 14px rgba(91, 157, 255, .2) !important; }
+.scope-button.active, .clipboard-kind-button.active { color: #14171c !important; border-color: transparent !important; background: var(--accent) !important; box-shadow: 0 8px 20px rgba(91, 157, 255, .18) !important; }
 .result { border-color: rgba(232, 238, 244, .1) !important; background: rgba(255, 255, 255, .025) !important; }
 .result:hover, .result.active { border-color: rgba(91, 157, 255, .42) !important; background: rgba(91, 157, 255, .1) !important; }
 .r-title { color: #eaf2ff !important; }
@@ -78,16 +91,16 @@ body {
 .editor-inner { width: min(1080px, 100%) !important; }
 .editor-head { margin-bottom: 26px !important; }
 .editor-head h2 { font-size: 28px !important; }
-.selected-card { padding: 22px !important; border-radius: 18px !important; }
+.selected-card { padding: 22px !important; border-radius: 14px !important; }
 .selected-banner { padding-bottom: 18px !important; margin-bottom: 19px !important; }
 .settings-block { padding: 18px !important; border-radius: 14px !important; }
 .settings-block-title { font-size: 13px !important; }
 .form-grid { gap: 16px !important; }
 .field label { font-size: 12px !important; }
-.button { min-height: 36px !important; border-radius: 9px !important; }
+.button { position: relative !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: .55rem !important; min-height: 40px !important; padding: 0 1.05rem !important; border-radius: 12px !important; font-weight: 800 !important; text-decoration: none !important; transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease, border-color .18s ease, background .18s ease !important; }
 .settings-actionbar { padding: 13px 28px 14px !important; }
 /* The core editor is a full-width workspace, not a narrow nested column. */
-.core-settings-card { display: block !important; width: 100% !important; }
+.core-settings-card { display: block !important; width: 100% !important; border: 1px solid var(--surface-border) !important; background: color-mix(in srgb, var(--surface) 82%, transparent) !important; box-shadow: none !important; }
 .core-settings-card > .selected-banner { margin-bottom: 20px !important; }
 .core-settings-card > .clipboard-settings-grid { display: grid !important; width: 100% !important; grid-template-columns: repeat(2, minmax(280px, 1fr)) !important; gap: 0 !important; overflow: visible !important; }
 .core-settings-card > .clipboard-settings-grid > .settings-block { min-width: 0 !important; overflow: hidden; }
@@ -106,12 +119,28 @@ body {
 .brand-mark { color: #14171c !important; background: linear-gradient(145deg, #eaf2ff, #5b9dff) !important; box-shadow: 0 8px 24px rgba(91, 157, 255, .22) !important; }
 .eyebrow, .editor-kicker { color: var(--accent) !important; }
 .sidebar { background: rgba(7, 8, 11, .68) !important; border-right-color: rgba(232, 238, 244, .13) !important; }
-.app-card, .tree-card, .selected-card, .settings-block, .overview-card { border-color: rgba(255,255,255,.10) !important; background: rgba(255,255,255,.05) !important; box-shadow: none !important; }
+.app-card, .tree-card, .selected-card, .settings-block, .overview-card { border-color: var(--surface-border) !important; border-radius: 14px !important; background: color-mix(in srgb, var(--surface) 76%, transparent) !important; box-shadow: none !important; backdrop-filter: blur(8px) !important; }
 .module-button.active, .core-section-tab.active { color: var(--ink) !important; border-color: rgba(91, 157, 255, .4) !important; background: rgba(91, 157, 255, .13) !important; }
 .tree-row.active { background: linear-gradient(90deg, rgba(91, 157, 255, .18), rgba(91, 157, 255, .04)) !important; box-shadow: inset 2px 0 var(--accent) !important; }
 .button.primary { color: #14171c !important; background: #fff !important; box-shadow: 0 12px 30px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.82) !important; }
 .button { border-color: rgba(255,255,255,.25) !important; background: transparent !important; color: #eaf2ff !important; }
 .button:hover { border-color: rgba(255,255,255,.42) !important; background: rgba(255,255,255,.08) !important; transform: translateY(-1px); }
+.button:active { transform: translateY(0) scale(.985) !important; }
+.button:focus-visible, .scope-button:focus-visible, .clipboard-kind-button:focus-visible, .core-section-tab:focus-visible { outline: 3px solid rgba(91,157,255,.55) !important; outline-offset: 3px !important; }
+.button:disabled { transform: none !important; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field textarea, .field select, .storage-path-row input, .json-editor {
+  border: 1px solid rgba(255,255,255,.16) !important;
+  border-radius: 12px !important;
+  background: rgba(7,8,11,.72) !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035) !important;
+}
+.field input:not([type="checkbox"]):not([type="radio"]):focus, .field textarea:focus, .field select:focus, .storage-path-row input:focus, .json-editor:focus {
+  border-color: rgba(91,157,255,.78) !important;
+  box-shadow: 0 0 0 3px rgba(91,157,255,.14) !important;
+  outline: none !important;
+}
+.version-pill, .version-badge { border-color: rgba(91,157,255,.36) !important; border-radius: 999px !important; color: var(--accent) !important; background: rgba(91,157,255,.11) !important; }
 .update-badge[data-status="available"], .update-badge[data-status="downloaded"] { color: #b7ead4 !important; border-color: rgba(52, 211, 153, .42) !important; background: rgba(52, 211, 153, .13) !important; }
 @media (max-width: 700px) {
   .topbar { padding-inline: 15px !important; }
