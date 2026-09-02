@@ -69,3 +69,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  finalize-updater:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Replace API asset URLs with public download URLs
+        run: |
+          mkdir -p updater-metadata
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir updater-metadata
+          node app/scripts/fix-updater-metadata.mjs updater-metadata/latest.json "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" updater-metadata/latest.json --repo "$GITHUB_REPOSITORY" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
