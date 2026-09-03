@@ -116,7 +116,68 @@ fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
 }
 
 #[cfg(target_os = "macos")]
-fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
+fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
+    let mut detail = json!({
+        "phase": phase,
+        "enabled": ORGANIZER_ENABLED.load(AtomicOrdering::Acquire),
+        "collapsed": ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire),
+        "mainThread": objc2::MainThreadMarker::new().is_some()
+    });
+    if let Some(control) = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) } {
+        if let Some(status_item) = control.ns_status_item() {
+            detail["statusItemVisible"] = json!(status_item.isVisible());
+            detail["statusItemLength"] = json!(status_item.length());
+            if let Some(main_thread) = objc2::MainThreadMarker::new() {
+                if let Some(button) = status_item.button(main_thread) {
+                    let frame = button.frame();
+                    detail["buttonHidden"] = json!(button.isHidden());
+                    detail["buttonAlignment"] = json!(button.alignment().0);
+                    detail["buttonTitle"] = json!(button.title().to_string());
+                    detail["buttonFrame"] = json!({
+                        "x": frame.origin.x,
+                        "y": frame.origin.y,
+                        "width": frame.size.width,
+                        "height": frame.size.height
+                    });
+                    if let Some(window) = button.window() {
+                        let frame = window.frame();
+                        detail["windowRight"] = json!(frame.origin.x + frame.size.width);
+                        detail["windowFrame"] = json!({
+                            "x": frame.origin.x,
+                            "y": frame.origin.y,
+                            "width": frame.size.width,
+                            "height": frame.size.height
+                        });
+                    }
+                }
+            }
+        }
+    }
+    diagnostics::record_event(app, "menu_bar_organizer", detail);
+}
+
+#[cfg(target_os = "macos")]
+fn schedule_organizer_observation(app: &tauri::AppHandle, phase: &str) {
+    record_organizer_state(app, &format!("{phase}:immediate"));
+    for delay_ms in [150_u64, 800_u64] {
+        let handle = app.clone();
+        let phase = format!("{phase}:after_{delay_ms}ms");
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+            let callback_handle = handle.clone();
+            let _ = handle.run_on_main_thread(move || {
+                record_organizer_state(&callback_handle, &phase);
+            });
+        });
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn configure_organizer_items(
+    app: &tauri::AppHandle,
+    enabled: bool,
+    collapsed: bool,
+) -> Result<(), String> {
     let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
     let control = match control {
         Some(control) => control,
@@ -152,6 +213,7 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
+    schedule_organizer_observation(app, if collapsed { "collapse" } else { "expand" });
     Ok(())
 }
 
@@ -160,8 +222,9 @@ fn apply_menu_bar_organizer(app: &tauri::AppHandle, config: &Value) -> Value {
     let enabled = config_flag(config, "/core/menuBar/organizerEnabled", false);
     let collapsed = enabled && config_flag(config, "/core/menuBar/collapseOnLaunch", false);
     let handle = app.clone();
+    let callback_handle = handle.clone();
     let _ = handle.run_on_main_thread(move || {
-        if let Err(error) = configure_organizer_items(enabled, collapsed) {
+        if let Err(error) = configure_organizer_items(&callback_handle, enabled, collapsed) {
             eprintln!("[flowhub-tauri] 菜单栏整理器配置失败：{error}");
         }
     });
@@ -174,12 +237,12 @@ fn apply_menu_bar_organizer(_app: &tauri::AppHandle, _config: &Value) -> Value {
 }
 
 #[cfg(target_os = "macos")]
-fn toggle_menu_bar_organizer() -> Result<bool, String> {
+fn toggle_menu_bar_organizer(app: &tauri::AppHandle) -> Result<bool, String> {
     if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
         return Err("请先在设置中启用菜单栏整理".to_string());
     }
     let collapsed = !ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire);
-    configure_organizer_items(true, collapsed)?;
+    configure_organizer_items(app, true, collapsed)?;
     Ok(collapsed)
 }
 
@@ -201,8 +264,9 @@ async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
+        let handle = app.clone();
         app.run_on_main_thread(move || {
-            let _ = sender.send(toggle_menu_bar_organizer());
+            let _ = sender.send(toggle_menu_bar_organizer(&handle));
         })
         .map_err(|error| error.to_string())?;
         let collapsed = receiver.await.map_err(|error| error.to_string())??;
@@ -268,10 +332,7 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
     if show_launcher || show_settings {
         menu = menu.separator();
     }
-    menu = menu.text(
-        FLOWHUB_ORGANIZER_MENU_ID,
-        "菜单栏整理 · 展开 / 收起",
-    );
+    menu = menu.text(FLOWHUB_ORGANIZER_MENU_ID, "菜单栏整理 · 展开 / 收起");
     if show_version || show_quit {
         menu = menu.separator();
     }
@@ -307,7 +368,7 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             }
             FLOWHUB_ORGANIZER_MENU_ID => {
                 let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
-                    toggle_menu_bar_organizer().map(|_| ())
+                    toggle_menu_bar_organizer(app).map(|_| ())
                 } else {
                     enable_menu_bar_organizer(app)
                 };
@@ -2140,7 +2201,7 @@ pub fn run() {
     );
 
     #[cfg(target_os = "macos")]
-    let builder = builder.on_tray_icon_event(|_app, event| {
+    let builder = builder.on_tray_icon_event(|app, event| {
         if let TrayIconEvent::Click {
             id,
             button: MouseButton::Left,
@@ -2149,7 +2210,7 @@ pub fn run() {
         } = event
         {
             if id.0 == ORGANIZER_CONTROL_ID {
-                if let Err(error) = toggle_menu_bar_organizer() {
+                if let Err(error) = toggle_menu_bar_organizer(app) {
                     eprintln!("[flowhub-tauri] 无法切换菜单栏隐藏区：{error}");
                 }
             }
@@ -2193,9 +2254,11 @@ pub fn run() {
             let organizer_state = apply_menu_bar_organizer(app.handle(), &config);
             #[cfg(target_os = "macos")]
             if std::env::var("FLOWHUB_TAURI_ORGANIZER_SMOKE_TEST").as_deref() == Ok("1") {
-                configure_organizer_items(true, false).map_err(std::io::Error::other)?;
-                toggle_menu_bar_organizer().map_err(std::io::Error::other)?;
-                configure_organizer_items(false, false).map_err(std::io::Error::other)?;
+                configure_organizer_items(app.handle(), true, false)
+                    .map_err(std::io::Error::other)?;
+                toggle_menu_bar_organizer(app.handle()).map_err(std::io::Error::other)?;
+                configure_organizer_items(app.handle(), false, false)
+                    .map_err(std::io::Error::other)?;
             }
             println!(
                 "[flowhub-tauri] 数据目录：{}",
