@@ -1,9 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSLayoutConstraintOrientation;
+use objc2_app_kit::{NSTextAlignment, NSVariableStatusItemLength};
 #[cfg(target_os = "macos")]
-use objc2_foundation::{NSString, NSUserDefaults};
+use objc2_foundation::NSString;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -63,15 +63,7 @@ const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
-const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
-#[cfg(target_os = "macos")]
-const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V6.Control";
-#[cfg(target_os = "macos")]
-const ORGANIZER_BOUNDARY_AUTOSAVE: &str = "FlowHub.Organizer.V6.Boundary";
-#[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
-#[cfg(target_os = "macos")]
-static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
@@ -99,93 +91,46 @@ fn set_organizer_autosave_name(tray: &tray_icon::TrayIcon, name: &str) {
 }
 
 #[cfg(target_os = "macos")]
-fn seed_organizer_position(name: &str, position: f64) {
-    let defaults = NSUserDefaults::standardUserDefaults();
-    let key = NSString::from_str(&format!("NSStatusItem Preferred Position {name}"));
-    if defaults.objectForKey(&key).is_none() {
-        defaults.setDouble_forKey(position, &key);
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn remove_status_item_min_width(tray: &tray_icon::TrayIcon) {
+fn set_organizer_control_layout(tray: &tray_icon::TrayIcon, collapsed: bool) {
     let Some(main_thread) = objc2::MainThreadMarker::new() else {
         return;
     };
     if let Some(status_item) = tray.ns_status_item() {
-        let Some(button) = status_item.button(main_thread) else {
-            return;
-        };
-        let Some(window) = button.window() else {
-            return;
-        };
-        let Some(content_view) = window.contentView() else {
-            return;
-        };
-        let Some(superview) = (unsafe { button.superview() }) else {
-            return;
-        };
-        let superview_ptr = objc2::rc::Retained::as_ptr(&superview).cast::<()>();
-        let constraints = content_view.constraintsAffectingLayoutForOrientation(
-            NSLayoutConstraintOrientation::Horizontal,
-        );
-        for constraint in constraints.iter() {
-            let Some(second_item) = (unsafe { constraint.secondItem() }) else {
-                continue;
-            };
-            if objc2::rc::Retained::as_ptr(&second_item).cast::<()>() == superview_ptr {
-                constraint.setActive(false);
-                break;
-            }
+        if let Some(button) = status_item.button(main_thread) {
+            button.setAlignment(NSTextAlignment(1));
         }
+        status_item.setLength(if collapsed {
+            4096.0
+        } else {
+            NSVariableStatusItemLength
+        });
     }
 }
 
 #[cfg(target_os = "macos")]
 fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
-    let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
-    let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
-    let (control, boundary) = match (control, boundary) {
-        (Some(control), Some(boundary)) => (control, boundary),
-        _ => {
-            seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
-            seed_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, 1.0);
+    let control = match unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) } {
+        Some(control) => control,
+        None => {
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
                 .with_title(if collapsed { "‹" } else { "›" })
                 .with_tooltip("展开或收起菜单栏隐藏区")
                 .build()
                 .map_err(|error| error.to_string())?;
-            set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
-            let boundary = tray_icon::TrayIconBuilder::new()
-                .with_id(ORGANIZER_BOUNDARY_ID)
-                .with_title("")
-                .build()
-                .map_err(|error| error.to_string())?;
-            set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-            remove_status_item_min_width(&boundary);
             let control = Box::into_raw(Box::new(control));
-            let boundary = Box::into_raw(Box::new(boundary));
             ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
-            ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
-            (unsafe { &*control }, unsafe { &*boundary })
+            unsafe { &*control }
         }
     };
 
     control
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
-    boundary
-        .set_visible(enabled)
-        .map_err(|error| error.to_string())?;
     if enabled {
-        set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
-        set_organizer_autosave_name(boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
+        set_organizer_autosave_name(control, "FlowHub.Organizer.V5.Control");
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
-        remove_status_item_min_width(boundary);
-        if let Some(status_item) = boundary.ns_status_item() {
-            status_item.setLength(if collapsed { 4096.0 } else { 0.0 });
-        }
+        set_organizer_control_layout(control, collapsed);
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
