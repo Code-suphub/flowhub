@@ -1,8 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSTextAlignment;
-#[cfg(target_os = "macos")]
 use objc2_foundation::NSString;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
@@ -63,7 +61,11 @@ const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
+const ORGANIZER_SEPARATOR_ID: &str = "flowhub-organizer-separator";
+#[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
+static ORGANIZER_SEPARATOR_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
@@ -77,14 +79,14 @@ fn config_flag(config: &Value, pointer: &str, default: bool) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn organizer_control_title(collapsed: bool) -> String {
+fn organizer_separator_title(collapsed: bool) -> String {
     if collapsed {
         // A bounded wide item pushes status items on its left off-screen. En
         // spaces keep the geometry predictable without allocating a 10k-point
         // status item, which is expensive on recent macOS versions.
-        format!("{}‹", "\u{2002}".repeat(720))
+        format!("{}│", "\u{2002}".repeat(720))
     } else {
-        "│ ›".to_string()
+        "│".to_string()
     }
 }
 
@@ -103,41 +105,45 @@ fn set_organizer_autosave_name(tray: &tray_icon::TrayIcon, name: &str) {
 }
 
 #[cfg(target_os = "macos")]
-fn right_align_organizer_control(tray: &tray_icon::TrayIcon) {
-    let Some(main_thread) = objc2::MainThreadMarker::new() else {
-        return;
-    };
-    if let Some(status_item) = tray.ns_status_item() {
-        if let Some(button) = status_item.button(main_thread) {
-            button.setAlignment(NSTextAlignment(1));
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
 fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
-    let control = match unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) } {
-        Some(control) => control,
-        None => {
+    let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
+    let separator = unsafe { organizer_tray(&ORGANIZER_SEPARATOR_PTR) };
+    let (control, separator) = match (control, separator) {
+        (Some(control), Some(separator)) => (control, separator),
+        _ => {
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
-                .with_title(organizer_control_title(collapsed))
-                .with_tooltip("点击展开或收起；按住 ⌘ 拖动隐藏区边界")
+                .with_title(if collapsed { "‹" } else { "›" })
+                .with_tooltip("展开或收起菜单栏隐藏区")
+                .build()
+                .map_err(|error| error.to_string())?;
+            let separator = tray_icon::TrayIconBuilder::new()
+                .with_id(ORGANIZER_SEPARATOR_ID)
+                .with_title(organizer_separator_title(collapsed))
+                .with_tooltip("按住 ⌘ 拖动此隐藏区边界")
                 .build()
                 .map_err(|error| error.to_string())?;
             let control = Box::into_raw(Box::new(control));
+            let separator = Box::into_raw(Box::new(separator));
             ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
-            unsafe { &*control }
+            ORGANIZER_SEPARATOR_PTR.store(separator as usize, AtomicOrdering::Release);
+            (unsafe { &*control }, unsafe { &*separator })
         }
     };
 
     control
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
+    separator
+        .set_visible(enabled)
+        .map_err(|error| error.to_string())?;
     if enabled {
-        set_organizer_autosave_name(control, "FlowHub.Organizer.Control");
-        control.set_title(Some(organizer_control_title(collapsed)));
-        right_align_organizer_control(control);
+        // V2 resets the persisted placement from the former combined item so
+        // the boundary and control are created next to each other again.
+        set_organizer_autosave_name(control, "FlowHub.Organizer.V2.Control");
+        set_organizer_autosave_name(separator, "FlowHub.Organizer.V2.Separator");
+        control.set_title(Some(if collapsed { "‹" } else { "›" }));
+        separator.set_title(Some(organizer_separator_title(collapsed)));
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
