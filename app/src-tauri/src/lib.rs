@@ -58,6 +58,24 @@ tauri_panel! {
     })
 }
 
+#[cfg(target_os = "macos")]
+objc2::define_class!(
+    #[unsafe(super(NSTextField))]
+    #[thread_kind = objc2::MainThreadOnly]
+    #[name = "FlowHubOrganizerLabel"]
+    struct FlowHubOrganizerLabel;
+
+    impl FlowHubOrganizerLabel {
+        #[unsafe(method(hitTest:))]
+        fn hit_test(
+            &self,
+            _point: objc2_foundation::NSPoint,
+        ) -> Option<&objc2_app_kit::NSView> {
+            None
+        }
+    }
+);
+
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
 static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
 #[cfg(target_os = "macos")]
@@ -141,6 +159,12 @@ fn configure_organizer_label(tray: &tray_icon::TrayIcon, collapsed: bool) {
         None => {
             let value = NSString::from_str("");
             let label = NSTextField::labelWithString(&value, main_thread);
+            unsafe {
+                objc2::runtime::AnyObject::set_class(
+                    &label,
+                    <FlowHubOrganizerLabel as objc2::ClassType>::class(),
+                );
+            }
             label.setAlignment(NSTextAlignment::Center);
             label.setAutoresizingMask(
                 NSAutoresizingMaskOptions::ViewMinXMargin
@@ -189,6 +213,9 @@ fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
                     if let Some(label) = unsafe { organizer_label() } {
                         let label_frame = label.frame();
                         detail["labelValue"] = json!(label.stringValue().to_string());
+                        detail["labelHitTestPassThrough"] = json!(label
+                            .hitTest(objc2_foundation::NSPoint::new(1.0, 1.0))
+                            .is_none());
                         detail["labelFrame"] = json!({
                             "x": label_frame.origin.x,
                             "y": label_frame.origin.y,
