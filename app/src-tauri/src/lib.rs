@@ -1,7 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSTextAlignment, NSVariableStatusItemLength};
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSTextAlignment, NSTextField, NSVariableStatusItemLength,
+};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSString, NSUserDefaults};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -69,6 +71,8 @@ const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V9.Control";
 #[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
+static ORGANIZER_LABEL_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static ORGANIZER_COLLAPSED: AtomicBool = AtomicBool::new(false);
@@ -116,6 +120,49 @@ fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
 }
 
 #[cfg(target_os = "macos")]
+unsafe fn organizer_label() -> Option<&'static NSTextField> {
+    let address = ORGANIZER_LABEL_PTR.load(AtomicOrdering::Acquire);
+    (address != 0).then(|| unsafe { &*(address as *const NSTextField) })
+}
+
+#[cfg(target_os = "macos")]
+fn configure_organizer_label(tray: &tray_icon::TrayIcon, collapsed: bool) {
+    let Some(status_item) = tray.ns_status_item() else {
+        return;
+    };
+    let Some(main_thread) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let Some(button) = status_item.button(main_thread) else {
+        return;
+    };
+    let label = match unsafe { organizer_label() } {
+        Some(label) => label,
+        None => {
+            let value = NSString::from_str("");
+            let label = NSTextField::labelWithString(&value, main_thread);
+            label.setAlignment(NSTextAlignment::Center);
+            label.setAutoresizingMask(
+                NSAutoresizingMaskOptions::ViewMinXMargin
+                    | NSAutoresizingMaskOptions::ViewHeightSizable,
+            );
+            button.addSubview(&label);
+            let label = objc2::rc::Retained::into_raw(label);
+            ORGANIZER_LABEL_PTR.store(label as usize, AtomicOrdering::Release);
+            unsafe { &*label }
+        }
+    };
+    let bounds = button.bounds();
+    let width = 26.0_f64.min(bounds.size.width.max(0.0));
+    label.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(bounds.size.width - width, 0.0),
+        objc2_foundation::NSSize::new(width, bounds.size.height),
+    ));
+    let value = NSString::from_str(if collapsed { "‹" } else { "›" });
+    label.setStringValue(&value);
+}
+
+#[cfg(target_os = "macos")]
 fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
     let mut detail = json!({
         "phase": phase,
@@ -139,6 +186,16 @@ fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
                         "width": frame.size.width,
                         "height": frame.size.height
                     });
+                    if let Some(label) = unsafe { organizer_label() } {
+                        let label_frame = label.frame();
+                        detail["labelValue"] = json!(label.stringValue().to_string());
+                        detail["labelFrame"] = json!({
+                            "x": label_frame.origin.x,
+                            "y": label_frame.origin.y,
+                            "width": label_frame.size.width,
+                            "height": label_frame.size.height
+                        });
+                    }
                     if let Some(window) = button.window() {
                         let frame = window.frame();
                         detail["windowRight"] = json!(frame.origin.x + frame.size.width);
@@ -185,7 +242,7 @@ fn configure_organizer_items(
             seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
-                .with_title(if collapsed { "‹" } else { "›" })
+                .with_title("")
                 .with_tooltip("展开或收起菜单栏隐藏区")
                 .build()
                 .map_err(|error| error.to_string())?;
@@ -201,7 +258,7 @@ fn configure_organizer_items(
         .map_err(|error| error.to_string())?;
     if enabled {
         set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
-        control.set_title(Some(if collapsed { "‹" } else { "›" }));
+        control.set_title(Some(""));
         set_organizer_item_length(
             control,
             if collapsed {
@@ -210,6 +267,7 @@ fn configure_organizer_items(
                 NSVariableStatusItemLength
             },
         );
+        configure_organizer_label(control, collapsed);
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
