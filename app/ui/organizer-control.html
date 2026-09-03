@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FlowHub Organizer</title>
     <style>
-      :root { color-scheme: light dark; }
+      :root { color-scheme: dark light; }
       * { box-sizing: border-box; }
       html, body {
         width: 100%;
@@ -20,14 +20,15 @@
         padding: 0 1px 1px 0;
         border: 0;
         border-radius: 4px;
-        color: CanvasText;
+        color: rgba(255, 255, 255, 0.92);
+        text-shadow: 0 0 1px rgba(0, 0, 0, 0.95), 0 1px 1px rgba(0, 0, 0, 0.65);
         background: transparent;
         font: 600 16px/1 -apple-system, BlinkMacSystemFont, sans-serif;
         cursor: default;
         -webkit-app-region: no-drag;
       }
-      button:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
-      button:active { background: color-mix(in srgb, CanvasText 20%, transparent); }
+      button:hover { background: rgba(255, 255, 255, 0.12); }
+      button:active { background: rgba(255, 255, 255, 0.2); }
     </style>
   </head>
   <body>

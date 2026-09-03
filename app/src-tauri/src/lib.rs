@@ -135,6 +135,9 @@ fn ensure_organizer_control_window(
     panel.set_floating_panel(true);
     panel.set_hides_on_deactivate(false);
     panel.set_has_shadow(false);
+    panel.set_opaque(false);
+    panel.set_transparent(true);
+    panel.set_alpha_value(1.0);
     panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
     panel.set_collection_behavior(
         CollectionBehavior::new()
