@@ -35,6 +35,7 @@ const TOOL_SETTINGS = {
   proxy: "代理信息检测",
   ip: "IP 识别与归属地"
 };
+const SHIFTED_DIGIT_KEYS = { ")": "0", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9" };
 let draftTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -79,11 +80,18 @@ function normalizeConfig(config) {
     if (!normalized) continue;
     const parts = normalized.split("+").filter(Boolean).map((part) => modifierAliases[part] || part);
     const keys = parts.filter((part) => !modifiers.has(part));
-    if (keys.length !== 1 || (!parts.some((part) => modifiers.has(part)) && !/^f(?:[1-9]|1\d|2[0-4])$/.test(keys[0]))) {
+    if (parts.includes("shift") && SHIFTED_DIGIT_KEYS[keys[0]]) {
+      keys[0] = SHIFTED_DIGIT_KEYS[keys[0]];
+      scopeShortcuts[scope] = shortcut.replace(/[^+]+$/, keys[0]);
+    }
+    if (keys.length !== 1 || (!parts.some((part) => modifiers.has(part)) && !/^[0-9]$|^f(?:[1-9]|1\d|2[0-4])$/.test(keys[0]))) {
       throw new Error(`${scope} 的范围快捷键格式无效：${shortcut}`);
     }
-    const canonical = [...new Set(parts.filter((part) => modifiers.has(part)))].sort().join("+") + `+${keys[0]}`;
-    if (usedShortcuts.has(canonical)) throw new Error(`范围快捷键重复：${shortcut}`);
+    const canonical = [...new Set(parts.filter((part) => modifiers.has(part))), keys[0]].sort().join("+");
+    if (usedShortcuts.has(canonical)) {
+      scopeShortcuts[scope] = "";
+      continue;
+    }
     usedShortcuts.set(canonical, scope);
   }
   config.core.scopeShortcuts = scopeShortcuts;
@@ -602,15 +610,18 @@ function renderSettingsFields() {
   renderDiagnostics();
 }
 
-function shortcutFromEvent(event) {
-  const rawKey = String(event.key || "");
+function shortcutFromEvent(event, { allowBare = false } = {}) {
+  const code = String(event.code || "");
+  const physicalNumber = code.match(/^(?:Digit|Numpad)([0-9])$/)?.[1] || "";
+  const rawKey = physicalNumber || String(event.key || "");
   if (!rawKey || ["Shift", "Control", "Alt", "Meta", "CapsLock", "NumLock"].includes(rawKey)) return "";
   const key = rawKey === " " ? "Space" : rawKey.length === 1 ? rawKey.toUpperCase() : rawKey;
   const modifiers = [];
   if (event.metaKey || event.ctrlKey) modifiers.push("CommandOrControl");
   if (event.altKey) modifiers.push("Alt");
   if (event.shiftKey) modifiers.push("Shift");
-  if (!modifiers.length && !/^F(?:[1-9]|1\d|2[0-4])$/i.test(key)) return "";
+  if (!modifiers.length && !allowBare && !/^F(?:[1-9]|1\d|2[0-4])$/i.test(key)) return "";
+  if (!modifiers.length && allowBare && !/^[0-9]$|^F(?:[1-9]|1\d|2[0-4])$/i.test(key)) return "";
   return [...modifiers, key].join("+");
 }
 
@@ -640,13 +651,37 @@ function showShortcutConflict(input, message = "") {
   hint.hidden = !message;
 }
 
+function finishShortcutCapture(input, { restore = false } = {}) {
+  if (!input) return;
+  input.classList.remove("is-capturing");
+  if (restore && input.dataset.capturePrevious !== undefined) input.textContent = input.dataset.capturePrevious;
+  delete input.dataset.capturePrevious;
+}
+
+function beginShortcutCapture(input) {
+  document.querySelectorAll(".shortcut-capture.is-capturing").forEach((active) => finishShortcutCapture(active, { restore: true }));
+  input.dataset.capturePrevious = input.textContent;
+  input.classList.add("is-capturing");
+  input.textContent = "请按下快捷键…";
+  input.focus({ preventScroll: true });
+}
+
 function applyCapturedShortcut(input, value) {
   const conflict = shortcutConflict(input, value);
   if (conflict) {
-    showShortcutConflict(input, `与${conflict.label}冲突，请换一个组合键`);
-    toast(`${value} 与${conflict.label}冲突`, true);
-    return;
+    const currentScope = input.dataset.coreScopeShortcut;
+    const conflictScope = conflict.key.startsWith("scope:") ? conflict.key.slice(6) : "";
+    if (!currentScope || !conflictScope) {
+      finishShortcutCapture(input, { restore: true });
+      showShortcutConflict(input, `与${conflict.label}冲突，请换一个组合键`);
+      toast(`${value} 与${conflict.label}冲突`, true);
+      return;
+    }
+    const previous = state.config?.core?.scopeShortcuts?.[currentScope] || "";
+    state.config.core.scopeShortcuts[conflictScope] = previous;
+    toast(`已将 ${value} 分配给当前范围，并与${conflict.label}交换`);
   }
+  finishShortcutCapture(input);
   showShortcutConflict(input);
   if (input.matches("button")) input.textContent = value;
   else input.value = value;
@@ -659,6 +694,7 @@ function applyCapturedShortcut(input, value) {
     state.config.core.scopeShortcuts[input.dataset.coreScopeShortcut] = value;
   }
   markDirty();
+  renderSettingsFields();
 }
 
 function renderDiagnostics() {
@@ -914,7 +950,7 @@ function renderPluginModules() {
     if (!items.length) return "";
     const activePlugin = items.find((plugin) => plugin.settingsPanel === state.module);
     const title = activePlugin ? `${label} · 当前为${activePlugin.settingsName || activePlugin.name}` : `${label} · ${items.length} 个模块`;
-    return `<details class="module-nav-menu${activePlugin ? " current" : ""}"><summary class="module-nav-menu-trigger" title="${esc(title)}"><i class="module-nav-icon">${esc(activePlugin?.icon || icon)}</i><strong>${esc(label)}</strong><span class="module-nav-menu-chevron">⌄</span></summary><div class="module-nav-popover">${items.map(pluginButton).join("")}</div></details>`;
+    return `<details class="module-nav-menu${activePlugin ? " current" : ""}"${activePlugin ? " open" : ""}><summary class="module-nav-menu-trigger" title="${esc(title)}"><i class="module-nav-icon">${esc(activePlugin?.icon || icon)}</i><strong>${esc(label)}</strong><span class="module-nav-menu-chevron">⌄</span></summary><div class="module-nav-popover">${items.map(pluginButton).join("")}</div></details>`;
   };
   $("#moduleSwitcher").innerHTML = [
     coreButton,
@@ -1351,6 +1387,13 @@ function switchModule(module) {
 }
 
 document.addEventListener("click", (event) => {
+  const shortcutButton = event.target.closest(".shortcut-capture");
+  if (shortcutButton) {
+    event.preventDefault();
+    beginShortcutCapture(shortcutButton);
+    return;
+  }
+  document.querySelectorAll(".shortcut-capture.is-capturing").forEach((active) => finishShortcutCapture(active, { restore: true }));
   const coreSection = event.target.closest("[data-core-section]")?.dataset.coreSection;
   if (coreSection) {
     state.coreSection = coreSection;
@@ -1387,14 +1430,15 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  const shortcutInput = event.target.closest?.(".shortcut-capture");
+  const shortcutInput = document.querySelector(".shortcut-capture.is-capturing");
   if (shortcutInput) {
     if (event.key === "Escape") {
       event.preventDefault();
+      finishShortcutCapture(shortcutInput, { restore: true });
       shortcutInput.blur();
       return;
     }
-    const shortcut = shortcutFromEvent(event);
+    const shortcut = shortcutFromEvent(event, { allowBare: Boolean(shortcutInput.dataset.coreScopeShortcut) });
     if (!shortcut) return;
     event.preventDefault();
     event.stopPropagation();
