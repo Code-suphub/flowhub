@@ -57,6 +57,8 @@ static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
 #[cfg(target_os = "macos")]
 const FLOWHUB_TRAY_ID: &str = "flowhub-menu-bar";
 #[cfg(target_os = "macos")]
+const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
+#[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
 const ORGANIZER_SEPARATOR_ID: &str = "flowhub-organizer-separator";
@@ -174,6 +176,19 @@ fn toggle_menu_bar_organizer() -> Result<bool, String> {
     Ok(collapsed)
 }
 
+#[cfg(target_os = "macos")]
+fn enable_menu_bar_organizer(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let paths = state.paths();
+    let mut config = read_json(&paths.config_path)
+        .unwrap_or_else(|| serde_json::from_str(DEFAULT_CONFIG).unwrap_or_else(|_| json!({})));
+    let menu_bar = ensure_object_path(&mut config, &["core", "menuBar"])?;
+    menu_bar.insert("organizerEnabled".to_string(), Value::Bool(true));
+    write_json_atomic(&paths.config_path, &config)?;
+    apply_menu_bar_organizer(app, &config);
+    Ok(())
+}
+
 #[tauri::command]
 async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
@@ -202,13 +217,25 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
     let show_settings = config_flag(config, "/core/menuBar/showOpenSettings", true);
     let show_version = config_flag(config, "/core/menuBar/showVersion", true);
     let show_quit = config_flag(config, "/core/menuBar/showQuit", true);
+    let organizer_enabled = config_flag(config, "/core/menuBar/organizerEnabled", false);
     if show_launcher {
         menu = menu.text("flowhub-open", "打开 FlowHub");
     }
     if show_settings {
         menu = menu.text("flowhub-settings", "设置…");
     }
-    if (show_launcher || show_settings) && (show_version || show_quit) {
+    if show_launcher || show_settings {
+        menu = menu.separator();
+    }
+    menu = menu.text(
+        FLOWHUB_ORGANIZER_MENU_ID,
+        if organizer_enabled {
+            "展开 / 收起隐藏区"
+        } else {
+            "启用菜单栏整理"
+        },
+    );
+    if show_version || show_quit {
         menu = menu.separator();
     }
     if show_version {
@@ -240,6 +267,19 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             "flowhub-open" => toggle_main(app),
             "flowhub-settings" => {
                 let _ = open_settings(app.clone(), None);
+            }
+            FLOWHUB_ORGANIZER_MENU_ID => {
+                let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
+                    toggle_menu_bar_organizer().map(|_| ())
+                } else {
+                    enable_menu_bar_organizer(app)
+                };
+                if let Err(error) = result {
+                    eprintln!("[flowhub-tauri] 菜单栏整理操作失败：{error}");
+                }
+                if let Ok(config) = hydrated_config(&app.state::<AppState>()) {
+                    let _ = apply_menu_bar(app, &config);
+                }
             }
             "flowhub-quit" => app.exit(0),
             _ => {}
