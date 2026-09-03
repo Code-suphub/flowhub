@@ -1,6 +1,8 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
+use objc2_app_kit::NSTextAlignment;
+#[cfg(target_os = "macos")]
 use objc2_foundation::NSString;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
@@ -80,7 +82,7 @@ fn organizer_control_title(collapsed: bool) -> String {
         // A bounded wide item pushes status items on its left off-screen. En
         // spaces keep the geometry predictable without allocating a 10k-point
         // status item, which is expensive on recent macOS versions.
-        format!("{}│ ‹", "\u{2002}".repeat(720))
+        format!("{}‹", "\u{2002}".repeat(720))
     } else {
         "│ ›".to_string()
     }
@@ -97,6 +99,18 @@ fn set_organizer_autosave_name(tray: &tray_icon::TrayIcon, name: &str) {
     if let Some(status_item) = tray.ns_status_item() {
         let name = NSString::from_str(name);
         status_item.setAutosaveName(Some(&name));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn right_align_organizer_control(tray: &tray_icon::TrayIcon) {
+    let Some(main_thread) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    if let Some(status_item) = tray.ns_status_item() {
+        if let Some(button) = status_item.button(main_thread) {
+            button.setAlignment(NSTextAlignment(1));
+        }
     }
 }
 
@@ -123,6 +137,7 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
     if enabled {
         set_organizer_autosave_name(control, "FlowHub.Organizer.Control");
         control.set_title(Some(organizer_control_title(collapsed)));
+        right_align_organizer_control(control);
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
