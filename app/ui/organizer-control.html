@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowHub Organizer</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+      button {
+        width: 100%;
+        height: 100%;
+        padding: 0 1px 1px 0;
+        border: 0;
+        border-radius: 4px;
+        color: CanvasText;
+        background: transparent;
+        font: 600 16px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+        cursor: default;
+        -webkit-app-region: no-drag;
+      }
+      button:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
+      button:active { background: color-mix(in srgb, CanvasText 20%, transparent); }
+    </style>
+  </head>
+  <body>
+    <button id="toggle" type="button" aria-label="收起菜单栏隐藏区">›</button>
+    <script>
+      const button = document.querySelector("#toggle");
+      window.setOrganizerCollapsed = (collapsed) => {
+        button.textContent = collapsed ? "‹" : "›";
+        button.setAttribute("aria-label", collapsed ? "展开菜单栏隐藏区" : "收起菜单栏隐藏区");
+      };
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          const result = await window.__TAURI__.core.invoke("toggle_menu_bar_items");
+          window.setOrganizerCollapsed(Boolean(result.collapsed));
+        } finally {
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

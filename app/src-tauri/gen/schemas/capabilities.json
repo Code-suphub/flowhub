@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"FlowHub desktop windows","local":true,"windows":["main","settings"],"permissions":["core:default","notification:default"]}}
+{"default":{"identifier":"default","description":"FlowHub desktop windows","local":true,"windows":["main","settings","organizer-control"],"permissions":["core:default","notification:default"]}}

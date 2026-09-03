@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "FlowHub desktop windows",
-  "windows": ["main", "settings"],
+  "windows": ["main", "settings", "organizer-control"],
   "permissions": ["core:default", "notification:default"]
 }

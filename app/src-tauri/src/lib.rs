@@ -1,8 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSVariableStatusItemLength;
-#[cfg(target_os = "macos")]
 use objc2_foundation::{NSString, NSUserDefaults};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
@@ -23,7 +21,7 @@ use std::{
 #[cfg(target_os = "macos")]
 use tauri::{
     menu::{MenuBuilder, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::TrayIconBuilder,
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 #[cfg(target_os = "macos")]
@@ -61,15 +59,9 @@ const FLOWHUB_TRAY_ID: &str = "flowhub-menu-bar";
 #[cfg(target_os = "macos")]
 const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
-const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
-#[cfg(target_os = "macos")]
 const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
 #[cfg(target_os = "macos")]
-const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V9.Control";
-#[cfg(target_os = "macos")]
 const ORGANIZER_BOUNDARY_AUTOSAVE: &str = "FlowHub.Organizer.V9.Boundary";
-#[cfg(target_os = "macos")]
-static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
@@ -115,51 +107,116 @@ fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
 }
 
 #[cfg(target_os = "macos")]
-fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
-    let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
-    let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
-    let (control, boundary) = match (control, boundary) {
-        (Some(control), Some(boundary)) => (control, boundary),
-        _ => {
-            seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
+fn ensure_organizer_control_window(
+    app: &tauri::AppHandle,
+) -> Result<tauri::WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window("organizer-control") {
+        return Ok(window);
+    }
+    let window = WebviewWindowBuilder::new(
+        app,
+        "organizer-control",
+        WebviewUrl::App("organizer-control.html".into()),
+    )
+    .title("FlowHub Organizer")
+    .inner_size(18.0, 22.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .build()
+    .map_err(|error| error.to_string())?;
+    let panel = window
+        .to_panel::<FlowHubLauncherPanel>()
+        .map_err(|error| format!("{error:?}"))?;
+    panel.set_level(PanelLevel::Status.value());
+    panel.set_floating_panel(true);
+    panel.set_hides_on_deactivate(false);
+    panel.set_has_shadow(false);
+    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+    panel.set_collection_behavior(
+        CollectionBehavior::new()
+            .full_screen_auxiliary()
+            .can_join_all_spaces()
+            .stationary()
+            .ignores_cycle()
+            .into(),
+    );
+    Ok(window)
+}
+
+#[cfg(target_os = "macos")]
+fn position_organizer_control(
+    app: &tauri::AppHandle,
+    boundary: &tray_icon::TrayIcon,
+    collapsed: bool,
+) -> Result<(), String> {
+    let Some(main_thread) = objc2::MainThreadMarker::new() else {
+        return Err("菜单栏控制必须在主线程定位".to_string());
+    };
+    let status_item = boundary
+        .ns_status_item()
+        .ok_or_else(|| "无法读取菜单栏边界".to_string())?;
+    let button = status_item
+        .button(main_thread)
+        .ok_or_else(|| "无法读取菜单栏边界按钮".to_string())?;
+    let status_window = button
+        .window()
+        .ok_or_else(|| "无法读取菜单栏边界窗口".to_string())?;
+    let frame = status_window.frame();
+    let panel = app
+        .get_webview_panel("organizer-control")
+        .map_err(|error| format!("{error:?}"))?;
+    // The delimiter grows towards the left. Pin the overlay to its trailing
+    // edge so the arrow never moves or creates a second status-item slot.
+    panel
+        .as_panel()
+        .setFrameOrigin(NSPoint::new(frame.origin.x + frame.size.width - 18.0, frame.origin.y));
+    if let Some(window) = app.get_webview_window("organizer-control") {
+        let _ = window.eval(format!(
+            "window.setOrganizerCollapsed?.({})",
+            if collapsed { "true" } else { "false" }
+        ));
+    }
+    panel.order_front_regardless();
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn configure_organizer_items(
+    app: &tauri::AppHandle,
+    enabled: bool,
+    collapsed: bool,
+) -> Result<(), String> {
+    let control_window = ensure_organizer_control_window(app)?;
+    let boundary = match unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) } {
+        Some(boundary) => boundary,
+        None => {
             seed_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, 1.0);
-            let control = tray_icon::TrayIconBuilder::new()
-                .with_id(ORGANIZER_CONTROL_ID)
-                .with_title(if collapsed { "‹" } else { "›" })
-                .with_tooltip("展开或收起菜单栏隐藏区")
-                .build()
-                .map_err(|error| error.to_string())?;
-            set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
             let boundary = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_BOUNDARY_ID)
                 .with_title("")
                 .build()
                 .map_err(|error| error.to_string())?;
             set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-            let control = Box::into_raw(Box::new(control));
             let boundary = Box::into_raw(Box::new(boundary));
-            ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
             ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
-            (unsafe { &*control }, unsafe { &*boundary })
+            unsafe { &*boundary }
         }
     };
 
-    control
-        .set_visible(enabled)
-        .map_err(|error| error.to_string())?;
     boundary
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
     if enabled {
-        set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
         set_organizer_autosave_name(boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-        control.set_title(Some(if collapsed { "‹" } else { "›" }));
-        set_organizer_item_length(control, NSVariableStatusItemLength);
         boundary.set_title(Some(""));
-        // This mirrors the public NSStatusItem technique used by established
-        // menu-bar organizers: the delimiter becomes wider than any display,
-        // pushing every item to its left out of the visible menu bar.
-        set_organizer_item_length(boundary, if collapsed { 10_000.0 } else { 1.0 });
+        set_organizer_item_length(boundary, if collapsed { 10_000.0 } else { 18.0 });
+        position_organizer_control(app, boundary, collapsed)?;
+    } else {
+        let _ = control_window.hide();
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
@@ -171,8 +228,9 @@ fn apply_menu_bar_organizer(app: &tauri::AppHandle, config: &Value) -> Value {
     let enabled = config_flag(config, "/core/menuBar/organizerEnabled", false);
     let collapsed = enabled && config_flag(config, "/core/menuBar/collapseOnLaunch", false);
     let handle = app.clone();
+    let organizer_handle = handle.clone();
     let _ = handle.run_on_main_thread(move || {
-        if let Err(error) = configure_organizer_items(enabled, collapsed) {
+        if let Err(error) = configure_organizer_items(&organizer_handle, enabled, collapsed) {
             eprintln!("[flowhub-tauri] 菜单栏整理器配置失败：{error}");
         }
     });
@@ -185,12 +243,12 @@ fn apply_menu_bar_organizer(_app: &tauri::AppHandle, _config: &Value) -> Value {
 }
 
 #[cfg(target_os = "macos")]
-fn toggle_menu_bar_organizer() -> Result<bool, String> {
+fn toggle_menu_bar_organizer(app: &tauri::AppHandle) -> Result<bool, String> {
     if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
         return Err("请先在设置中启用菜单栏整理".to_string());
     }
     let collapsed = !ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire);
-    configure_organizer_items(true, collapsed)?;
+    configure_organizer_items(app, true, collapsed)?;
     Ok(collapsed)
 }
 
@@ -212,8 +270,9 @@ async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
+        let handle = app.clone();
         app.run_on_main_thread(move || {
-            let _ = sender.send(toggle_menu_bar_organizer());
+            let _ = sender.send(toggle_menu_bar_organizer(&handle));
         })
         .map_err(|error| error.to_string())?;
         let collapsed = receiver.await.map_err(|error| error.to_string())??;
@@ -283,7 +342,7 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             }
             FLOWHUB_ORGANIZER_MENU_ID => {
                 let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
-                    toggle_menu_bar_organizer().map(|_| ())
+                    toggle_menu_bar_organizer(app).map(|_| ())
                 } else {
                     enable_menu_bar_organizer(app)
                 };
@@ -2115,23 +2174,6 @@ pub fn run() {
             .build(),
     );
 
-    #[cfg(target_os = "macos")]
-    let builder = builder.on_tray_icon_event(|_app, event| {
-        if let TrayIconEvent::Click {
-            id,
-            button: MouseButton::Left,
-            button_state: MouseButtonState::Up,
-            ..
-        } = event
-        {
-            if id.0 == ORGANIZER_CONTROL_ID {
-                if let Err(error) = toggle_menu_bar_organizer() {
-                    eprintln!("[flowhub-tauri] 无法切换菜单栏隐藏区：{error}");
-                }
-            }
-        }
-    });
-
     builder
         .setup(|app| {
             let state = initialize_state().map_err(std::io::Error::other)?;
@@ -2169,9 +2211,11 @@ pub fn run() {
             let organizer_state = apply_menu_bar_organizer(app.handle(), &config);
             #[cfg(target_os = "macos")]
             if std::env::var("FLOWHUB_TAURI_ORGANIZER_SMOKE_TEST").as_deref() == Ok("1") {
-                configure_organizer_items(true, false).map_err(std::io::Error::other)?;
-                toggle_menu_bar_organizer().map_err(std::io::Error::other)?;
-                configure_organizer_items(false, false).map_err(std::io::Error::other)?;
+                configure_organizer_items(app.handle(), true, false)
+                    .map_err(std::io::Error::other)?;
+                toggle_menu_bar_organizer(app.handle()).map_err(std::io::Error::other)?;
+                configure_organizer_items(app.handle(), false, false)
+                    .map_err(std::io::Error::other)?;
             }
             println!(
                 "[flowhub-tauri] 数据目录：{}",
