@@ -313,6 +313,7 @@ if (!window.weborg) {
     async sampleDiagnostics() { return { ok: false, preview: true, reason: "浏览器预览不支持监控采样" }; },
     async clearDiagnostics() { return { ok: false, preview: true, reason: "浏览器预览不支持清理监控数据" }; },
     async sendTestNotification() { return { ok: false, preview: true, reason: "请在 FlowHub App 中发送测试通知" }; },
+    async toggleMenuBarItems() { return { ok: false, preview: true, reason: "请在 FlowHub App 中切换菜单栏隐藏区" }; },
     async checkForUpdates() {
       return { ok: false, preview: true, reason: "浏览器预览不能检查应用更新" };
     },

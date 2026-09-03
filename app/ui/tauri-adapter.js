@@ -270,6 +270,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     sampleDiagnostics: () => invoke("sample_diagnostics"),
     clearDiagnostics: () => invoke("clear_diagnostics"),
     sendTestNotification: () => invoke("send_test_notification"),
+    toggleMenuBarItems: () => invoke("toggle_menu_bar_items"),
     checkForUpdates: () => invoke("check_for_updates"),
     downloadUpdate: () => invoke("download_update"),
     quitAndInstallUpdate: () => invoke("quit_and_install_update"),

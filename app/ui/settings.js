@@ -23,7 +23,7 @@ const state = {
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
-const DEFAULT_MENU_BAR = { enabled: true, showOpenLauncher: true, showOpenSettings: true, showVersion: true, showQuit: true };
+const DEFAULT_MENU_BAR = { enabled: true, showOpenLauncher: true, showOpenSettings: true, showVersion: true, showQuit: true, organizerEnabled: false, collapseOnLaunch: false };
 const DEFAULT_NOTIFICATIONS = { enabled: true, updates: true };
 const PROXY_ADAPTERS = new Set(["auto", "mihomo", "clash-rest", "system"]);
 const TOOL_SETTINGS = {
@@ -604,12 +604,20 @@ function renderSettingsFields() {
   document.querySelectorAll("[data-notification-field]").forEach((input) => {
     input.checked = state.config?.core?.notifications?.[input.dataset.notificationField] !== false;
   });
+  document.querySelectorAll("[data-organizer-field]").forEach((input) => {
+    input.checked = state.config?.core?.menuBar?.[input.dataset.organizerField] === true;
+  });
   const menuBarEnabled = state.config?.core?.menuBar?.enabled !== false;
   const notificationsEnabled = state.config?.core?.notifications?.enabled !== false;
+  const organizerEnabled = state.config?.core?.menuBar?.organizerEnabled === true;
   $("#menuBarItems")?.classList.toggle("is-disabled", !menuBarEnabled);
   $("#notificationItems")?.classList.toggle("is-disabled", !notificationsEnabled);
   document.querySelectorAll("[data-menu-bar-field]:not([data-menu-bar-field='enabled'])").forEach((input) => { input.disabled = !menuBarEnabled; });
   document.querySelectorAll("[data-notification-field]:not([data-notification-field='enabled'])").forEach((input) => { input.disabled = !notificationsEnabled; });
+  document.querySelectorAll("[data-organizer-field]:not([data-organizer-field='organizerEnabled'])").forEach((input) => { input.disabled = !organizerEnabled; });
+  $("#organizerControls")?.classList.toggle("is-disabled", !organizerEnabled);
+  const organizerToggle = document.querySelector('[data-action="toggle-menu-bar-items"]');
+  if (organizerToggle) organizerToggle.disabled = !organizerEnabled || document.documentElement.dataset.weborgRuntime === "browser";
   const testNotification = document.querySelector('[data-action="test-notification"]');
   if (testNotification) testNotification.disabled = !notificationsEnabled || document.documentElement.dataset.weborgRuntime === "browser";
   if ($("#notificationStatus")) $("#notificationStatus").textContent = document.documentElement.dataset.weborgRuntime === "browser" ? "正式 App 中可发送测试" : "由 macOS 管理权限";
@@ -1210,6 +1218,13 @@ async function sendTestNotification() {
   toast("测试通知已发送");
 }
 
+async function toggleMenuBarItems() {
+  if (state.dirty) return toast("请先保存菜单栏整理设置", true);
+  const result = await window.weborg.toggleMenuBarItems();
+  if (!result?.ok) return toast(result?.reason || "无法切换菜单栏隐藏区", true);
+  toast(result.collapsed ? "菜单栏隐藏区已收起" : "菜单栏隐藏区已展开");
+}
+
 async function checkAppUpdate() {
   if (!state.appUpdate?.supported) return toast("安装后的正式版本才支持检查更新", true);
   state.appUpdate = { ...state.appUpdate, status: "checking", error: "" };
@@ -1370,6 +1385,7 @@ function handleAction(action) {
   if (action === "reload") return reload();
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
   if (action === "test-notification") return sendTestNotification();
+  if (action === "toggle-menu-bar-items") return toggleMenuBarItems();
   if (action === "check-update") return checkAppUpdate();
   if (action === "update-primary") return runPrimaryUpdateAction();
   if (action === "sample-diagnostics") return sampleDiagnosticsFromSettings();
@@ -1582,6 +1598,15 @@ document.addEventListener("input", (event) => {
     state.config.core ||= {};
     state.config.core.notifications ||= { ...DEFAULT_NOTIFICATIONS };
     state.config.core.notifications[notificationField] = event.target.checked;
+    markDirty();
+    renderSettingsFields();
+    return;
+  }
+  const organizerField = event.target.dataset.organizerField;
+  if (organizerField) {
+    state.config.core ||= {};
+    state.config.core.menuBar ||= { ...DEFAULT_MENU_BAR };
+    state.config.core.menuBar[organizerField] = event.target.checked;
     markDirty();
     renderSettingsFields();
     return;

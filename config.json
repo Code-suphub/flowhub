@@ -10,7 +10,9 @@
       "showOpenLauncher": true,
       "showOpenSettings": true,
       "showVersion": true,
-      "showQuit": true
+      "showQuit": true,
+      "organizerEnabled": false,
+      "collapseOnLaunch": false
     },
     "notifications": {
       "enabled": true,
