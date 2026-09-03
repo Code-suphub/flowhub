@@ -102,6 +102,18 @@ fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
 }
 
 #[cfg(target_os = "macos")]
+fn organizer_boundary_title(collapsed: bool) -> String {
+    if collapsed {
+        // AppKit may discard an empty status item whose fixed width is wider
+        // than the available menu bar. Real (but invisible) content instead
+        // participates in layout and pushes items on its left off-screen.
+        "\u{2002}".repeat(720)
+    } else {
+        String::new()
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
     let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
     let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
@@ -118,7 +130,7 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
                 .map_err(|error| error.to_string())?;
             let boundary = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_BOUNDARY_ID)
-                .with_title("")
+                .with_title(organizer_boundary_title(collapsed))
                 .build()
                 .map_err(|error| error.to_string())?;
             let control = Box::into_raw(Box::new(control));
@@ -140,9 +152,18 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
         set_organizer_autosave_name(boundary, "FlowHub.Organizer.V7.Boundary");
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
         set_organizer_item_length(control, NSVariableStatusItemLength);
-        // One point is enough to preserve the ordering while leaving no usable
-        // slot between the hidden section and its fixed restore arrow.
-        set_organizer_item_length(boundary, if collapsed { 4096.0 } else { 1.0 });
+        boundary.set_title(Some(&organizer_boundary_title(collapsed)));
+        // One point is enough to preserve ordering in the expanded state.
+        // Collapsed width is derived from invisible content because AppKit
+        // keeps content-backed items in its status-item layout.
+        set_organizer_item_length(
+            boundary,
+            if collapsed {
+                NSVariableStatusItemLength
+            } else {
+                1.0
+            },
+        );
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
