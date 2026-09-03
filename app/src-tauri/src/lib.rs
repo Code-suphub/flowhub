@@ -87,6 +87,8 @@ const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V9.Control";
 #[cfg(target_os = "macos")]
+const ORGANIZER_COLLAPSED_LENGTH: f64 = 2_048.0;
+#[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_LABEL_PTR: AtomicUsize = AtomicUsize::new(0);
@@ -178,8 +180,15 @@ fn configure_organizer_label(tray: &tray_icon::TrayIcon, collapsed: bool) {
     };
     let bounds = button.bounds();
     let width = 26.0_f64.min(bounds.size.width.max(0.0));
+    let trailing_inset = button
+        .window()
+        .map(|window| (window.frame().size.width - bounds.size.width).max(0.0))
+        .unwrap_or(0.0);
     label.setFrame(objc2_foundation::NSRect::new(
-        objc2_foundation::NSPoint::new(bounds.size.width - width, 0.0),
+        objc2_foundation::NSPoint::new(
+            (bounds.size.width - width - trailing_inset - 2.0).max(0.0),
+            0.0,
+        ),
         objc2_foundation::NSSize::new(width, bounds.size.height),
     ));
     let value = NSString::from_str(if collapsed { "‹" } else { "›" });
@@ -289,7 +298,7 @@ fn configure_organizer_items(
         set_organizer_item_length(
             control,
             if collapsed {
-                10_000.0
+                ORGANIZER_COLLAPSED_LENGTH
             } else {
                 NSVariableStatusItemLength
             },
