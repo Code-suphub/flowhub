@@ -217,7 +217,6 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
     let show_settings = config_flag(config, "/core/menuBar/showOpenSettings", true);
     let show_version = config_flag(config, "/core/menuBar/showVersion", true);
     let show_quit = config_flag(config, "/core/menuBar/showQuit", true);
-    let organizer_enabled = config_flag(config, "/core/menuBar/organizerEnabled", false);
     if show_launcher {
         menu = menu.text("flowhub-open", "打开 FlowHub");
     }
@@ -229,11 +228,7 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
     }
     menu = menu.text(
         FLOWHUB_ORGANIZER_MENU_ID,
-        if organizer_enabled {
-            "展开 / 收起隐藏区"
-        } else {
-            "启用菜单栏整理"
-        },
+        "菜单栏整理 · 展开 / 收起",
     );
     if show_version || show_quit {
         menu = menu.separator();
@@ -276,9 +271,6 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
                 };
                 if let Err(error) = result {
                     eprintln!("[flowhub-tauri] 菜单栏整理操作失败：{error}");
-                }
-                if let Ok(config) = hydrated_config(&app.state::<AppState>()) {
-                    let _ = apply_menu_bar(app, &config);
                 }
             }
             "flowhub-quit" => app.exit(0),
