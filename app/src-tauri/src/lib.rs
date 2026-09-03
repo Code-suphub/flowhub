@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::NSVariableStatusItemLength;
 #[cfg(target_os = "macos")]
-use objc2_foundation::NSString;
+use objc2_foundation::{NSString, NSUserDefaults};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -65,6 +65,10 @@ const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
 const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
 #[cfg(target_os = "macos")]
+const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V9.Control";
+#[cfg(target_os = "macos")]
+const ORGANIZER_BOUNDARY_AUTOSAVE: &str = "FlowHub.Organizer.V9.Boundary";
+#[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
@@ -95,21 +99,18 @@ fn set_organizer_autosave_name(tray: &tray_icon::TrayIcon, name: &str) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
-    if let Some(status_item) = tray.ns_status_item() {
-        status_item.setLength(length);
+fn seed_organizer_position(name: &str, position: f64) {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let key = NSString::from_str(&format!("NSStatusItem Preferred Position {name}"));
+    if defaults.objectForKey(&key).is_none() {
+        defaults.setDouble_forKey(position, &key);
     }
 }
 
 #[cfg(target_os = "macos")]
-fn organizer_boundary_title(collapsed: bool) -> String {
-    if collapsed {
-        // AppKit may discard an empty status item whose fixed width is wider
-        // than the available menu bar. Real (but invisible) content instead
-        // participates in layout and pushes items on its left off-screen.
-        "\u{2002}".repeat(720)
-    } else {
-        String::new()
+fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
+    if let Some(status_item) = tray.ns_status_item() {
+        status_item.setLength(length);
     }
 }
 
@@ -120,19 +121,21 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
     let (control, boundary) = match (control, boundary) {
         (Some(control), Some(boundary)) => (control, boundary),
         _ => {
-            // New status items are inserted to the left of existing items, so
-            // create the fixed arrow first and the boundary second.
+            seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
+            seed_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, 1.0);
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
                 .with_title(if collapsed { "‹" } else { "›" })
                 .with_tooltip("展开或收起菜单栏隐藏区")
                 .build()
                 .map_err(|error| error.to_string())?;
+            set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
             let boundary = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_BOUNDARY_ID)
-                .with_title(organizer_boundary_title(collapsed))
+                .with_title("")
                 .build()
                 .map_err(|error| error.to_string())?;
+            set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
             let control = Box::into_raw(Box::new(control));
             let boundary = Box::into_raw(Box::new(boundary));
             ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
@@ -148,22 +151,15 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
     if enabled {
-        set_organizer_autosave_name(control, "FlowHub.Organizer.V7.Control");
-        set_organizer_autosave_name(boundary, "FlowHub.Organizer.V7.Boundary");
+        set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
+        set_organizer_autosave_name(boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
         set_organizer_item_length(control, NSVariableStatusItemLength);
-        boundary.set_title(Some(&organizer_boundary_title(collapsed)));
-        // One point is enough to preserve ordering in the expanded state.
-        // Collapsed width is derived from invisible content because AppKit
-        // keeps content-backed items in its status-item layout.
-        set_organizer_item_length(
-            boundary,
-            if collapsed {
-                NSVariableStatusItemLength
-            } else {
-                1.0
-            },
-        );
+        boundary.set_title(Some(""));
+        // This mirrors the public NSStatusItem technique used by established
+        // menu-bar organizers: the delimiter becomes wider than any display,
+        // pushing every item to its left out of the visible menu bar.
+        set_organizer_item_length(boundary, if collapsed { 10_000.0 } else { 1.0 });
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
