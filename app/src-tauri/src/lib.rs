@@ -61,9 +61,13 @@ const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
+const ORGANIZER_SPACER_ID: &str = "flowhub-organizer-spacer";
+#[cfg(target_os = "macos")]
 const ORGANIZER_SEPARATOR_ID: &str = "flowhub-organizer-separator";
 #[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
+static ORGANIZER_SPACER_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_SEPARATOR_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
@@ -79,14 +83,15 @@ fn config_flag(config: &Value, pointer: &str, default: bool) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn organizer_separator_title(collapsed: bool) -> String {
+fn organizer_spacer_title(collapsed: bool) -> String {
     if collapsed {
-        // A bounded wide item pushes status items on its left off-screen. En
-        // spaces keep the geometry predictable without allocating a 10k-point
-        // status item, which is expensive on recent macOS versions.
-        format!("{}│", "\u{2002}".repeat(720))
+        // This invisible item sits immediately left of the fixed arrow. When
+        // widened it pushes the entire section between the separator and arrow
+        // off-screen while leaving the arrow available to restore the section.
+        "\u{2002}".repeat(720)
     } else {
-        "│".to_string()
+        // Keep a status item in the ordering without introducing a visible gap.
+        "\u{200B}".to_string()
     }
 }
 
@@ -107,9 +112,10 @@ fn set_organizer_autosave_name(tray: &tray_icon::TrayIcon, name: &str) {
 #[cfg(target_os = "macos")]
 fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
     let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
+    let spacer = unsafe { organizer_tray(&ORGANIZER_SPACER_PTR) };
     let separator = unsafe { organizer_tray(&ORGANIZER_SEPARATOR_PTR) };
-    let (control, separator) = match (control, separator) {
-        (Some(control), Some(separator)) => (control, separator),
+    let (control, spacer, separator) = match (control, spacer, separator) {
+        (Some(control), Some(spacer), Some(separator)) => (control, spacer, separator),
         _ => {
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
@@ -117,17 +123,28 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
                 .with_tooltip("展开或收起菜单栏隐藏区")
                 .build()
                 .map_err(|error| error.to_string())?;
+            let spacer = tray_icon::TrayIconBuilder::new()
+                .with_id(ORGANIZER_SPACER_ID)
+                .with_title(organizer_spacer_title(collapsed))
+                .build()
+                .map_err(|error| error.to_string())?;
             let separator = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_SEPARATOR_ID)
-                .with_title(organizer_separator_title(collapsed))
+                .with_title("│")
                 .with_tooltip("按住 ⌘ 拖动此隐藏区边界")
                 .build()
                 .map_err(|error| error.to_string())?;
             let control = Box::into_raw(Box::new(control));
+            let spacer = Box::into_raw(Box::new(spacer));
             let separator = Box::into_raw(Box::new(separator));
             ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
+            ORGANIZER_SPACER_PTR.store(spacer as usize, AtomicOrdering::Release);
             ORGANIZER_SEPARATOR_PTR.store(separator as usize, AtomicOrdering::Release);
-            (unsafe { &*control }, unsafe { &*separator })
+            (
+                unsafe { &*control },
+                unsafe { &*spacer },
+                unsafe { &*separator },
+            )
         }
     };
 
@@ -137,13 +154,17 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
     separator
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
+    spacer
+        .set_visible(enabled)
+        .map_err(|error| error.to_string())?;
     if enabled {
-        // V2 resets the persisted placement from the former combined item so
-        // the boundary and control are created next to each other again.
-        set_organizer_autosave_name(control, "FlowHub.Organizer.V2.Control");
-        set_organizer_autosave_name(separator, "FlowHub.Organizer.V2.Separator");
+        // V3 adds an invisible spacer immediately before the fixed arrow.
+        set_organizer_autosave_name(control, "FlowHub.Organizer.V3.Control");
+        set_organizer_autosave_name(spacer, "FlowHub.Organizer.V3.Spacer");
+        set_organizer_autosave_name(separator, "FlowHub.Organizer.V3.Separator");
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
-        separator.set_title(Some(organizer_separator_title(collapsed)));
+        spacer.set_title(Some(organizer_spacer_title(collapsed)));
+        separator.set_title(Some("│"));
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
