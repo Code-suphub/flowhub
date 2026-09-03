@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSTextAlignment, NSVariableStatusItemLength};
+use objc2_app_kit::NSVariableStatusItemLength;
 #[cfg(target_os = "macos")]
 use objc2_foundation::NSString;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -63,7 +63,11 @@ const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
+const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
+#[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
+static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
@@ -91,46 +95,54 @@ fn set_organizer_autosave_name(tray: &tray_icon::TrayIcon, name: &str) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_organizer_control_layout(tray: &tray_icon::TrayIcon, collapsed: bool) {
-    let Some(main_thread) = objc2::MainThreadMarker::new() else {
-        return;
-    };
+fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
     if let Some(status_item) = tray.ns_status_item() {
-        if let Some(button) = status_item.button(main_thread) {
-            button.setAlignment(NSTextAlignment(1));
-        }
-        status_item.setLength(if collapsed {
-            4096.0
-        } else {
-            NSVariableStatusItemLength
-        });
+        status_item.setLength(length);
     }
 }
 
 #[cfg(target_os = "macos")]
 fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
-    let control = match unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) } {
-        Some(control) => control,
-        None => {
+    let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
+    let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
+    let (control, boundary) = match (control, boundary) {
+        (Some(control), Some(boundary)) => (control, boundary),
+        _ => {
+            // New status items are inserted to the left of existing items, so
+            // create the fixed arrow first and the boundary second.
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
                 .with_title(if collapsed { "‹" } else { "›" })
                 .with_tooltip("展开或收起菜单栏隐藏区")
                 .build()
                 .map_err(|error| error.to_string())?;
+            let boundary = tray_icon::TrayIconBuilder::new()
+                .with_id(ORGANIZER_BOUNDARY_ID)
+                .with_title("")
+                .build()
+                .map_err(|error| error.to_string())?;
             let control = Box::into_raw(Box::new(control));
+            let boundary = Box::into_raw(Box::new(boundary));
             ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
-            unsafe { &*control }
+            ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
+            (unsafe { &*control }, unsafe { &*boundary })
         }
     };
 
     control
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
+    boundary
+        .set_visible(enabled)
+        .map_err(|error| error.to_string())?;
     if enabled {
-        set_organizer_autosave_name(control, "FlowHub.Organizer.V5.Control");
+        set_organizer_autosave_name(control, "FlowHub.Organizer.V7.Control");
+        set_organizer_autosave_name(boundary, "FlowHub.Organizer.V7.Boundary");
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
-        set_organizer_control_layout(control, collapsed);
+        set_organizer_item_length(control, NSVariableStatusItemLength);
+        // One point is enough to preserve the ordering while leaving no usable
+        // slot between the hidden section and its fixed restore arrow.
+        set_organizer_item_length(boundary, if collapsed { 4096.0 } else { 1.0 });
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
