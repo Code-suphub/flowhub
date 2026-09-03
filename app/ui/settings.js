@@ -18,7 +18,8 @@ const state = {
   memoFilter: "",
   coreSection: "general",
   appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" },
-  diagnostics: { enabled: false, available: false, path: "" }
+  diagnostics: { enabled: false, available: false, path: "" },
+  menuBarManagement: { supported: false, trusted: false, nativeControl: false, mode: "unknown" }
 };
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
@@ -618,6 +619,17 @@ function renderSettingsFields() {
   $("#organizerControls")?.classList.toggle("is-disabled", !organizerEnabled);
   const organizerToggle = document.querySelector('[data-action="toggle-menu-bar-items"]');
   if (organizerToggle) organizerToggle.disabled = !organizerEnabled || document.documentElement.dataset.weborgRuntime === "browser";
+  const management = state.menuBarManagement || {};
+  const managementStatus = $("#menuBarManagementStatus");
+  if (managementStatus) {
+    managementStatus.textContent = management.trusted ? "已授权 · 组合模式" : (management.supported ? "未授权 · 原生模式" : "仅 App 可用");
+    managementStatus.dataset.state = management.trusted ? "ready" : "idle";
+  }
+  const permissionButton = document.querySelector('[data-action="request-menu-bar-management-permission"]');
+  if (permissionButton) {
+    permissionButton.textContent = management.trusted ? "刷新权限" : "授权辅助功能";
+    permissionButton.disabled = document.documentElement.dataset.weborgRuntime === "browser";
+  }
   const testNotification = document.querySelector('[data-action="test-notification"]');
   if (testNotification) testNotification.disabled = !notificationsEnabled || document.documentElement.dataset.weborgRuntime === "browser";
   if ($("#notificationStatus")) $("#notificationStatus").textContent = document.documentElement.dataset.weborgRuntime === "browser" ? "正式 App 中可发送测试" : "由 macOS 管理权限";
@@ -1225,6 +1237,19 @@ async function toggleMenuBarItems() {
   toast(result.collapsed ? "菜单栏隐藏区已收起" : "菜单栏隐藏区已展开");
 }
 
+async function refreshMenuBarManagementState() {
+  state.menuBarManagement = await window.weborg.getMenuBarManagementState();
+  renderSettingsFields();
+  return state.menuBarManagement;
+}
+
+async function requestMenuBarManagementPermission() {
+  const result = await window.weborg.requestMenuBarManagementPermission();
+  if (!result?.ok) return toast(result?.reason || "无法请求辅助功能权限", true);
+  await refreshMenuBarManagementState();
+  toast(state.menuBarManagement?.trusted ? "辅助功能权限已启用" : "请在系统设置中允许 FlowHub，返回后会自动刷新");
+}
+
 async function checkAppUpdate() {
   if (!state.appUpdate?.supported) return toast("安装后的正式版本才支持检查更新", true);
   state.appUpdate = { ...state.appUpdate, status: "checking", error: "" };
@@ -1386,6 +1411,7 @@ function handleAction(action) {
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
   if (action === "test-notification") return sendTestNotification();
   if (action === "toggle-menu-bar-items") return toggleMenuBarItems();
+  if (action === "request-menu-bar-management-permission") return requestMenuBarManagementPermission();
   if (action === "check-update") return checkAppUpdate();
   if (action === "update-primary") return runPrimaryUpdateAction();
   if (action === "sample-diagnostics") return sampleDiagnosticsFromSettings();
@@ -1702,12 +1728,15 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 
-Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo(), window.weborg.getUpdateState(), window.weborg.getDiagnosticsState()]).then(([plugins, config, clipboardStorage, configFile, appUpdate, diagnostics]) => {
+window.addEventListener("focus", () => { void refreshMenuBarManagementState(); });
+
+Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo(), window.weborg.getUpdateState(), window.weborg.getDiagnosticsState(), window.weborg.getMenuBarManagementState()]).then(([plugins, config, clipboardStorage, configFile, appUpdate, diagnostics, menuBarManagement]) => {
   state.plugins = plugins || [];
   state.clipboardStorage = clipboardStorage;
   state.configFile = configFile;
   state.appUpdate = appUpdate || state.appUpdate;
   state.diagnostics = diagnostics || state.diagnostics;
+  state.menuBarManagement = menuBarManagement || state.menuBarManagement;
   const loadedConfig = clone(normalizeConfig(config));
   state.savedConfig = clone(loadedConfig);
   const draft = readDraft(configFile);

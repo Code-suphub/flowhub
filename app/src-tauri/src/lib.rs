@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSVariableStatusItemLength;
+use objc2_app_kit::{NSTextAlignment, NSVariableStatusItemLength};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSString, NSUserDefaults};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -40,6 +40,8 @@ use tauri_plugin_opener::OpenerExt;
 mod clipboard;
 mod diagnostics;
 #[cfg(target_os = "macos")]
+mod macos_accessibility;
+#[cfg(target_os = "macos")]
 mod macos_hotkey;
 mod updater;
 
@@ -63,15 +65,9 @@ const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
-const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
-#[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V9.Control";
 #[cfg(target_os = "macos")]
-const ORGANIZER_BOUNDARY_AUTOSAVE: &str = "FlowHub.Organizer.V9.Boundary";
-#[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
-#[cfg(target_os = "macos")]
-static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
@@ -111,18 +107,21 @@ fn seed_organizer_position(name: &str, position: f64) {
 fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
     if let Some(status_item) = tray.ns_status_item() {
         status_item.setLength(length);
+        if let Some(main_thread) = objc2::MainThreadMarker::new() {
+            if let Some(button) = status_item.button(main_thread) {
+                button.setAlignment(NSTextAlignment::Right);
+            }
+        }
     }
 }
 
 #[cfg(target_os = "macos")]
 fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), String> {
     let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
-    let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
-    let (control, boundary) = match (control, boundary) {
-        (Some(control), Some(boundary)) => (control, boundary),
+    let control = match control {
+        Some(control) => control,
         _ => {
             seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
-            seed_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, 1.0);
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
                 .with_title(if collapsed { "‹" } else { "›" })
@@ -130,33 +129,26 @@ fn configure_organizer_items(enabled: bool, collapsed: bool) -> Result<(), Strin
                 .build()
                 .map_err(|error| error.to_string())?;
             set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
-            let boundary = tray_icon::TrayIconBuilder::new()
-                .with_id(ORGANIZER_BOUNDARY_ID)
-                .with_title("")
-                .build()
-                .map_err(|error| error.to_string())?;
-            set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
             let control = Box::into_raw(Box::new(control));
-            let boundary = Box::into_raw(Box::new(boundary));
             ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
-            ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
-            (unsafe { &*control }, unsafe { &*boundary })
+            unsafe { &*control }
         }
     };
 
     control
         .set_visible(enabled)
         .map_err(|error| error.to_string())?;
-    boundary
-        .set_visible(enabled)
-        .map_err(|error| error.to_string())?;
     if enabled {
         set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
-        set_organizer_autosave_name(boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
-        set_organizer_item_length(control, NSVariableStatusItemLength);
-        boundary.set_title(Some(""));
-        set_organizer_item_length(boundary, if collapsed { 10_000.0 } else { 1.0 });
+        set_organizer_item_length(
+            control,
+            if collapsed {
+                10_000.0
+            } else {
+                NSVariableStatusItemLength
+            },
+        );
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
@@ -218,6 +210,41 @@ async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     }
     #[cfg(not(target_os = "macos"))]
     Ok(json!({ "ok": false, "reason": "菜单栏整理仅支持 macOS" }))
+}
+
+#[tauri::command]
+fn get_menu_bar_management_state() -> Value {
+    #[cfg(target_os = "macos")]
+    {
+        let trusted = macos_accessibility::is_trusted();
+        return json!({
+            "supported": true,
+            "trusted": trusted,
+            "nativeControl": true,
+            "mode": if trusted { "combined" } else { "native" }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    json!({ "supported": false, "trusted": false, "nativeControl": false, "mode": "unsupported" })
+}
+
+#[tauri::command]
+fn request_menu_bar_management_permission(app: tauri::AppHandle) -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let trusted = macos_accessibility::request_trust();
+        if !trusted {
+            app.opener()
+                .open_url(
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                    None::<&str>,
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        return Ok(json!({ "ok": true, "trusted": trusted }));
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(json!({ "ok": false, "trusted": false, "reason": "辅助功能增强仅支持 macOS" }))
 }
 
 #[cfg(target_os = "macos")]
@@ -2247,6 +2274,8 @@ pub fn run() {
             search_usage,
             open_settings,
             open_accessibility_settings,
+            get_menu_bar_management_state,
+            request_menu_bar_management_permission,
             get_config_path_info,
             get_storage_info,
             diagnostics::get_diagnostics_state,

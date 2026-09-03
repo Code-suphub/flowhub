@@ -258,6 +258,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     searchUsage: (scope = "all") => invoke("search_usage", { scope }),
     openSettings: (options = {}) => invoke("open_settings", { initialUrl: options.initialUrl || null }),
     openAccessibilitySettings: () => invoke("open_accessibility_settings"),
+    getMenuBarManagementState: () => invoke("get_menu_bar_management_state"),
+    requestMenuBarManagementPermission: () => invoke("request_menu_bar_management_permission"),
     getConfigPathInfo: () => invoke("get_config_path_info"),
     chooseConfigPath: () => invoke("choose_config_path"),
     openConfigPath: () => invoke("open_config_path"),

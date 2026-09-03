@@ -271,6 +271,13 @@
       .organizer-step::before { content: counter(organizer-step); width: 19px; height: 19px; display: grid; place-items: center; border-radius: 6px; color: #9ed9c0; background: rgba(121, 200, 170, .1); font-weight: 800; }
       .organizer-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
       .organizer-controls.is-disabled { opacity: .45; }
+      .organizer-mode { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border-radius: 8px; background: rgba(0, 0, 0, .13); }
+      .organizer-mode-copy { min-width: 0; }
+      .organizer-mode-copy strong { display: block; color: #b9c8c1; font-size: 10px; }
+      .organizer-mode-copy small { display: block; margin-top: 3px; color: #6f8078; font-size: 9px; line-height: 1.45; }
+      .organizer-mode-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+      .organizer-state { padding: 4px 7px; border: 1px solid rgba(121, 200, 170, .16); border-radius: 999px; color: #82938b; font: 700 8px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+      .organizer-state[data-state="ready"] { color: #9fe0c3; border-color: rgba(121, 200, 170, .35); background: rgba(121, 200, 170, .08); }
       .update-quick { border-color: rgba(143, 213, 183, .25); color: #b9ead3; background: rgba(143, 213, 183, .075); }
       .scope-shortcut-grid { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 10px; }
       .scope-shortcut-grid .field { min-width: 0; }
@@ -800,9 +807,9 @@
                   </div>
                   <div class="field-hint">隐藏图标后，仍可通过全局快捷键打开 FlowHub，再从设置中恢复。</div>
                   <div class="organizer-setup">
-                    <div class="organizer-setup-head"><strong>菜单栏整理 · 实验功能</strong><label class="switch-field"><input id="organizerEnabled" type="checkbox" data-organizer-field="organizerEnabled" />启用隐藏分区</label></div>
+                    <div class="organizer-setup-head"><strong>菜单栏整理 · 原生控制</strong><label class="switch-field"><input id="organizerEnabled" type="checkbox" data-organizer-field="organizerEnabled" />启用隐藏分区</label></div>
                     <div class="organizer-steps">
-                      <span class="organizer-step">保存后，箭头「›」会成为隐藏区与常显区的边界。</span>
+                      <span class="organizer-step">保存后，箭头「›」本身就是隐藏区与常显区的边界，不再产生中间夹层。</span>
                       <span class="organizer-step">按住 ⌘，把想隐藏的图标移到箭头左侧。</span>
                       <span class="organizer-step">点击箭头展开或收起；箭头会始终留在菜单栏。</span>
                     </div>
@@ -810,7 +817,11 @@
                       <label class="switch-field"><input type="checkbox" data-organizer-field="collapseOnLaunch" />启动时自动收起</label>
                       <button class="button" type="button" data-action="toggle-menu-bar-items">立即展开 / 收起</button>
                     </div>
-                    <div class="field-hint">分隔位置由 macOS 记忆。新启动应用的图标可能出现在隐藏区，可按住 ⌘ 拖回右侧。</div>
+                    <div class="organizer-mode">
+                      <div class="organizer-mode-copy"><strong>辅助功能增强</strong><small>原生模式无需授权即可展开和收起；授权后启用组合模式，为图标识别与位置保护提供系统能力。</small></div>
+                      <div class="organizer-mode-actions"><span class="organizer-state" id="menuBarManagementStatus">检测中</span><button class="button" type="button" data-action="request-menu-bar-management-permission">授权辅助功能</button></div>
+                    </div>
+                    <div class="field-hint">分隔位置由 macOS 记忆。FlowHub 箭头始终保留；即使未授权，也可通过箭头或全局快捷键恢复。</div>
                   </div>
                 </div>
                 <div class="settings-block wide update-block hidden" data-core-section-panel="system">

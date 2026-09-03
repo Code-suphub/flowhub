@@ -269,6 +269,12 @@ if (!window.weborg) {
     async openAccessibilitySettings() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开系统辅助功能设置" };
     },
+    async getMenuBarManagementState() {
+      return { supported: false, trusted: false, nativeControl: false, mode: "preview" };
+    },
+    async requestMenuBarManagementPermission() {
+      return { ok: false, trusted: false, preview: true, reason: "请在 FlowHub App 中授权辅助功能" };
+    },
     async getConfigPathInfo() {
       try {
         const response = await fetch("/__weborg/config/location", { cache: "no-store" });
