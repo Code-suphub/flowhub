@@ -16,6 +16,11 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(target_os = "macos")]
+use tauri::{
+    menu::{MenuBuilder, MenuItem},
+    tray::TrayIconBuilder,
+};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{
@@ -25,6 +30,7 @@ use tauri_nspanel::{
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
@@ -46,6 +52,94 @@ tauri_panel! {
 
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
 static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "macos")]
+const FLOWHUB_TRAY_ID: &str = "flowhub-menu-bar";
+
+fn config_flag(config: &Value, pointer: &str, default: bool) -> bool {
+    config
+        .pointer(pointer)
+        .and_then(Value::as_bool)
+        .unwrap_or(default)
+}
+
+#[cfg(target_os = "macos")]
+fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, String> {
+    let _ = app.remove_tray_by_id(FLOWHUB_TRAY_ID);
+    if !config_flag(config, "/core/menuBar/enabled", true) {
+        return Ok(json!({ "enabled": false }));
+    }
+
+    let mut menu = MenuBuilder::new(app);
+    let show_launcher = config_flag(config, "/core/menuBar/showOpenLauncher", true);
+    let show_settings = config_flag(config, "/core/menuBar/showOpenSettings", true);
+    let show_version = config_flag(config, "/core/menuBar/showVersion", true);
+    let show_quit = config_flag(config, "/core/menuBar/showQuit", true);
+    if show_launcher {
+        menu = menu.text("flowhub-open", "打开 FlowHub");
+    }
+    if show_settings {
+        menu = menu.text("flowhub-settings", "设置…");
+    }
+    if (show_launcher || show_settings) && (show_version || show_quit) {
+        menu = menu.separator();
+    }
+    if show_version {
+        let version = MenuItem::with_id(
+            app,
+            "flowhub-version",
+            format!("FlowHub v{}", app.package_info().version),
+            false,
+            None::<&str>,
+        )
+        .map_err(|error| error.to_string())?;
+        menu = menu.item(&version);
+    }
+    if show_quit {
+        menu = menu.text("flowhub-quit", "退出 FlowHub");
+    }
+    let menu = menu.build().map_err(|error| error.to_string())?;
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| "FlowHub 缺少菜单栏图标".to_string())?;
+    TrayIconBuilder::with_id(FLOWHUB_TRAY_ID)
+        .icon(icon)
+        .icon_as_template(true)
+        .tooltip("FlowHub")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id().0.as_str() {
+            "flowhub-open" => toggle_main(app),
+            "flowhub-settings" => {
+                let _ = open_settings(app.clone(), None);
+            }
+            "flowhub-quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)
+        .map_err(|error| error.to_string())?;
+    Ok(json!({ "enabled": true }))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_menu_bar(_app: &tauri::AppHandle, _config: &Value) -> Result<Value, String> {
+    Ok(json!({ "enabled": false, "unsupported": true }))
+}
+
+#[tauri::command]
+fn send_test_notification(app: tauri::AppHandle) -> Result<Value, String> {
+    let config = hydrated_config(&app.state::<AppState>())?;
+    if !config_flag(&config, "/core/notifications/enabled", true) {
+        return Ok(json!({ "ok": false, "reason": "请先开启 FlowHub 应用通知" }));
+    }
+    app.notification()
+        .builder()
+        .title("FlowHub 通知已开启")
+        .body("之后可在这里接收更新提醒。")
+        .show()
+        .map_err(|error| error.to_string())?;
+    Ok(json!({ "ok": true }))
+}
 
 #[derive(Clone)]
 struct AppPaths {
@@ -760,13 +854,14 @@ fn save_config(
         .unwrap_or("Alt+Space");
     let hotkey_state = register_hotkey(&app, hotkey);
     let autostart_state = apply_autostart(&app, &hydrated);
+    let menu_bar_state = apply_menu_bar(&app, &hydrated)?;
     clipboard::apply_config(&app, &hydrated)?;
     let _ = app.emit("flowhub:config", json!({ "config": hydrated, "query": "" }));
     Ok(json!({
         "ok": true,
         "config": hydrated,
         "pluginFailures": [],
-        "coreState": { "hotkey": hotkey_state, "autostart": autostart_state },
+        "coreState": { "hotkey": hotkey_state, "autostart": autostart_state, "menuBar": menu_bar_state },
         "storageState": storage_state,
         "catalogState": { "count": count, "storage": "sqlite" }
     }))
@@ -1778,6 +1873,7 @@ pub fn run() {
             toggle_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -1872,12 +1968,15 @@ pub fn run() {
                 .unwrap_or("Alt+Space");
             let hotkey_state = register_hotkey(app.handle(), hotkey);
             let autostart_state = apply_autostart(app.handle(), &config);
+            let menu_bar_state =
+                apply_menu_bar(app.handle(), &config).map_err(std::io::Error::other)?;
             println!(
                 "[flowhub-tauri] 数据目录：{}",
                 app.state::<AppState>().root_dir.display()
             );
             println!("[flowhub-tauri] 快捷键状态：{hotkey_state}");
             println!("[flowhub-tauri] 登录项状态：{autostart_state}");
+            println!("[flowhub-tauri] 菜单栏状态：{menu_bar_state}");
 
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
@@ -1964,7 +2063,8 @@ pub fn run() {
             updater::get_update_state,
             updater::check_for_updates,
             updater::download_update,
-            updater::quit_and_install_update
+            updater::quit_and_install_update,
+            send_test_notification
         ])
         .run(tauri::generate_context!())
         .expect("FlowHub failed to run");

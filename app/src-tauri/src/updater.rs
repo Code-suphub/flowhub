@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 pub(crate) struct UpdateRuntime {
@@ -98,11 +99,18 @@ pub(crate) async fn check_for_updates(
     );
     let result = match app.updater().map_err(public_error)?.check().await {
         Ok(Some(update)) => {
+            let version = update.version.clone();
+            let previous_version = runtime
+                .snapshot()
+                .get("availableVersion")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             let state = runtime.patch(
                 &app,
                 json!({
                     "status": "available",
-                    "availableVersion": update.version,
+                    "availableVersion": version,
                     "releaseDate": update.date.map(|date| date.to_string()).unwrap_or_default(),
                     "releaseNotes": update.body.clone().unwrap_or_default(),
                     "checkedAt": checked_at(),
@@ -110,6 +118,24 @@ pub(crate) async fn check_for_updates(
                     "percent": 0
                 }),
             );
+            let config =
+                crate::hydrated_config(&app.state::<crate::AppState>()).unwrap_or_default();
+            let notifications_enabled = config
+                .pointer("/core/notifications/enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+                && config
+                    .pointer("/core/notifications/updates")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+            if notifications_enabled && previous_version != version {
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("FlowHub 有新版本")
+                    .body(format!("v{version} 已发布，可在设置中查看并更新。"))
+                    .show();
+            }
             *runtime
                 .available
                 .lock()
@@ -258,11 +284,31 @@ pub(crate) fn schedule_initial_check(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         let config_path = handle.state::<crate::AppState>().paths().config_path;
-        let config = std::fs::read_to_string(config_path).ok().and_then(|text| serde_json::from_str::<Value>(&text).ok()).unwrap_or_default();
-        if config.pointer("/core/autoUpdateCheck").and_then(Value::as_bool) == Some(false) { return; }
-        let auto_install = config.pointer("/core/autoUpdateInstall").and_then(Value::as_bool).unwrap_or(false);
-        let result = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>()).await.ok();
-        if auto_install && result.as_ref().and_then(|value| value.get("ok")).and_then(Value::as_bool) == Some(true) {
+        let config = std::fs::read_to_string(config_path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .unwrap_or_default();
+        if config
+            .pointer("/core/autoUpdateCheck")
+            .and_then(Value::as_bool)
+            == Some(false)
+        {
+            return;
+        }
+        let auto_install = config
+            .pointer("/core/autoUpdateInstall")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let result = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>())
+            .await
+            .ok();
+        if auto_install
+            && result
+                .as_ref()
+                .and_then(|value| value.get("ok"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        {
             let _ = download_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
             let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>());
         }

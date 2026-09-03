@@ -4,7 +4,18 @@
     "launchAtLogin": false,
     "configPath": "",
     "autoUpdateCheck": true,
-    "autoUpdateInstall": false
+    "autoUpdateInstall": false,
+    "menuBar": {
+      "enabled": true,
+      "showOpenLauncher": true,
+      "showOpenSettings": true,
+      "showVersion": true,
+      "showQuit": true
+    },
+    "notifications": {
+      "enabled": true,
+      "updates": true
+    }
   },
   "plugins": {
     "web": {

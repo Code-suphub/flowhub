@@ -23,6 +23,8 @@ const state = {
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
+const DEFAULT_MENU_BAR = { enabled: true, showOpenLauncher: true, showOpenSettings: true, showVersion: true, showQuit: true };
+const DEFAULT_NOTIFICATIONS = { enabled: true, updates: true };
 const PROXY_ADAPTERS = new Set(["auto", "mihomo", "clash-rest", "system"]);
 const TOOL_SETTINGS = {
   calculator: "计算表达式",
@@ -67,6 +69,10 @@ function normalizeConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
   if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
   if (config.core.configPath !== undefined && typeof config.core.configPath !== "string") throw new Error("配置文件位置必须是字符串");
+  if (config.core.menuBar !== undefined && (!config.core.menuBar || typeof config.core.menuBar !== "object" || Array.isArray(config.core.menuBar))) throw new Error("菜单栏配置必须是对象");
+  if (config.core.notifications !== undefined && (!config.core.notifications || typeof config.core.notifications !== "object" || Array.isArray(config.core.notifications))) throw new Error("通知配置必须是对象");
+  config.core.menuBar = { ...DEFAULT_MENU_BAR, ...(config.core.menuBar || {}) };
+  config.core.notifications = { ...DEFAULT_NOTIFICATIONS, ...(config.core.notifications || {}) };
   const configuredShortcuts = config.core.scopeShortcuts;
   if (configuredShortcuts !== undefined && (!configuredShortcuts || typeof configuredShortcuts !== "object" || Array.isArray(configuredShortcuts))) throw new Error("范围快捷键必须是对象");
   const scopeShortcuts = { ...DEFAULT_SCOPE_SHORTCUTS, ...(configuredShortcuts || {}) };
@@ -592,6 +598,21 @@ function renderSettingsFields() {
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
   if ($("#autoUpdateCheck")) $("#autoUpdateCheck").checked = state.config?.core?.autoUpdateCheck !== false;
   if ($("#autoUpdateInstall")) $("#autoUpdateInstall").checked = state.config?.core?.autoUpdateInstall === true;
+  document.querySelectorAll("[data-menu-bar-field]").forEach((input) => {
+    input.checked = state.config?.core?.menuBar?.[input.dataset.menuBarField] !== false;
+  });
+  document.querySelectorAll("[data-notification-field]").forEach((input) => {
+    input.checked = state.config?.core?.notifications?.[input.dataset.notificationField] !== false;
+  });
+  const menuBarEnabled = state.config?.core?.menuBar?.enabled !== false;
+  const notificationsEnabled = state.config?.core?.notifications?.enabled !== false;
+  $("#menuBarItems")?.classList.toggle("is-disabled", !menuBarEnabled);
+  $("#notificationItems")?.classList.toggle("is-disabled", !notificationsEnabled);
+  document.querySelectorAll("[data-menu-bar-field]:not([data-menu-bar-field='enabled'])").forEach((input) => { input.disabled = !menuBarEnabled; });
+  document.querySelectorAll("[data-notification-field]:not([data-notification-field='enabled'])").forEach((input) => { input.disabled = !notificationsEnabled; });
+  const testNotification = document.querySelector('[data-action="test-notification"]');
+  if (testNotification) testNotification.disabled = !notificationsEnabled || document.documentElement.dataset.weborgRuntime === "browser";
+  if ($("#notificationStatus")) $("#notificationStatus").textContent = document.documentElement.dataset.weborgRuntime === "browser" ? "正式 App 中可发送测试" : "由 macOS 管理权限";
   document.querySelectorAll("[data-core-scope-shortcut]").forEach((input) => {
     const value = state.config?.core?.scopeShortcuts?.[input.dataset.coreScopeShortcut] ?? DEFAULT_SCOPE_SHORTCUTS[input.dataset.coreScopeShortcut] ?? "";
     if (input.matches("button")) input.textContent = value || "点击后按键";
@@ -1183,6 +1204,12 @@ async function openAccessibilitySettings() {
   if (!result?.ok) toast(result?.reason || "无法打开系统设置", true);
 }
 
+async function sendTestNotification() {
+  const result = await window.weborg.sendTestNotification();
+  if (!result?.ok) return toast(result?.reason || "测试通知发送失败", true);
+  toast("测试通知已发送");
+}
+
 async function checkAppUpdate() {
   if (!state.appUpdate?.supported) return toast("安装后的正式版本才支持检查更新", true);
   state.appUpdate = { ...state.appUpdate, status: "checking", error: "" };
@@ -1342,6 +1369,7 @@ function handleAction(action) {
   if (action === "save") return save();
   if (action === "reload") return reload();
   if (action === "open-accessibility-settings") return openAccessibilitySettings();
+  if (action === "test-notification") return sendTestNotification();
   if (action === "check-update") return checkAppUpdate();
   if (action === "update-primary") return runPrimaryUpdateAction();
   if (action === "sample-diagnostics") return sampleDiagnosticsFromSettings();
@@ -1538,6 +1566,24 @@ document.addEventListener("input", (event) => {
     state.config.core ||= {};
     state.config.core[coreField] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
     markDirty();
+    return;
+  }
+  const menuBarField = event.target.dataset.menuBarField;
+  if (menuBarField) {
+    state.config.core ||= {};
+    state.config.core.menuBar ||= { ...DEFAULT_MENU_BAR };
+    state.config.core.menuBar[menuBarField] = event.target.checked;
+    markDirty();
+    renderSettingsFields();
+    return;
+  }
+  const notificationField = event.target.dataset.notificationField;
+  if (notificationField) {
+    state.config.core ||= {};
+    state.config.core.notifications ||= { ...DEFAULT_NOTIFICATIONS };
+    state.config.core.notifications[notificationField] = event.target.checked;
+    markDirty();
+    renderSettingsFields();
     return;
   }
   const shortcutScope = event.target.dataset.coreScopeShortcut;

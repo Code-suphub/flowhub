@@ -256,6 +256,13 @@
       .update-meta { color: #62736b; font-size: 9px; }
       .update-actions { display: flex; gap: 7px; }
       .update-actions .button { min-height: 30px; padding: 0 11px; font-size: 11px; }
+      .system-control-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+      .system-control-group { display: grid; align-content: start; gap: 8px; padding: 11px 12px; border: 1px solid rgba(211, 231, 220, .075); border-radius: 9px; background: rgba(3, 10, 13, .22); }
+      .system-control-group > strong { color: #b9c8c1; font-size: 10px; }
+      .system-control-group .switch-field { min-height: 24px; }
+      .system-control-grid.is-disabled { opacity: .45; }
+      .notification-note { display: flex; align-items: center; gap: 7px; color: #65756e; font-size: 10px; }
+      .notification-note::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #81d5b3; box-shadow: 0 0 0 4px rgba(129, 213, 179, .08); }
       .update-quick { border-color: rgba(143, 213, 183, .25); color: #b9ead3; background: rgba(143, 213, 183, .075); }
       .scope-shortcut-grid { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; margin-top: 10px; }
       .scope-shortcut-grid .field { min-width: 0; }
@@ -762,6 +769,44 @@
                     <div class="storage-path-row"><input id="coreConfigPath" readonly /><button class="button" type="button" data-action="choose-config-path">选择…</button></div>
                     <div class="storage-actions"><button class="button" type="button" data-action="open-config-path">在 Finder 中显示</button><button class="button" type="button" data-action="reset-config-path">恢复默认</button></div>
                     <div class="field-hint" id="coreConfigPathHint">保存后切换到新的配置文件；原文件会保留。</div>
+                  </div>
+                </div>
+                <div class="settings-block wide hidden" data-core-section-panel="system">
+                  <div class="update-heading">
+                    <div class="update-title"><strong>macOS 菜单栏</strong><code>FlowHub</code></div>
+                    <label class="switch-field"><input id="menuBarEnabled" type="checkbox" data-menu-bar-field="enabled" />显示图标</label>
+                  </div>
+                  <p class="update-copy">控制 FlowHub 自己在屏幕右上角的图标和菜单内容，保存后立即生效。</p>
+                  <div class="system-control-grid" id="menuBarItems">
+                    <div class="system-control-group">
+                      <strong>快捷入口</strong>
+                      <label class="switch-field"><input type="checkbox" data-menu-bar-field="showOpenLauncher" />打开 FlowHub</label>
+                      <label class="switch-field"><input type="checkbox" data-menu-bar-field="showOpenSettings" />打开设置</label>
+                    </div>
+                    <div class="system-control-group">
+                      <strong>应用信息</strong>
+                      <label class="switch-field"><input type="checkbox" data-menu-bar-field="showVersion" />显示版本号</label>
+                      <label class="switch-field"><input type="checkbox" data-menu-bar-field="showQuit" />显示退出按钮</label>
+                    </div>
+                  </div>
+                  <div class="field-hint">隐藏图标后，仍可通过全局快捷键打开 FlowHub，再从设置中恢复。</div>
+                </div>
+                <div class="settings-block wide update-block hidden" data-core-section-panel="system">
+                  <div class="update-heading">
+                    <div class="update-title"><strong>应用通知</strong><code>macOS</code></div>
+                    <label class="switch-field"><input id="notificationsEnabled" type="checkbox" data-notification-field="enabled" />允许通知</label>
+                  </div>
+                  <p class="update-copy">FlowHub 只发送你选择的应用事件；系统级权限仍由 macOS“系统设置 → 通知”管理。</p>
+                  <div class="system-control-grid" id="notificationItems">
+                    <div class="system-control-group">
+                      <strong>通知类型</strong>
+                      <label class="switch-field"><input type="checkbox" data-notification-field="updates" />发现新版本</label>
+                    </div>
+                    <div class="system-control-group">
+                      <strong>通知检查</strong>
+                      <span class="notification-note" id="notificationStatus">由 macOS 管理权限</span>
+                      <div class="update-actions"><button class="button" type="button" data-action="test-notification">发送测试通知</button></div>
+                    </div>
                   </div>
                 </div>
                 <div class="settings-block wide hidden" data-core-section-panel="system">
