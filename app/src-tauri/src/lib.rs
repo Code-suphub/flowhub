@@ -779,74 +779,48 @@ async fn set_menu_bar_item_hidden(
         let (sender, receiver) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
             let result = (|| {
-                let ids = organizer_window_ids()?;
+                let (control_id, _boundary_id, always_boundary_id) = organizer_window_ids()?;
                 let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) }
                     .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
                 let always_boundary =
                     unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
                         .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
-                set_organizer_boundary_collapsed(
-                    boundary,
-                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                    false,
-                );
-                set_organizer_boundary_collapsed(
-                    always_boundary,
-                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                    false,
-                );
-                Ok(ids)
-            })();
-            let _ = sender.send(result);
-        })
-        .map_err(|error| error.to_string())?;
-        let prepared = receiver.await.map_err(|error| error.to_string())?;
-
-        let move_result = match prepared {
-            Ok((control_id, _boundary_id, always_boundary_id)) => {
-                tokio::time::sleep(Duration::from_millis(180)).await;
                 let target_id = if hidden {
                     always_boundary_id
                 } else {
                     control_id
                 };
-                match tokio::task::spawn_blocking(move || {
-                    macos_accessibility::move_menu_bar_item(window_id, target_id, hidden)
+                macos_accessibility::without_visual_updates(|| {
+                    set_organizer_boundary_collapsed(
+                        boundary,
+                        &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                        false,
+                    );
+                    set_organizer_boundary_collapsed(
+                        always_boundary,
+                        &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                        false,
+                    );
+                    std::thread::sleep(Duration::from_millis(180));
+                    let move_result =
+                        macos_accessibility::move_menu_bar_item(window_id, target_id, hidden);
+                    set_organizer_boundary_collapsed(
+                        always_boundary,
+                        &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                        true,
+                    );
+                    set_organizer_boundary_collapsed(
+                        boundary,
+                        &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                        was_collapsed,
+                    );
+                    move_result
                 })
-                .await
-                {
-                    Ok(result) => result,
-                    Err(error) => Err(error.to_string()),
-                }
-            }
-            Err(error) => Err(error),
-        };
-
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        app.run_on_main_thread(move || {
-            let result = (|| {
-                let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) }
-                    .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
-                let always_boundary =
-                    unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
-                        .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
-                set_organizer_boundary_collapsed(
-                    always_boundary,
-                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                    true,
-                );
-                set_organizer_boundary_collapsed(
-                    boundary,
-                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                    was_collapsed,
-                );
-                Ok::<(), String>(())
             })();
             let _ = sender.send(result);
         })
         .map_err(|error| error.to_string())?;
-        let restore_result = receiver.await.map_err(|error| error.to_string())?;
-        restore_result?;
+        let move_result = receiver.await.map_err(|error| error.to_string())?;
 
         match move_result {
             Ok(()) => {

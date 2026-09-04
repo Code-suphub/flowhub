@@ -7,6 +7,7 @@ use core_foundation::{
     string::{CFString, CFStringRef},
 };
 use core_graphics::{
+    display::CGDisplay,
     event::{CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton, EventField},
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect},
@@ -24,6 +25,38 @@ type CGWindowID = u32;
 struct MouseLocationGuard {
     source: CGEventSource,
     point: CGPoint,
+}
+
+struct VisualUpdateGuard {
+    hidden_displays: Vec<CGDisplay>,
+}
+
+impl VisualUpdateGuard {
+    fn new() -> Self {
+        unsafe { NSDisableScreenUpdates() };
+        let display_ids =
+            CGDisplay::active_displays().unwrap_or_else(|_| vec![CGDisplay::main().id]);
+        let hidden_displays = display_ids
+            .into_iter()
+            .map(CGDisplay::new)
+            .filter(|display| display.hide_cursor().is_ok())
+            .collect();
+        Self { hidden_displays }
+    }
+}
+
+impl Drop for VisualUpdateGuard {
+    fn drop(&mut self) {
+        unsafe { NSEnableScreenUpdates() };
+        for display in &self.hidden_displays {
+            let _ = display.show_cursor();
+        }
+    }
+}
+
+pub fn without_visual_updates<T>(action: impl FnOnce() -> T) -> T {
+    let _guard = VisualUpdateGuard::new();
+    action()
 }
 
 impl Drop for MouseLocationGuard {
@@ -61,6 +94,12 @@ unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
     static kAXTrustedCheckOptionPrompt: CFStringRef;
+}
+
+#[link(name = "AppKit", kind = "framework")]
+unsafe extern "C" {
+    fn NSDisableScreenUpdates();
+    fn NSEnableScreenUpdates();
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
