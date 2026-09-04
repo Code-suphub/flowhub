@@ -1,6 +1,6 @@
 [package]
 name = "flowhub-tauri"
-version = "0.1.4"
+version = "0.1.5"
 description = "FlowHub desktop launcher"
 authors = ["FlowHub contributors"]
 edition = "2021"
