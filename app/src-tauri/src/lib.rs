@@ -82,6 +82,12 @@ static ORGANIZER_BOUNDARY_CONSTRAINT_PTR: AtomicUsize = AtomicUsize::new(0);
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static ORGANIZER_COLLAPSED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static ORGANIZER_POSITION_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static ORGANIZER_LAST_CONTROL_POSITION: AtomicU64 = AtomicU64::new(u64::MAX);
+#[cfg(target_os = "macos")]
+static ORGANIZER_LAST_BOUNDARY_POSITION: AtomicU64 = AtomicU64::new(u64::MAX);
 
 fn config_flag(config: &Value, pointer: &str, default: bool) -> bool {
     config
@@ -111,6 +117,22 @@ fn seed_organizer_position(name: &str, position: f64) {
     if defaults.objectForKey(&key).is_none() {
         defaults.setDouble_forKey(position, &key);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn organizer_position(name: &str) -> Option<f64> {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let key = NSString::from_str(&format!("NSStatusItem Preferred Position {name}"));
+    defaults
+        .objectForKey(&key)
+        .map(|_| defaults.doubleForKey(&key))
+}
+
+#[cfg(target_os = "macos")]
+fn set_organizer_position(name: &str, position: f64) {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let key = NSString::from_str(&format!("NSStatusItem Preferred Position {name}"));
+    defaults.setDouble_forKey(position, &key);
 }
 
 #[cfg(target_os = "macos")]
@@ -193,6 +215,104 @@ fn set_organizer_boundary_collapsed(tray: &tray_icon::TrayIcon, collapsed: bool)
             }
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn recreate_collapsed_organizer_boundary(
+    app: &tauri::AppHandle,
+    control_position: f64,
+) -> Result<(), String> {
+    let constraint_pointer = ORGANIZER_BOUNDARY_CONSTRAINT_PTR.swap(0, AtomicOrdering::AcqRel);
+    if constraint_pointer != 0 {
+        unsafe {
+            drop(Box::from_raw(
+                constraint_pointer as *mut objc2::rc::Retained<NSLayoutConstraint>,
+            ));
+        }
+    }
+    let boundary_pointer = ORGANIZER_BOUNDARY_PTR.swap(0, AtomicOrdering::AcqRel);
+    if boundary_pointer != 0 {
+        unsafe {
+            drop(Box::from_raw(boundary_pointer as *mut tray_icon::TrayIcon));
+        }
+    }
+
+    let repaired_position = control_position + 1.0;
+    set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, repaired_position);
+
+    let boundary = tray_icon::TrayIconBuilder::new()
+        .with_id(ORGANIZER_BOUNDARY_ID)
+        .with_title("")
+        .build()
+        .map_err(|error| error.to_string())?;
+    set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
+    capture_organizer_minimum_width_constraint(&boundary);
+    boundary
+        .set_icon_with_as_template(None, true)
+        .map_err(|error| error.to_string())?;
+    boundary.set_title(Some(""));
+    set_organizer_boundary_collapsed(&boundary, true);
+    let boundary = Box::into_raw(Box::new(boundary));
+    ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
+    ORGANIZER_LAST_BOUNDARY_POSITION.store(repaired_position.to_bits(), AtomicOrdering::Release);
+    schedule_organizer_observation(app, "position_repair");
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn start_organizer_position_watcher(app: &tauri::AppHandle) {
+    if ORGANIZER_POSITION_WATCHER_STARTED.swap(true, AtomicOrdering::AcqRel) {
+        return;
+    }
+    if let Some(position) = organizer_position(ORGANIZER_CONTROL_AUTOSAVE) {
+        ORGANIZER_LAST_CONTROL_POSITION.store(position.to_bits(), AtomicOrdering::Release);
+    }
+    if let Some(position) = organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE) {
+        ORGANIZER_LAST_BOUNDARY_POSITION.store(position.to_bits(), AtomicOrdering::Release);
+    }
+    let handle = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(250));
+        if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
+            continue;
+        }
+        let callback_handle = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            let Some(control_position) = organizer_position(ORGANIZER_CONTROL_AUTOSAVE) else {
+                return;
+            };
+            let Some(boundary_position) = organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE) else {
+                return;
+            };
+            let previous_control = ORGANIZER_LAST_CONTROL_POSITION
+                .swap(control_position.to_bits(), AtomicOrdering::AcqRel);
+            let previous_boundary = ORGANIZER_LAST_BOUNDARY_POSITION
+                .swap(boundary_position.to_bits(), AtomicOrdering::AcqRel);
+            let position_changed = previous_control != u64::MAX
+                && previous_boundary != u64::MAX
+                && (previous_control != control_position.to_bits()
+                    || previous_boundary != boundary_position.to_bits());
+            if position_changed && ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire) {
+                diagnostics::record_event(
+                    &callback_handle,
+                    "menu_bar_organizer_position_repair",
+                    json!({
+                        "controlPosition": control_position,
+                        "boundaryPosition": boundary_position,
+                    }),
+                );
+                if let Err(error) =
+                    recreate_collapsed_organizer_boundary(&callback_handle, control_position)
+                {
+                    diagnostics::record_event(
+                        &callback_handle,
+                        "menu_bar_organizer_position_repair_failed",
+                        json!({ "error": error }),
+                    );
+                }
+            }
+        });
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -289,7 +409,6 @@ fn configure_organizer_items(
         (Some(control), Some(boundary)) => (control, boundary),
         _ => {
             seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
-            seed_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, 1.0);
             let control = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_CONTROL_ID)
                 .with_title(if collapsed { "‹" } else { "›" })
@@ -297,6 +416,8 @@ fn configure_organizer_items(
                 .build()
                 .map_err(|error| error.to_string())?;
             set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
+            let control_position = organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(0.0);
+            set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, control_position + 1.0);
             let boundary = tray_icon::TrayIconBuilder::new()
                 .with_id(ORGANIZER_BOUNDARY_ID)
                 .with_title("")
@@ -341,6 +462,7 @@ fn configure_organizer_items(
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
+    start_organizer_position_watcher(app);
     schedule_organizer_observation(app, if collapsed { "collapse" } else { "expand" });
     Ok(())
 }
