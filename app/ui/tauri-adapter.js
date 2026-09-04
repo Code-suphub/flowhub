@@ -260,6 +260,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     openAccessibilitySettings: () => invoke("open_accessibility_settings"),
     getMenuBarManagementState: () => invoke("get_menu_bar_management_state"),
     requestMenuBarManagementPermission: () => invoke("request_menu_bar_management_permission"),
+    listMenuBarItems: () => invoke("list_menu_bar_items"),
+    setMenuBarItemHidden: (windowId, hidden) => invoke("set_menu_bar_item_hidden", { windowId, hidden }),
     getConfigPathInfo: () => invoke("get_config_path_info"),
     chooseConfigPath: () => invoke("choose_config_path"),
     openConfigPath: () => invoke("open_config_path"),

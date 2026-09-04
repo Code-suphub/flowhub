@@ -19,7 +19,10 @@ const state = {
   coreSection: "general",
   appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" },
   diagnostics: { enabled: false, available: false, path: "" },
-  menuBarManagement: { supported: false, trusted: false, nativeControl: false, mode: "unknown" }
+  menuBarManagement: { supported: false, trusted: false, nativeControl: false, mode: "unknown" },
+  menuBarItems: [],
+  menuBarItemsLoading: false,
+  menuBarItemsError: ""
 };
 
 const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
@@ -630,6 +633,7 @@ function renderSettingsFields() {
     permissionButton.textContent = management.trusted ? "刷新权限" : "授权辅助功能";
     permissionButton.disabled = document.documentElement.dataset.weborgRuntime === "browser";
   }
+  renderMenuBarItemControls();
   const testNotification = document.querySelector('[data-action="test-notification"]');
   if (testNotification) testNotification.disabled = !notificationsEnabled || document.documentElement.dataset.weborgRuntime === "browser";
   if ($("#notificationStatus")) $("#notificationStatus").textContent = document.documentElement.dataset.weborgRuntime === "browser" ? "正式 App 中可发送测试" : "由 macOS 管理权限";
@@ -649,6 +653,68 @@ function renderSettingsFields() {
   renderClipboardSummary();
   renderAppUpdate();
   renderDiagnostics();
+}
+
+function menuBarItemName(item) {
+  const known = {
+    Clock: "时钟",
+    BentoBox: "控制中心",
+    Siri: "Siri",
+    WiFi: "无线局域网",
+    Bluetooth: "蓝牙",
+    Battery: "电池",
+    FocusModes: "专注模式",
+    Sound: "声音"
+  };
+  return known[item.title] || item.title || item.ownerName || "未命名图标";
+}
+
+function renderMenuBarItemControls() {
+  const list = $("#menuBarItemControlList");
+  const summary = $("#menuBarItemControlSummary");
+  if (!list || !summary) return;
+  const organizerEnabled = state.config?.core?.menuBar?.organizerEnabled === true;
+  const trusted = state.menuBarManagement?.trusted === true;
+  if (!organizerEnabled) {
+    summary.textContent = "启用隐藏分区并保存后即可逐项控制";
+    list.innerHTML = '<div class="menu-bar-item-empty">隐藏分区尚未启用</div>';
+    return;
+  }
+  if (!trusted) {
+    summary.textContent = "需要辅助功能权限";
+    list.innerHTML = '<div class="menu-bar-item-empty">授权后可识别并移动各个菜单栏图标</div>';
+    return;
+  }
+  if (state.menuBarItemsLoading) {
+    summary.textContent = "正在读取菜单栏…";
+    list.innerHTML = '<div class="menu-bar-item-empty is-loading">正在扫描当前菜单栏图标</div>';
+    return;
+  }
+  if (state.menuBarItemsError) {
+    summary.textContent = "读取失败";
+    list.innerHTML = `<div class="menu-bar-item-empty is-error">${esc(state.menuBarItemsError)}</div>`;
+    return;
+  }
+  const items = state.menuBarItems || [];
+  const hiddenCount = items.filter((item) => item.section === "alwaysHidden").length;
+  summary.textContent = `${items.length} 个图标 · ${hiddenCount} 个始终隐藏`;
+  if (!items.length) {
+    list.innerHTML = '<div class="menu-bar-item-empty">没有发现可管理的菜单栏图标</div>';
+    return;
+  }
+  list.innerHTML = items.map((item) => {
+    const alwaysHidden = item.section === "alwaysHidden";
+    const name = menuBarItemName(item);
+    const owner = item.ownerName && item.ownerName !== name ? item.ownerName : "macOS 菜单栏项目";
+    const disabled = !item.hideable;
+    const badge = alwaysHidden ? "始终隐藏" : (item.section === "hidden" ? "随箭头隐藏" : "常显");
+    return `<div class="menu-bar-item-row${alwaysHidden ? " is-hidden" : ""}">
+      <span class="menu-bar-item-glyph" aria-hidden="true">${esc(name.slice(0, 1).toUpperCase())}</span>
+      <span class="menu-bar-item-copy"><strong>${esc(name)}</strong><small>${esc(owner)}</small></span>
+      <span class="menu-bar-item-badge" data-section="${esc(item.section)}">${badge}</span>
+      <button class="button menu-bar-item-action" type="button" data-action="set-menu-bar-item-hidden" data-window-id="${Number(item.windowId)}" data-hidden="${alwaysHidden ? "false" : "true"}" ${disabled ? "disabled" : ""}>${disabled ? "系统固定" : (alwaysHidden ? "显示" : "隐藏")}</button>
+    </div>`;
+  }).join("");
 }
 
 function shortcutFromEvent(event, { allowBare = false } = {}) {
@@ -1196,6 +1262,9 @@ async function save() {
     state.dirty = false;
     clearDraft(previousDraftKey);
     render();
+    if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
+      void refreshMenuBarItems();
+    }
     toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 个插件启动失败` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
   } catch (error) {
     toast(error.message, true);
@@ -1240,7 +1309,50 @@ async function toggleMenuBarItems() {
 async function refreshMenuBarManagementState() {
   state.menuBarManagement = await window.weborg.getMenuBarManagementState();
   renderSettingsFields();
+  if (state.menuBarManagement?.trusted && state.config?.core?.menuBar?.organizerEnabled) {
+    await refreshMenuBarItems();
+  }
   return state.menuBarManagement;
+}
+
+async function refreshMenuBarItems() {
+  if (!state.config?.core?.menuBar?.organizerEnabled || !state.menuBarManagement?.trusted) {
+    state.menuBarItems = [];
+    state.menuBarItemsError = "";
+    return renderMenuBarItemControls();
+  }
+  state.menuBarItemsLoading = true;
+  state.menuBarItemsError = "";
+  renderMenuBarItemControls();
+  try {
+    const result = await window.weborg.listMenuBarItems();
+    if (!result?.ok) throw new Error(result?.reason || "无法读取菜单栏图标");
+    state.menuBarItems = Array.isArray(result.items) ? result.items : [];
+  } catch (error) {
+    state.menuBarItems = [];
+    state.menuBarItemsError = error?.message || String(error);
+  } finally {
+    state.menuBarItemsLoading = false;
+    renderMenuBarItemControls();
+  }
+}
+
+async function setMenuBarItemHidden(button) {
+  const windowId = Number(button?.dataset.windowId);
+  const hidden = button?.dataset.hidden === "true";
+  if (!Number.isFinite(windowId)) return;
+  button.disabled = true;
+  button.textContent = hidden ? "隐藏中…" : "显示中…";
+  try {
+    const result = await window.weborg.setMenuBarItemHidden(windowId, hidden);
+    if (!result?.ok) return toast(result?.reason || "无法移动菜单栏图标", true);
+    toast(hidden ? "该图标已设为始终隐藏" : "该图标已移到常显区");
+    await refreshMenuBarItems();
+  } catch (error) {
+    toast(error?.message || String(error), true);
+  } finally {
+    renderMenuBarItemControls();
+  }
 }
 
 async function requestMenuBarManagementPermission() {
@@ -1394,7 +1506,7 @@ function applyInitialWebUrl() {
   prepareAddWebUrl(value);
 }
 
-function handleAction(action) {
+function handleAction(action, actionTarget) {
   if (action === "add-root") return addRoot();
   if (action === "expand-all") { expandAll(); return renderTree(); }
   if (action === "collapse-all") { collapseAll(); return renderTree(); }
@@ -1412,6 +1524,8 @@ function handleAction(action) {
   if (action === "test-notification") return sendTestNotification();
   if (action === "toggle-menu-bar-items") return toggleMenuBarItems();
   if (action === "request-menu-bar-management-permission") return requestMenuBarManagementPermission();
+  if (action === "refresh-menu-bar-items") return refreshMenuBarItems();
+  if (action === "set-menu-bar-item-hidden") return setMenuBarItemHidden(actionTarget);
   if (action === "check-update") return checkAppUpdate();
   if (action === "update-primary") return runPrimaryUpdateAction();
   if (action === "sample-diagnostics") return sampleDiagnosticsFromSettings();
@@ -1477,8 +1591,9 @@ document.addEventListener("click", (event) => {
   }
   const toggleId = event.target.closest("[data-toggle-node]")?.dataset.toggleNode;
   if (toggleId) return toggleNode(toggleId);
-  const action = event.target.closest("[data-action]")?.dataset.action;
-  if (action) return handleAction(action);
+  const actionTarget = event.target.closest("[data-action]");
+  const action = actionTarget?.dataset.action;
+  if (action) return handleAction(action, actionTarget);
   const mode = event.target.closest("[data-mode]")?.dataset.mode;
   if (mode) {
     state.mode = mode;
@@ -1760,6 +1875,9 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     state.dirty = Boolean(hasConfigChanges || hasJsonChanges);
     state.draftSavedAt = Number(draft.savedAt) || Date.now();
     render();
+    if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
+      void refreshMenuBarItems();
+    }
     applyInitialWebUrl();
     if (state.mode === "json" && draft.jsonText) {
       $("#jsonEditor").value = draft.jsonText;
@@ -1775,5 +1893,8 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   state.jsonDirty = false;
   expandInitialTree();
   render();
+  if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
+    void refreshMenuBarItems();
+  }
   applyInitialWebUrl();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));

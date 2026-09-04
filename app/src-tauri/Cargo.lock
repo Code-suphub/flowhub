@@ -1153,6 +1153,7 @@ dependencies = [
  "chrono",
  "clipboard-rs",
  "core-foundation",
+ "core-graphics",
  "dirs 6.0.0",
  "enigo",
  "image",

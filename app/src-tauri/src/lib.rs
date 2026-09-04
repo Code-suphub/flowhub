@@ -69,15 +69,24 @@ const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
 const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
 #[cfg(target_os = "macos")]
+const ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_ID: &str = "flowhub-organizer-always-hidden-boundary";
+#[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V17.Control";
 #[cfg(target_os = "macos")]
 const ORGANIZER_BOUNDARY_AUTOSAVE: &str = "FlowHub.Organizer.V17.Boundary";
+#[cfg(target_os = "macos")]
+const ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE: &str =
+    "FlowHub.Organizer.V18.AlwaysHiddenBoundary";
 #[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
+static ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
 static ORGANIZER_BOUNDARY_CONSTRAINT_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(target_os = "macos")]
+static ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
@@ -85,9 +94,21 @@ static ORGANIZER_COLLAPSED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static ORGANIZER_POSITION_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
+static ORGANIZER_ITEM_MOVE_ACTIVE: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
 static ORGANIZER_LAST_CONTROL_POSITION: AtomicU64 = AtomicU64::new(u64::MAX);
 #[cfg(target_os = "macos")]
 static ORGANIZER_LAST_BOUNDARY_POSITION: AtomicU64 = AtomicU64::new(u64::MAX);
+
+#[cfg(target_os = "macos")]
+struct OrganizerItemMoveGuard;
+
+#[cfg(target_os = "macos")]
+impl Drop for OrganizerItemMoveGuard {
+    fn drop(&mut self) {
+        ORGANIZER_ITEM_MOVE_ACTIVE.store(false, AtomicOrdering::Release);
+    }
+}
 
 fn config_flag(config: &Value, pointer: &str, default: bool) -> bool {
     config
@@ -143,8 +164,11 @@ fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
 }
 
 #[cfg(target_os = "macos")]
-fn capture_organizer_minimum_width_constraint(tray: &tray_icon::TrayIcon) {
-    if ORGANIZER_BOUNDARY_CONSTRAINT_PTR.load(AtomicOrdering::Acquire) != 0 {
+fn capture_organizer_minimum_width_constraint(
+    tray: &tray_icon::TrayIcon,
+    constraint_pointer: &AtomicUsize,
+) {
+    if constraint_pointer.load(AtomicOrdering::Acquire) != 0 {
         return;
     }
     let Some(status_item) = tray.ns_status_item() else {
@@ -176,33 +200,38 @@ fn capture_organizer_minimum_width_constraint(tray: &tray_icon::TrayIcon) {
         if is_status_item_width_constraint {
             let retained = constraint.retain();
             let pointer = Box::into_raw(Box::new(retained));
-            ORGANIZER_BOUNDARY_CONSTRAINT_PTR.store(pointer as usize, AtomicOrdering::Release);
+            constraint_pointer.store(pointer as usize, AtomicOrdering::Release);
             break;
         }
     }
 }
 
 #[cfg(target_os = "macos")]
-unsafe fn organizer_boundary_constraint() -> Option<&'static objc2::rc::Retained<NSLayoutConstraint>>
-{
-    let address = ORGANIZER_BOUNDARY_CONSTRAINT_PTR.load(AtomicOrdering::Acquire);
+unsafe fn organizer_boundary_constraint(
+    constraint_pointer: &AtomicUsize,
+) -> Option<&'static objc2::rc::Retained<NSLayoutConstraint>> {
+    let address = constraint_pointer.load(AtomicOrdering::Acquire);
     (address != 0).then(|| unsafe { &*(address as *const objc2::rc::Retained<NSLayoutConstraint>) })
 }
 
 #[cfg(target_os = "macos")]
-fn set_organizer_boundary_collapsed(tray: &tray_icon::TrayIcon, collapsed: bool) {
+fn set_organizer_boundary_collapsed(
+    tray: &tray_icon::TrayIcon,
+    constraint_pointer: &AtomicUsize,
+    collapsed: bool,
+) {
     let Some(status_item) = tray.ns_status_item() else {
         return;
     };
-    capture_organizer_minimum_width_constraint(tray);
+    capture_organizer_minimum_width_constraint(tray, constraint_pointer);
     if collapsed {
         status_item.setLength(10_000.0);
-        if let Some(constraint) = unsafe { organizer_boundary_constraint() } {
+        if let Some(constraint) = unsafe { organizer_boundary_constraint(constraint_pointer) } {
             constraint.setActive(true);
         }
     } else {
         status_item.setLength(0.0);
-        if let Some(constraint) = unsafe { organizer_boundary_constraint() } {
+        if let Some(constraint) = unsafe { organizer_boundary_constraint(constraint_pointer) } {
             constraint.setActive(false);
         }
         if let Some(main_thread) = objc2::MainThreadMarker::new() {
@@ -236,7 +265,6 @@ fn recreate_collapsed_organizer_boundary(
             drop(Box::from_raw(boundary_pointer as *mut tray_icon::TrayIcon));
         }
     }
-
     let repaired_position = control_position + 1.0;
     set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, repaired_position);
 
@@ -246,12 +274,12 @@ fn recreate_collapsed_organizer_boundary(
         .build()
         .map_err(|error| error.to_string())?;
     set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-    capture_organizer_minimum_width_constraint(&boundary);
+    capture_organizer_minimum_width_constraint(&boundary, &ORGANIZER_BOUNDARY_CONSTRAINT_PTR);
     boundary
         .set_icon_with_as_template(None, true)
         .map_err(|error| error.to_string())?;
     boundary.set_title(Some(""));
-    set_organizer_boundary_collapsed(&boundary, true);
+    set_organizer_boundary_collapsed(&boundary, &ORGANIZER_BOUNDARY_CONSTRAINT_PTR, true);
     let boundary = Box::into_raw(Box::new(boundary));
     ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
     ORGANIZER_LAST_BOUNDARY_POSITION.store(repaired_position.to_bits(), AtomicOrdering::Release);
@@ -274,6 +302,9 @@ fn start_organizer_position_watcher(app: &tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(250));
         if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
+            continue;
+        }
+        if ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire) {
             continue;
         }
         let callback_handle = handle.clone();
@@ -364,21 +395,65 @@ fn organizer_item_snapshot(item: Option<&tray_icon::TrayIcon>) -> Value {
 }
 
 #[cfg(target_os = "macos")]
+fn organizer_window_id(pointer: &AtomicUsize) -> Option<u32> {
+    let tray = unsafe { organizer_tray(pointer) }?;
+    let status_item = tray.ns_status_item()?;
+    let main_thread = objc2::MainThreadMarker::new()?;
+    let button = status_item.button(main_thread)?;
+    let window = button.window()?;
+    u32::try_from(window.windowNumber()).ok()
+}
+
+#[cfg(target_os = "macos")]
+fn organizer_window_ids() -> Result<(u32, u32, u32), String> {
+    let control = organizer_window_id(&ORGANIZER_CONTROL_PTR)
+        .ok_or_else(|| "菜单栏控制箭头尚未就绪".to_string())?;
+    let boundary = organizer_window_id(&ORGANIZER_BOUNDARY_PTR)
+        .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
+    let always_hidden_boundary = organizer_window_id(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR)
+        .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
+    Ok((control, boundary, always_hidden_boundary))
+}
+
+#[cfg(target_os = "macos")]
 fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
     let control = organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) });
     let boundary = organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) });
+    let always_hidden_boundary =
+        organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) });
     let detail = json!({
         "phase": phase,
         "enabled": ORGANIZER_ENABLED.load(AtomicOrdering::Acquire),
         "collapsed": ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire),
         "controlSymbol": if ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire) { "‹" } else { "›" },
         "mainThread": objc2::MainThreadMarker::new().is_some(),
-        "layoutMode": "fixed-control-zero-width-boundary",
+        "layoutMode": "fixed-control-dual-boundary",
         "control": control,
         "boundary": boundary,
+        "alwaysHiddenBoundary": always_hidden_boundary,
         "boundaryConstraintCaptured": ORGANIZER_BOUNDARY_CONSTRAINT_PTR.load(AtomicOrdering::Acquire) != 0
     });
     diagnostics::record_event(app, "menu_bar_organizer", detail);
+    if phase.ends_with(":after_800ms") {
+        let inventory = organizer_window_ids().and_then(|ids| {
+            let items = macos_accessibility::menu_bar_items()?;
+            Ok(json!({
+                "phase": phase,
+                "count": items.len(),
+                "controlWindowId": ids.0,
+                "boundaryWindowId": ids.1,
+                "alwaysHiddenBoundaryWindowId": ids.2,
+                "controlFound": items.iter().any(|item| item.window_id == ids.0),
+                "boundaryFound": items.iter().any(|item| item.window_id == ids.1),
+                "alwaysHiddenBoundaryFound": items.iter().any(|item| item.window_id == ids.2),
+            }))
+        });
+        diagnostics::record_event(
+            app,
+            "menu_bar_item_inventory_probe",
+            inventory.unwrap_or_else(|error| json!({ "phase": phase, "error": error })),
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -405,39 +480,69 @@ fn configure_organizer_items(
 ) -> Result<(), String> {
     let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
     let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
-    let (control, boundary) = match (control, boundary) {
-        (Some(control), Some(boundary)) => (control, boundary),
-        _ => {
-            seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
-            let control = tray_icon::TrayIconBuilder::new()
-                .with_id(ORGANIZER_CONTROL_ID)
-                .with_title(if collapsed { "‹" } else { "›" })
-                .with_tooltip("展开或收起菜单栏隐藏区")
-                .build()
-                .map_err(|error| error.to_string())?;
-            set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
-            let control_position = organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(0.0);
-            set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, control_position + 1.0);
-            let boundary = tray_icon::TrayIconBuilder::new()
-                .with_id(ORGANIZER_BOUNDARY_ID)
-                .with_title("")
-                .build()
-                .map_err(|error| error.to_string())?;
-            set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-            capture_organizer_minimum_width_constraint(&boundary);
-            let control = Box::into_raw(Box::new(control));
-            let boundary = Box::into_raw(Box::new(boundary));
-            ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
-            ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
-            (unsafe { &*control }, unsafe { &*boundary })
-        }
-    };
+    let always_hidden_boundary = unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) };
+    let (control, boundary, always_hidden_boundary) =
+        match (control, boundary, always_hidden_boundary) {
+            (Some(control), Some(boundary), Some(always_hidden_boundary)) => {
+                (control, boundary, always_hidden_boundary)
+            }
+            _ => {
+                seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
+                let control = tray_icon::TrayIconBuilder::new()
+                    .with_id(ORGANIZER_CONTROL_ID)
+                    .with_title(if collapsed { "‹" } else { "›" })
+                    .with_tooltip("展开或收起菜单栏隐藏区")
+                    .build()
+                    .map_err(|error| error.to_string())?;
+                set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
+                let control_position =
+                    organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(0.0);
+                set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, control_position + 1.0);
+                seed_organizer_position(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE, 10_000.0);
+                let boundary = tray_icon::TrayIconBuilder::new()
+                    .with_id(ORGANIZER_BOUNDARY_ID)
+                    .with_title("")
+                    .build()
+                    .map_err(|error| error.to_string())?;
+                set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
+                capture_organizer_minimum_width_constraint(
+                    &boundary,
+                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                );
+                let always_hidden_boundary = tray_icon::TrayIconBuilder::new()
+                    .with_id(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_ID)
+                    .with_title("")
+                    .build()
+                    .map_err(|error| error.to_string())?;
+                set_organizer_autosave_name(
+                    &always_hidden_boundary,
+                    ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE,
+                );
+                capture_organizer_minimum_width_constraint(
+                    &always_hidden_boundary,
+                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                );
+                let control = Box::into_raw(Box::new(control));
+                let boundary = Box::into_raw(Box::new(boundary));
+                let always_hidden_boundary = Box::into_raw(Box::new(always_hidden_boundary));
+                ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
+                ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
+                ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR
+                    .store(always_hidden_boundary as usize, AtomicOrdering::Release);
+                (unsafe { &*control }, unsafe { &*boundary }, unsafe {
+                    &*always_hidden_boundary
+                })
+            }
+        };
 
     if !enabled {
         control
             .set_visible(false)
             .map_err(|error| error.to_string())?;
         boundary
+            .set_visible(false)
+            .map_err(|error| error.to_string())?;
+        always_hidden_boundary
             .set_visible(false)
             .map_err(|error| error.to_string())?;
     } else {
@@ -447,8 +552,15 @@ fn configure_organizer_items(
         boundary
             .set_visible(true)
             .map_err(|error| error.to_string())?;
+        always_hidden_boundary
+            .set_visible(true)
+            .map_err(|error| error.to_string())?;
         set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
         set_organizer_autosave_name(boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
+        set_organizer_autosave_name(
+            always_hidden_boundary,
+            ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE,
+        );
         set_organizer_item_length(control, NSVariableStatusItemLength);
         control
             .set_icon_with_as_template(None, true)
@@ -458,7 +570,16 @@ fn configure_organizer_items(
             .set_icon_with_as_template(None, true)
             .map_err(|error| error.to_string())?;
         boundary.set_title(Some(""));
-        set_organizer_boundary_collapsed(boundary, collapsed);
+        set_organizer_boundary_collapsed(boundary, &ORGANIZER_BOUNDARY_CONSTRAINT_PTR, collapsed);
+        always_hidden_boundary
+            .set_icon_with_as_template(None, true)
+            .map_err(|error| error.to_string())?;
+        always_hidden_boundary.set_title(Some(""));
+        set_organizer_boundary_collapsed(
+            always_hidden_boundary,
+            &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+            true,
+        );
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
@@ -524,6 +645,200 @@ async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     }
     #[cfg(not(target_os = "macos"))]
     Ok(json!({ "ok": false, "reason": "菜单栏整理仅支持 macOS" }))
+}
+
+#[tauri::command]
+async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
+            return Ok(json!({
+                "ok": true,
+                "trusted": macos_accessibility::is_trusted(),
+                "organizerEnabled": false,
+                "items": []
+            }));
+        }
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let _ = sender.send(organizer_window_ids());
+        })
+        .map_err(|error| error.to_string())?;
+        let (control_id, boundary_id, always_boundary_id) =
+            receiver.await.map_err(|error| error.to_string())??;
+        let all_items = macos_accessibility::menu_bar_items()?;
+        let boundary = all_items.iter().find(|item| item.window_id == boundary_id);
+        let always_boundary = all_items
+            .iter()
+            .find(|item| item.window_id == always_boundary_id);
+        let current_pid = std::process::id() as i32;
+        let items = all_items
+            .iter()
+            .filter(|item| {
+                item.owner_pid != current_pid
+                    && item.owner_name != "Window Server"
+                    && item.title != "Menubar"
+            })
+            .map(|item| {
+                let item_max_x = item.x + item.width;
+                let section =
+                    if always_boundary.is_some_and(|divider| item_max_x <= divider.x + 1.0) {
+                        "alwaysHidden"
+                    } else if boundary.is_some_and(|divider| item_max_x <= divider.x + 1.0) {
+                        "hidden"
+                    } else {
+                        "visible"
+                    };
+                let mut value = serde_json::to_value(item).unwrap_or_else(|_| json!({}));
+                value["section"] = json!(section);
+                value
+            })
+            .collect::<Vec<_>>();
+        diagnostics::record_event(
+            &app,
+            "menu_bar_item_inventory",
+            json!({
+                "count": items.len(),
+                "controlWindowId": control_id,
+                "boundaryWindowId": boundary_id,
+                "alwaysHiddenBoundaryWindowId": always_boundary_id,
+                "alwaysHiddenCount": items.iter().filter(|item| item.get("section") == Some(&json!("alwaysHidden"))).count(),
+            }),
+        );
+        return Ok(json!({
+            "ok": true,
+            "trusted": macos_accessibility::is_trusted(),
+            "organizerEnabled": true,
+            "items": items
+        }));
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(
+        json!({ "ok": false, "trusted": false, "organizerEnabled": false, "items": [], "reason": "逐项控制仅支持 macOS" }),
+    )
+}
+
+#[tauri::command]
+async fn set_menu_bar_item_hidden(
+    app: tauri::AppHandle,
+    window_id: u32,
+    hidden: bool,
+) -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
+            return Ok(json!({ "ok": false, "reason": "请先启用菜单栏隐藏分区" }));
+        }
+        if !macos_accessibility::is_trusted() {
+            return Ok(json!({ "ok": false, "reason": "请先授予 FlowHub 辅助功能权限" }));
+        }
+        if ORGANIZER_ITEM_MOVE_ACTIVE.swap(true, AtomicOrdering::AcqRel) {
+            return Ok(json!({ "ok": false, "reason": "另一个菜单栏图标正在移动，请稍后重试" }));
+        }
+        let _move_guard = OrganizerItemMoveGuard;
+
+        let was_collapsed = ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire);
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let result = (|| {
+                let ids = organizer_window_ids()?;
+                let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) }
+                    .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
+                let always_boundary =
+                    unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
+                        .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
+                set_organizer_boundary_collapsed(
+                    boundary,
+                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                    false,
+                );
+                set_organizer_boundary_collapsed(
+                    always_boundary,
+                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                    false,
+                );
+                Ok(ids)
+            })();
+            let _ = sender.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+        let prepared = receiver.await.map_err(|error| error.to_string())?;
+
+        let move_result = match prepared {
+            Ok((control_id, _boundary_id, always_boundary_id)) => {
+                tokio::time::sleep(Duration::from_millis(180)).await;
+                let target_id = if hidden {
+                    always_boundary_id
+                } else {
+                    control_id
+                };
+                match tokio::task::spawn_blocking(move || {
+                    macos_accessibility::move_menu_bar_item(window_id, target_id, hidden)
+                })
+                .await
+                {
+                    Ok(result) => result,
+                    Err(error) => Err(error.to_string()),
+                }
+            }
+            Err(error) => Err(error),
+        };
+
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let result = (|| {
+                let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) }
+                    .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
+                let always_boundary =
+                    unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
+                        .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
+                set_organizer_boundary_collapsed(
+                    always_boundary,
+                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                    true,
+                );
+                set_organizer_boundary_collapsed(
+                    boundary,
+                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                    was_collapsed,
+                );
+                Ok::<(), String>(())
+            })();
+            let _ = sender.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+        let restore_result = receiver.await.map_err(|error| error.to_string())?;
+        restore_result?;
+
+        match move_result {
+            Ok(()) => {
+                diagnostics::record_event(
+                    &app,
+                    "menu_bar_item_visibility_changed",
+                    json!({ "windowId": window_id, "hidden": hidden, "ok": true }),
+                );
+                schedule_organizer_observation(
+                    &app,
+                    if hidden {
+                        "item_always_hidden"
+                    } else {
+                        "item_shown"
+                    },
+                );
+                Ok(json!({ "ok": true, "hidden": hidden }))
+            }
+            Err(error) => {
+                diagnostics::record_event(
+                    &app,
+                    "menu_bar_item_visibility_changed",
+                    json!({ "windowId": window_id, "hidden": hidden, "ok": false, "error": error }),
+                );
+                Ok(json!({ "ok": false, "reason": error }))
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(json!({ "ok": false, "reason": "逐项控制仅支持 macOS" }))
 }
 
 #[tauri::command]
@@ -2533,6 +2848,17 @@ pub fn run() {
             if let Ok(smoke_test) = std::env::var("FLOWHUB_TAURI_ORGANIZER_SMOKE_TEST") {
                 configure_organizer_items(app.handle(), true, false)
                     .map_err(std::io::Error::other)?;
+                let menu_bar_items =
+                    macos_accessibility::menu_bar_items().map_err(std::io::Error::other)?;
+                let organizer_ids = organizer_window_ids().map_err(std::io::Error::other)?;
+                println!(
+                    "[flowhub-tauri] 菜单栏图标枚举：{}",
+                    json!({
+                        "count": menu_bar_items.len(),
+                        "organizerWindowIds": organizer_ids,
+                        "items": menu_bar_items,
+                    })
+                );
                 toggle_menu_bar_organizer(app.handle()).map_err(std::io::Error::other)?;
                 if smoke_test == "1" {
                     configure_organizer_items(app.handle(), false, false)
@@ -2595,6 +2921,10 @@ pub fn run() {
                 }
             }
 
+            if std::env::var("FLOWHUB_TAURI_SHOW_SETTINGS_ON_START").as_deref() == Ok("1") {
+                open_settings(app.handle().clone(), None).map_err(std::io::Error::other)?;
+            }
+
             if std::env::var("FLOWHUB_TAURI_SMOKE_TEST").as_deref() == Ok("1") {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
@@ -2618,6 +2948,8 @@ pub fn run() {
             open_accessibility_settings,
             get_menu_bar_management_state,
             request_menu_bar_management_permission,
+            list_menu_bar_items,
+            set_menu_bar_item_hidden,
             get_config_path_info,
             get_storage_info,
             diagnostics::get_diagnostics_state,
