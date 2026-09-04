@@ -807,11 +807,11 @@
                   </div>
                   <div class="field-hint">隐藏图标后，仍可通过全局快捷键打开 FlowHub，再从设置中恢复。</div>
                   <div class="organizer-setup">
-                    <div class="organizer-setup-head"><strong>菜单栏整理 · 稳定模式</strong><label class="switch-field"><input id="organizerEnabled" type="checkbox" data-organizer-field="organizerEnabled" />启用隐藏分区</label></div>
+                    <div class="organizer-setup-head"><strong>菜单栏整理 · 固定控制模式</strong><label class="switch-field"><input id="organizerEnabled" type="checkbox" data-organizer-field="organizerEnabled" />启用隐藏分区</label></div>
                     <div class="organizer-steps">
-                      <span class="organizer-step">箭头使用独立的原生状态项，收起后仍可点击恢复。</span>
+                      <span class="organizer-step">箭头始终是独立控制项；它左侧的无宽度分界负责隐藏图标。</span>
                       <span class="organizer-step">展开时按住 ⌘，把想隐藏的图标移到箭头左侧。</span>
-                      <span class="organizer-step">整理完成后点击「›」收起；点击「‹」重新展开。</span>
+                      <span class="organizer-step">点击「›」后只保留「‹」；再次点击即可恢复隐藏区。</span>
                     </div>
                     <div class="organizer-controls" id="organizerControls">
                       <label class="switch-field"><input type="checkbox" data-organizer-field="collapseOnLaunch" />启动时自动收起</label>
@@ -821,7 +821,7 @@
                       <div class="organizer-mode-copy"><strong>辅助功能增强</strong><small>原生模式无需授权即可展开和收起；授权后启用组合模式，为图标识别与位置保护提供系统能力。</small></div>
                       <div class="organizer-mode-actions"><span class="organizer-state" id="menuBarManagementStatus">检测中</span><button class="button" type="button" data-action="request-menu-bar-management-permission">授权辅助功能</button></div>
                     </div>
-                    <div class="field-hint">位置由 macOS 记忆。请勿把箭头本身拖入隐藏区；即使位置异常，也可通过 FlowHub 菜单或全局快捷键打开设置恢复。</div>
+                    <div class="field-hint">位置由 macOS 记忆。正常布局为「隐藏区图标　›」与「‹」两种状态；即使位置异常，也可通过 FlowHub 菜单或全局快捷键打开设置恢复。</div>
                   </div>
                 </div>
                 <div class="settings-block wide update-block hidden" data-core-section-panel="system">
