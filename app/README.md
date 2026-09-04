@@ -48,11 +48,20 @@ src-tauri/target/release/bundle/macos/FlowHub.app
 src-tauri/target/release/bundle/dmg/FlowHub_0.1.0_aarch64.dmg
 ```
 
-目前使用 ad-hoc 签名，不需要 Apple 开发者账号；其他 Mac 首次打开可能出现 Gatekeeper 提示。Tauri 更新包签名与 Apple Developer ID 签名相互独立。
+macOS 包固定使用 `FlowHub Local Development` 代码签名身份，以便本地迭代包和 GitHub
+发布包保持相同的 Designated Requirement。该自签名证书仅适合已信任证书的开发机器；其他
+Mac 仍可能出现 Gatekeeper 提示。Tauri 更新包签名与 macOS 应用代码签名相互独立。
 
 ## GitHub 自动发布与更新
 
-在 GitHub 仓库中配置 Actions Secret `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，值分别是本机 `~/.tauri/flowhub.key` 与 `~/.tauri/flowhub.key.password` 的完整内容。
+在 GitHub 仓库中配置以下 Actions Secrets：
+
+- `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：Tauri 更新签名。
+- `FLOWHUB_MACOS_CERTIFICATE`：`FlowHub Local Development` 的 PKCS#12 文件经 Base64 编码后的内容。
+- `FLOWHUB_MACOS_CERTIFICATE_PASSWORD`：上述 PKCS#12 文件的密码。
+
+自签名证书及私钥不得提交到仓库。本地钥匙串与 GitHub Actions 必须使用同一个证书，
+否则 macOS 辅助功能授权无法在本地包和 GitHub 发布包之间复用。
 
 同步修改以下三处版本号后，推送同名标签：
 

@@ -55,6 +55,31 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
+      - name: Import macOS code-signing certificate
+        env:
+          FLOWHUB_MACOS_CERTIFICATE: ${{ secrets.FLOWHUB_MACOS_CERTIFICATE }}
+          FLOWHUB_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.FLOWHUB_MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          test -n "$FLOWHUB_MACOS_CERTIFICATE"
+          test -n "$FLOWHUB_MACOS_CERTIFICATE_PASSWORD"
+          certificate_path="$RUNNER_TEMP/flowhub-codesign.p12"
+          certificate_pem_path="$RUNNER_TEMP/flowhub-codesign.pem"
+          keychain_path="$RUNNER_TEMP/flowhub-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          printf '%s' "$FLOWHUB_MACOS_CERTIFICATE" | base64 --decode > "$certificate_path"
+          openssl pkcs12 -in "$certificate_path" -clcerts -nokeys \
+            -passin env:FLOWHUB_MACOS_CERTIFICATE_PASSWORD -out "$certificate_pem_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" \
+            -P "$FLOWHUB_MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security add-trusted-cert -r trustRoot -p codeSign -k "$keychain_path" "$certificate_pem_path"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path" | grep "FlowHub Local Development"
+
       - name: Build and publish Tauri release
         uses: tauri-apps/tauri-action@v1
         with:
