@@ -24,7 +24,7 @@ use std::{
 };
 #[cfg(target_os = "macos")]
 use tauri::{
-    menu::{MenuBuilder, MenuItem},
+    menu::{MenuBuilder, MenuItem, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
@@ -64,6 +64,12 @@ static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
 const FLOWHUB_TRAY_ID: &str = "flowhub-menu-bar";
 #[cfg(target_os = "macos")]
 const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
+#[cfg(target_os = "macos")]
+const FLOWHUB_ORGANIZER_TOGGLE_MENU_ID: &str = "flowhub-organizer-toggle";
+#[cfg(target_os = "macos")]
+const FLOWHUB_ORGANIZER_ITEMS_MENU_ID: &str = "flowhub-organizer-items";
+#[cfg(target_os = "macos")]
+const FLOWHUB_ORGANIZER_ITEM_PREFIX: &str = "flowhub-organizer-item:";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
@@ -597,6 +603,8 @@ fn apply_menu_bar_organizer(app: &tauri::AppHandle, config: &Value) -> Value {
     let _ = handle.run_on_main_thread(move || {
         if let Err(error) = configure_organizer_items(&callback_handle, enabled, collapsed) {
             eprintln!("[flowhub-tauri] 菜单栏整理器配置失败：{error}");
+        } else {
+            schedule_flowhub_menu_refresh(&callback_handle);
         }
     });
     json!({ "enabled": enabled, "collapsed": collapsed })
@@ -647,6 +655,54 @@ async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     Ok(json!({ "ok": false, "reason": "菜单栏整理仅支持 macOS" }))
 }
 
+#[cfg(target_os = "macos")]
+fn managed_menu_bar_items(
+    boundary_id: u32,
+    always_boundary_id: u32,
+) -> Result<Vec<(macos_accessibility::MenuBarItem, &'static str)>, String> {
+    let all_items = macos_accessibility::menu_bar_items()?;
+    let boundary = all_items.iter().find(|item| item.window_id == boundary_id);
+    let always_boundary = all_items
+        .iter()
+        .find(|item| item.window_id == always_boundary_id);
+    let current_pid = std::process::id() as i32;
+    Ok(all_items
+        .iter()
+        .filter(|item| {
+            item.owner_pid != current_pid
+                && item.owner_name != "Window Server"
+                && item.title != "Menubar"
+        })
+        .map(|item| {
+            let item_max_x = item.x + item.width;
+            let section = if always_boundary.is_some_and(|divider| item_max_x <= divider.x + 1.0) {
+                "alwaysHidden"
+            } else if boundary.is_some_and(|divider| item_max_x <= divider.x + 1.0) {
+                "hidden"
+            } else {
+                "visible"
+            };
+            (item.clone(), section)
+        })
+        .collect())
+}
+
+#[cfg(target_os = "macos")]
+fn menu_bar_item_display_name(item: &macos_accessibility::MenuBarItem) -> String {
+    match item.title.as_str() {
+        "Clock" => "时钟".to_string(),
+        "BentoBox" => "控制中心".to_string(),
+        "WiFi" => "无线局域网".to_string(),
+        "Bluetooth" => "蓝牙".to_string(),
+        "Battery" => "电池".to_string(),
+        "FocusModes" => "专注模式".to_string(),
+        "Sound" => "声音".to_string(),
+        title if !title.is_empty() => title.to_string(),
+        _ if !item.owner_name.is_empty() => item.owner_name.clone(),
+        _ => "未命名图标".to_string(),
+    }
+}
+
 #[tauri::command]
 async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
@@ -666,29 +722,9 @@ async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
         .map_err(|error| error.to_string())?;
         let (control_id, boundary_id, always_boundary_id) =
             receiver.await.map_err(|error| error.to_string())??;
-        let all_items = macos_accessibility::menu_bar_items()?;
-        let boundary = all_items.iter().find(|item| item.window_id == boundary_id);
-        let always_boundary = all_items
-            .iter()
-            .find(|item| item.window_id == always_boundary_id);
-        let current_pid = std::process::id() as i32;
-        let items = all_items
-            .iter()
-            .filter(|item| {
-                item.owner_pid != current_pid
-                    && item.owner_name != "Window Server"
-                    && item.title != "Menubar"
-            })
-            .map(|item| {
-                let item_max_x = item.x + item.width;
-                let section =
-                    if always_boundary.is_some_and(|divider| item_max_x <= divider.x + 1.0) {
-                        "alwaysHidden"
-                    } else if boundary.is_some_and(|divider| item_max_x <= divider.x + 1.0) {
-                        "hidden"
-                    } else {
-                        "visible"
-                    };
+        let items = managed_menu_bar_items(boundary_id, always_boundary_id)?
+            .into_iter()
+            .map(|(item, section)| {
                 let mut value = serde_json::to_value(item).unwrap_or_else(|_| json!({}));
                 value["section"] = json!(section);
                 value
@@ -825,6 +861,7 @@ async fn set_menu_bar_item_hidden(
                         "item_shown"
                     },
                 );
+                schedule_flowhub_menu_refresh(&app);
                 Ok(json!({ "ok": true, "hidden": hidden }))
             }
             Err(error) => {
@@ -877,6 +914,130 @@ fn request_menu_bar_management_permission(app: tauri::AppHandle) -> Result<Value
 }
 
 #[cfg(target_os = "macos")]
+fn schedule_flowhub_menu_refresh(app: &tauri::AppHandle) {
+    let Ok(config) = hydrated_config(&app.state::<AppState>()) else {
+        return;
+    };
+    let handle = app.clone();
+    let callback_handle = handle.clone();
+    let _ = handle.run_on_main_thread(move || {
+        if let Err(error) = apply_menu_bar(&callback_handle, &config) {
+            eprintln!("[flowhub-tauri] 菜单栏菜单刷新失败：{error}");
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn build_organizer_menu(
+    app: &tauri::AppHandle,
+) -> Result<tauri::menu::Submenu<tauri::Wry>, String> {
+    let enabled = ORGANIZER_ENABLED.load(AtomicOrdering::Acquire);
+    let mut organizer = SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_MENU_ID, "菜单栏整理")
+        .text(
+            FLOWHUB_ORGANIZER_TOGGLE_MENU_ID,
+            if !enabled {
+                "启用隐藏分区"
+            } else if ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire) {
+                "展开隐藏区"
+            } else {
+                "收起隐藏区"
+            },
+        )
+        .separator();
+
+    let mut item_menu =
+        SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_ITEMS_MENU_ID, "逐个图标控制");
+    let mut listed_item_count = 0_usize;
+    if !enabled {
+        let item = MenuItem::with_id(
+            app,
+            "flowhub-organizer-items-disabled",
+            "请先启用隐藏分区",
+            false,
+            None::<&str>,
+        )
+        .map_err(|error| error.to_string())?;
+        item_menu = item_menu.item(&item);
+    } else if !macos_accessibility::is_trusted() {
+        let item = MenuItem::with_id(
+            app,
+            "flowhub-organizer-items-permission-note",
+            "需要辅助功能权限",
+            false,
+            None::<&str>,
+        )
+        .map_err(|error| error.to_string())?;
+        item_menu = item_menu
+            .item(&item)
+            .text("flowhub-organizer-request-permission", "授权辅助功能…");
+    } else if let Ok((_control_id, boundary_id, always_boundary_id)) = organizer_window_ids() {
+        let items = managed_menu_bar_items(boundary_id, always_boundary_id).unwrap_or_default();
+        listed_item_count = items.len();
+        if items.is_empty() {
+            let item = MenuItem::with_id(
+                app,
+                "flowhub-organizer-items-empty",
+                "未发现可管理的图标",
+                false,
+                None::<&str>,
+            )
+            .map_err(|error| error.to_string())?;
+            item_menu = item_menu.item(&item);
+        } else {
+            for (item, section) in items {
+                let always_hidden = section == "alwaysHidden";
+                let action = if always_hidden { "show" } else { "hide" };
+                let text = format!(
+                    "{}　{}",
+                    if always_hidden {
+                        "显示"
+                    } else {
+                        "始终隐藏"
+                    },
+                    menu_bar_item_display_name(&item)
+                );
+                let menu_item = MenuItem::with_id(
+                    app,
+                    format!("{FLOWHUB_ORGANIZER_ITEM_PREFIX}{}:{action}", item.window_id),
+                    text,
+                    item.hideable,
+                    None::<&str>,
+                )
+                .map_err(|error| error.to_string())?;
+                item_menu = item_menu.item(&menu_item);
+            }
+        }
+    } else {
+        let item = MenuItem::with_id(
+            app,
+            "flowhub-organizer-items-loading",
+            "图标列表尚未就绪",
+            false,
+            None::<&str>,
+        )
+        .map_err(|error| error.to_string())?;
+        item_menu = item_menu.item(&item);
+    }
+
+    let item_menu = item_menu.build().map_err(|error| error.to_string())?;
+    organizer = organizer
+        .item(&item_menu)
+        .text("flowhub-organizer-refresh", "刷新图标列表")
+        .text("flowhub-organizer-open-settings", "在设置中管理…");
+    let organizer = organizer.build().map_err(|error| error.to_string())?;
+    diagnostics::record_event(
+        app,
+        "menu_bar_menu_rebuilt",
+        json!({
+            "organizerEnabled": enabled,
+            "trusted": macos_accessibility::is_trusted(),
+            "listedItemCount": listed_item_count,
+        }),
+    );
+    Ok(organizer)
+}
+
+#[cfg(target_os = "macos")]
 fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, String> {
     let _ = app.remove_tray_by_id(FLOWHUB_TRAY_ID);
     if !config_flag(config, "/core/menuBar/enabled", true) {
@@ -897,7 +1058,8 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
     if show_launcher || show_settings {
         menu = menu.separator();
     }
-    menu = menu.text(FLOWHUB_ORGANIZER_MENU_ID, "菜单栏整理 · 展开 / 收起");
+    let organizer_menu = build_organizer_menu(app)?;
+    menu = menu.item(&organizer_menu);
     if show_version || show_quit {
         menu = menu.separator();
     }
@@ -931,7 +1093,7 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             "flowhub-settings" => {
                 let _ = open_settings(app.clone(), None);
             }
-            FLOWHUB_ORGANIZER_MENU_ID => {
+            FLOWHUB_ORGANIZER_TOGGLE_MENU_ID => {
                 let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
                     toggle_menu_bar_organizer(app).map(|_| ())
                 } else {
@@ -941,7 +1103,40 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
                     eprintln!("[flowhub-tauri] 菜单栏整理操作失败：{error}");
                 }
             }
+            "flowhub-organizer-request-permission" => {
+                let _ = request_menu_bar_management_permission(app.clone());
+            }
+            "flowhub-organizer-refresh" => schedule_flowhub_menu_refresh(app),
+            "flowhub-organizer-open-settings" => {
+                let _ = open_settings(app.clone(), None);
+            }
             "flowhub-quit" => app.exit(0),
+            id if id.starts_with(FLOWHUB_ORGANIZER_ITEM_PREFIX) => {
+                let payload = &id[FLOWHUB_ORGANIZER_ITEM_PREFIX.len()..];
+                let Some((window_id, action)) = payload.split_once(':') else {
+                    return;
+                };
+                let Ok(window_id) = window_id.parse::<u32>() else {
+                    return;
+                };
+                let hidden = action == "hide";
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    match set_menu_bar_item_hidden(handle.clone(), window_id, hidden).await {
+                        Ok(result) if result.get("ok").and_then(Value::as_bool) == Some(true) => {}
+                        Ok(result) => eprintln!(
+                            "[flowhub-tauri] 菜单栏单项操作失败：{}",
+                            result
+                                .get("reason")
+                                .and_then(Value::as_str)
+                                .unwrap_or("未知错误")
+                        ),
+                        Err(error) => {
+                            eprintln!("[flowhub-tauri] 菜单栏单项操作失败：{error}")
+                        }
+                    }
+                });
+            }
             _ => {}
         })
         .build(app)
