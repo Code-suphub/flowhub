@@ -63,6 +63,8 @@ static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
 #[cfg(target_os = "macos")]
 const FLOWHUB_TRAY_ID: &str = "flowhub-menu-bar";
 #[cfg(target_os = "macos")]
+const FLOWHUB_TRAY_AUTOSAVE: &str = "FlowHub.MenuBar.V1.Main";
+#[cfg(target_os = "macos")]
 const FLOWHUB_ORGANIZER_MENU_ID: &str = "flowhub-organizer";
 #[cfg(target_os = "macos")]
 const FLOWHUB_ORGANIZER_TOGGLE_MENU_ID: &str = "flowhub-organizer-toggle";
@@ -493,7 +495,7 @@ fn configure_organizer_items(
                 (control, boundary, always_hidden_boundary)
             }
             _ => {
-                seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 0.0);
+                seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 1.0);
                 let control = tray_icon::TrayIconBuilder::new()
                     .with_id(ORGANIZER_CONTROL_ID)
                     .with_title(if collapsed { "‹" } else { "›" })
@@ -502,7 +504,7 @@ fn configure_organizer_items(
                     .map_err(|error| error.to_string())?;
                 set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
                 let control_position =
-                    organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(0.0);
+                    organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(1.0);
                 set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, control_position + 1.0);
                 seed_organizer_position(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE, 10_000.0);
                 let boundary = tray_icon::TrayIconBuilder::new()
@@ -1082,7 +1084,9 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
         .default_window_icon()
         .cloned()
         .ok_or_else(|| "FlowHub 缺少菜单栏图标".to_string())?;
-    TrayIconBuilder::with_id(FLOWHUB_TRAY_ID)
+    let control_position = organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(1.0);
+    set_organizer_position(FLOWHUB_TRAY_AUTOSAVE, (control_position - 1.0).max(0.0));
+    let tray = TrayIconBuilder::with_id(FLOWHUB_TRAY_ID)
         .icon(icon)
         .icon_as_template(true)
         .tooltip("FlowHub")
@@ -1140,6 +1144,8 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             _ => {}
         })
         .build(app)
+        .map_err(|error| error.to_string())?;
+    tray.with_inner_tray_icon(|tray| set_organizer_autosave_name(tray, FLOWHUB_TRAY_AUTOSAVE))
         .map_err(|error| error.to_string())?;
     Ok(json!({ "enabled": true }))
 }
