@@ -666,7 +666,7 @@ function menuBarItemName(item) {
     FocusModes: "专注模式",
     Sound: "声音"
   };
-  return known[item.title] || item.title || item.ownerName || "未命名图标";
+  return known[item.title] || item.title || item.accessibilityLabel || item.ownerName || "未命名图标";
 }
 
 function renderMenuBarItemControls() {

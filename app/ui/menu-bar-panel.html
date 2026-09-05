@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>菜单栏图标</title>
+  <link rel="stylesheet" href="menu-bar-panel.css">
+  <script type="module" src="menu-bar-panel.js"></script>
+</head>
+<body>
+  <header>
+    <div><h1>菜单栏图标</h1><p>开：显示 · 关：始终隐藏</p></div>
+    <button id="close" class="icon-button" aria-label="关闭面板" title="关闭">×</button>
+  </header>
+  <div id="notice" role="status" aria-live="polite">正在读取菜单栏…</div>
+  <main id="items" aria-label="逐个图标控制"></main>
+  <footer><span id="summary">按菜单栏顺序</span><button id="refresh">刷新顺序</button></footer>
+</body>
+</html>

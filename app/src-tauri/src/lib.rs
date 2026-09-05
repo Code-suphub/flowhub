@@ -700,6 +700,7 @@ fn menu_bar_item_display_name(item: &macos_accessibility::MenuBarItem) -> String
         "FocusModes" => "专注模式".to_string(),
         "Sound" => "声音".to_string(),
         title if !title.is_empty() => title.to_string(),
+        _ if !item.accessibility_label.is_empty() => item.accessibility_label.clone(),
         _ if !item.owner_name.is_empty() => item.owner_name.clone(),
         _ => "未命名图标".to_string(),
     }
@@ -727,8 +728,10 @@ async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
         let items = managed_menu_bar_items(boundary_id, always_boundary_id)?
             .into_iter()
             .map(|(item, section)| {
+                let display_name = menu_bar_item_display_name(&item);
                 let mut value = serde_json::to_value(item).unwrap_or_else(|_| json!({}));
                 value["section"] = json!(section);
+                value["displayName"] = json!(display_name);
                 value
             })
             .collect::<Vec<_>>();
@@ -778,49 +781,86 @@ async fn set_menu_bar_item_hidden(
         let was_collapsed = ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire);
         let (sender, receiver) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
-            let result = (|| {
-                let (control_id, _boundary_id, always_boundary_id) = organizer_window_ids()?;
+            let result = (|| -> Result<_, String> {
+                organizer_window_ids()?;
                 let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) }
                     .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
                 let always_boundary =
                     unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
                         .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
-                let target_id = if hidden {
-                    always_boundary_id
-                } else {
-                    control_id
-                };
-                macos_accessibility::without_visual_updates(|| {
-                    set_organizer_boundary_collapsed(
-                        boundary,
-                        &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                        false,
-                    );
-                    set_organizer_boundary_collapsed(
-                        always_boundary,
-                        &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                        false,
-                    );
-                    std::thread::sleep(Duration::from_millis(180));
-                    let move_result =
-                        macos_accessibility::move_menu_bar_item(window_id, target_id, hidden);
-                    set_organizer_boundary_collapsed(
-                        always_boundary,
-                        &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                        true,
-                    );
-                    set_organizer_boundary_collapsed(
-                        boundary,
-                        &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                        was_collapsed,
-                    );
-                    move_result
-                })
+                let visual_guard = macos_accessibility::VisualUpdateGuard::new();
+                set_organizer_boundary_collapsed(
+                    boundary,
+                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                    false,
+                );
+                set_organizer_boundary_collapsed(
+                    always_boundary,
+                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                    false,
+                );
+                Ok(visual_guard)
             })();
             let _ = sender.send(result);
         })
         .map_err(|error| error.to_string())?;
-        let move_result = receiver.await.map_err(|error| error.to_string())?;
+        let visual_guard = receiver.await.map_err(|error| error.to_string())??;
+
+        // Yield to AppKit so hidden windows receive their on-screen geometry.
+        // Sleeping or dragging on the main thread prevents this layout from completing.
+        let move_result = async {
+            tokio::time::sleep(Duration::from_millis(180)).await;
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            app.run_on_main_thread(move || {
+                let _ = sender.send(
+                    organizer_window_id(if hidden {
+                        &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR
+                    } else {
+                        &ORGANIZER_CONTROL_PTR
+                    })
+                    .ok_or_else(|| "目标分界在展开后不可用".to_string()),
+                );
+            }).map_err(|error| error.to_string())?;
+            let target_id = receiver.await.map_err(|error| error.to_string())??;
+            let handle = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let before = macos_accessibility::menu_bar_items().unwrap_or_default();
+                let result = macos_accessibility::move_menu_bar_item(window_id, target_id, hidden);
+                let after = macos_accessibility::menu_bar_items().unwrap_or_default();
+                diagnostics::record_event(&handle, "menu_bar_item_move_geometry", json!({
+                    "windowId": window_id, "targetId": target_id, "hidden": hidden,
+                    "before": before.iter().filter(|item| item.window_id == window_id || item.window_id == target_id).collect::<Vec<_>>(),
+                    "after": after.iter().filter(|item| item.window_id == window_id || item.window_id == target_id).collect::<Vec<_>>(),
+                    "ok": result.is_ok()
+                }));
+                result
+            }).await.map_err(|error| error.to_string())?
+        }.await;
+
+        // Restore both dividers even if target lookup or the movement failed.
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            if let Some(always_boundary) =
+                unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
+            {
+                set_organizer_boundary_collapsed(
+                    always_boundary,
+                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
+                    true,
+                );
+            }
+            if let Some(boundary) = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) } {
+                set_organizer_boundary_collapsed(
+                    boundary,
+                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
+                    was_collapsed,
+                );
+            }
+            drop(visual_guard);
+            let _ = sender.send(());
+        })
+        .map_err(|error| error.to_string())?;
+        receiver.await.map_err(|error| error.to_string())?;
 
         match move_result {
             Ok(()) => {
@@ -908,7 +948,7 @@ fn build_organizer_menu(
     app: &tauri::AppHandle,
 ) -> Result<tauri::menu::Submenu<tauri::Wry>, String> {
     let enabled = ORGANIZER_ENABLED.load(AtomicOrdering::Acquire);
-    let mut organizer = SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_MENU_ID, "菜单栏整理")
+    SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_MENU_ID, "菜单栏整理")
         .text(
             FLOWHUB_ORGANIZER_TOGGLE_MENU_ID,
             if !enabled {
@@ -919,98 +959,56 @@ fn build_organizer_menu(
                 "收起隐藏区"
             },
         )
-        .separator();
+        .separator()
+        .text(FLOWHUB_ORGANIZER_ITEMS_MENU_ID, "逐个图标控制…")
+        .text("flowhub-organizer-open-settings", "在设置中管理…")
+        .build()
+        .map_err(|error| error.to_string())
+}
 
-    let mut item_menu =
-        SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_ITEMS_MENU_ID, "逐个图标控制");
-    let mut listed_item_count = 0_usize;
-    if !enabled {
-        let item = MenuItem::with_id(
-            app,
-            "flowhub-organizer-items-disabled",
-            "请先启用隐藏分区",
-            false,
-            None::<&str>,
-        )
-        .map_err(|error| error.to_string())?;
-        item_menu = item_menu.item(&item);
-    } else if !macos_accessibility::is_trusted() {
-        let item = MenuItem::with_id(
-            app,
-            "flowhub-organizer-items-permission-note",
-            "需要辅助功能权限",
-            false,
-            None::<&str>,
-        )
-        .map_err(|error| error.to_string())?;
-        item_menu = item_menu
-            .item(&item)
-            .text("flowhub-organizer-request-permission", "授权辅助功能…");
-    } else if let Ok((_control_id, boundary_id, always_boundary_id)) = organizer_window_ids() {
-        let items = managed_menu_bar_items(boundary_id, always_boundary_id).unwrap_or_default();
-        listed_item_count = items.len();
-        if items.is_empty() {
-            let item = MenuItem::with_id(
-                app,
-                "flowhub-organizer-items-empty",
-                "未发现可管理的图标",
-                false,
-                None::<&str>,
-            )
-            .map_err(|error| error.to_string())?;
-            item_menu = item_menu.item(&item);
-        } else {
-            for (item, section) in items {
-                let always_hidden = section == "alwaysHidden";
-                let action = if always_hidden { "show" } else { "hide" };
-                let text = format!(
-                    "{}　{}",
-                    if always_hidden {
-                        "显示"
-                    } else {
-                        "始终隐藏"
-                    },
-                    menu_bar_item_display_name(&item)
-                );
-                let menu_item = MenuItem::with_id(
-                    app,
-                    format!("{FLOWHUB_ORGANIZER_ITEM_PREFIX}{}:{action}", item.window_id),
-                    text,
-                    item.hideable,
-                    None::<&str>,
-                )
-                .map_err(|error| error.to_string())?;
-                item_menu = item_menu.item(&menu_item);
-            }
+#[tauri::command]
+fn toggle_menu_bar_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("menu-bar-panel") {
+        if window.is_visible().map_err(|error| error.to_string())? {
+            return window.hide().map_err(|error| error.to_string());
         }
-    } else {
-        let item = MenuItem::with_id(
-            app,
-            "flowhub-organizer-items-loading",
-            "图标列表尚未就绪",
-            false,
-            None::<&str>,
-        )
-        .map_err(|error| error.to_string())?;
-        item_menu = item_menu.item(&item);
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        window
+            .emit("menu-bar-panel-opened", ())
+            .map_err(|error| error.to_string())?;
+        return Ok(());
     }
-
-    let item_menu = item_menu.build().map_err(|error| error.to_string())?;
-    organizer = organizer
-        .item(&item_menu)
-        .text("flowhub-organizer-refresh", "刷新图标列表")
-        .text("flowhub-organizer-open-settings", "在设置中管理…");
-    let organizer = organizer.build().map_err(|error| error.to_string())?;
-    diagnostics::record_event(
-        app,
-        "menu_bar_menu_rebuilt",
-        json!({
-            "organizerEnabled": enabled,
-            "trusted": macos_accessibility::is_trusted(),
-            "listedItemCount": listed_item_count,
-        }),
-    );
-    Ok(organizer)
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "menu-bar-panel",
+        WebviewUrl::App("menu-bar-panel.html".into()),
+    )
+    .title("菜单栏图标")
+    .inner_size(340.0, 570.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .center()
+    .build()
+    .map_err(|error| error.to_string())?;
+    if let Some(monitor) = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+    {
+        let scale = monitor.scale_factor();
+        let origin = monitor.position().to_logical::<f64>(scale);
+        let size = monitor.size().to_logical::<f64>(scale);
+        window
+            .set_position(tauri::LogicalPosition::new(
+                origin.x + size.width - 356.0,
+                origin.y + 48.0,
+            ))
+            .map_err(|error| error.to_string())?;
+    }
+    window.set_focus().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1070,6 +1068,11 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             "flowhub-open" => toggle_main(app),
             "flowhub-settings" => {
                 let _ = open_settings(app.clone(), None);
+            }
+            FLOWHUB_ORGANIZER_ITEMS_MENU_ID => {
+                if let Err(error) = toggle_menu_bar_panel(app.clone()) {
+                    eprintln!("[flowhub-tauri] 图标面板打开失败：{error}");
+                }
             }
             FLOWHUB_ORGANIZER_TOGGLE_MENU_ID => {
                 let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
@@ -2873,8 +2876,12 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            toggle_main(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| arg == "--menu-bar-panel") {
+                let _ = toggle_menu_bar_panel(app.clone());
+            } else {
+                toggle_main(app);
+            }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -3108,6 +3115,9 @@ pub fn run() {
                 });
             }
             updater::schedule_initial_check(app.handle());
+            if std::env::args().any(|arg| arg == "--menu-bar-panel") {
+                toggle_menu_bar_panel(app.handle().clone()).map_err(std::io::Error::other)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3124,6 +3134,7 @@ pub fn run() {
             get_menu_bar_management_state,
             request_menu_bar_management_permission,
             list_menu_bar_items,
+            toggle_menu_bar_panel,
             set_menu_bar_item_hidden,
             get_config_path_info,
             get_storage_info,
