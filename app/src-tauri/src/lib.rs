@@ -386,6 +386,7 @@ fn organizer_item_snapshot(item: Option<&tray_icon::TrayIcon>) -> Value {
                     }
                     if let Some(window) = button.window() {
                         let frame = window.frame();
+                        detail["windowId"] = json!(window.windowNumber());
                         detail["windowIgnoresMouseEvents"] = json!(window.ignoresMouseEvents());
                         detail["windowRight"] = json!(frame.origin.x + frame.size.width);
                         detail["windowFrame"] = json!({
@@ -778,89 +779,26 @@ async fn set_menu_bar_item_hidden(
         }
         let _move_guard = OrganizerItemMoveGuard;
 
-        let was_collapsed = ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire);
         let (sender, receiver) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
-            let result = (|| -> Result<_, String> {
-                organizer_window_ids()?;
-                let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) }
-                    .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
-                let always_boundary =
-                    unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
-                        .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
-                let visual_guard = macos_accessibility::VisualUpdateGuard::new();
-                set_organizer_boundary_collapsed(
-                    boundary,
-                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                    false,
-                );
-                set_organizer_boundary_collapsed(
-                    always_boundary,
-                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                    false,
-                );
-                Ok(visual_guard)
-            })();
-            let _ = sender.send(result);
+            let _ = sender.send(
+                organizer_window_id(if hidden {
+                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR
+                } else {
+                    &ORGANIZER_CONTROL_PTR
+                })
+                .ok_or_else(|| "目标分界尚未就绪".to_string()),
+            );
         })
         .map_err(|error| error.to_string())?;
-        let visual_guard = receiver.await.map_err(|error| error.to_string())??;
-
-        // Yield to AppKit so hidden windows receive their on-screen geometry.
-        // Sleeping or dragging on the main thread prevents this layout from completing.
-        let move_result = async {
-            tokio::time::sleep(Duration::from_millis(180)).await;
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            app.run_on_main_thread(move || {
-                let _ = sender.send(
-                    organizer_window_id(if hidden {
-                        &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR
-                    } else {
-                        &ORGANIZER_CONTROL_PTR
-                    })
-                    .ok_or_else(|| "目标分界在展开后不可用".to_string()),
-                );
-            }).map_err(|error| error.to_string())?;
-            let target_id = receiver.await.map_err(|error| error.to_string())??;
-            let handle = app.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                let before = macos_accessibility::menu_bar_items().unwrap_or_default();
-                let result = macos_accessibility::move_menu_bar_item(window_id, target_id, hidden);
-                let after = macos_accessibility::menu_bar_items().unwrap_or_default();
-                diagnostics::record_event(&handle, "menu_bar_item_move_geometry", json!({
-                    "windowId": window_id, "targetId": target_id, "hidden": hidden,
-                    "before": before.iter().filter(|item| item.window_id == window_id || item.window_id == target_id).collect::<Vec<_>>(),
-                    "after": after.iter().filter(|item| item.window_id == window_id || item.window_id == target_id).collect::<Vec<_>>(),
-                    "ok": result.is_ok()
-                }));
-                result
-            }).await.map_err(|error| error.to_string())?
-        }.await;
-
-        // Restore both dividers even if target lookup or the movement failed.
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        app.run_on_main_thread(move || {
-            if let Some(always_boundary) =
-                unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }
-            {
-                set_organizer_boundary_collapsed(
-                    always_boundary,
-                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                    true,
-                );
-            }
-            if let Some(boundary) = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) } {
-                set_organizer_boundary_collapsed(
-                    boundary,
-                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                    was_collapsed,
-                );
-            }
-            drop(visual_guard);
-            let _ = sender.send(());
+        let target_id = receiver.await.map_err(|error| error.to_string())??;
+        let handle = app.clone();
+        let move_result = tauri::async_runtime::spawn_blocking(move || {
+            // Keep both dividers unchanged: unrelated hidden items must never be exposed.
+            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, hidden)
         })
+        .await
         .map_err(|error| error.to_string())?;
-        receiver.await.map_err(|error| error.to_string())?;
 
         match move_result {
             Ok(()) => {
@@ -1013,8 +951,8 @@ fn toggle_menu_bar_panel(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, String> {
-    let _ = app.remove_tray_by_id(FLOWHUB_TRAY_ID);
     if !config_flag(config, "/core/menuBar/enabled", true) {
+        let _ = app.remove_tray_by_id(FLOWHUB_TRAY_ID);
         return Ok(json!({ "enabled": false }));
     }
 
@@ -1052,6 +990,26 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
         menu = menu.text("flowhub-quit", "退出 FlowHub");
     }
     let menu = menu.build().map_err(|error| error.to_string())?;
+    if let Some(tray) = app.tray_by_id(FLOWHUB_TRAY_ID) {
+        // Recreating the status item reapplies its saved position and moves it
+        // across the icon just revealed. Menu-only refreshes must preserve it.
+        let before = tray
+            .with_inner_tray_icon(|tray| organizer_item_snapshot(Some(tray)))
+            .map_err(|error| error.to_string())?;
+        tray.set_menu(Some(menu))
+            .map_err(|error| error.to_string())?;
+        let after = tray
+            .with_inner_tray_icon(|tray| organizer_item_snapshot(Some(tray)))
+            .map_err(|error| error.to_string())?;
+        diagnostics::record_event(
+            app,
+            "flowhub_menu_refreshed",
+            json!({
+                "mode": "in-place", "before": before, "after": after,
+            }),
+        );
+        return Ok(json!({ "enabled": true }));
+    }
     let icon = app
         .default_window_icon()
         .cloned()

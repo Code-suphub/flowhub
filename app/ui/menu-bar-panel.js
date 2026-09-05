@@ -11,6 +11,7 @@ let trusted = false;
 
 function status(text, error = false) {
   notice.textContent = text;
+  notice.title = text;
   notice.classList.toggle("error", error);
 }
 

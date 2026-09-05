@@ -12,6 +12,28 @@ const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
 const localVersion = `${baseVersion}-local.${stamp}`;
 const configDirectory = mkdtempSync(join(tmpdir(), "flowhub-local-build-"));
 const configPath = join(configDirectory, "tauri.local.json");
+const installedExecutablePattern = "^/Applications/FlowHub\\.app/Contents/MacOS/flowhub-tauri( |$)";
+
+function installedFlowHubPids() {
+  const result = spawnSync("pgrep", ["-f", installedExecutablePattern], { encoding: "utf8" });
+  if (result.status !== 0) return [];
+  return String(result.stdout || "")
+    .split(/\s+/)
+    .map(Number)
+    .filter((pid) => Number.isInteger(pid) && pid > 1);
+}
+
+function stopInstalledFlowHub() {
+  const pids = installedFlowHubPids();
+  for (const pid of pids) spawnSync("kill", ["-TERM", String(pid)]);
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; attempt < 30 && installedFlowHubPids().length; attempt += 1) {
+    Atomics.wait(sleeper, 0, 0, 100);
+  }
+  if (installedFlowHubPids().length) {
+    throw new Error("旧版 FlowHub 未能退出，请手动退出后重新安装");
+  }
+}
 
 // Tauri merges this small override with tauri.conf.json. The prerelease marker
 // keeps local iterations distinct, so the stable GitHub updater can later offer
@@ -31,6 +53,7 @@ try {
     if (installRequested) {
       if (process.platform !== "darwin") throw new Error("本地自动安装目前仅支持 macOS");
       const targetPath = "/Applications/FlowHub.app";
+      stopInstalledFlowHub();
       if (existsSync(targetPath)) {
         const removed = spawnSync("osascript", ["-e", `tell application \"Finder\" to delete POSIX file \"${targetPath}\"`], { stdio: "inherit" });
         if ((removed.status ?? 1) !== 0) throw new Error("无法移除旧版 FlowHub，请先退出正在运行的应用");

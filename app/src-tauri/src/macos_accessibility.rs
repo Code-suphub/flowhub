@@ -4,11 +4,15 @@ use core_foundation::{
     boolean::CFBoolean,
     dictionary::{CFDictionary, CFDictionaryRef},
     number::CFNumber,
+    runloop::{kCFRunLoopDefaultMode, CFRunLoop},
     string::{CFString, CFStringRef},
 };
 use core_graphics::{
     display::CGDisplay,
-    event::{CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton, EventField},
+    event::{
+        CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions,
+        CGEventTapPlacement, CGEventType, CGMouseButton, CallbackResult, EventField,
+    },
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect},
     window::{
@@ -22,45 +26,30 @@ use std::{ptr, thread, time::Duration};
 type CGSConnectionID = u32;
 type CGWindowID = u32;
 
-struct MouseLocationGuard {
-    source: CGEventSource,
+// Restoring via a posted MouseMoved event is asynchronous: showing the cursor
+// first can reveal its temporary drag position. Warp synchronously, then show.
+struct CursorMoveGuard {
     point: CGPoint,
+    displays: Vec<CGDisplay>,
 }
 
-pub struct VisualUpdateGuard {
-    hidden_displays: Vec<CGDisplay>,
-}
-
-impl VisualUpdateGuard {
-    pub fn new() -> Self {
-        let display_ids =
-            CGDisplay::active_displays().unwrap_or_else(|_| vec![CGDisplay::main().id]);
-        let hidden_displays = display_ids
+impl CursorMoveGuard {
+    fn new(point: CGPoint) -> Self {
+        let displays = CGDisplay::active_displays()
+            .unwrap_or_else(|_| vec![CGDisplay::main().id])
             .into_iter()
             .map(CGDisplay::new)
             .filter(|display| display.hide_cursor().is_ok())
             .collect();
-        Self { hidden_displays }
+        Self { point, displays }
     }
 }
 
-impl Drop for VisualUpdateGuard {
+impl Drop for CursorMoveGuard {
     fn drop(&mut self) {
-        for display in &self.hidden_displays {
+        let _ = CGDisplay::warp_mouse_cursor_position(self.point);
+        for display in &self.displays {
             let _ = display.show_cursor();
-        }
-    }
-}
-
-impl Drop for MouseLocationGuard {
-    fn drop(&mut self) {
-        if let Ok(event) = CGEvent::new_mouse_event(
-            self.source.clone(),
-            CGEventType::MouseMoved,
-            self.point,
-            CGMouseButton::Left,
-        ) {
-            event.post(CGEventTapLocation::HID);
         }
     }
 }
@@ -286,6 +275,44 @@ mod tests {
             }
         }
     }
+
+    fn fixture(window_id: u32, x: f64, width: f64) -> MenuBarItem {
+        MenuBarItem {
+            window_id,
+            x,
+            width,
+            y: 0.0,
+            height: 37.0,
+            owner_pid: 1,
+            owner_name: String::new(),
+            title: String::new(),
+            accessibility_id: String::new(),
+            accessibility_label: String::new(),
+            stable_id: String::new(),
+            on_screen: true,
+            movable: true,
+            hideable: true,
+        }
+    }
+
+    #[test]
+    fn visibility_waits_for_divider_animation_to_finish() {
+        let battery = fixture(46, 1196.0, 42.0);
+        let mut items = vec![battery, fixture(2, 1185.0, 26.0)];
+        assert!(!item_reached_target(&items, 46, 2, false));
+        items[1].x = 1170.0;
+        assert!(item_reached_target(&items, 46, 2, false));
+        assert!(!item_reached_target(&items, 999, 2, false));
+        assert!(!item_reached_target(&items, 46, 999, false));
+    }
+
+    #[test]
+    fn hidden_placement_uses_full_bounds_even_offscreen() {
+        let mut items = vec![fixture(46, -4205.0, 42.0), fixture(2, -4163.0, 5016.0)];
+        assert!(item_reached_target(&items, 46, 2, true));
+        items[0].x += 10.0;
+        assert!(!item_reached_target(&items, 46, 2, true));
+    }
 }
 
 pub fn menu_bar_items() -> Result<Vec<MenuBarItem>, String> {
@@ -406,7 +433,47 @@ fn targeted_mouse_event(
     Ok(event)
 }
 
+// Wait for session delivery before forwarding to the owner. Posting both back
+// to back races WindowServer's drag setup, especially for off-screen windows.
+fn post_menu_bar_event(event: &CGEvent, owner_pid: i32) -> Result<(), String> {
+    let received = std::cell::Cell::new(false);
+    let marker = event.get_integer_value_field(EventField::EVENT_SOURCE_USER_DATA);
+    CGEventTap::with_enabled(
+        CGEventTapLocation::Session,
+        CGEventTapPlacement::TailAppendEventTap,
+        CGEventTapOptions::ListenOnly,
+        vec![event.get_type()],
+        |_, _, incoming| {
+            if !received.get()
+                && incoming.get_integer_value_field(EventField::EVENT_SOURCE_USER_DATA) == marker
+            {
+                event.post_to_pid(owner_pid);
+                received.set(true);
+            }
+            CallbackResult::Keep
+        },
+        || {
+            event.post(CGEventTapLocation::Session);
+            let started = std::time::Instant::now();
+            while !received.get() && started.elapsed() < Duration::from_millis(100) {
+                CFRunLoop::run_in_mode(
+                    unsafe { kCFRunLoopDefaultMode },
+                    Duration::from_millis(10),
+                    true,
+                );
+            }
+        },
+    )
+    .map_err(|_| "无法监听菜单栏事件，请检查辅助功能权限".to_string())?;
+    if received.get() {
+        Ok(())
+    } else {
+        Err("菜单栏事件投递超时".to_string())
+    }
+}
+
 pub fn move_menu_bar_item(
+    app: &tauri::AppHandle,
     window_id: u32,
     target_window_id: u32,
     place_left_of_target: bool,
@@ -414,15 +481,10 @@ pub fn move_menu_bar_item(
     if !is_trusted() {
         return Err("请先授予 FlowHub 辅助功能权限".to_string());
     }
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+    let source = CGEventSource::new(CGEventSourceStateID::Private)
         .map_err(|_| "无法创建系统输入事件源".to_string())?;
-    let original_pointer = CGEvent::new(source.clone())
-        .map_err(|_| "无法读取鼠标位置".to_string())?
-        .location();
-    let _mouse_location_guard = MouseLocationGuard {
-        source: source.clone(),
-        point: original_pointer,
-    };
+    let pointer_source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "无法读取系统输入事件源".to_string())?;
     let mut moved = false;
     for _attempt in 0..3 {
         let items = menu_bar_items()?;
@@ -449,7 +511,10 @@ pub fn move_menu_bar_item(
             break;
         }
 
-        let start = CGPoint::new(item.x + item.width / 2.0, item.y + item.height / 2.0);
+        // A negative hidden-window coordinate is clamped to the Apple menu by
+        // session hit testing. Target the owning window explicitly from outside
+        // the desktop, as opposed to clicking the visible menu bar underneath.
+        let start = CGPoint::new(20_000.0, 20_000.0);
         let target_x = if place_left_of_target {
             target.x
         } else {
@@ -464,14 +529,6 @@ pub fn move_menu_bar_item(
             item.window_id,
             true,
         )?;
-        let mouse_dragged = targeted_mouse_event(
-            source.clone(),
-            CGEventType::LeftMouseDragged,
-            end,
-            item.owner_pid,
-            target.window_id,
-            true,
-        )?;
         let mouse_up = targeted_mouse_event(
             source.clone(),
             CGEventType::LeftMouseUp,
@@ -481,36 +538,71 @@ pub fn move_menu_bar_item(
             false,
         )?;
 
-        mouse_down.post(CGEventTapLocation::Session);
-        // Off-screen status windows are skipped by session hit testing. Deliver
-        // the targeted event to their owner as well so a hidden item can start a move.
-        if !item.on_screen {
-            mouse_down.post_to_pid(item.owner_pid);
-        }
-        thread::sleep(Duration::from_millis(55));
-        if item.on_screen {
-            mouse_dragged.post(CGEventTapLocation::Session);
-        }
-        thread::sleep(Duration::from_millis(75));
-        mouse_up.post(CGEventTapLocation::Session);
-        if !item.on_screen {
-            mouse_up.post_to_pid(item.owner_pid);
-        }
-        thread::sleep(Duration::from_millis(140));
-        let updated = menu_bar_items()?;
-        let updated_item = updated
-            .iter()
-            .find(|candidate| candidate.window_id == window_id);
-        let updated_target = updated
-            .iter()
-            .find(|candidate| candidate.window_id == target_window_id);
-        moved = match (updated_item, updated_target) {
-            (Some(item), Some(target)) if place_left_of_target => {
-                item.x + item.width <= target.x + 1.0
+        let mut pointer_samples = Vec::new();
+        let original_pointer = CGEvent::new(pointer_source.clone())
+            .map_err(|_| "无法读取鼠标位置".to_string())?
+            .location();
+        let started = std::time::Instant::now();
+        let cursor_guard = CursorMoveGuard::new(original_pointer);
+        let cursor_hidden = !cursor_guard.displays.is_empty();
+        let mut delivery_error = None;
+        for (event, delay) in [(&mouse_down, 55_u64), (&mouse_up, 30_u64)] {
+            if let Err(error) = post_menu_bar_event(event, item.owner_pid) {
+                // Always release the synthetic button, including tap failure.
+                mouse_up.post(CGEventTapLocation::Session);
+                mouse_up.post_to_pid(item.owner_pid);
+                thread::sleep(Duration::from_millis(30));
+                delivery_error = Some(error);
+                break;
             }
-            (Some(item), Some(target)) => item.x + 1.0 >= target.x + target.width,
-            _ => false,
-        };
+            for _ in 0..(delay / 10) {
+                thread::sleep(Duration::from_millis(10));
+                if let Ok(pointer) = CGEvent::new(pointer_source.clone()) {
+                    let point = pointer.location();
+                    pointer_samples.push(serde_json::json!({"x": point.x, "y": point.y}));
+                }
+            }
+        }
+        drop(cursor_guard);
+        let cursor_transaction_ms = started.elapsed().as_millis();
+        let pointer_restored = CGEvent::new(pointer_source.clone()).ok().map(|event| {
+            let p = event.location();
+            serde_json::json!({"x": p.x, "y": p.y})
+        });
+        // Wait for layout after releasing the cursor, not while it is hidden.
+        thread::sleep(Duration::from_millis(110));
+        let layout_started = std::time::Instant::now();
+        let mut updated = menu_bar_items()?;
+        // Status windows animate independently. Do not re-drag an item that is
+        // already in place while the divider is still sliding into its final frame.
+        while !item_reached_target(&updated, window_id, target_window_id, place_left_of_target)
+            && delivery_error.is_none()
+            && layout_started.elapsed() < Duration::from_millis(1000)
+        {
+            thread::sleep(Duration::from_millis(50));
+            updated = menu_bar_items()?;
+        }
+        crate::diagnostics::record_event(
+            app,
+            "menu_bar_item_direct_move",
+            serde_json::json!({
+                "windowId": window_id, "targetId": target_window_id,
+                "hidden": place_left_of_target, "attempt": _attempt,
+                "strategy": "direct-target-synchronous-cursor-restore",
+                "cursorHidden": cursor_hidden,
+                "cursorTransactionMs": cursor_transaction_ms,
+                "pointerRestored": pointer_restored,
+                "deliveryError": delivery_error,
+                "layoutWaitMs": layout_started.elapsed().as_millis(),
+                "pointerBefore": {"x": original_pointer.x, "y": original_pointer.y},
+                "pointerSamples": pointer_samples,
+                "before": items, "after": updated,
+            }),
+        );
+        if let Some(error) = delivery_error {
+            return Err(error);
+        }
+        moved = item_reached_target(&updated, window_id, target_window_id, place_left_of_target);
         if moved {
             break;
         }
@@ -522,5 +614,20 @@ pub fn move_menu_bar_item(
         Err(format!(
             "macOS 未接受这次图标移动（目标分界窗口 {target_window_id}）"
         ))
+    }
+}
+
+fn item_reached_target(
+    items: &[MenuBarItem],
+    window_id: u32,
+    target_id: u32,
+    hidden: bool,
+) -> bool {
+    let item = items.iter().find(|item| item.window_id == window_id);
+    let target = items.iter().find(|item| item.window_id == target_id);
+    match (item, target) {
+        (Some(item), Some(target)) if hidden => item.x + item.width <= target.x + 1.0,
+        (Some(item), Some(target)) => item.x + 1.0 >= target.x + target.width,
+        _ => false,
     }
 }
