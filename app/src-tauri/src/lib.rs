@@ -852,20 +852,39 @@ async fn set_menu_bar_item_hidden(
                 error
             })?;
             let plan = memory.prepare(&identities, index, section, hidden);
+            let section_of = |item: &macos_accessibility::MenuBarItem| {
+                if item.x + item.width <= always_boundary.x + 1.0 { Section::AlwaysHidden }
+                else if item.x + item.width <= boundary.x + 1.0 { Section::Hidden }
+                else { Section::Visible }
+            };
+            let manageable = |item: &macos_accessibility::MenuBarItem| item.owner_pid != std::process::id() as i32
+                && item.owner_name != "Window Server" && item.title != "Menubar" && item.movable && item.hideable;
+            if hidden && section != Section::AlwaysHidden {
+                let mut ordered: Vec<_> = inventory.iter().enumerate().filter(|(_, i)| manageable(i) && section_of(i) == section).collect();
+                ordered.sort_by(|a,b| a.1.x.total_cmp(&b.1.x));
+                memory.remember_order(&identities[index], section, &ordered.iter().map(|(i,_)| &identities[*i]).collect::<Vec<_>>());
+            }
+            let anchor = if !hidden && section == Section::AlwaysHidden {
+                let candidates: Vec<_> = inventory.iter().enumerate().filter(|(_,i)| manageable(i)).collect();
+                let current: Vec<_> = candidates.iter().map(|(i,item)| (&identities[*i], section_of(item))).collect();
+                memory.order_anchor(&identities[index], plan.destination, &current)
+                    .map(|(i,left)| (candidates[i].1.window_id, left))
+            } else { None };
             // Persist before dragging, including collision tombstones. A failed or
             // partially completed drag must not erase the original section.
             memory.save(&memory_path).map_err(|error| {
                 diagnostics::record_event(&handle, "menu_bar_section_memory_error", json!({"error": error}));
                 error
             })?;
-            let (target_id, place_left) = plan.target(control_id, always_boundary_id);
+            let (target_id, place_left) = anchor.unwrap_or_else(|| plan.target(control_id, always_boundary_id));
             diagnostics::record_event(&handle, "menu_bar_section_restore_plan", json!({
                 "windowId": window_id, "currentSection": section,
                 "destination": plan.destination, "fallbackReason": plan.fallback_reason,
                 "targetWindowId": target_id, "placeLeft": place_left,
+                "orderAnchorFound": anchor.is_some(),
             }));
             // Keep both dividers unchanged: unrelated hidden items must never be exposed.
-            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left)
+            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, anchor.is_some())
         })
         .await
         .map_err(|error| error.to_string())?;

@@ -536,6 +536,18 @@ mod tests {
     }
 
     #[test]
+    fn order_restore_requires_adjacency_not_just_the_correct_side() {
+        let mut items = vec![fixture(1, -5000.0, 34.0), fixture(2, 900.0, 34.0)];
+        assert!(item_reached_target(&items, 1, 2, true));
+        assert!(!placement_reached(&items, 1, 2, true, true));
+        items[0].x = 866.0;
+        assert!(placement_reached(&items, 1, 2, true, true));
+        assert!(!placement_reached(&items, 1, 2, false, true));
+        items[0].x = 934.0;
+        assert!(placement_reached(&items, 1, 2, false, true));
+    }
+
+    #[test]
     fn hidden_placement_uses_full_bounds_even_offscreen() {
         let mut items = vec![fixture(46, -4205.0, 42.0), fixture(2, -4163.0, 5016.0)];
         assert!(item_reached_target(&items, 46, 2, true));
@@ -706,6 +718,7 @@ pub fn move_menu_bar_item(
     window_id: u32,
     target_window_id: u32,
     place_left_of_target: bool,
+    require_adjacent: bool,
 ) -> Result<(), String> {
     if !is_trusted() {
         return Err("请先授予 FlowHub 辅助功能权限".to_string());
@@ -730,11 +743,8 @@ pub fn move_menu_bar_item(
         if !item.movable {
             return Err("这个系统图标不能移动".to_string());
         }
-        let already_moved = if place_left_of_target {
-            item.x + item.width <= target.x + 1.0
-        } else {
-            item.x + 1.0 >= target.x + target.width
-        };
+        let reached = |items: &[MenuBarItem]| placement_reached(items, window_id, target_window_id, place_left_of_target, require_adjacent);
+        let already_moved = reached(&items);
         if already_moved {
             moved = true;
             break;
@@ -840,7 +850,7 @@ pub fn move_menu_bar_item(
         let mut updated = menu_bar_items()?;
         // Status windows animate independently. Do not re-drag an item that is
         // already in place while the divider is still sliding into its final frame.
-        while !item_reached_target(&updated, window_id, target_window_id, place_left_of_target)
+        while !reached(&updated)
             && delivery_error.is_none()
             && layout_started.elapsed() < Duration::from_millis(1000)
         {
@@ -872,7 +882,7 @@ pub fn move_menu_bar_item(
         if let Some(error) = delivery_error {
             return Err(error);
         }
-        moved = item_reached_target(&updated, window_id, target_window_id, place_left_of_target);
+        moved = reached(&updated);
         if moved {
             break;
         }
@@ -900,4 +910,12 @@ fn item_reached_target(
         (Some(item), Some(target)) => item.x + 1.0 >= target.x + target.width,
         _ => false,
     }
+}
+
+fn placement_reached(items: &[MenuBarItem], item_id: u32, target_id: u32, left: bool, adjacent: bool) -> bool {
+    if !adjacent { return item_reached_target(items, item_id, target_id, left); }
+    let Some(item) = items.iter().find(|i| i.window_id == item_id) else { return false };
+    let Some(target) = items.iter().find(|i| i.window_id == target_id) else { return false };
+    let gap = if left { target.x - (item.x + item.width) } else { item.x - (target.x + target.width) };
+    (-1.0..=4.0).contains(&gap)
 }
