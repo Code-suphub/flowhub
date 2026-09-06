@@ -26,6 +26,106 @@ use std::{ptr, thread, time::Duration};
 type CGSConnectionID = u32;
 type CGWindowID = u32;
 
+const MOUSE_QUIET_SECONDS: f64 = 0.20;
+const MOUSE_WAIT_BUDGET: Duration = Duration::from_millis(300);
+const MOUSE_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const MOUSE_ACTIVITY_TYPES: [CGEventType; 11] = [
+    CGEventType::MouseMoved,
+    CGEventType::LeftMouseDragged,
+    CGEventType::RightMouseDragged,
+    CGEventType::OtherMouseDragged,
+    CGEventType::ScrollWheel,
+    CGEventType::LeftMouseDown,
+    CGEventType::LeftMouseUp,
+    CGEventType::RightMouseDown,
+    CGEventType::RightMouseUp,
+    CGEventType::OtherMouseDown,
+    CGEventType::OtherMouseUp,
+];
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MousePreflight {
+    pressed_buttons: Vec<u32>,
+    activity_ages_seconds: [f64; MOUSE_ACTIVITY_TYPES.len()],
+}
+
+#[derive(Debug, PartialEq)]
+enum MouseWaitDecision {
+    Ready,
+    Wait(Duration),
+    Reject(&'static str),
+}
+
+impl MousePreflight {
+    fn read() -> Self {
+        // CGEventSource.h: HIDSystemState tracks hardware sources, whereas
+        // CombinedSessionState also includes our posted Private-source events.
+        let state = CGEventSourceStateID::HIDSystemState;
+        let activity_ages_seconds = MOUSE_ACTIVITY_TYPES.map(|event_type| unsafe {
+            CGEventSourceSecondsSinceLastEventType(state, event_type)
+        });
+        // CGMouseButton is uint32_t in CGEventTypes.h. Query all 32 Quartz
+        // mouse buttons (CGRemoteOperation.h), including side buttons; do not
+        // transmute their indices into the crate's three-variant Rust enum.
+        let pressed_buttons = (0..32)
+            .filter(|&button| unsafe { CGEventSourceButtonState(state, button) })
+            .collect();
+        Self {
+            pressed_buttons,
+            activity_ages_seconds,
+        }
+    }
+
+    fn rejection(&self) -> Option<&'static str> {
+        if !self.pressed_buttons.is_empty() {
+            Some("mouse_button_down")
+        } else if self
+            .activity_ages_seconds
+            .iter()
+            .any(|age| !age.is_finite() || *age < 0.0)
+        {
+            Some("invalid_mouse_activity")
+        } else if self
+            .activity_ages_seconds
+            .iter()
+            .any(|age| *age < MOUSE_QUIET_SECONDS)
+        {
+            Some("recent_mouse_activity")
+        } else {
+            None
+        }
+    }
+
+    fn wait_decision(&self, elapsed: Duration) -> MouseWaitDecision {
+        match self.rejection() {
+            Some(reason @ ("mouse_button_down" | "invalid_mouse_activity")) => {
+                MouseWaitDecision::Reject(reason)
+            }
+            // Check the deadline before accepting even a quiet sample: an
+            // overslept worker must not silently execute a stale request.
+            _ if elapsed >= MOUSE_WAIT_BUDGET => MouseWaitDecision::Reject("mouse_wait_timeout"),
+            None => MouseWaitDecision::Ready,
+            Some(_) => MouseWaitDecision::Wait(
+                MOUSE_POLL_INTERVAL.min(MOUSE_WAIT_BUDGET - elapsed),
+            ),
+        }
+    }
+}
+
+fn wait_for_quiet_mouse() -> (MousePreflight, Duration, Option<&'static str>) {
+    let started = std::time::Instant::now();
+    loop {
+        let sample = MousePreflight::read();
+        let elapsed = started.elapsed();
+        match sample.wait_decision(elapsed) {
+            MouseWaitDecision::Ready => return (sample, elapsed, None),
+            MouseWaitDecision::Reject(reason) => return (sample, elapsed, Some(reason)),
+            MouseWaitDecision::Wait(delay) => thread::sleep(delay),
+        }
+    }
+}
+
 // Restoring via a posted MouseMoved event is asynchronous: showing the cursor
 // first can reveal its temporary drag position. Warp synchronously, then show.
 struct CursorMoveGuard {
@@ -89,6 +189,13 @@ unsafe extern "C" {
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
+    // Signatures verified against the local SDK's CGEventSource.h; these
+    // functions are not wrapped by core-graphics 0.25's event_source module.
+    fn CGEventSourceButtonState(state_id: CGEventSourceStateID, button: u32) -> bool;
+    fn CGEventSourceSecondsSinceLastEventType(
+        state_id: CGEventSourceStateID,
+        event_type: CGEventType,
+    ) -> f64;
     fn CGSMainConnectionID() -> CGSConnectionID;
     fn CGSGetWindowCount(
         connection: CGSConnectionID,
@@ -175,14 +282,18 @@ fn dictionary_bool(
         .is_some_and(|value| value == CFBoolean::true_value())
 }
 
-fn item_capabilities(owner_name: &str, title: &str, accessibility_id: &str) -> (bool, bool) {
-    let control_center = matches!(owner_name, "Control Center" | "控制中心");
-    let immovable = (control_center
+pub fn is_fixed_menu_bar_entry(owner_name: &str, title: &str, accessibility_id: &str) -> bool {
+    matches!(owner_name, "Control Center" | "控制中心")
         && (matches!(title, "Clock" | "BentoBox")
             || matches!(
                 accessibility_id,
                 "com.apple.menuextra.clock" | "com.apple.menuextra.controlcenter"
-            )))
+            ))
+}
+
+fn item_capabilities(owner_name: &str, title: &str, accessibility_id: &str) -> (bool, bool) {
+    let control_center = matches!(owner_name, "Control Center" | "控制中心");
+    let immovable = is_fixed_menu_bar_entry(owner_name, title, accessibility_id)
         || (owner_name == "SystemUIServer" && title == "Siri");
     let non_hideable =
         control_center && matches!(title, "AudioVideoModule" | "FaceTime" | "MusicRecognition");
@@ -262,6 +373,124 @@ fn window_id_array(ids: &[CGWindowID]) -> CFArray<CGWindowID> {
 mod tests {
     use super::*;
     use core_foundation::array::CFArrayGetValueAtIndex;
+
+    fn quiet_mouse() -> MousePreflight {
+        MousePreflight {
+            pressed_buttons: Vec::new(),
+            activity_ages_seconds: [MOUSE_QUIET_SECONDS; MOUSE_ACTIVITY_TYPES.len()],
+        }
+    }
+
+    #[test]
+    fn mouse_preflight_requires_all_buttons_released() {
+        for button in 0..32 {
+            let mut sample = quiet_mouse();
+            sample.pressed_buttons.push(button);
+            assert_eq!(sample.rejection(), Some("mouse_button_down"));
+        }
+    }
+
+    #[test]
+    fn mouse_preflight_checks_every_activity_and_quiet_boundary() {
+        assert_eq!(quiet_mouse().rejection(), None);
+        for index in 0..MOUSE_ACTIVITY_TYPES.len() {
+            let mut sample = quiet_mouse();
+            for age in [0.0, MOUSE_QUIET_SECONDS - 0.001] {
+                sample.activity_ages_seconds[index] = age;
+                assert_eq!(sample.rejection(), Some("recent_mouse_activity"));
+            }
+            for age in [MOUSE_QUIET_SECONDS, 3600.0, f64::MAX] {
+                sample.activity_ages_seconds[index] = age;
+                assert_eq!(sample.rejection(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn mouse_preflight_rejects_invalid_activity_readings() {
+        for index in 0..MOUSE_ACTIVITY_TYPES.len() {
+            for age in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                let mut sample = quiet_mouse();
+                sample.activity_ages_seconds[index] = age;
+                assert_eq!(sample.rejection(), Some("invalid_mouse_activity"));
+            }
+        }
+    }
+
+    #[test]
+    fn mouse_wait_allows_click_release_to_settle() {
+        let mut sample = quiet_mouse();
+        let release = MOUSE_ACTIVITY_TYPES
+            .iter()
+            .position(|kind| matches!(kind, CGEventType::LeftMouseUp))
+            .unwrap();
+        for ms in (0..200).step_by(20) {
+            sample.activity_ages_seconds[release] = ms as f64 / 1000.0;
+            assert_eq!(sample.wait_decision(Duration::from_millis(ms)),
+                MouseWaitDecision::Wait(MOUSE_POLL_INTERVAL));
+        }
+        sample.activity_ages_seconds[release] = 0.2;
+        assert_eq!(sample.wait_decision(Duration::from_millis(200)), MouseWaitDecision::Ready);
+    }
+
+    #[test]
+    fn mouse_wait_never_extends_budget_for_continued_activity_or_oversleep() {
+        let mut sample = quiet_mouse();
+        sample.activity_ages_seconds[0] = 0.0;
+        for ms in (0..300).step_by(20) {
+            assert_eq!(sample.wait_decision(Duration::from_millis(ms)),
+                MouseWaitDecision::Wait(MOUSE_POLL_INTERVAL));
+        }
+        assert_eq!(sample.wait_decision(Duration::from_millis(295)),
+            MouseWaitDecision::Wait(Duration::from_millis(5)));
+        for ms in [300, 301, 3000] {
+            for state in [&sample, &quiet_mouse()] {
+                assert_eq!(state.wait_decision(Duration::from_millis(ms)),
+                    MouseWaitDecision::Reject("mouse_wait_timeout"));
+            }
+        }
+    }
+
+    #[test]
+    fn mouse_wait_rejects_held_buttons_and_invalid_readings_without_waiting() {
+        let mut sample = quiet_mouse();
+        sample.pressed_buttons.push(0);
+        for ms in [0, 100, 300] {
+            assert_eq!(sample.wait_decision(Duration::from_millis(ms)),
+                MouseWaitDecision::Reject("mouse_button_down"));
+        }
+        sample.pressed_buttons.clear();
+        sample.activity_ages_seconds[0] = f64::NAN;
+        assert_eq!(sample.wait_decision(Duration::ZERO),
+            MouseWaitDecision::Reject("invalid_mouse_activity"));
+    }
+
+    #[test]
+    fn fixed_entry_filter_only_excludes_clock_and_control_center_entry() {
+        for owner in ["Control Center", "控制中心"] {
+            assert!(is_fixed_menu_bar_entry(owner, "Clock", ""));
+            assert!(is_fixed_menu_bar_entry(owner, "BentoBox", ""));
+            assert!(is_fixed_menu_bar_entry(
+                owner,
+                "",
+                "com.apple.menuextra.clock"
+            ));
+            assert!(is_fixed_menu_bar_entry(
+                owner,
+                "",
+                "com.apple.menuextra.controlcenter"
+            ));
+            for (title, id) in [
+                ("Battery", "com.apple.menuextra.battery"),
+                ("WiFi", ""),
+                ("Sound", ""),
+                ("", ""),
+            ] {
+                assert!(!is_fixed_menu_bar_entry(owner, title, id));
+            }
+        }
+        assert!(!is_fixed_menu_bar_entry("Third Party Clock", "Clock", ""));
+    }
 
     #[test]
     fn window_ids_keep_pointer_sized_slots_without_skipping_ids() {
@@ -419,7 +648,7 @@ fn targeted_mouse_event(
         CGEventFlags::CGEventFlagNull
     });
     event.set_integer_value_field(EventField::EVENT_TARGET_UNIX_PROCESS_ID, owner_pid as i64);
-    event.set_integer_value_field(EventField::EVENT_SOURCE_USER_DATA, window_id as i64);
+    event.set_integer_value_field(EventField::EVENT_SOURCE_USER_DATA, crate::macos_item_submenu::synthetic_marker(window_id));
     event.set_integer_value_field(
         EventField::MOUSE_EVENT_WINDOW_UNDER_MOUSE_POINTER,
         window_id as i64,
@@ -539,6 +768,37 @@ pub fn move_menu_bar_item(
         )?;
 
         let mut pointer_samples = Vec::new();
+        // Start-only check on EVERY attempt, immediately before hiding/posting.
+        // Wait synchronously up to 300ms; no queued retry or cursor guard on
+        // rejection (and thus no warp). A held button is rejected immediately.
+        // This is not atomic with posting and does not protect against physical
+        // mouse movement during the transaction or its final cursor restore.
+        let (preflight, preflight_wait, rejection) = wait_for_quiet_mouse();
+        if let Some(reason) = rejection {
+            crate::diagnostics::record_event(
+                app,
+                "menu_bar_item_move_preflight_rejected",
+                serde_json::json!({
+                    "windowId": window_id, "targetId": target_window_id,
+                    "hidden": place_left_of_target, "attempt": _attempt,
+                    "reason": reason, "retryable": true,
+                    "sourceState": "HIDSystemState", "preflight": preflight,
+                    "activityTypes": MOUSE_ACTIVITY_TYPES.map(|kind| format!("{kind:?}")),
+                    "quietThresholdMs": MOUSE_QUIET_SECONDS * 1000.0,
+                    "waitBudgetMs": MOUSE_WAIT_BUDGET.as_millis(),
+                    "actualWaitMs": preflight_wait.as_millis(),
+                    "protectionScope": "start-only",
+                    "eventsPostedThisAttempt": false, "cursorTouchedThisAttempt": false,
+                }),
+            );
+            return Err(match reason {
+                "mouse_button_down" => "鼠标按键仍按住，本次移动未开始；请松开并静止至少 200 毫秒后重试",
+                "mouse_wait_timeout" => "等待鼠标静止超时（上限 300 毫秒），本轮移动未开始；请停止移动或滚动后重试",
+                _ => "无法确认鼠标空闲，本次移动未开始；请稍后重试",
+            }.to_string());
+        }
+        // The user may have moved during the quiet wait. Restore only to the
+        // position read AFTER it succeeds, never to a pre-wait position.
         let original_pointer = CGEvent::new(pointer_source.clone())
             .map_err(|_| "无法读取鼠标位置".to_string())?
             .location();
@@ -547,6 +807,11 @@ pub fn move_menu_bar_item(
         let cursor_hidden = !cursor_guard.displays.is_empty();
         let mut delivery_error = None;
         for (event, delay) in [(&mouse_down, 55_u64), (&mouse_up, 30_u64)] {
+            crate::diagnostics::record_event(app, "menu_bar_item_event_post", serde_json::json!({
+                "windowId": window_id, "attempt": _attempt,
+                "eventType": format!("{:?}", event.get_type()),
+                "submenuTracking": crate::macos_item_submenu::is_tracking(),
+            }));
             if let Err(error) = post_menu_bar_event(event, item.owner_pid) {
                 // Always release the synthetic button, including tap failure.
                 mouse_up.post(CGEventTapLocation::Session);
@@ -589,6 +854,11 @@ pub fn move_menu_bar_item(
                 "windowId": window_id, "targetId": target_window_id,
                 "hidden": place_left_of_target, "attempt": _attempt,
                 "strategy": "direct-target-synchronous-cursor-restore",
+                "mousePreflight": preflight,
+                "mousePreflightWaitMs": preflight_wait.as_millis(),
+                "mousePreflightWaitBudgetMs": MOUSE_WAIT_BUDGET.as_millis(),
+                "mousePreflightProtectionScope": "start-only",
+                "mouseQuietThresholdMs": MOUSE_QUIET_SECONDS * 1000.0,
                 "cursorHidden": cursor_hidden,
                 "cursorTransactionMs": cursor_transaction_ms,
                 "pointerRestored": pointer_restored,

@@ -45,6 +45,8 @@ mod diagnostics;
 mod macos_accessibility;
 #[cfg(target_os = "macos")]
 mod macos_hotkey;
+#[cfg(target_os = "macos")]
+mod macos_item_submenu;
 mod updater;
 
 #[cfg(target_os = "macos")]
@@ -317,6 +319,13 @@ fn start_organizer_position_watcher(app: &tauri::AppHandle) {
         }
         let callback_handle = handle.clone();
         let _ = handle.run_on_main_thread(move || {
+            // The worker's check can be stale by the time this queued callback
+            // runs. Never repair/recreate a divider during an item drag.
+            if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire)
+                || ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire)
+            {
+                return;
+            }
             let Some(control_position) = organizer_position(ORGANIZER_CONTROL_AUTOSAVE) else {
                 return;
             };
@@ -728,6 +737,15 @@ async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
             receiver.await.map_err(|error| error.to_string())??;
         let items = managed_menu_bar_items(boundary_id, always_boundary_id)?
             .into_iter()
+            // Omit only these fixed entries from management UI, not from the
+            // underlying inventory used for geometry and diagnostics.
+            .filter(|(item, _)| {
+                !macos_accessibility::is_fixed_menu_bar_entry(
+                    &item.owner_name,
+                    &item.title,
+                    &item.accessibility_id,
+                )
+            })
             .map(|(item, section)| {
                 let display_name = menu_bar_item_display_name(&item);
                 let mut value = serde_json::to_value(item).unwrap_or_else(|_| json!({}));
@@ -886,6 +904,13 @@ fn build_organizer_menu(
     app: &tauri::AppHandle,
 ) -> Result<tauri::menu::Submenu<tauri::Wry>, String> {
     let enabled = ORGANIZER_ENABLED.load(AtomicOrdering::Acquire);
+    // Native child menu: hover/click expands beside the organizer menu instead
+    // of launching an unrelated always-on-top webview window.
+    let items_menu = SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_ITEMS_MENU_ID, "逐个图标控制")
+        .item(&MenuItem::with_id(app, "flowhub-items-loading", "正在读取图标…", false, None::<&str>)
+            .map_err(|error| error.to_string())?)
+        .build()
+        .map_err(|error| error.to_string())?;
     SubmenuBuilder::with_id(app, FLOWHUB_ORGANIZER_MENU_ID, "菜单栏整理")
         .text(
             FLOWHUB_ORGANIZER_TOGGLE_MENU_ID,
@@ -898,7 +923,7 @@ fn build_organizer_menu(
             },
         )
         .separator()
-        .text(FLOWHUB_ORGANIZER_ITEMS_MENU_ID, "逐个图标控制…")
+        .item(&items_menu)
         .text("flowhub-organizer-open-settings", "在设置中管理…")
         .build()
         .map_err(|error| error.to_string())
@@ -951,6 +976,12 @@ fn toggle_menu_bar_panel(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, String> {
+    // Updating the parent menu while its child is tracking dismisses the entire
+    // cascade. The child refreshes row state in-place and refreshes on close.
+    if macos_item_submenu::is_tracking() {
+        macos_item_submenu::defer_refresh();
+        return Ok(json!({ "enabled": true, "refreshDeferred": true }));
+    }
     if !config_flag(config, "/core/menuBar/enabled", true) {
         let _ = app.remove_tray_by_id(FLOWHUB_TRAY_ID);
         return Ok(json!({ "enabled": false }));
@@ -998,6 +1029,9 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             .map_err(|error| error.to_string())?;
         tray.set_menu(Some(menu))
             .map_err(|error| error.to_string())?;
+        let submenu_app = app.clone();
+        tray.with_inner_tray_icon(move |tray| macos_item_submenu::install(&submenu_app, tray))
+            .map_err(|error| error.to_string())??;
         let after = tray
             .with_inner_tray_icon(|tray| organizer_item_snapshot(Some(tray)))
             .map_err(|error| error.to_string())?;
@@ -1026,11 +1060,6 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
             "flowhub-open" => toggle_main(app),
             "flowhub-settings" => {
                 let _ = open_settings(app.clone(), None);
-            }
-            FLOWHUB_ORGANIZER_ITEMS_MENU_ID => {
-                if let Err(error) = toggle_menu_bar_panel(app.clone()) {
-                    eprintln!("[flowhub-tauri] 图标面板打开失败：{error}");
-                }
             }
             FLOWHUB_ORGANIZER_TOGGLE_MENU_ID => {
                 let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
@@ -1082,6 +1111,9 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
         .map_err(|error| error.to_string())?;
     tray.with_inner_tray_icon(|tray| set_organizer_autosave_name(tray, FLOWHUB_TRAY_AUTOSAVE))
         .map_err(|error| error.to_string())?;
+    let submenu_app = app.clone();
+    tray.with_inner_tray_icon(move |tray| macos_item_submenu::install(&submenu_app, tray))
+        .map_err(|error| error.to_string())??;
     Ok(json!({ "enabled": true }))
 }
 
@@ -2835,6 +2867,27 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            #[cfg(target_os = "macos")]
+            if args.iter().any(|arg| arg == "--menu-bar-menu") {
+                // Diagnostic entry to the real status-item menu, not the
+                // overlay shortcut: exercise native submenu handoff in QA.
+                if let Some(tray) = app.tray_by_id(FLOWHUB_TRAY_ID) {
+                    let _ = tray.with_inner_tray_icon(|tray| {
+                        if let Some(mtm) = objc2::MainThreadMarker::new() {
+                            if let Some(button) = tray.ns_status_item().and_then(|status| status.button(mtm)) {
+                                // Nil sender is valid for the status button's AppKit action.
+                                unsafe { button.performClick(None); }
+                            }
+                        }
+                    });
+                }
+                return;
+            }
+            #[cfg(target_os = "macos")]
+            if args.iter().any(|arg| arg == "--menu-bar-controls") {
+                macos_item_submenu::open_controls(app);
+                return;
+            }
             if args.iter().any(|arg| arg == "--menu-bar-panel") {
                 let _ = toggle_menu_bar_panel(app.clone());
             } else {

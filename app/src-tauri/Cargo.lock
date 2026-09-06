@@ -1150,6 +1150,7 @@ name = "flowhub-tauri"
 version = "0.1.5"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "chrono",
  "clipboard-rs",
  "core-foundation",

@@ -1,0 +1,546 @@
+//! Persistent, nonactivating menu cascade. Never suppresses physical input.
+//! Only this app's explicitly tagged synthetic events are ignored for dismissal.
+use super::*;
+use block2::RcBlock;
+use objc2::runtime::AnyObject;
+use objc2::Message;
+use objc2_app_kit::{
+    NSBackingStoreType, NSButton, NSEventMask, NSEventType, NSPanel, NSScreen, NSScrollView,
+    NSStatusBarButton, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSVisualEffectView, NSWindowStyleMask,
+};
+use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
+use objc2_foundation::{NSNotification, NSOperationQueue};
+use std::ptr::NonNull;
+
+static VISIBLE: AtomicBool = AtomicBool::new(false);
+const MARKER: i64 = 0x4648_5542_0000_0000;
+pub fn synthetic_marker(window: u32) -> i64 {
+    MARKER | window as i64
+}
+pub fn is_visible() -> bool {
+    VISIBLE.load(Ordering::Acquire)
+}
+
+struct Session {
+    app: tauri::AppHandle,
+    panels: Vec<Retained<MenuPanel>>,
+    // Keep original menu targets/delegate alive for actions and completions.
+    _root: Retained<NSMenu>,
+    _header: Retained<ItemMenuView>,
+    monitors: Vec<Retained<AnyObject>>,
+    activation: Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>,
+    rows: Vec<Retained<NSView>>,
+}
+thread_local! {
+    static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+    static ANCHOR: RefCell<Weak<NSStatusBarButton>> = RefCell::new(Weak::default());
+}
+pub fn set_anchor(button: &Retained<NSStatusBarButton>) {
+    ANCHOR.with(|a| *a.borrow_mut() = Weak::from_retained(button));
+}
+
+define_class!(
+    #[unsafe(super = NSPanel)]
+    #[name = "FlowHubItemCascadePanel"]
+    #[thread_kind = MainThreadOnly]
+    struct MenuPanel;
+    unsafe impl NSObjectProtocol for MenuPanel {}
+    impl MenuPanel {
+        #[unsafe(method(canBecomeKeyWindow))]
+        fn can_become_key(&self) -> bool { true }
+        #[unsafe(method(canBecomeMainWindow))]
+        fn can_become_main(&self) -> bool { false }
+    }
+);
+
+struct ActionIvars {
+    menu: Retained<NSMenu>,
+    index: isize,
+    depth: usize,
+}
+define_class!(
+    #[unsafe(super = NSView)]
+    #[name = "FlowHubCascadeActionRow"]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = ActionIvars]
+    struct ActionRow;
+    unsafe impl NSObjectProtocol for ActionRow {}
+    impl ActionRow {
+        #[unsafe(method(activate:))]
+        fn activate(&self, _sender: &NSButton) {
+            let iv = self.ivars();
+            let Some(item) = iv.menu.itemAtIndex(iv.index) else { return };
+            if !item.isEnabled() { return; }
+            if item.submenu().is_some() {
+                SESSION.with(|state| {
+                    if let Some(s) = state.borrow().as_ref() {
+                        let next = iv.depth + 1;
+                        if let Some(panel) = s.panels.get(next) {
+                            let visible = !panel.isVisible();
+                            for child in s.panels.iter().skip(next) {
+                                if visible { child.orderFrontRegardless(); } else { child.orderOut(None); }
+                            }
+                        }
+                    }
+                });
+            } else {
+                let menu = iv.menu.clone();
+                let index = iv.index;
+                close("menu-action");
+                menu.performActionForItemAtIndex(index);
+            }
+        }
+    }
+);
+
+fn close(reason: &str) {
+    let session = SESSION.with(|state| state.borrow_mut().take());
+    let Some(session) = session else { return };
+    VISIBLE.store(false, Ordering::Release);
+    for monitor in &session.monitors {
+        // Tokens belong to this session only. Real input is never consumed.
+        unsafe {
+            NSEvent::removeMonitor(monitor);
+        }
+    }
+    if let Some(observer) = &session.activation {
+        unsafe {
+            NSWorkspace::sharedWorkspace()
+                .notificationCenter()
+                .removeObserver(AsRef::<AnyObject>::as_ref(&**observer));
+        }
+    }
+    for panel in &session.panels {
+        panel.orderOut(None);
+    }
+    crate::diagnostics::record_event(
+        &session.app,
+        "menu_bar_overlay_closed",
+        serde_json::json!({"reason": reason}),
+    );
+    if DEFERRED_REFRESH.swap(false, Ordering::AcqRel) {
+        let app = session.app.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::schedule_flowhub_menu_refresh(&app);
+        });
+    }
+}
+
+fn is_own_synthetic(event: &NSEvent) -> bool {
+    // NSEvent's CGEvent pointer is borrowed and used only within this callback.
+    unsafe extern "C" {
+        fn CGEventGetIntegerValueField(event: *mut std::ffi::c_void, field: u32) -> i64;
+    }
+    let cg: *mut std::ffi::c_void = unsafe { msg_send![event, CGEvent] };
+    if cg.is_null() {
+        return false;
+    }
+    let marker = unsafe { CGEventGetIntegerValueField(cg, 42) };
+    let pid = unsafe { CGEventGetIntegerValueField(cg, 41) };
+    matches_synthetic(marker, pid, std::process::id())
+}
+fn matches_synthetic(marker: i64, pid: i64, own_pid: u32) -> bool {
+    (marker & !0xffff_ffff) == MARKER && pid == i64::from(own_pid)
+}
+
+fn observe(event: &NSEvent, global: bool) -> bool {
+    if !is_visible() {
+        return false;
+    }
+    if is_own_synthetic(event) {
+        SESSION.with(|state| {
+            if let Some(s) = state.borrow().as_ref() {
+                crate::diagnostics::record_event(
+                    &s.app,
+                    "menu_bar_overlay_ignored_synthetic",
+                    serde_json::json!({"global": global}),
+                );
+            }
+        });
+        return false;
+    }
+    if event.r#type() == NSEventType::KeyDown {
+        if event.keyCode() == 53 {
+            close("escape");
+            return true;
+        }
+        return false;
+    }
+    let inside = !global
+        && SESSION.with(|state| {
+            state.borrow().as_ref().is_some_and(|s| {
+                s.panels
+                    .iter()
+                    .any(|panel| panel.isVisible() && panel.windowNumber() == event.windowNumber())
+            })
+        });
+    if !inside {
+        close("outside-click");
+    }
+    false
+}
+
+fn panel(frame: NSRect, content: &NSView, mtm: MainThreadMarker) -> Retained<MenuPanel> {
+    let allocated = MenuPanel::alloc(mtm).set_ivars(());
+    let panel: Retained<MenuPanel> = unsafe {
+        msg_send![super(allocated),
+        initWithContentRect: frame,
+        styleMask: NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel,
+        backing: NSBackingStoreType::Buffered, defer: false]
+    };
+    unsafe {
+        panel.setReleasedWhenClosed(false);
+    }
+    panel.setHidesOnDeactivate(false);
+    panel.setFloatingPanel(true);
+    panel.setLevel(101); // Above the status-menu level, scoped to this session.
+    panel.setHasShadow(true);
+    panel.setOpaque(false);
+    panel.setBackgroundColor(Some(&NSColor::clearColor()));
+    let background = NSVisualEffectView::initWithFrame(
+        NSVisualEffectView::alloc(mtm),
+        rect(0.0, 0.0, frame.size.width, frame.size.height),
+    );
+    background.setMaterial(NSVisualEffectMaterial::Menu);
+    background.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    background.setState(NSVisualEffectState::Active);
+    background.setWantsLayer(true);
+    let layer: Option<Retained<AnyObject>> = unsafe { msg_send![&background, layer] };
+    if let Some(layer) = layer {
+        let _: () = unsafe { msg_send![&layer, setCornerRadius: 8.0_f64] };
+        let _: () = unsafe { msg_send![&layer, setMasksToBounds: true] };
+    }
+    background.addSubview(content);
+    panel.setContentView(Some(&background));
+    panel
+}
+
+fn menu_content(
+    menu: &NSMenu,
+    width: f64,
+    depth: usize,
+    mtm: MainThreadMarker,
+) -> (Retained<NSView>, f64) {
+    let height = (0..menu.numberOfItems())
+        .filter_map(|i| menu.itemAtIndex(i))
+        .map(|item| if item.isSeparatorItem() { 9.0 } else { 27.0 })
+        .sum::<f64>()
+        + 12.0;
+    let content = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, width, height));
+    let mut y = height - 6.0;
+    for index in 0..menu.numberOfItems() {
+        let Some(item) = menu.itemAtIndex(index) else {
+            continue;
+        };
+        if item.isSeparatorItem() {
+            y -= 9.0;
+            let line = NSVisualEffectView::initWithFrame(
+                NSVisualEffectView::alloc(mtm),
+                rect(10.0, y + 4.0, width - 20.0, 1.0),
+            );
+            line.setMaterial(NSVisualEffectMaterial::Selection);
+            content.addSubview(&line);
+            continue;
+        }
+        y -= 27.0;
+        let row = ActionRow::alloc(mtm).set_ivars(ActionIvars {
+            menu: menu.retain(),
+            index,
+            depth,
+        });
+        let row: Retained<ActionRow> =
+            unsafe { msg_send![super(row), initWithFrame: rect(6.0, y, width - 12.0, 27.0)] };
+        let button =
+            NSButton::initWithFrame(NSButton::alloc(mtm), rect(0.0, 0.0, width - 12.0, 27.0));
+        button.setTitle(&item.title());
+        button.setBordered(false);
+        button.setFont(Some(&NSFont::systemFontOfSize(13.0)));
+        button.setAlignment(objc2_app_kit::NSTextAlignment::Left);
+        button.setEnabled(item.isEnabled());
+        unsafe {
+            button.setTarget(Some(&row));
+            button.setAction(Some(sel!(activate:)));
+        }
+        row.addSubview(&button);
+        if item.submenu().is_some() {
+            row.addSubview(&label("›", rect(width - 35.0, 5.0, 14.0, 18.0), mtm));
+        }
+        content.addSubview(&row);
+    }
+    (content, height)
+}
+
+pub(super) fn show(header: &ItemMenuView, menu: &NSMenu) {
+    if is_visible() {
+        return;
+    }
+    let Some(parent) = (unsafe { menu.supermenu() }) else {
+        return;
+    };
+    let Some(root) = (unsafe { parent.supermenu() }) else {
+        return;
+    };
+    let mtm = header.mtm();
+    let Some(anchor) = ANCHOR.with(|a| {
+        a.borrow().load().and_then(|button| {
+            button.window().map(|window| {
+                window.convertRectToScreen(button.convertRect_toView(button.bounds(), None))
+            })
+        })
+    }) else {
+        return;
+    };
+    let screens = NSScreen::screens(mtm);
+    let screen = screens
+        .iter()
+        .find(|s| contains(s.frame(), anchor.origin))
+        .or_else(|| screens.firstObject());
+    let Some(screen) = screen else { return };
+    let bounds = screen.visibleFrame();
+    let widths = [root.size().width.max(180.0), parent.size().width.max(180.0), WIDTH];
+    let (root_view, root_height) = menu_content(&root, widths[0], 0, mtm);
+    let (parent_view, parent_height) = menu_content(&parent, widths[1], 1, mtm);
+    // NSMenu continues laying out its item views while tracking unwinds.
+    // Remove its ownership BEFORE reparenting; otherwise every row can be
+    // reset to (0, 0) after we have positioned it in the document view.
+    // Keep the native header/delegate in its original item for future opens.
+    let rows: Vec<_> = (1..menu.numberOfItems()).filter_map(|i| {
+        let item = menu.itemAtIndex(i)?;
+        let view = item.view()?;
+        item.setView(None);
+        view.removeFromSuperview();
+        Some(view)
+    }).collect();
+    let list_height = HEADER_HEIGHT + rows.len() as f64 * HEIGHT + 12.0;
+    let vertical = bounds.size.width < widths.iter().sum::<f64>() + 20.0;
+    let viewport_height = list_height.min(
+        (bounds.size.height
+            - 12.0
+            - if vertical {
+                root_height + parent_height + 8.0
+            } else {
+                0.0
+            })
+        .max(80.0),
+    );
+    let list = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, WIDTH, list_height));
+    list.addSubview(&secondary_label("开：显示  ·  关：始终隐藏", rect(12.0, list_height - 26.0, WIDTH - 24.0, 14.0), mtm));
+    for (index, view) in rows.iter().enumerate() {
+        view.setTranslatesAutoresizingMaskIntoConstraints(true);
+        view.setAutoresizingMask(objc2_app_kit::NSAutoresizingMaskOptions::ViewNotSizable);
+        view.setFrame(rect(0.0, list_height - 6.0 - HEADER_HEIGHT - (index + 1) as f64 * HEIGHT, WIDTH, HEIGHT));
+        list.addSubview(view);
+    }
+    let scroll = NSScrollView::initWithFrame(
+        NSScrollView::alloc(mtm),
+        rect(0.0, 0.0, WIDTH, viewport_height),
+    );
+    scroll.setDrawsBackground(false);
+    scroll.setHasVerticalScroller(list_height > viewport_height);
+    scroll.setAutohidesScrollers(true);
+    scroll.setDocumentView(Some(&list));
+    list.scrollPoint(NSPoint::new(0.0, (list_height - viewport_height).max(0.0)));
+    let mut frames = cascade_frames(
+        anchor,
+        bounds,
+        [root_height, parent_height, viewport_height],
+        widths,
+    );
+    if !vertical {
+        // Cascade from each submenu's actual entry row, not the status bar top.
+        let offset = |menu: &NSMenu| {
+            let mut y = 6.0;
+            for i in 0..menu.numberOfItems() {
+                if let Some(item) = menu.itemAtIndex(i) {
+                    if item.submenu().is_some() { break; }
+                    y += if item.isSeparatorItem() { 9.0 } else { 27.0 };
+                }
+            }
+            y
+        };
+        let parent_top = frames[0].origin.y + root_height - offset(&root);
+        frames[1].origin.y = (parent_top - parent_height).max(bounds.origin.y + 6.0);
+        frames[2].origin.y = (parent_top - offset(&parent) - viewport_height).max(bounds.origin.y + 6.0);
+    }
+    let panels = vec![
+        panel(frames[0], &root_view, mtm),
+        panel(frames[1], &parent_view, mtm),
+        panel(frames[2], &scroll, mtm),
+    ];
+    for (panel, title) in panels
+        .iter()
+        .zip(["FlowHub 菜单", "菜单栏整理", "逐个图标控制"])
+    {
+        panel.setTitle(&NSString::from_str(title));
+    }
+    // Install session BEFORE ending native tracking; menuDidClose must not trigger a rebuild.
+    VISIBLE.store(true, Ordering::Release);
+    SESSION.with(|state| {
+        *state.borrow_mut() = Some(Session {
+            app: header.ivars().app.clone(),
+            panels,
+            _root: root.clone(),
+            _header: header.retain(),
+            monitors: vec![],
+            activation: None,
+            rows,
+        })
+    });
+    root.cancelTrackingWithoutAnimation();
+    let activation = RcBlock::new(|_: NonNull<NSNotification>| {
+        if NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .is_some_and(|app| app.processIdentifier() != std::process::id() as i32)
+        {
+            close("application-switch");
+        }
+    });
+    let observer = unsafe {
+        NSWorkspace::sharedWorkspace()
+            .notificationCenter()
+            .addObserverForName_object_queue_usingBlock(
+                Some(NSWorkspaceDidActivateApplicationNotification),
+                None,
+                Some(&NSOperationQueue::mainQueue()),
+                &activation,
+            )
+    };
+    let mask = NSEventMask::LeftMouseDown
+        | NSEventMask::RightMouseDown
+        | NSEventMask::OtherMouseDown
+        | NSEventMask::KeyDown;
+    let local = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
+        if observe(unsafe { event.as_ref() }, false) {
+            std::ptr::null_mut()
+        } else {
+            event.as_ptr()
+        }
+    });
+    let global = RcBlock::new(|event: NonNull<NSEvent>| {
+        observe(unsafe { event.as_ref() }, true);
+    });
+    let monitors = [
+        unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &local) },
+        NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &global),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    SESSION.with(|state| {
+        if let Some(s) = state.borrow_mut().as_mut() {
+            s.monitors = monitors;
+            s.activation = Some(observer);
+            for panel in &s.panels {
+                panel.orderFrontRegardless();
+            }
+            s.panels[2].makeKeyAndOrderFront(None);
+            crate::diagnostics::record_event(
+                &s.app,
+                "menu_bar_overlay_opened",
+                serde_json::json!({"rows": menu.numberOfItems() - 1, "panels": 3}),
+            );
+        }
+    });
+    unsafe { header.performSelector_withObject_afterDelay(sel!(auditOverlay:), None, 0.3); }
+}
+
+pub(super) fn audit_layout() {
+    SESSION.with(|state| {
+        if let Some(s) = state.borrow().as_ref() {
+            let frames: Vec<_> = s.rows.iter().map(|row| row.frame()).collect();
+            let separated = frames.windows(2).all(|pair| pair[0].origin.y >= pair[1].origin.y + pair[1].size.height);
+            crate::diagnostics::record_event(&s.app, "menu_bar_overlay_layout", serde_json::json!({
+                "rowCount": frames.len(), "rowsSeparated": separated,
+                "frames": frames.iter().map(|r| serde_json::json!({"x": r.origin.x, "y": r.origin.y, "height": r.size.height})).collect::<Vec<_>>()
+            }));
+        }
+    });
+}
+
+fn contains(rect: NSRect, point: NSPoint) -> bool {
+    point.x >= rect.origin.x
+        && point.x <= rect.origin.x + rect.size.width
+        && point.y >= rect.origin.y
+        && point.y <= rect.origin.y + rect.size.height
+}
+fn cascade_frames(anchor: NSRect, screen: NSRect, heights: [f64; 3], widths: [f64; 3]) -> [NSRect; 3] {
+    let left = screen.origin.x + 6.0;
+    let right = screen.origin.x + screen.size.width - 6.0;
+    let top = anchor.origin.y.min(screen.origin.y + screen.size.height);
+    let total = widths.iter().sum::<f64>() + 8.0;
+    if total > right - left {
+        let mut next_top = top;
+        return std::array::from_fn(|i| {
+            let frame = rect(
+                anchor.origin.x.clamp(left, (right - widths[i]).max(left)),
+                next_top - heights[i],
+                widths[i],
+                heights[i],
+            );
+            next_top -= heights[i] + 4.0;
+            frame
+        });
+    }
+    let leftward = anchor.origin.x > screen.origin.x + screen.size.width / 2.0;
+    let mut x = if leftward {
+        (anchor.origin.x + anchor.size.width - widths[0])
+            .clamp(left + total - widths[0], right - widths[0])
+    } else {
+        anchor.origin.x.clamp(left, (right - total).max(left))
+    };
+    std::array::from_fn(|i| {
+        if i > 0 {
+            x += if leftward {
+                -widths[i] - 4.0
+            } else {
+                widths[i - 1] + 4.0
+            };
+        }
+        rect(
+            x,
+            (top - heights[i]).max(screen.origin.y + 6.0),
+            widths[i],
+            heights[i],
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn filters_only_our_tagged_events() {
+        assert!(matches_synthetic(synthetic_marker(314), 123, 123));
+        assert!(!matches_synthetic(synthetic_marker(314), 456, 123));
+        assert!(!matches_synthetic(314, 123, 123));
+        assert!(!matches_synthetic(0, 0, 123));
+    }
+    #[test]
+    fn cascade_fits_normal_and_negative_origin_screens() {
+        for origin in [0.0, -1512.0] {
+            for anchor_x in [10.0, 500.0, 800.0, 1290.0] {
+                let screen = rect(origin, 0.0, 1512.0, 950.0);
+                let frames = cascade_frames(
+                    rect(origin + anchor_x, 950.0, 34.0, 32.0),
+                    screen,
+                    [200.0, 105.0, 480.0],
+                    [278.0, 204.0, WIDTH],
+                );
+                for f in frames {
+                    assert!(f.origin.x >= origin);
+                    assert!(f.origin.x + f.size.width <= origin + 1512.0);
+                    assert!(f.origin.y >= 0.0);
+                }
+                for pair in [(0, 1), (0, 2), (1, 2)] {
+                    let a = frames[pair.0];
+                    let b = frames[pair.1];
+                    assert!(
+                        a.origin.x + a.size.width <= b.origin.x
+                            || b.origin.x + b.size.width <= a.origin.x
+                    );
+                }
+            }
+        }
+    }
+}
