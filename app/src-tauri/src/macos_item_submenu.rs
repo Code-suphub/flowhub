@@ -35,6 +35,7 @@ static DEFERRED_REFRESH: AtomicBool = AtomicBool::new(false);
 
 #[derive(Default)]
 struct Registry {
+    native_root: Option<Retained<NSMenu>>,
     serial: u64,
     generation: u64,
     delegate: Weak<ItemMenuView>,
@@ -74,6 +75,14 @@ define_class!(
     unsafe impl NSObjectProtocol for ItemMenuView {}
 
     impl ItemMenuView {
+        #[unsafe(method(openRoot:))]
+        fn open_root(&self, _sender: Option<&objc2::runtime::AnyObject>) {
+            if overlay::dismiss_if_visible() { return; }
+            if let Some(menu) = self.ivars().menu.load() {
+                populate(self, &menu);
+                overlay::show_root(self, &menu);
+            }
+        }
         #[unsafe(method(auditOverlay:))]
         fn audit_overlay(&self, _sender: Option<&objc2::runtime::AnyObject>) {
             overlay::audit_layout();
@@ -333,7 +342,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         let capable = item.movable && item.hideable;
         switch.setEnabled(capable);
         switch.setToolTip(Some(&NSString::from_str(&format!(
-            "{title}：开：显示；关：始终隐藏"
+            "{title}：开：恢复原分区；关：始终隐藏"
         ))));
         let status = secondary_label(
             &row_status(section, capable),
@@ -514,7 +523,7 @@ pub fn install(app: &tauri::AppHandle, tray: &tray_icon::TrayIcon) -> Result<(),
     let header: Retained<ItemMenuView> =
         unsafe { msg_send![super(header), initWithFrame: rect(0.0, 0.0, WIDTH, HEADER_HEIGHT)] };
     header.addSubview(&secondary_label(
-        "开：显示  ·  关：始终隐藏",
+        "开：恢复原分区  ·  关：始终隐藏",
         rect(12.0, 6.0, WIDTH - 24.0, 14.0),
         mtm,
     ));
@@ -527,11 +536,28 @@ pub fn install(app: &tauri::AppHandle, tray: &tray_icon::TrayIcon) -> Result<(),
     REGISTRY.with(|registry| {
         let mut registry = registry.borrow_mut();
         registry.delegate = Weak::from_retained(&header);
+        registry.native_root = Some(root);
         registry.rows.clear();
     });
     menu.setDelegate(Some(ProtocolObject::from_ref(&*header)));
     if let Some(button) = tray.ns_status_item().and_then(|status| status.button(mtm)) {
         overlay::set_anchor(&button);
+        // Use the same cascade from the FIRST click; hovering never replaces
+        // native ancestors with newly positioned windows.
+        if let Some(status) = tray.ns_status_item() { status.setMenu(None); }
+        // tray-icon installs an input-catching child view over this button.
+        // Retain it for the library's sizing/lifetime bookkeeping, but route
+        // this main item's clicks through our button action instead.
+        if let Some(class) = objc2::runtime::AnyClass::get(c"TaoTrayTarget") {
+            for view in button.subviews() {
+                if view.isKindOfClass(class) { view.setHidden(true); }
+            }
+        }
+        unsafe {
+            button.setTarget(Some(&header));
+            button.setAction(Some(sel!(openRoot:)));
+            button.sendActionOn(objc2_app_kit::NSEventMask::LeftMouseUp | objc2_app_kit::NSEventMask::RightMouseUp);
+        }
     }
     Ok(())
 }

@@ -4,6 +4,7 @@ use super::*;
 use block2::RcBlock;
 use objc2::runtime::AnyObject;
 use objc2::Message;
+use objc2::AnyThread;
 use objc2_app_kit::{
     NSBackingStoreType, NSButton, NSEventMask, NSEventType, NSPanel, NSScreen, NSScrollView,
     NSStatusBarButton, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
@@ -11,6 +12,7 @@ use objc2_app_kit::{
 };
 use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
 use objc2_foundation::{NSNotification, NSOperationQueue};
+use objc2_app_kit::{NSTrackingArea, NSTrackingAreaOptions};
 use std::ptr::NonNull;
 
 static VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -20,6 +22,27 @@ pub fn synthetic_marker(window: u32) -> i64 {
 }
 pub fn is_visible() -> bool {
     VISIBLE.load(Ordering::Acquire)
+}
+pub(super) fn dismiss_if_visible() -> bool {
+    let was_visible = is_visible();
+    if was_visible { close("status-item-toggle"); }
+    was_visible
+}
+
+fn reveal(depth: usize, submenu: bool) {
+    SESSION.with(|state| {
+        if let Some(s) = state.borrow().as_ref() {
+            let frames_before: Vec<_> = s.panels.iter().map(|p| p.frame()).collect();
+            for (i, child) in s.panels.iter().enumerate().skip(depth + 1) {
+                if submenu && i == depth + 1 { child.makeKeyAndOrderFront(None); }
+                else { child.orderOut(None); }
+            }
+            crate::diagnostics::record_event(&s.app, "menu_bar_overlay_reveal", serde_json::json!({
+                "depth": depth, "submenu": submenu,
+                "ancestorFramesUnchanged": s.panels.iter().enumerate().take(depth + 1).all(|(i,p)| p.frame() == frames_before[i])
+            }));
+        }
+    });
 }
 
 struct Session {
@@ -67,23 +90,21 @@ define_class!(
     struct ActionRow;
     unsafe impl NSObjectProtocol for ActionRow {}
     impl ActionRow {
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, _event: &NSEvent) {
+            let iv = self.ivars();
+            let submenu = iv.menu.itemAtIndex(iv.index).is_some_and(|item| item.isEnabled() && item.submenu().is_some());
+            reveal(iv.depth, submenu);
+        }
         #[unsafe(method(activate:))]
         fn activate(&self, _sender: &NSButton) {
             let iv = self.ivars();
             let Some(item) = iv.menu.itemAtIndex(iv.index) else { return };
             if !item.isEnabled() { return; }
             if item.submenu().is_some() {
-                SESSION.with(|state| {
-                    if let Some(s) = state.borrow().as_ref() {
-                        let next = iv.depth + 1;
-                        if let Some(panel) = s.panels.get(next) {
-                            let visible = !panel.isVisible();
-                            for child in s.panels.iter().skip(next) {
-                                if visible { child.orderFrontRegardless(); } else { child.orderOut(None); }
-                            }
-                        }
-                    }
-                });
+                // A physical click first enters the row; do not immediately
+                // undo the submenu opened by mouseEntered.
+                reveal(iv.depth, true);
             } else {
                 let menu = iv.menu.clone();
                 let index = iv.index;
@@ -167,7 +188,8 @@ fn observe(event: &NSEvent, global: bool) -> bool {
         }
         return false;
     }
-    let inside = !global
+    let anchor_click = !global && ANCHOR.with(|a| a.borrow().load().and_then(|b| b.window()).is_some_and(|w| w.windowNumber() == event.windowNumber()));
+    let inside = anchor_click || !global
         && SESSION.with(|state| {
             state.borrow().as_ref().is_some_and(|s| {
                 s.panels
@@ -263,6 +285,11 @@ fn menu_content(
             button.setAction(Some(sel!(activate:)));
         }
         row.addSubview(&button);
+        let tracking = unsafe { NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(), row.bounds(),
+            NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveAlways,
+            Some(&row), None) };
+        row.addTrackingArea(&tracking);
         if item.submenu().is_some() {
             row.addSubview(&label("›", rect(width - 35.0, 5.0, 14.0, 18.0), mtm));
         }
@@ -272,6 +299,12 @@ fn menu_content(
 }
 
 pub(super) fn show(header: &ItemMenuView, menu: &NSMenu) {
+    show_cascade(header, menu, 2);
+}
+pub(super) fn show_root(header: &ItemMenuView, menu: &NSMenu) {
+    show_cascade(header, menu, 0);
+}
+fn show_cascade(header: &ItemMenuView, menu: &NSMenu, initial_depth: usize) {
     if is_visible() {
         return;
     }
@@ -281,6 +314,18 @@ pub(super) fn show(header: &ItemMenuView, menu: &NSMenu) {
     let Some(root) = (unsafe { parent.supermenu() }) else {
         return;
     };
+    // The source menu may outlive a divider toggle; refresh this dynamic label
+    // when opening, without rebuilding any already-visible ancestor panel.
+    if let Some(toggle) = parent.itemAtIndex(0) {
+        let title = if !crate::ORGANIZER_ENABLED.load(Ordering::Acquire) {
+            "启用隐藏分区"
+        } else if crate::ORGANIZER_COLLAPSED.load(Ordering::Acquire) {
+            "展开隐藏区"
+        } else {
+            "收起隐藏区"
+        };
+        toggle.setTitle(&NSString::from_str(title));
+    }
     let mtm = header.mtm();
     let Some(anchor) = ANCHOR.with(|a| {
         a.borrow().load().and_then(|button| {
@@ -325,7 +370,7 @@ pub(super) fn show(header: &ItemMenuView, menu: &NSMenu) {
         .max(80.0),
     );
     let list = NSView::initWithFrame(NSView::alloc(mtm), rect(0.0, 0.0, WIDTH, list_height));
-    list.addSubview(&secondary_label("开：显示  ·  关：始终隐藏", rect(12.0, list_height - 26.0, WIDTH - 24.0, 14.0), mtm));
+    list.addSubview(&secondary_label("开：恢复原分区  ·  关：始终隐藏", rect(12.0, list_height - 26.0, WIDTH - 24.0, 14.0), mtm));
     for (index, view) in rows.iter().enumerate() {
         view.setTranslatesAutoresizingMaskIntoConstraints(true);
         view.setAutoresizingMask(objc2_app_kit::NSAutoresizingMaskOptions::ViewNotSizable);
@@ -431,14 +476,14 @@ pub(super) fn show(header: &ItemMenuView, menu: &NSMenu) {
         if let Some(s) = state.borrow_mut().as_mut() {
             s.monitors = monitors;
             s.activation = Some(observer);
-            for panel in &s.panels {
+            for panel in s.panels.iter().take(initial_depth + 1) {
                 panel.orderFrontRegardless();
             }
-            s.panels[2].makeKeyAndOrderFront(None);
+            s.panels[initial_depth].makeKeyAndOrderFront(None);
             crate::diagnostics::record_event(
                 &s.app,
                 "menu_bar_overlay_opened",
-                serde_json::json!({"rows": menu.numberOfItems() - 1, "panels": 3}),
+                serde_json::json!({"rows": menu.numberOfItems() - 1, "panels": 3, "initialDepth": initial_depth}),
             );
         }
     });

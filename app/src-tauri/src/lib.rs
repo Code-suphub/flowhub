@@ -47,6 +47,8 @@ mod macos_accessibility;
 mod macos_hotkey;
 #[cfg(target_os = "macos")]
 mod macos_item_submenu;
+#[cfg(any(target_os = "macos", test))]
+mod menu_bar_section_memory;
 mod updater;
 
 #[cfg(target_os = "macos")]
@@ -799,21 +801,71 @@ async fn set_menu_bar_item_hidden(
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
-            let _ = sender.send(
-                organizer_window_id(if hidden {
-                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR
-                } else {
-                    &ORGANIZER_CONTROL_PTR
-                })
-                .ok_or_else(|| "目标分界尚未就绪".to_string()),
-            );
+            let _ = sender.send(organizer_window_ids());
         })
         .map_err(|error| error.to_string())?;
-        let target_id = receiver.await.map_err(|error| error.to_string())??;
+        let (control_id, boundary_id, always_boundary_id) =
+            receiver.await.map_err(|error| error.to_string())??;
+        let memory_path = app
+            .state::<AppState>()
+            .root_dir
+            .join("menu-bar-sections.json");
         let handle = app.clone();
         let move_result = tauri::async_runtime::spawn_blocking(move || {
+            use menu_bar_section_memory::{Identity, Memory, Section};
+            // Require both dividers to exist before trusting section geometry.
+            let inventory = macos_accessibility::menu_bar_items()?;
+            if ![control_id, boundary_id, always_boundary_id]
+                .iter()
+                .all(|id| inventory.iter().any(|item| item.window_id == *id))
+            {
+                return Err("菜单栏分界尚未就绪".to_string());
+            }
+            let boundary = inventory.iter().find(|item| item.window_id == boundary_id).unwrap();
+            let always_boundary = inventory
+                .iter()
+                .find(|item| item.window_id == always_boundary_id)
+                .unwrap();
+            let item = inventory
+                .iter()
+                .find(|item| item.window_id == window_id)
+                .ok_or_else(|| "菜单栏图标已不存在".to_string())?;
+            let section = if item.x + item.width <= always_boundary.x + 1.0 {
+                Section::AlwaysHidden
+            } else if item.x + item.width <= boundary.x + 1.0 {
+                Section::Hidden
+            } else {
+                Section::Visible
+            };
+            let identities: Vec<_> = inventory
+                .iter()
+                .map(|item| Identity {
+                    owner: item.owner_name.clone(),
+                    title: item.title.clone(),
+                    accessibility_id: item.accessibility_id.clone(),
+                    stable_id: item.stable_id.clone(),
+                })
+                .collect();
+            let index = inventory.iter().position(|item| item.window_id == window_id).unwrap();
+            let mut memory = Memory::load(&memory_path).map_err(|error| {
+                diagnostics::record_event(&handle, "menu_bar_section_memory_error", json!({"error": error}));
+                error
+            })?;
+            let plan = memory.prepare(&identities, index, section, hidden);
+            // Persist before dragging, including collision tombstones. A failed or
+            // partially completed drag must not erase the original section.
+            memory.save(&memory_path).map_err(|error| {
+                diagnostics::record_event(&handle, "menu_bar_section_memory_error", json!({"error": error}));
+                error
+            })?;
+            let (target_id, place_left) = plan.target(control_id, always_boundary_id);
+            diagnostics::record_event(&handle, "menu_bar_section_restore_plan", json!({
+                "windowId": window_id, "currentSection": section,
+                "destination": plan.destination, "fallbackReason": plan.fallback_reason,
+                "targetWindowId": target_id, "placeLeft": place_left,
+            }));
             // Keep both dividers unchanged: unrelated hidden items must never be exposed.
-            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, hidden)
+            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left)
         })
         .await
         .map_err(|error| error.to_string())?;
