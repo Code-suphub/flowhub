@@ -1337,8 +1337,23 @@ async function toggleMenuBarItems() {
   toast(result.collapsed ? "菜单栏隐藏区已收起" : "菜单栏隐藏区已展开");
 }
 
-async function refreshMenuBarManagementState() {
+let menuBarRefreshPending = null;
+function isMenuBarPageVisible() {
+  return state.module === "core" && state.coreSection === "menubar";
+}
+
+function refreshMenuBarManagementState() {
+  if (!isMenuBarPageVisible()) return Promise.resolve(state.menuBarManagement);
+  if (menuBarRefreshPending) return menuBarRefreshPending;
+  menuBarRefreshPending = refreshVisibleMenuBarManagementState()
+    .catch((error) => { toast(`菜单栏状态刷新失败：${error.message || error}`, true); })
+    .finally(() => { menuBarRefreshPending = null; });
+  return menuBarRefreshPending;
+}
+
+async function refreshVisibleMenuBarManagementState() {
   state.menuBarManagement = await window.weborg.getMenuBarManagementState();
+  if (!isMenuBarPageVisible()) return state.menuBarManagement;
   renderSettingsFields();
   if (state.menuBarManagement?.trusted && state.config?.core?.menuBar?.organizerEnabled) {
     await refreshMenuBarItems();
@@ -1347,6 +1362,7 @@ async function refreshMenuBarManagementState() {
 }
 
 async function refreshMenuBarItems() {
+  if (!isMenuBarPageVisible() || state.menuBarItemsLoading) return;
   if (!state.config?.core?.menuBar?.organizerEnabled || !state.menuBarManagement?.trusted) {
     state.menuBarItems = [];
     state.menuBarItemsError = "";
@@ -1622,9 +1638,11 @@ function handleAction(action, actionTarget) {
 
 function switchModule(module) {
   if (!["core", "web", "clipboard", "app", "memo", "tools"].includes(module)) return;
+  if (state.module === module) return;
   state.module = module;
-  renderPluginModules();
   renderModule();
+  document.querySelector(".editor")?.scrollTo({ top: 0 });
+  if (isMenuBarPageVisible()) void refreshMenuBarManagementState();
 }
 
 document.addEventListener("click", (event) => {
@@ -1637,8 +1655,10 @@ document.addEventListener("click", (event) => {
   document.querySelectorAll(".shortcut-capture.is-capturing").forEach((active) => finishShortcutCapture(active, { restore: true }));
   const coreSection = event.target.closest("[data-core-section]")?.dataset.coreSection;
   if (coreSection) {
+    if (state.coreSection === coreSection) return;
     state.coreSection = coreSection;
     renderCoreSection();
+    if (isMenuBarPageVisible()) void refreshMenuBarManagementState();
     document.querySelector(".editor")?.scrollTo({ top: 0 });
     return;
   }
