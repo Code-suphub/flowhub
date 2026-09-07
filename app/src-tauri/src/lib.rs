@@ -41,6 +41,7 @@ use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
 mod diagnostics;
+mod port_inspector;
 #[cfg(target_os = "macos")]
 mod macos_accessibility;
 #[cfg(target_os = "macos")]
@@ -3243,6 +3244,8 @@ pub fn run() {
             search_usage,
             open_settings,
             close_settings,
+            port_inspector::inspect_port,
+            port_inspector::terminate_port_process,
             open_accessibility_settings,
             get_menu_bar_management_state,
             request_menu_bar_management_permission,

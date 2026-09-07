@@ -917,6 +917,7 @@
             <section class="selected-card clipboard-settings-card">
               <div class="selected-banner"><span class="selected-icon">✦</span><div><strong>工具开关</strong><small>关闭后对应能力不会参与搜索，也不会发起查询。</small></div></div>
               <div class="tool-settings-grid">
+                <label class="switch-field"><input type="checkbox" data-tool-setting="port" />端口与进程（port 9000）</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="calculator" />计算表达式</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="timestamp" />时间戳转换</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="jwt" />JWT 解析</label>
@@ -1044,6 +1045,7 @@
     <div class="toast" id="toast"><span class="toast-message" id="toastMessage" role="status" aria-live="polite" aria-atomic="true"></span><button class="toast-close" id="toastClose" type="button" aria-label="关闭提示">×</button></div>
     <script src="web-search.js"></script>
     <script src="memo-catalog.js"></script>
+    <script src="public-ip.js"></script>
     <script src="tauri-adapter.js"></script>
     <script src="browser-adapter.js"></script>
     <script src="icons.js"></script>

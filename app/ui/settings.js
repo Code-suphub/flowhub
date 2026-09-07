@@ -31,6 +31,7 @@ const DEFAULT_MENU_BAR = { enabled: true, showOpenLauncher: true, showOpenSettin
 const DEFAULT_NOTIFICATIONS = { enabled: true, updates: true };
 const PROXY_ADAPTERS = new Set(["auto", "mihomo", "clash-rest", "system"]);
 const TOOL_SETTINGS = {
+  port: "端口与进程",
   calculator: "计算表达式",
   timestamp: "时间戳转换",
   jwt: "JWT 解析",

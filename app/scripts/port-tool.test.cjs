@@ -1,0 +1,22 @@
+const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const ctx=vm.createContext({window:{},setTimeout,clearTimeout,Promise,JSON});
+for(const file of ['tool-registry.js','port-tool.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../ui',file),'utf8'),ctx);
+const {parse,commands}=ctx.window.FlowHubPortCommands;
+assert.equal(parse('port 9000'),9000);assert.equal(parse('端口 65535'),65535);
+for(const q of ['port 0','port 65536','port 9000; kill 1','port -1','port 90xx'])assert.equal(parse(q),null);
+assert(commands(9000).linux.includes('sport = :$PORT'));assert(!/\bkill\b/.test(commands(9000).linux));
+let query='port 9000',calls=0,copied='',inspections=0;
+const process={pid:4242,name:'test-listener',user:'tester',startedAt:'Mon Sep 7 15:00:00 2026',elapsed:'00:01',sockets:['TCP 127.0.0.1:9000'],executable:'/test/listener',identity:'test-identity'};
+const context={query,queryNow:()=>query,enabled:()=>true,active:true,render(){},status(){},copy:async text=>copied=text,api:{inspectPort:async()=>{inspections++;return {port:9000,processes:[process]}},terminatePortProcess:async(port,pid,identity)=>{assert.equal(port,9000);assert.equal(pid,4242);assert.equal(identity,'test-identity');calls++;return 'SIGTERM sent';}}};
+const reg=ctx.window.FlowHubTools;
+(async()=>{
+ await reg.action('port','refresh',{dataset:{}},context);
+ const item=reg.suggestions(context)[0];assert.equal(item.details.processes.length,1);
+ await reg.action('port','confirm',{dataset:{pid:'4242'}},context);assert.equal(calls,0);
+ await reg.action('port','terminate',{dataset:{pid:'4242'}},context);assert(reg.render(reg.suggestions(context)[0],{esc:String,index:0,active:true}).includes('确认结束'));
+ await reg.action('port','cancel',{dataset:{}},context);await reg.action('port','confirm',{dataset:{pid:'4242'}},context);assert.equal(calls,0);
+ await reg.action('port','terminate',{dataset:{pid:'4242'}},context);await reg.action('port','confirm',{dataset:{pid:'4242'}},context);assert.equal(calls,1);
+ await reg.action('port','copy-linux',{dataset:{}},context);assert(copied.includes('PORT=9000'));
+ reg.queryChanged({...context,enabled:()=>false});assert.equal(reg.suggestions({...context,enabled:()=>false}).length,0);
+ console.log('PASS: port bounds/injection, inspection, confirmation/cancel, identity forwarding, Linux command copy, disabled tool');
+})().catch(error=>{console.error(error);process.exitCode=1});

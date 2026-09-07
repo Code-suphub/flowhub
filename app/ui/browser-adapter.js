@@ -56,31 +56,8 @@ if (!window.weborg) {
     return { ...(queries.find((query) => query.status === "fulfilled")?.value || {}), Answer: unique };
   }
 
-  async function lookupLocalIp() {
-    const local = await fetch("/__weborg/local-ip", { cache: "no-store" });
-    if (local.ok) {
-      const body = await local.json();
-      if (body?.ipv4 || body?.ipv6) return body;
-    }
-    const readIp = async (endpoint) => {
-      const response = await fetch(endpoint, { cache: "no-store" });
-      if (!response.ok) throw new Error("IP endpoint unavailable");
-      const text = (await response.text()).trim();
-      try { return JSON.parse(text).ip || ""; } catch { return text; }
-    };
-    const [ipv4, ipv6] = await Promise.allSettled([readIp("https://api4.ipify.org?format=json"), readIp("https://api6.ipify.org?format=json")]);
-    if (ipv4.status === "fulfilled" || ipv6.status === "fulfilled") {
-      return { ipv4: ipv4.status === "fulfilled" ? ipv4.value : "", ipv6: ipv6.status === "fulfilled" ? ipv6.value : "" };
-    }
-    for (const endpoint of ["https://ifconfig.me/ip", "https://icanhazip.com", "https://api.ipify.org?format=json"]) {
-      try {
-        const fallback = await fetch(endpoint, { cache: "no-store" });
-        if (!fallback.ok) continue;
-        const text = (await fallback.text()).trim();
-        try { return { ipv4: JSON.parse(text).ip || "" }; } catch { return { ipv4: text }; }
-      } catch {}
-    }
-    throw new Error("本机 IP 查询失败");
+  async function lookupLocalIp(onProgress) {
+    return window.FlowHubLookupPublicIp(onProgress);
   }
 
   async function lookupIp(ip) {

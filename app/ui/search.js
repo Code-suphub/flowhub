@@ -15,7 +15,7 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null, localIpResult: null, ipResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
@@ -25,7 +25,6 @@ let usageSearchToken = 0;
 let allScopeRefreshToken = 0;
 let dnsSearchToken = 0;
 const dnsIpCache = new Map();
-let localIpSearchToken = 0;
 let ipSearchToken = 0;
 let proxySearchToken = 0;
 let clipboardSearchTimer = null;
@@ -37,7 +36,6 @@ let searchInputComposing = false;
 let searchCompositionEndedAt = -Infinity;
 let actionStatusTimer = null;
 let dnsSearchTimer = null;
-let localIpSearchTimer = null;
 let ipSearchTimer = null;
 let proxySearchTimer = null;
 let inputRenderFrame = null;
@@ -204,24 +202,6 @@ function isPrivateIp(address) {
     || parts[0] >= 224;
 }
 
-function isLocalIpQuery(expression = state.query) {
-  return /^(?:本机\s*ip|我的\s*ip|my\s*ip|local\s*ip)$/i.test(String(expression).trim());
-}
-
-function localIpSuggestions() {
-  const expression = state.query.trim();
-  if (!isLocalIpQuery(expression)) return [];
-  const details = state.localIpResult;
-  return ["IPv4", "IPv6"].map((family) => ({
-    type: "local-ip",
-    family,
-    expression,
-    result: details?.[family.toLowerCase()] || `${family} 不可用`,
-    details,
-    id: `local-ip:${family}`
-  }));
-}
-
 function proxySuggestion() {
   const expression = state.query.trim();
   if (!/^(?:代理|代理信息|proxy|proxy\s+info)$/i.test(expression)) return null;
@@ -326,19 +306,24 @@ async function enrichDnsIpResults(hostname, answers, token) {
   render();
 }
 
+function toolContext() {
+  return {query:state.query, queryNow:()=>state.query, api:window.weborg,
+    enabled:key=>pluginEnabled("tools") && !["clipboard","memo"].includes(state.scope) && state.config?.plugins?.tools?.settings?.[key] !== false,
+    render:()=>render({preserveScroll:true}), copy:copyText, status:showActionStatus};
+}
+for (const [id, suggestions] of [
+  ["dns",dnsSuggestions], ["cloudflare",()=>[cloudflareSuggestion()]],
+  ["proxy",()=>[proxySuggestion()]],
+  ["timestamp",()=>[timestampSuggestion()]], ["jwt",()=>[jwtSuggestion()]],
+  ["ip",()=>[ipSuggestion()]], ["calculator",()=>[calculationSuggestion()]]
+]) window.FlowHubTools.register({id,suggestions});
 function toolSuggestions() {
-  if (!pluginEnabled("tools")) return [];
-  const enabled = (key) => state.config?.plugins?.tools?.settings?.[key] !== false;
-  return [
-    ...(enabled("dns") ? dnsSuggestions() : []),
-    enabled("cloudflare") ? cloudflareSuggestion() : null,
-    ...(enabled("localIp") ? localIpSuggestions() : []),
-    enabled("proxy") ? proxySuggestion() : null,
-    enabled("timestamp") ? timestampSuggestion() : null,
-    enabled("jwt") ? jwtSuggestion() : null,
-    enabled("ip") ? ipSuggestion() : null,
-    enabled("calculator") ? calculationSuggestion() : null
-  ].filter(Boolean);
+  return window.FlowHubTools.suggestions(toolContext()).filter(Boolean);
+}
+function portableQueryCommand(item) {
+  if (item.type === "dns") return `dig +time=2 +tries=1 '${item.hostname}' ${item.family === "IPv4" ? "A" : item.family === "IPv6" ? "AAAA" : "CNAME"}`;
+  if (item.type === "ip") return `curl --fail --connect-timeout 3 --max-time 8 'https://ipapi.co/${item.address}/json/'`;
+  return null;
 }
 
 async function copyText(text) {
@@ -695,6 +680,14 @@ function renderResults(items, from = 0, to = items.length) {
 }
 
 function renderResult(item, index, items) {
+  const registered = window.FlowHubTools.render(item, {esc,index,active:index===state.index});
+  if (registered) return registered;
+  const html = renderResultBody(item,index,items);
+  if (!portableQueryCommand(item)) return html;
+  const end = html.lastIndexOf("</div>");
+  return html.slice(0,end)+`<button type="button" class="tool-action query-copy" data-copy-query title="适用于 macOS / Linux；需要 curl 或 dig">复制查询命令</button>`+html.slice(end);
+}
+function renderResultBody(item, index, items) {
   const usageSection = renderUsageSection(item, index, items);
   if (item.type === "calculation") {
     return `${usageSection}
@@ -757,26 +750,6 @@ function renderResult(item, index, items) {
           <span class="r-meta calculation-expression">回车复制详情</span>
         </span>
         <span class="r-kind calculation">IP 归属地</span>
-      </div>
-    `;
-  }
-  if (item.type === "local-ip") {
-    const details = item.details;
-    const location = [details?.city, details?.region, details?.country_name].filter(Boolean).join(" · ");
-    const address = details?.[item.family.toLowerCase()];
-    const infoText = details?.error
-      ? "查询失败 · 请检查网络"
-      : address
-        ? `${location || "公网地址"} · 回车复制详情`
-        : details ? `当前网络未提供 ${item.family} 地址` : "正在查询本机 IP…";
-    return `${usageSection}
-      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">⌁</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">${esc(item.family)} · ${esc(address || item.result)}</span>
-          <span class="r-meta calculation-expression">${esc(infoText)}</span>
-        </span>
-        <span class="r-kind calculation">本机 IP</span>
       </div>
     `;
   }
@@ -1031,6 +1004,7 @@ function revealActiveResult() {
 }
 
 function choose(page) {
+  if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
   if (["calculation", "timestamp", "jwt"].includes(page?.type)) {
     void copyText(page.result)
       .then(() => showActionStatus("已复制"))
@@ -1084,21 +1058,6 @@ function choose(page) {
         showActionStatus(details?.challenge ? "检测到 Cloudflare 拦截或挑战" : "Cloudflare 检测完成");
       })
       .catch(() => showActionStatus("Cloudflare 检测失败"));
-    return;
-  }
-  if (page?.type === "local-ip") {
-    const lookupLocalIp = window.weborg?.lookupLocalIp;
-    if (typeof lookupLocalIp !== "function") {
-      showActionStatus("本机 IP 查询不可用");
-      return;
-    }
-    const copyResult = (details) => {
-      const text = details?.ipv4 || details?.ipv6 || details?.ip
-        ? [`IPv4: ${details.ipv4 || "无"}`, `IPv6: ${details.ipv6 || "无"}`, details.city && `城市: ${details.city}`, details.region && `区域: ${details.region}`, details.country_name && `国家/地区: ${details.country_name}`, details.org && `运营商: ${details.org}`].filter(Boolean).join("\n")
-        : "本机 IP 查询失败";
-      return copyText(text);
-    };
-    void lookupLocalIp().then(copyResult).then(() => showActionStatus("本机 IP 已复制")).catch(() => showActionStatus("本机 IP 查询失败"));
     return;
   }
   if (page?.type === "proxy") {
@@ -1175,27 +1134,6 @@ function queueDnsLookup() {
     } catch {
       if (token === dnsSearchToken) {
         state.dnsResult = { hostname: suggestion.hostname, answers: [] };
-        render();
-      }
-    }
-  }, 220);
-}
-
-function queueLocalIpLookup() {
-  clearTimeout(localIpSearchTimer);
-  const token = ++localIpSearchToken;
-  state.localIpResult = null;
-  const expression = state.query.trim();
-  if (!isLocalIpQuery(expression) || typeof window.weborg?.lookupLocalIp !== "function") return;
-  localIpSearchTimer = setTimeout(async () => {
-    try {
-      const result = await window.weborg.lookupLocalIp();
-      if (token !== localIpSearchToken || state.query.trim() !== expression) return;
-      state.localIpResult = result?.ipv4 || result?.ipv6 || result?.ip ? result : { error: "查询失败" };
-      render();
-    } catch {
-      if (token === localIpSearchToken) {
-        state.localIpResult = { error: "查询失败" };
         render();
       }
     }
@@ -1290,6 +1228,7 @@ function setScope(scope) {
   invalidateClipboardPaging({ resetPaging: false });
   invalidatePluginPaging({ resetPaging: false });
   state.scope = scope;
+  window.FlowHubTools.queryChanged(toolContext());
   state.index = 0;
   document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
   clipboardKindRow?.classList.toggle("visible", scope === "clipboard");
@@ -1355,6 +1294,7 @@ function setClipboardKind(kind) {
 // 更新配置（主进程每次呼出都会推送）
 window.weborg.onConfig(async (cfg) => {
   setConfig(cfg);
+  window.FlowHubTools.queryChanged(toolContext());
   renderPluginScopes(await window.weborg.listPlugins());
   if (!scopeOrder.includes(state.scope)) state.scope = "all";
   renderKeyboardHint();
@@ -1384,6 +1324,8 @@ window.weborg.onConfig(async (cfg) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "F6") { e.preventDefault(); (resultsEl.querySelector(".result.active .tool-action") || resultsEl.querySelector(".tool-action") || q)?.focus(); return; }
+  if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
   if (e.key === "Escape") {
@@ -1692,8 +1634,8 @@ q.addEventListener("input", () => {
   invalidateClipboardPaging();
   invalidatePluginPaging();
   state.query = q.value;
+  window.FlowHubTools.queryChanged(toolContext());
   queueDnsLookup();
-  queueLocalIpLookup();
   queueIpLookup();
   queueProxyLookup();
   if (!state.query.trim()) {
@@ -1757,6 +1699,20 @@ resultsEl.addEventListener("contextmenu", (e) => {
   void window.weborg?.pluginAction("clipboard", "menu", { id: item.id });
 });
 resultsEl.addEventListener("click", (e) => {
+  const command = e.target.closest("[data-copy-query]");
+  if (command) {
+    e.preventDefault(); e.stopPropagation();
+    const item=matches()[Number(command.closest(".result")?.dataset.i)];
+    const text=item&&portableQueryCommand(item);
+    if (text) void copyText(text).then(()=>showActionStatus("查询命令已复制")).catch(()=>showActionStatus("复制失败"));
+    return;
+  }
+  const action=e.target.closest("[data-tool-action]");
+  if (action) {
+    e.preventDefault();e.stopPropagation();
+    Promise.resolve(window.FlowHubTools.action(action.dataset.toolId,action.dataset.toolAction,action,toolContext())).catch(error=>showActionStatus(error.message||"操作失败"));
+    return;
+  }
   const toggle = e.target.closest("[data-clipboard-toggle]");
   if (toggle) {
     const id = Number(toggle.dataset.clipboardToggle);
@@ -1792,15 +1748,13 @@ function prepareForShow() {
   }
   if (q) q.value = "";
   state.query = "";
+  window.FlowHubTools.queryChanged(toolContext());
   state.index = 0;
   clearTimeout(dnsSearchTimer);
-  clearTimeout(localIpSearchTimer);
   clearTimeout(proxySearchTimer);
   dnsSearchToken += 1;
-  localIpSearchToken += 1;
   proxySearchToken += 1;
   state.dnsResult = null;
-  state.localIpResult = null;
   state.proxyResult = null;
   clearTimeout(dnsSearchTimer);
   dnsSearchToken += 1;
