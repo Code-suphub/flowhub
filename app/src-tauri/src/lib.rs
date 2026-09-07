@@ -49,6 +49,8 @@ mod macos_hotkey;
 mod macos_item_submenu;
 #[cfg(any(target_os = "macos", test))]
 mod menu_bar_section_memory;
+#[cfg(target_os = "macos")]
+mod menu_bar_icon;
 mod update_cache;
 mod updater;
 
@@ -1116,6 +1118,9 @@ fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, Strin
         );
         return Ok(json!({ "enabled": true }));
     }
+    #[cfg(target_os = "macos")]
+    let icon = menu_bar_icon::image();
+    #[cfg(not(target_os = "macos"))]
     let icon = app
         .default_window_icon()
         .cloned()
