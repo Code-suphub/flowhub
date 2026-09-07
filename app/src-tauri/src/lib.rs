@@ -49,6 +49,7 @@ mod macos_hotkey;
 mod macos_item_submenu;
 #[cfg(any(target_os = "macos", test))]
 mod menu_bar_section_memory;
+mod update_cache;
 mod updater;
 
 #[cfg(target_os = "macos")]
@@ -3232,6 +3233,7 @@ pub fn run() {
             clipboard::load_clipboard_assets,
             clipboard::activate_clipboard,
             clipboard::delete_clipboard,
+            updater::log_update_event,
             updater::get_update_state,
             updater::check_for_updates,
             updater::download_update,

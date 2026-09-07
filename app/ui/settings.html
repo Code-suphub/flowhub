@@ -334,8 +334,13 @@
       #jsonEditor { min-height: 490px; color: #c5f1e6; border-color: rgba(75, 208, 184, .22); font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; tab-size: 2; }
       .json-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
       .json-actions small { color: var(--faint); }
-      .toast { position: fixed; right: 24px; bottom: 22px; max-width: 430px; padding: 10px 14px; border: 1px solid rgba(75, 208, 184, .3); border-radius: 9px; color: var(--ink); background: #1b3335; box-shadow: 0 14px 30px rgba(0, 0, 0, .3); opacity: 0; transform: translateY(8px); pointer-events: none; transition: .18s ease; }
-      .toast.show { opacity: 1; transform: translateY(0); }
+      .toast { position: fixed; z-index: 2000; right: 16px; bottom: calc(var(--settings-actionbar-height, 72px) + 12px); display: flex; align-items: flex-start; gap: 12px; width: max-content; max-width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - var(--settings-actionbar-height, 72px) - 36px); overflow: auto; padding: 14px 16px; border: 1px solid rgba(75, 208, 184, .3); border-radius: 12px; color: var(--ink); background: #1b3335; box-shadow: 0 14px 30px rgba(0, 0, 0, .3); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; opacity: 0; visibility: hidden; transform: translateY(8px); pointer-events: none; transition: opacity .18s ease, transform .18s ease, visibility .18s ease; }
+      .toast-message { min-width: 0; }
+      .toast-close { flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: inherit; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; }
+      .toast-close:hover { background: rgba(255,255,255,.1); }
+      .toast-close:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+      .update-notice { position: relative; z-index: 1; margin: 0; padding: 12px 14px; border: 1px solid rgba(255,142,142,.32); border-radius: 10px; color: #ffd3d3; background: #35252b; font-size: 12px; line-height: 1.7; }
+      .toast.show { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
       .toast.error { border-color: rgba(255, 142, 142, .4); background: #3b252b; }
       .hidden { display: none !important; }
       .form-section { display: grid; gap: 13px; padding: 14px; border: 1px solid rgba(211, 231, 220, .075); border-radius: 11px; background: rgba(4, 11, 14, .22); }
@@ -883,6 +888,7 @@
                   <div class="update-progress hidden" id="updateProgress" role="progressbar" aria-label="更新下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div class="update-track"><div class="update-fill" id="updateProgressFill"></div></div><small id="updateProgressText">0%</small>
                   </div>
+                  <p id="updateNotice" class="update-notice hidden" role="status" aria-live="polite"></p>
                   <div class="update-footer">
                     <span class="update-meta" id="updateMeta">稳定通道 · GitHub Release</span>
                     <div class="update-actions">
@@ -1033,7 +1039,7 @@
         <div class="actionbar-actions"><span class="status" id="status">已保存</span><button class="button" type="button" data-action="reload" disabled>重置未保存</button><button class="button primary" id="saveBtn" type="button" data-action="save" disabled>保存</button></div>
       </footer>
     </div>
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast"><span class="toast-message" id="toastMessage" role="status" aria-live="polite" aria-atomic="true"></span><button class="toast-close" id="toastClose" type="button" aria-label="关闭提示">×</button></div>
     <script src="web-search.js"></script>
     <script src="memo-catalog.js"></script>
     <script src="tauri-adapter.js"></script>

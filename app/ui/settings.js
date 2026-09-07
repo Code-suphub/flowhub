@@ -480,6 +480,7 @@ function jsonEditorDiffersFromConfig() {
 function markDirty(message = "有未保存修改") {
   state.dirty = !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
   state.draftSavedAt = 0;
+  renderUpdateNotice();
   if (!state.dirty) {
     clearDraft();
     updateStatus();
@@ -503,14 +504,42 @@ let toastTimer;
 let allowUnload = false;
 function toast(message, error = false) {
   const element = $("#toast");
-  element.textContent = message;
+  const content = $("#toastMessage");
+  content.setAttribute("aria-live", error ? "assertive" : "polite");
+  content.textContent = message;
   element.classList.toggle("error", error);
   element.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => element.classList.remove("show"), 2600);
+  toastTimer = setTimeout(() => element.classList.remove("show"), error ? 8000 : 3000);
+}
+
+// The theme puts the app in its own stacking context. Keep notices outside it
+// and above the actual footer height, including when its controls wrap.
+const actionbar = document.querySelector(".settings-actionbar");
+if (actionbar) {
+  const measureActionbar = () => document.documentElement.style.setProperty(
+    "--settings-actionbar-height", `${Math.ceil(actionbar.getBoundingClientRect().height)}px`
+  );
+  new ResizeObserver(measureActionbar).observe(actionbar);
+  measureActionbar();
+}
+$("#toastClose").addEventListener("click", () => {
+  clearTimeout(toastTimer);
+  $("#toast").classList.remove("show");
+});
+
+function renderUpdateNotice() {
+  const notice = $("#updateNotice");
+  if (!notice) return;
+  const blocked = state.appUpdate?.status === "downloaded" && state.dirty;
+  notice.classList.toggle("hidden", !blocked);
+  notice.textContent = blocked
+    ? "有未保存的配置。请先点击底部「保存」，或用「重置未保存」放弃修改，再安装更新。草稿自动保存不代表配置已生效。"
+    : "";
 }
 
 function updateStatus() {
+  renderUpdateNotice();
   const status = $("#status");
   const message = state.dirty ? (state.draftSavedAt ? "草稿已自动保存" : "有未保存修改") : "已保存";
   status.textContent = message;
@@ -847,6 +876,7 @@ function formatBytes(value) {
 }
 
 function renderAppUpdate() {
+  renderUpdateNotice();
   const update = state.appUpdate || {};
   const currentVersion = String(update.currentVersion || "—");
   const availableVersion = String(update.availableVersion || "");
@@ -859,7 +889,7 @@ function renderAppUpdate() {
     "not-available": "已是最新",
     downloading: "下载中",
     downloaded: "等待安装",
-    installing: "正在重启",
+    installing: "准备安装",
     error: "检查失败"
   };
   const descriptions = {
@@ -869,8 +899,8 @@ function renderAppUpdate() {
     available: `发现 FlowHub v${availableVersion || "—"}，确认后开始下载，完成前不会退出当前应用。`,
     "not-available": `当前 v${currentVersion} 已是最新稳定版本。`,
     downloading: availableVersion ? `正在下载 FlowHub v${availableVersion}，可以继续使用其他设置。` : "正在下载新版本，可以继续使用其他设置。",
-    downloaded: `FlowHub v${availableVersion || "新版本"} 已下载完成，重启后将自动替换当前版本。`,
-    installing: "正在关闭 FlowHub 并安装新版本…",
+    downloaded: update.error ? `更新包已保留，可重试安装。${update.error}` : `FlowHub v${availableVersion || "新版本"} 已保存到本机，关闭应用后仍可继续安装，无需重新下载。`,
+    installing: "正在核对版本信息并安装本地更新包，完成后自动重启…",
     error: update.error || "无法连接更新服务，请稍后重试。"
   };
   const badge = $("#updateBadge");
@@ -1372,7 +1402,22 @@ async function checkAppUpdate() {
   if (!result?.ok) toast(result?.reason || "检查更新失败", true);
 }
 
+async function logUpdateEvent(event, details = {}) {
+  try { await window.weborg.logUpdateEvent?.(event, details); }
+  catch (error) { console.error("更新日志写入失败", error); }
+}
+
 async function runPrimaryUpdateAction() {
+  await logUpdateEvent("primary.click", { status: state.appUpdate?.status, dirty: state.dirty });
+  try {
+    await performPrimaryUpdateAction();
+  } catch (error) {
+    await logUpdateEvent("primary.error", { error: String(error) });
+    toast(`更新操作失败：${String(error)}`, true);
+  }
+}
+
+async function performPrimaryUpdateAction() {
   const status = state.appUpdate?.status;
   if (status === "available") {
     const result = await window.weborg.downloadUpdate();
@@ -1383,11 +1428,17 @@ async function runPrimaryUpdateAction() {
   }
   if (status === "downloaded") {
     if (state.dirty) {
+      await logUpdateEvent("install.blocked.unsaved");
       toast("请先保存或放弃当前配置修改，再重启安装更新", true);
       return;
     }
-    if (!window.confirm("更新已准备完成。现在重启 FlowHub 并安装吗？")) return;
+    await logUpdateEvent("confirm.start");
+    const confirmed = window.confirm("更新已准备完成。现在重启 FlowHub 并安装吗？");
+    await logUpdateEvent("confirm.result", { confirmed });
+    if (!confirmed) return;
+    await logUpdateEvent("install.invoke");
     const result = await window.weborg.quitAndInstallUpdate();
+    await logUpdateEvent("install.response", { ok: result?.ok, reason: result?.reason });
     if (result?.state) state.appUpdate = result.state;
     renderAppUpdate();
     if (!result?.ok) toast(result?.reason || "无法启动更新安装", true);

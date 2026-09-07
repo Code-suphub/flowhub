@@ -1,14 +1,56 @@
+use crate::update_cache::{self, CachedUpdate};
 use serde_json::{json, Value};
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
+// Keep updater diagnostics outside the application bundle so they survive replacement.
+fn update_log(app: &AppHandle, event: &str, details: Value) {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let Ok(_guard) = LOCK.lock() else {
+        return;
+    };
+    let result = (|| -> std::io::Result<()> {
+        let directory = app.path().app_log_dir().map_err(std::io::Error::other)?;
+        std::fs::create_dir_all(&directory)?;
+        let path = directory.join("updater.jsonl");
+        if std::fs::metadata(&path)
+            .map(|m| m.len() > 2_000_000)
+            .unwrap_or(false)
+        {
+            std::fs::rename(&path, directory.join("updater.previous.jsonl"))?;
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        writeln!(
+            file,
+            "{}",
+            json!({"time": checked_at(), "pid": std::process::id(),
+            "version": app.package_info().version.to_string(), "event": event, "details": details})
+        )?;
+        file.flush()
+    })();
+    if let Err(error) = result {
+        eprintln!("FlowHub updater log: {error}");
+    }
+}
+
+#[tauri::command]
+pub(crate) fn log_update_event(app: AppHandle, event: String, details: Value) {
+    update_log(&app, &format!("ui.{event}"), details);
+}
+
 pub(crate) struct UpdateRuntime {
     state: RwLock<Value>,
     available: Mutex<Option<Update>>,
-    downloaded: Mutex<Option<Vec<u8>>>,
+    cached: Mutex<Option<CachedUpdate>>,
+    operation: tokio::sync::Mutex<()>,
 }
 
 impl UpdateRuntime {
@@ -30,7 +72,8 @@ impl UpdateRuntime {
                 "error": ""
             })),
             available: Mutex::new(None),
-            downloaded: Mutex::new(None),
+            cached: Mutex::new(None),
+            operation: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -52,6 +95,11 @@ impl UpdateRuntime {
 
     fn patch(&self, app: &AppHandle, patch: Value) -> Value {
         let mut state = self.snapshot();
+        if patch.get("status") != state.get("status")
+            || patch.get("status").and_then(Value::as_str) == Some("error")
+        {
+            update_log(app, "state", patch.clone());
+        }
         if let (Some(current), Some(fields)) = (state.as_object_mut(), patch.as_object()) {
             for (key, value) in fields {
                 current.insert(key.clone(), value.clone());
@@ -84,6 +132,14 @@ pub(crate) async fn check_for_updates(
     app: AppHandle,
     runtime: State<'_, UpdateRuntime>,
 ) -> Result<Value, String> {
+    let _operation = runtime
+        .operation
+        .try_lock()
+        .map_err(|_| "更新操作正在进行中".to_string())?;
+    if runtime.cached.lock().unwrap().is_some() {
+        return Ok(json!({"ok":true,"state":runtime.snapshot()}));
+    }
+
     if !runtime
         .snapshot()
         .get("supported")
@@ -140,10 +196,6 @@ pub(crate) async fn check_for_updates(
                 .available
                 .lock()
                 .expect("FlowHub updater available lock poisoned") = Some(update);
-            *runtime
-                .downloaded
-                .lock()
-                .expect("FlowHub updater download lock poisoned") = None;
             json!({ "ok": true, "state": state })
         }
         Ok(None) => {
@@ -164,6 +216,11 @@ pub(crate) async fn check_for_updates(
             json!({ "ok": true, "state": state })
         }
         Err(error) => {
+            update_log(
+                &app,
+                "operation.error",
+                json!({"error": format!("{error:?}")}),
+            );
             let reason = public_error(error);
             let state = runtime.patch(&app, json!({ "status": "error", "error": reason }));
             json!({ "ok": false, "reason": reason, "state": state })
@@ -177,6 +234,15 @@ pub(crate) async fn download_update(
     app: AppHandle,
     runtime: State<'_, UpdateRuntime>,
 ) -> Result<Value, String> {
+    let _operation = runtime
+        .operation
+        .try_lock()
+        .map_err(|_| "更新操作正在进行中".to_string())?;
+    if runtime.cached.lock().unwrap().is_some() {
+        return Ok(json!({"ok":true,"state":runtime.snapshot()}));
+    }
+
+    update_log(&app, "command", json!({"state": runtime.snapshot()}));
     let update = runtime
         .available
         .lock()
@@ -224,10 +290,34 @@ pub(crate) async fn download_update(
         .await;
     match result {
         Ok(bytes) => {
-            *runtime
-                .downloaded
-                .lock()
-                .expect("FlowHub updater download lock poisoned") = Some(bytes);
+            let metadata = CachedUpdate {
+                version: update.version.clone(),
+                target: update.target.clone(),
+                arch: std::env::consts::ARCH.into(),
+                url: update.download_url.to_string(),
+                signature: update.signature.clone(),
+                notes: update.body.clone().unwrap_or_default(),
+                date: update.date.map(|d| d.to_string()).unwrap_or_default(),
+                size: 0,
+                sha256: String::new(),
+            };
+            let cached =
+                match cache_dir(&app).and_then(|dir| update_cache::save(&dir, metadata, &bytes)) {
+                    Ok(cached) => cached,
+                    Err(error) => {
+                        let state = runtime.patch(
+                            &app,
+                            json!({"status":"error", "error":format!("保存更新包失败：{error}")}),
+                        );
+                        return Ok(json!({"ok":false,"reason":state["error"],"state":state}));
+                    }
+                };
+            update_log(
+                &app,
+                "cache.saved",
+                json!({"version":cached.version,"bytes":cached.size}),
+            );
+            *runtime.cached.lock().unwrap() = Some(cached);
             let state = runtime.patch(
                 &app,
                 json!({ "status": "downloaded", "percent": 100, "error": "" }),
@@ -235,6 +325,11 @@ pub(crate) async fn download_update(
             Ok(json!({ "ok": true, "state": state }))
         }
         Err(error) => {
+            update_log(
+                &app,
+                "operation.error",
+                json!({"error": format!("{error:?}")}),
+            );
             let reason = public_error(error);
             let state = runtime.patch(&app, json!({ "status": "error", "error": reason }));
             Ok(json!({ "ok": false, "reason": reason, "state": state }))
@@ -243,45 +338,173 @@ pub(crate) async fn download_update(
 }
 
 #[tauri::command]
-pub(crate) fn quit_and_install_update(
+pub(crate) async fn quit_and_install_update(
     app: AppHandle,
     runtime: State<'_, UpdateRuntime>,
 ) -> Result<Value, String> {
-    let update = runtime
-        .available
-        .lock()
-        .expect("FlowHub updater available lock poisoned")
-        .clone();
-    let bytes = runtime
-        .downloaded
-        .lock()
-        .expect("FlowHub updater download lock poisoned")
-        .take();
-    let (Some(update), Some(bytes)) = (update, bytes) else {
-        let state = runtime.snapshot();
-        return Ok(json!({ "ok": false, "reason": "更新尚未下载完成", "state": state }));
+    let _operation = runtime
+        .operation
+        .try_lock()
+        .map_err(|_| "更新操作正在进行中".to_string())?;
+    let cached = runtime.cached.lock().unwrap().clone();
+    let Some(cached) = cached else {
+        return Ok(json!({"ok":false,"reason":"更新尚未下载完成","state":runtime.snapshot()}));
     };
-    let state = runtime.patch(&app, json!({ "status": "installing", "error": "" }));
-    if let Err(error) = update.install(bytes) {
-        let reason = public_error(error);
-        let state = runtime.patch(&app, json!({ "status": "error", "error": reason }));
-        return Ok(json!({ "ok": false, "reason": reason, "state": state }));
+    runtime.patch(&app, json!({"status":"installing", "error":""}));
+    // Tauri's Update handle is process-local. Recreate it from the small release
+    // manifest after restart; the multi-megabyte package stays on disk.
+    let available = runtime.available.lock().unwrap().clone();
+    let result: Result<(), String> = async {
+        let update = if let Some(update) = available.filter(|u| cached.matches(u)) {
+            update
+        } else {
+            update_log(
+                &app,
+                "cache.resolve-release",
+                json!({"version":cached.version}),
+            );
+            app.updater()
+                .map_err(public_error)?
+                .check()
+                .await
+                .map_err(public_error)?
+                .ok_or_else(|| "当前没有可安装的新版，请重新检查更新".to_string())?
+        };
+        *runtime.available.lock().unwrap() = Some(update.clone());
+        if !cached.matches(&update) {
+            update_cache::clear(&cache_dir(&app)?)?;
+            *runtime.cached.lock().unwrap() = None;
+            runtime.patch(&app, json!({"availableVersion":update.version}));
+            return Err("发布版本已变化，请下载新版更新包".into());
+        }
+        let bytes = match update_cache::bytes(&cache_dir(&app)?, &cached).and_then(|bytes| {
+            update_cache::verify(&bytes, &update.signature, &public_key(&app)?)?;
+            Ok(bytes)
+        }) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                update_cache::clear(&cache_dir(&app)?)?;
+                *runtime.cached.lock().unwrap() = None;
+                return Err(format!("本地更新包校验失败，请重新下载：{error}"));
+            }
+        };
+        update_log(
+            &app,
+            "install.start",
+            json!({"version":cached.version,"bytes":bytes.len(),"source":"disk"}),
+        );
+        // Installation may request the main thread for macOS authorization.
+        tauri::async_runtime::spawn_blocking(move || update.install(bytes))
+            .await
+            .map_err(public_error)?
+            .map_err(public_error)?;
+        Ok(())
     }
-    let response = json!({ "ok": true, "state": state });
+    .await;
+    if let Err(error) = result {
+        let retained = runtime.cached.lock().unwrap().is_some();
+        update_log(
+            &app,
+            "install.error",
+            json!({"error":error,"cacheRetained":retained}),
+        );
+        let state = runtime.patch(
+            &app,
+            json!({"status":if retained {"downloaded"} else {"available"},"error":error,"percent":if retained {100} else {0}}),
+        );
+        return Ok(json!({"ok":false,"reason":error,"state":state}));
+    }
+    // Keep disk cache until the new version actually starts successfully.
+    update_log(&app, "install.success", json!({}));
+    let state = runtime.snapshot();
     let restart_app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(150));
+        update_log(&restart_app, "restart.request", json!({}));
         restart_app.restart();
     });
-    Ok(response)
+    Ok(json!({"ok":true,"state":state}))
+}
+
+fn cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map(|dir| dir.join("updates"))
+        .map_err(public_error)
+}
+
+fn public_key(app: &AppHandle) -> Result<String, String> {
+    app.config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|v| v.get("pubkey"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "缺少更新公钥".into())
+}
+
+fn restore_cache(app: &AppHandle) -> Result<bool, String> {
+    let dir = cache_dir(app)?;
+    let Some(cached) = update_cache::read(&dir)? else {
+        return Ok(false);
+    };
+    if cached.arch != std::env::consts::ARCH {
+        return Err("缓存更新包的架构与当前应用不一致".into());
+    }
+    let version = semver::Version::parse(&cached.version).map_err(public_error)?;
+    if version <= app.package_info().version {
+        update_cache::clear(&dir)?;
+        update_log(
+            app,
+            "cache.obsolete-removed",
+            json!({"version":cached.version}),
+        );
+        return Ok(false);
+    }
+    let bytes = update_cache::bytes(&dir, &cached)?;
+    update_cache::verify(&bytes, &cached.signature, &public_key(app)?)?;
+    let runtime = app.state::<UpdateRuntime>();
+    *runtime.cached.lock().unwrap() = Some(cached.clone());
+    runtime.patch(
+        app,
+        json!({"status":"downloaded","availableVersion":cached.version,
+        "releaseDate":cached.date,"releaseNotes":cached.notes,"percent":100,
+        "transferred":cached.size,"total":cached.size,"error":""}),
+    );
+    update_log(
+        app,
+        "cache.restored",
+        json!({"version":cached.version,"bytes":cached.size}),
+    );
+    Ok(true)
 }
 
 pub(crate) fn schedule_initial_check(app: &AppHandle) {
+    update_log(
+        app,
+        "startup",
+        json!({"executable": std::env::current_exe().ok()}),
+    );
     if cfg!(debug_assertions) {
         return;
     }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
+        let runtime = handle.state::<UpdateRuntime>();
+        let operation = runtime.operation.lock().await;
+        let restored = restore_cache(&handle);
+        let restored = match restored {
+            Ok(value) => value,
+            Err(error) => {
+                update_log(&handle, "cache.invalid", json!({"error":error}));
+                if let Ok(dir) = cache_dir(&handle) {
+                    let _ = update_cache::clear(&dir);
+                }
+                false
+            }
+        };
+        drop(operation);
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         let config_path = handle.state::<crate::AppState>().paths().config_path;
         let config = std::fs::read_to_string(config_path)
@@ -299,6 +522,13 @@ pub(crate) fn schedule_initial_check(app: &AppHandle) {
             .pointer("/core/autoUpdateInstall")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        if restored {
+            if auto_install {
+                let _ =
+                    quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
+            }
+            return;
+        }
         let result = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>())
             .await
             .ok();
@@ -310,7 +540,7 @@ pub(crate) fn schedule_initial_check(app: &AppHandle) {
                 == Some(true)
         {
             let _ = download_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-            let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>());
+            let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
         }
     });
 }

@@ -268,6 +268,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     getClipboardStorageInfo: () => invoke("get_storage_info"),
     chooseClipboardStorage: () => invoke("choose_storage_path"),
     openClipboardStorage: () => invoke("open_storage_path"),
+    logUpdateEvent: (event, details = {}) => invoke("log_update_event", { event, details }),
     getUpdateState: () => invoke("get_update_state"),
     getDiagnosticsState: () => invoke("get_diagnostics_state"),
     setDiagnosticsEnabled: (value) => invoke("set_diagnostics_enabled", { value }),
