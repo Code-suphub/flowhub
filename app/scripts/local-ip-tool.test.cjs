@@ -23,5 +23,24 @@ const read=file=>fs.readFileSync(`${__dirname}/../ui/${file}`,'utf8');
  await registry.action('localIp','refresh',{},context);
  await registry.choose(registry.suggestions(context)[0],context);assert(copied.includes('203.0.113.1'));
  await registry.action('localIp','command',{},context);assert(copied.includes('--max-time 6'));
- console.log('PASS: progressive IP results, partial failure, loading, stale response suppression, address/command copy');
+ // A failed primary provider falls back without hiding the other family.
+ const requested=[];
+ ctx.fetch=async url=>{requested.push(url);if(url.includes('ipify'))throw new Error('offline');return {ok:true,text:async()=>url.includes('4.ident')?'203.0.113.2':'2001:db8::2'};};
+ const fallback=await ctx.window.FlowHubLookupPublicIp();assert.equal(fallback.ipv4,'203.0.113.2');assert.equal(fallback.ipv6,'2001:db8::2');assert.equal(requested.length,4);
+ let abortCount=0;
+ ctx.fetch=async(url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>{abortCount++;const error=new Error('aborted');error.name='AbortError';reject(error);},{once:true}));
+ const controller=new AbortController();
+ const aborted=ctx.window.FlowHubLookupPublicIp(()=>assert.fail('cancelled lookup published'),{signal:controller.signal});
+ controller.abort();await assert.rejects(aborted,{name:'AbortError'});assert.equal(abortCount,2);
+ // Both providers time out and settle; timers are shortened only in this fixture.
+ ctx.setTimeout=callback=>setTimeout(callback,10);
+ const beforeTimeout=abortCount;
+ const timedOut=await ctx.window.FlowHubLookupPublicIp();
+ assert.equal(abortCount-beforeTimeout,4);assert.equal(timedOut.pending.length,0);assert(timedOut.errors.ipv4.includes('超时'));
+ // Replacing the query actively aborts the request, not just its UI publication.
+ let capturedSignal;
+ context.api.lookupLocalIp=async(cb,options)=>{capturedSignal=options.signal;return result;};
+ await registry.action('localIp','refresh',{},context);
+ registry.queryChanged({...context,query:'unrelated'});assert(capturedSignal.aborted);
+ console.log('PASS: progressive IP results, partial failure, loading, stale response suppression, address/command copy, fallback, cancellation, timeout');
 })().catch(error=>{console.error(error);process.exitCode=1});

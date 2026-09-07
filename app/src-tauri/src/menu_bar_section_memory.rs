@@ -191,6 +191,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn repeated_restores_keep_the_same_side_of_a_fixed_anchor() {
+        for section in [Section::Visible, Section::Hidden] {
+            let items = [icon("restored"), icon("fixed-anchor"), icon("other")];
+            let mut memory = Memory::default();
+            for _ in 0..3 {
+                memory.prepare(&items, 0, section, true);
+                memory.remember_order(&items[0], section, &items.iter().collect::<Vec<_>>());
+                let plan = memory.prepare(&items, 0, Section::AlwaysHidden, false);
+                assert_eq!(plan.destination, section);
+                let current = [(&items[0], Section::AlwaysHidden), (&items[1], section), (&items[2], section)];
+                assert_eq!(memory.order_anchor(&items[0], section, &current), Some((1, true)));
+            }
+        }
+    }
+
+    #[test]
     fn middle_icon_restores_before_right_or_after_left_neighbour() {
         let items = [icon("A"), icon("B"), icon("C")];
         let mut memory = Memory::default();

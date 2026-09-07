@@ -1,19 +1,21 @@
 (() => {
   const matches = query => /^(?:ip|本机\s*ip|公网\s*ip|我的\s*ip|my\s*ip|local\s*ip)$/i.test(String(query).trim());
-  let details = null, token = 0, timer;
+  let details = null, token = 0, timer, controller;
   const button = (action, label) => `<button type="button" class="tool-action" data-tool-id="localIp" data-tool-action="${action}">${label}</button>`;
   async function refresh(ctx) {
     const version = ++token;
+    controller?.abort();
+    controller = new AbortController();
     details = {pending:['ipv4','ipv6'], errors:{}};
     ctx.render();
     const publish = result => { if (token === version && matches(ctx.queryNow())) { details = result; ctx.render(); } };
-    try { publish(await ctx.api.lookupLocalIp(publish)); }
+    try { publish(await ctx.api.lookupLocalIp(publish, {signal:controller.signal})); }
     catch (error) { publish({pending:[], error:error.message || String(error)}); }
   }
   window.FlowHubTools.register({
     id:'localIp',
     queryChanged(ctx) {
-      clearTimeout(timer); ++token; details = null;
+      clearTimeout(timer); ++token; controller?.abort(); details = null;
       if (ctx.active && matches(ctx.query)) timer = setTimeout(() => refresh(ctx), 180);
     },
     suggestions(ctx) { return matches(ctx.query) ? [{id:'public-ip', toolId:'localIp', type:'public-ip', details}] : []; },

@@ -56,8 +56,8 @@ if (!window.weborg) {
     return { ...(queries.find((query) => query.status === "fulfilled")?.value || {}), Answer: unique };
   }
 
-  async function lookupLocalIp(onProgress) {
-    return window.FlowHubLookupPublicIp(onProgress);
+  async function lookupLocalIp(onProgress, options) {
+    return window.FlowHubLookupPublicIp(onProgress, options);
   }
 
   async function lookupIp(ip) {

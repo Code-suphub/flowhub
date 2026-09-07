@@ -173,6 +173,16 @@ pub struct MenuBarItem {
     pub hideable: bool,
 }
 
+/// Scope management to the divider's menu-bar row. Off-screen hidden items retain
+/// this y coordinate; filtering by visible screen bounds would lose them.
+pub fn items_in_menu_bar_row(items: &[MenuBarItem], boundary_id: u32) -> Result<Vec<MenuBarItem>, String> {
+    let boundary = items.iter().find(|item| item.window_id == boundary_id)
+        .ok_or("菜单栏分隔项暂不可用，请刷新")?;
+    let mut seen = std::collections::HashSet::new();
+    Ok(items.iter().filter(|item| (item.y - boundary.y).abs() <= 1.0)
+        .filter(|item| seen.insert(item.window_id)).cloned().collect())
+}
+
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
@@ -522,6 +532,18 @@ mod tests {
             movable: true,
             hideable: true,
         }
+    }
+
+    #[test]
+    fn scopes_inventory_to_boundary_row_without_merging_same_app_icons() {
+        let boundary = fixture(1, 500.0, 1.0);
+        let first = fixture(2, -2000.0, 24.0);
+        let second = fixture(3, 450.0, 24.0);
+        let mut mirror = first.clone(); mirror.window_id = 4; mirror.y = 982.0;
+        let rows = vec![boundary, first.clone(), second, mirror, first];
+        let selected = items_in_menu_bar_row(&rows, 1).unwrap();
+        assert_eq!(selected.iter().map(|item| item.window_id).collect::<Vec<_>>(), vec![1,2,3]);
+        assert!(items_in_menu_bar_row(&rows, 99).is_err());
     }
 
     #[test]

@@ -115,24 +115,54 @@ fn parse_lsof(text: &str, port: u16, protocol: &str, rows: &mut BTreeMap<u32, Po
         }
     }
 }
-fn ps(pid: u32, field: &str) -> Result<String, String> {
-    let (ok, out, err) = run(
-        "/bin/ps",
-        &[
-            "-p".into(),
-            pid.to_string(),
-            "-o".into(),
-            format!("{field}="),
-        ],
-    )?;
-    if !ok {
-        return Err(if err.is_empty() {
-            "进程已退出".into()
-        } else {
-            err
-        });
+// Read all fields in one snapshot, preserving spaces in the executable column.
+fn parse_ps(text: &str) -> BTreeMap<u32, (String, String, String)> {
+    let mut result = BTreeMap::new();
+    for line in text.lines() {
+        let mut remaining = line.trim();
+        let mut fields = vec![];
+        for _ in 0..7 {
+            let end = remaining
+                .find(char::is_whitespace)
+                .unwrap_or(remaining.len());
+            fields.push(&remaining[..end]);
+            remaining = remaining[end..].trim_start();
+        }
+        if let Ok(pid) = fields[0].parse::<u32>() {
+            if !fields[6].is_empty() && !remaining.is_empty() {
+                result.insert(
+                    pid,
+                    (fields[1..6].join(" "), fields[6].into(), remaining.into()),
+                );
+            }
+        }
     }
-    Ok(out.trim().into())
+    result
+}
+fn process_snapshots(pids: &[u32]) -> Result<BTreeMap<u32, (String, String, String)>, String> {
+    let mut result = BTreeMap::new();
+    // Bound command-line length even when a port has many owners.
+    for chunk in pids.chunks(128) {
+        let (ok, out, err) = run(
+            "/bin/ps",
+            &[
+                "-ww".into(),
+                "-p".into(),
+                chunk
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                "-o".into(),
+                "pid=,lstart=,etime=,comm=".into(),
+            ],
+        )?;
+        if !ok && !err.is_empty() {
+            return Err(format!("读取进程信息失败：{err}"));
+        }
+        result.extend(parse_ps(&out));
+    }
+    Ok(result)
 }
 fn inspect(port: u16) -> Result<PortReport, String> {
     if port == 0 {
@@ -157,17 +187,23 @@ fn inspect(port: u16) -> Result<PortReport, String> {
         }
         parse_lsof(&out, port, protocol, &mut rows);
     }
+    let pids = rows
+        .values()
+        .filter(|row| !row.sockets.is_empty())
+        .map(|row| row.pid)
+        .collect::<Vec<_>>();
+    let mut snapshots = process_snapshots(&pids)?;
     let mut processes = vec![];
     for (_, mut row) in rows {
         if row.sockets.is_empty() {
             continue;
         }
-        let Ok(started) = ps(row.pid, "lstart") else {
+        let Some((started, elapsed, executable)) = snapshots.remove(&row.pid) else {
             continue;
         };
         row.started_at = started;
-        row.elapsed = ps(row.pid, "etime")?;
-        row.executable = ps(row.pid, "comm")?;
+        row.elapsed = elapsed;
+        row.executable = executable;
         row.identity = format!(
             "{:x}",
             Sha256::digest(format!(
@@ -225,6 +261,15 @@ fn terminate(port: u16, pid: u32, identity: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn parses_batch_snapshot_with_spaced_paths() {
+        let rows = parse_ps("42 Mon Sep  7 16:00:00 2026 09-18:48:04 /Applications/My App/bin\n43 Mon Sep 7 16:00:00 2026 00:01 /usr/bin/test\n");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[&42].0, "Mon Sep 7 16:00:00 2026");
+        assert_eq!(rows[&42].1, "09-18:48:04");
+        assert_eq!(rows[&42].2, "/Applications/My App/bin");
+        assert!(parse_ps("invalid").is_empty());
+    }
     #[test]
     fn parses_ipv4_ipv6_and_ignores_remote_port() {
         let mut rows = BTreeMap::new();

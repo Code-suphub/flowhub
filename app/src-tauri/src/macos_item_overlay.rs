@@ -6,7 +6,7 @@ use objc2::runtime::AnyObject;
 use objc2::Message;
 use objc2::AnyThread;
 use objc2_app_kit::{
-    NSBackingStoreType, NSButton, NSEventMask, NSEventType, NSPanel, NSScreen, NSScrollView,
+    NSBackingStoreType, NSBezierPath, NSImage, NSButton, NSEventMask, NSEventType, NSPanel, NSScreen, NSScrollView,
     NSStatusBarButton, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
     NSVisualEffectView, NSWindowStyleMask,
 };
@@ -29,7 +29,75 @@ pub(super) fn dismiss_if_visible() -> bool {
     was_visible
 }
 
-fn reveal(depth: usize, submenu: bool) {
+static SESSION_REVISION: AtomicUsize = AtomicUsize::new(0);
+static HOVER_REVISION: AtomicUsize = AtomicUsize::new(0);
+
+fn leave_timeout(left_at: &mut Option<u64>, now_ms: u64, inside: bool) -> bool {
+    if inside { *left_at = None; return false; }
+    now_ms.saturating_sub(*left_at.get_or_insert(now_ms)) >= 500
+}
+
+fn watch_pointer(app: tauri::AppHandle) {
+    let revision = SESSION_REVISION.fetch_add(1, Ordering::AcqRel) + 1;
+    tauri::async_runtime::spawn(async move {
+        while SESSION_REVISION.load(Ordering::Acquire) == revision {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            if app.run_on_main_thread(move || {
+                if SESSION_REVISION.load(Ordering::Acquire) != revision { let _ = sender.send(()); return; }
+                let should_close = SESSION.with(|state| {
+                    let mut state = state.borrow_mut();
+                    let Some(session) = state.as_mut() else { return false; };
+                    if crate::ORGANIZER_ITEM_MOVE_ACTIVE.load(Ordering::Acquire) {
+                        session.pointer_left_at = None;
+                        return false;
+                    }
+                    let point = NSEvent::mouseLocation();
+                    let contains = |frame: NSRect| point.x >= frame.origin.x && point.x <= frame.origin.x + frame.size.width
+                        && point.y >= frame.origin.y && point.y <= frame.origin.y + frame.size.height;
+                    let inside = session.panels.iter().any(|panel| panel.isVisible() && contains(panel.frame()))
+                        || ANCHOR.with(|anchor| anchor.borrow().load().and_then(|button| button.window()).is_some_and(|window| contains(window.frame())));
+                    leave_timeout(&mut session.pointer_left_at, session.opened_at.elapsed().as_millis() as u64, inside)
+                });
+                if should_close { close("pointer-left-timeout"); }
+                let _ = sender.send(());
+            }).is_err() { break; }
+            if receiver.await.is_err() { break; }
+        }
+    });
+}
+
+fn reveal(depth: usize, submenu: bool, index: isize) {
+    let revision = HOVER_REVISION.fetch_add(1, Ordering::AcqRel) + 1;
+    if submenu { reveal_now(depth, submenu, index); return; }
+    let app = SESSION.with(|state| state.borrow().as_ref().map(|session| session.app.clone()));
+    if let Some(app) = app {
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let _ = app.run_on_main_thread(move || {
+                if HOVER_REVISION.load(Ordering::Acquire) != revision { return; }
+                let over_child = SESSION.with(|state| state.borrow().as_ref().is_some_and(|session| {
+                    let point = NSEvent::mouseLocation();
+                    session.panels.iter().skip(depth + 1).any(|panel| {
+                        let frame = panel.frame();
+                        panel.isVisible() && point.x >= frame.origin.x && point.x <= frame.origin.x + frame.size.width
+                            && point.y >= frame.origin.y && point.y <= frame.origin.y + frame.size.height
+                    })
+                }));
+                if !over_child { reveal_now(depth, false, index); }
+            });
+        });
+    }
+}
+
+fn reveal_now(depth: usize, submenu: bool, index: isize) {
+    ACTION_ROWS.with(|rows| {
+        for row in rows.borrow().iter().filter_map(Weak::load) {
+            if row.ivars().depth >= depth {
+                row.set_selected(row.ivars().depth == depth && row.ivars().index == index);
+            }
+        }
+    });
     SESSION.with(|state| {
         if let Some(s) = state.borrow().as_ref() {
             let frames_before: Vec<_> = s.panels.iter().map(|p| p.frame()).collect();
@@ -47,6 +115,8 @@ fn reveal(depth: usize, submenu: bool) {
 
 struct Session {
     app: tauri::AppHandle,
+    opened_at: std::time::Instant,
+    pointer_left_at: Option<u64>,
     panels: Vec<Retained<MenuPanel>>,
     // Keep original menu targets/delegate alive for actions and completions.
     _root: Retained<NSMenu>,
@@ -57,6 +127,7 @@ struct Session {
 }
 thread_local! {
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+    static ACTION_ROWS: RefCell<Vec<Weak<ActionRow>>> = const { RefCell::new(Vec::new()) };
     static ANCHOR: RefCell<Weak<NSStatusBarButton>> = RefCell::new(Weak::default());
 }
 pub fn set_anchor(button: &Retained<NSStatusBarButton>) {
@@ -81,6 +152,9 @@ struct ActionIvars {
     menu: Retained<NSMenu>,
     index: isize,
     depth: usize,
+    button: Retained<NSButton>,
+    highlight: Retained<NSVisualEffectView>,
+    arrow: Option<Retained<NSTextField>>,
 }
 define_class!(
     #[unsafe(super = NSView)]
@@ -94,7 +168,14 @@ define_class!(
         fn mouse_entered(&self, _event: &NSEvent) {
             let iv = self.ivars();
             let submenu = iv.menu.itemAtIndex(iv.index).is_some_and(|item| item.isEnabled() && item.submenu().is_some());
-            reveal(iv.depth, submenu);
+            reveal(iv.depth, submenu, iv.index);
+        }
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _event: &NSEvent) {
+            let iv = self.ivars();
+            if !iv.menu.itemAtIndex(iv.index).is_some_and(|item| item.isEnabled() && item.submenu().is_some()) {
+                self.set_selected(false);
+            }
         }
         #[unsafe(method(activate:))]
         fn activate(&self, _sender: &NSButton) {
@@ -104,7 +185,7 @@ define_class!(
             if item.submenu().is_some() {
                 // A physical click first enters the row; do not immediately
                 // undo the submenu opened by mouseEntered.
-                reveal(iv.depth, true);
+                reveal(iv.depth, true, iv.index);
             } else {
                 let menu = iv.menu.clone();
                 let index = iv.index;
@@ -115,10 +196,37 @@ define_class!(
     }
 );
 
+impl ActionRow {
+    fn set_selected(&self, selected: bool) {
+        let iv = self.ivars();
+        let enabled = iv.menu.itemAtIndex(iv.index).is_some_and(|item| item.isEnabled());
+        let selected = selected && enabled;
+        iv.highlight.setHidden(!selected);
+        let color = if selected { NSColor::selectedMenuItemTextColor() }
+            else if enabled { NSColor::labelColor() } else { NSColor::disabledControlTextColor() };
+        iv.button.setContentTintColor(Some(&color));
+        if let Some(arrow) = &iv.arrow { arrow.setTextColor(Some(&color)); }
+    }
+}
+
+fn rounded_mask(size: NSSize, radius: f64) -> Retained<NSImage> {
+    let image = NSImage::initWithSize(NSImage::alloc(), size);
+    #[allow(deprecated)]
+    image.lockFocus();
+    NSColor::whiteColor().setFill();
+    NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(rect(0.0, 0.0, size.width, size.height), radius, radius).fill();
+    #[allow(deprecated)]
+    image.unlockFocus();
+    image
+}
+
 fn close(reason: &str) {
+    SESSION_REVISION.fetch_add(1, Ordering::AcqRel);
+    HOVER_REVISION.fetch_add(1, Ordering::AcqRel);
     let session = SESSION.with(|state| state.borrow_mut().take());
     let Some(session) = session else { return };
     VISIBLE.store(false, Ordering::Release);
+    ACTION_ROWS.with(|rows| rows.borrow_mut().clear());
     for monitor in &session.monitors {
         // Tokens belong to this session only. Real input is never consumed.
         unsafe {
@@ -227,6 +335,7 @@ fn panel(frame: NSRect, content: &NSView, mtm: MainThreadMarker) -> Retained<Men
     background.setMaterial(NSVisualEffectMaterial::Menu);
     background.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
     background.setState(NSVisualEffectState::Active);
+    background.setMaskImage(Some(&rounded_mask(frame.size, 8.0)));
     background.setWantsLayer(true);
     let layer: Option<Retained<AnyObject>> = unsafe { msg_send![&background, layer] };
     if let Some(layer) = layer {
@@ -266,15 +375,22 @@ fn menu_content(
             continue;
         }
         y -= 27.0;
+        let button = NSButton::initWithFrame(NSButton::alloc(mtm), rect(8.0, 0.0, width - 36.0, 27.0));
+        let highlight = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), rect(0.0, 0.0, width - 12.0, 27.0));
+        highlight.setMaterial(NSVisualEffectMaterial::Selection);
+        highlight.setBlendingMode(NSVisualEffectBlendingMode::WithinWindow);
+        highlight.setState(NSVisualEffectState::Active);
+        highlight.setEmphasized(true);
+        highlight.setMaskImage(Some(&rounded_mask(NSSize::new(width - 12.0, 27.0), 4.0)));
+        highlight.setHidden(true);
+        let arrow = item.submenu().map(|_| label("›", rect(width - 35.0, 5.0, 14.0, 18.0), mtm));
         let row = ActionRow::alloc(mtm).set_ivars(ActionIvars {
-            menu: menu.retain(),
-            index,
-            depth,
+            menu: menu.retain(), index, depth, button: button.clone(), highlight: highlight.clone(), arrow: arrow.clone(),
         });
-        let row: Retained<ActionRow> =
-            unsafe { msg_send![super(row), initWithFrame: rect(6.0, y, width - 12.0, 27.0)] };
-        let button =
-            NSButton::initWithFrame(NSButton::alloc(mtm), rect(0.0, 0.0, width - 12.0, 27.0));
+        let row: Retained<ActionRow> = unsafe { msg_send![super(row), initWithFrame: rect(6.0, y, width - 12.0, 27.0)] };
+        row.addSubview(&highlight);
+        row.set_selected(false);
+        ACTION_ROWS.with(|rows| rows.borrow_mut().push(Weak::from_retained(&row)));
         button.setTitle(&item.title());
         button.setBordered(false);
         button.setFont(Some(&NSFont::systemFontOfSize(13.0)));
@@ -290,9 +406,7 @@ fn menu_content(
             NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveAlways,
             Some(&row), None) };
         row.addTrackingArea(&tracking);
-        if item.submenu().is_some() {
-            row.addSubview(&label("›", rect(width - 35.0, 5.0, 14.0, 18.0), mtm));
-        }
+        if let Some(arrow) = arrow { row.addSubview(&arrow); }
         content.addSubview(&row);
     }
     (content, height)
@@ -343,7 +457,18 @@ fn show_cascade(header: &ItemMenuView, menu: &NSMenu, initial_depth: usize) {
         .or_else(|| screens.firstObject());
     let Some(screen) = screen else { return };
     let bounds = screen.visibleFrame();
-    let widths = [root.size().width.max(180.0), parent.size().width.max(180.0), WIDTH];
+    // Measure the short organizer commands instead of imposing a 180 pt menu.
+    let parent_width = (0..parent.numberOfItems())
+        .filter_map(|index| parent.itemAtIndex(index))
+        .filter(|item| !item.isSeparatorItem())
+        .map(|item| {
+            let field = label(&item.title().to_string(), rect(0.0, 0.0, 0.0, 20.0), mtm);
+            field.setFont(Some(&NSFont::systemFontOfSize(13.0)));
+            field.sizeToFit();
+            field.frame().size.width + 48.0 // text inset, submenu arrow, outer padding
+        })
+        .fold(136.0_f64, f64::max).ceil();
+    let widths = [root.size().width.max(180.0), parent_width, WIDTH];
     let (root_view, root_height) = menu_content(&root, widths[0], 0, mtm);
     let (parent_view, parent_height) = menu_content(&parent, widths[1], 1, mtm);
     // NSMenu continues laying out its item views while tracking unwinds.
@@ -413,6 +538,12 @@ fn show_cascade(header: &ItemMenuView, menu: &NSMenu, initial_depth: usize) {
         panel(frames[1], &parent_view, mtm),
         panel(frames[2], &scroll, mtm),
     ];
+    ACTION_ROWS.with(|rows| {
+        for row in rows.borrow().iter().filter_map(Weak::load) {
+            let iv = row.ivars();
+            row.set_selected(iv.depth < initial_depth && iv.menu.itemAtIndex(iv.index).is_some_and(|item| item.submenu().is_some()));
+        }
+    });
     for (panel, title) in panels
         .iter()
         .zip(["FlowHub 菜单", "菜单栏整理", "逐个图标控制"])
@@ -424,6 +555,8 @@ fn show_cascade(header: &ItemMenuView, menu: &NSMenu, initial_depth: usize) {
     SESSION.with(|state| {
         *state.borrow_mut() = Some(Session {
             app: header.ivars().app.clone(),
+            opened_at: std::time::Instant::now(),
+            pointer_left_at: None,
             panels,
             _root: root.clone(),
             _header: header.retain(),
@@ -432,6 +565,7 @@ fn show_cascade(header: &ItemMenuView, menu: &NSMenu, initial_depth: usize) {
             rows,
         })
     });
+    watch_pointer(header.ivars().app.clone());
     root.cancelTrackingWithoutAnimation();
     let activation = RcBlock::new(|_: NonNull<NSNotification>| {
         if NSWorkspace::sharedWorkspace()
@@ -554,6 +688,18 @@ fn cascade_frames(anchor: NSRect, screen: NSRect, heights: [f64; 3], widths: [f6
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pointer_leave_grace_restarts_after_reentry() {
+        let mut left = None;
+        assert!(!leave_timeout(&mut left, 0, false));
+        assert!(!leave_timeout(&mut left, 499, false));
+        assert!(!leave_timeout(&mut left, 500, true));
+        assert!(!leave_timeout(&mut left, 800, false));
+        assert!(!leave_timeout(&mut left, 1299, false));
+        assert!(leave_timeout(&mut left, 1300, false));
+        assert!(!leave_timeout(&mut left, 2000, true));
+    }
+
     #[test]
     fn filters_only_our_tagged_events() {
         assert!(matches_synthetic(synthetic_marker(314), 123, 123));

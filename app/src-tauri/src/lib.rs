@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSLayoutConstraint, NSLayoutConstraintOrientation, NSVariableStatusItemLength,
+    NSLayoutAttribute, NSLayoutConstraint, NSLayoutConstraintOrientation, NSVariableStatusItemLength,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSString, NSUserDefaults};
@@ -215,7 +215,8 @@ fn capture_organizer_minimum_width_constraint(
             .is_some_and(|item| objc2::rc::Retained::as_ptr(item) as *const () == superview_ptr);
         if is_status_item_width_constraint {
             let retained = constraint.retain();
-            let pointer = Box::into_raw(Box::new(retained));
+            let original_constant = retained.constant();
+            let pointer = Box::into_raw(Box::new((retained, original_constant)));
             constraint_pointer.store(pointer as usize, AtomicOrdering::Release);
             break;
         }
@@ -225,9 +226,9 @@ fn capture_organizer_minimum_width_constraint(
 #[cfg(target_os = "macos")]
 unsafe fn organizer_boundary_constraint(
     constraint_pointer: &AtomicUsize,
-) -> Option<&'static objc2::rc::Retained<NSLayoutConstraint>> {
+) -> Option<&'static (objc2::rc::Retained<NSLayoutConstraint>, f64)> {
     let address = constraint_pointer.load(AtomicOrdering::Acquire);
-    (address != 0).then(|| unsafe { &*(address as *const objc2::rc::Retained<NSLayoutConstraint>) })
+    (address != 0).then(|| unsafe { &*(address as *const (objc2::rc::Retained<NSLayoutConstraint>, f64)) })
 }
 
 #[cfg(target_os = "macos")]
@@ -240,25 +241,18 @@ fn set_organizer_boundary_collapsed(
         return;
     };
     capture_organizer_minimum_width_constraint(tray, constraint_pointer);
-    if collapsed {
-        status_item.setLength(10_000.0);
-        if let Some(constraint) = unsafe { organizer_boundary_constraint(constraint_pointer) } {
-            constraint.setActive(true);
+    status_item.setLength(if collapsed { 10_000.0 } else { 1.0 });
+    // Remove the separator's native width padding through its layout constraint,
+    // rather than resizing only the active display's NSWindow. Apply this after
+    // setLength, which restores AppKit's padding. Leave collapsed layout native.
+    if let Some((constraint, original_constant)) = unsafe { organizer_boundary_constraint(constraint_pointer) } {
+        let is_width_padding = constraint.firstAttribute() == NSLayoutAttribute::Width
+            && constraint.secondAttribute() == NSLayoutAttribute::Width
+            && (0.0..=32.0).contains(original_constant);
+        if is_width_padding && !collapsed {
+            constraint.setConstant(0.0);
         }
-    } else {
-        status_item.setLength(0.0);
-        if let Some(constraint) = unsafe { organizer_boundary_constraint(constraint_pointer) } {
-            constraint.setActive(false);
-        }
-        if let Some(main_thread) = objc2::MainThreadMarker::new() {
-            if let Some(button) = status_item.button(main_thread) {
-                if let Some(window) = button.window() {
-                    let mut size = window.frame().size;
-                    size.width = 1.0;
-                    window.setContentSize(size);
-                }
-            }
-        }
+        constraint.setActive(true);
     }
 }
 
@@ -271,7 +265,7 @@ fn recreate_collapsed_organizer_boundary(
     if constraint_pointer != 0 {
         unsafe {
             drop(Box::from_raw(
-                constraint_pointer as *mut objc2::rc::Retained<NSLayoutConstraint>,
+                constraint_pointer as *mut (objc2::rc::Retained<NSLayoutConstraint>, f64),
             ));
         }
     }
@@ -401,6 +395,14 @@ fn organizer_item_snapshot(item: Option<&tray_icon::TrayIcon>) -> Value {
                     }
                     if let Some(window) = button.window() {
                         let frame = window.frame();
+                        if let Some(screen) = window.screen() {
+                            let screen_frame = screen.frame();
+                            detail["screen"] = json!({
+                                "x": screen_frame.origin.x, "y": screen_frame.origin.y,
+                                "width": screen_frame.size.width, "height": screen_frame.size.height,
+                                "scale": screen.backingScaleFactor()
+                            });
+                        }
                         detail["windowId"] = json!(window.windowNumber());
                         detail["windowIgnoresMouseEvents"] = json!(window.ignoresMouseEvents());
                         detail["windowRight"] = json!(frame.origin.x + frame.size.width);
@@ -445,7 +447,14 @@ fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
     let boundary = organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) });
     let always_hidden_boundary =
         organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) });
+    let boundary_padding = unsafe { organizer_boundary_constraint(&ORGANIZER_BOUNDARY_CONSTRAINT_PTR) }
+        .map(|(constraint, original)| json!({
+            "original": original, "current": constraint.constant(),
+            "firstAttribute": constraint.firstAttribute().0,
+            "secondAttribute": constraint.secondAttribute().0
+        }));
     let detail = json!({
+        "boundaryPadding": boundary_padding,
         "phase": phase,
         "enabled": ORGANIZER_ENABLED.load(AtomicOrdering::Acquire),
         "collapsed": ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire),
@@ -464,6 +473,7 @@ fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
             Ok(json!({
                 "phase": phase,
                 "count": items.len(),
+                "currentRowCount": macos_accessibility::items_in_menu_bar_row(&items, ids.1).map(|row| row.len()).ok(),
                 "controlWindowId": ids.0,
                 "boundaryWindowId": ids.1,
                 "alwaysHiddenBoundaryWindowId": ids.2,
@@ -679,6 +689,7 @@ fn managed_menu_bar_items(
     always_boundary_id: u32,
 ) -> Result<Vec<(macos_accessibility::MenuBarItem, &'static str)>, String> {
     let all_items = macos_accessibility::menu_bar_items()?;
+    let all_items = macos_accessibility::items_in_menu_bar_row(&all_items, boundary_id)?;
     let boundary = all_items.iter().find(|item| item.window_id == boundary_id);
     let always_boundary = all_items
         .iter()
@@ -819,6 +830,7 @@ async fn set_menu_bar_item_hidden(
             use menu_bar_section_memory::{Identity, Memory, Section};
             // Require both dividers to exist before trusting section geometry.
             let inventory = macos_accessibility::menu_bar_items()?;
+            let inventory = macos_accessibility::items_in_menu_bar_row(&inventory, boundary_id)?;
             if ![control_id, boundary_id, always_boundary_id]
                 .iter()
                 .all(|id| inventory.iter().any(|item| item.window_id == *id))
@@ -841,13 +853,20 @@ async fn set_menu_bar_item_hidden(
             } else {
                 Section::Visible
             };
+            // The main FlowHub icon is not movable through this UI, but it must
+            // participate in ordering so restores cannot cross it on the next cycle.
+            let own_anchors: Vec<_> = inventory.iter().filter(|item|
+                item.owner_pid == std::process::id() as i32
+                && ![control_id, boundary_id, always_boundary_id].contains(&item.window_id)
+            ).map(|item| item.window_id).collect();
+            let main_anchor = (own_anchors.len() == 1).then(|| own_anchors[0]);
             let identities: Vec<_> = inventory
                 .iter()
                 .map(|item| Identity {
                     owner: item.owner_name.clone(),
-                    title: item.title.clone(),
+                    title: if Some(item.window_id) == main_anchor { "flowhub-main-anchor".into() } else { item.title.clone() },
                     accessibility_id: item.accessibility_id.clone(),
-                    stable_id: item.stable_id.clone(),
+                    stable_id: if Some(item.window_id) == main_anchor { "flowhub-main-anchor".into() } else { item.stable_id.clone() },
                 })
                 .collect();
             let index = inventory.iter().position(|item| item.window_id == window_id).unwrap();
@@ -863,13 +882,14 @@ async fn set_menu_bar_item_hidden(
             };
             let manageable = |item: &macos_accessibility::MenuBarItem| item.owner_pid != std::process::id() as i32
                 && item.owner_name != "Window Server" && item.title != "Menubar" && item.movable && item.hideable;
+            let usable_anchor = |item: &macos_accessibility::MenuBarItem| manageable(item) || Some(item.window_id) == main_anchor;
             if hidden && section != Section::AlwaysHidden {
-                let mut ordered: Vec<_> = inventory.iter().enumerate().filter(|(_, i)| manageable(i) && section_of(i) == section).collect();
+                let mut ordered: Vec<_> = inventory.iter().enumerate().filter(|(_, i)| usable_anchor(i) && section_of(i) == section).collect();
                 ordered.sort_by(|a,b| a.1.x.total_cmp(&b.1.x));
                 memory.remember_order(&identities[index], section, &ordered.iter().map(|(i,_)| &identities[*i]).collect::<Vec<_>>());
             }
             let anchor = if !hidden && section == Section::AlwaysHidden {
-                let candidates: Vec<_> = inventory.iter().enumerate().filter(|(_,i)| manageable(i)).collect();
+                let candidates: Vec<_> = inventory.iter().enumerate().filter(|(_,i)| usable_anchor(i)).collect();
                 let current: Vec<_> = candidates.iter().map(|(i,item)| (&identities[*i], section_of(item))).collect();
                 memory.order_anchor(&identities[index], plan.destination, &current)
                     .map(|(i,left)| (candidates[i].1.window_id, left))
@@ -888,7 +908,7 @@ async fn set_menu_bar_item_hidden(
                 "orderAnchorFound": anchor.is_some(),
             }));
             // Keep both dividers unchanged: unrelated hidden items must never be exposed.
-            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, anchor.is_some())
+            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, true)
         })
         .await
         .map_err(|error| error.to_string())?;

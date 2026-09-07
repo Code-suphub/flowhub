@@ -121,8 +121,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     return { ...(queries.find((query) => query.status === "fulfilled")?.value || {}), Answer: unique };
   }
 
-  async function lookupLocalIp(onProgress) {
-    return window.FlowHubLookupPublicIp(onProgress);
+  async function lookupLocalIp(onProgress, options) {
+    return window.FlowHubLookupPublicIp(onProgress, options);
   }
 
   function normalizeIpLocation(body) {

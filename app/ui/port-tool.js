@@ -22,12 +22,20 @@
   };
   window.FlowHubPortCommands = {parse, commands, formatElapsed, formatStartedAt};
   let current = {port:null, processes:[], status:'idle'}, timer, token=0, confirming=null, terminating=false;
+  const pendingInspections = new Map();
+  function inspectOnce(port, api) {
+    if (!pendingInspections.has(port)) {
+      const request = Promise.resolve().then(() => api.inspectPort(port)).finally(() => pendingInspections.delete(port));
+      pendingInspections.set(port, request);
+    }
+    return pendingInspections.get(port);
+  }
   async function refresh(port, ctx) {
     const version=++token; confirming=null;
     current={port,processes:[],status:'loading'}; ctx.render();
     try {
       if (!ctx.api?.inspectPort) throw new Error('浏览器预览不读取本机进程；可复制查询命令。');
-      const report=await ctx.api.inspectPort(port);
+      const report=await inspectOnce(port, ctx.api);
       if(version!==token) return;
       current={...report,status:'ready'};
     } catch(error) { if(version===token) current={port,processes:[],status:'error',error:error.message||String(error)}; }
