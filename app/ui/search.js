@@ -553,10 +553,12 @@ function matches() {
     const pool = new Map([...allInitialResults, ...usageMatches(), ...toolSuggestions(), ...allCandidates()].map(item => [resultKey(item), item]));
     return allResultKeys.map(key => pool.get(key)).filter(Boolean);
   }
+  if (state.scope === "clipboard") return pluginEnabled("clipboard") ? clipboardMatches() : [];
+  if (state.scope === "memo") return pluginEnabled("memo") ? memoMatches() : [];
   const tools = state.scope === "clipboard" ? [] : toolSuggestions();
   const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
   const addWeb = pluginEnabled("web") && state.query.trim() ? webAddSuggestion(pages) : null;
-  const clips = pluginEnabled("clipboard") ? clipboardMatches() : [];
+  const clips = state.scope === "all" && pluginEnabled("clipboard") ? clipboardMatches() : [];
   const apps = pluginEnabled("app") ? appMatches() : [];
   const memos = pluginEnabled("memo") ? memoMatches() : [];
   const usages = usageMatches();
@@ -674,14 +676,14 @@ function renderUsageTile(item, index) {
   `;
 }
 
-function renderResults(items) {
+function renderResults(items, from = 0, to = items.length) {
   let html = "";
-  for (let index = 0; index < items.length;) {
+  for (let index = from; index < to;) {
     const item = items[index];
     if (item.usageSection) {
       const start = index;
       const section = item.usageSection;
-      while (index < items.length && items[index].usageSection === section) index += 1;
+      while (index < to && items[index].usageSection === section) index += 1;
       html += usageSectionHeading(section);
       html += `<div class="usage-strip">${items.slice(start, index).map((entry, offset) => renderUsageTile(entry, start + offset)).join("")}</div>`;
       continue;
@@ -929,7 +931,7 @@ function renderResult(item, index, items) {
     const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
     const title = item.kind === "image"
       ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
-      : isFile ? esc(fileLabel) : esc(preview || "空文本");
+      : isFile ? esc(fileLabel) : esc((expanded ? preview : preview.slice(0, 300) + (preview.length > 300 ? "…" : "")) || "空文本");
     const toggle = expandable
       ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
       : "";
@@ -961,7 +963,10 @@ function renderResult(item, index, items) {
   `;
 }
 
-function render({ preserveScroll = false } = {}) {
+const resultWindow = new window.FlowHubResultWindow();
+let windowedResults = false;
+let windowRenderFrame = 0;
+function render({ preserveScroll = false, targetIndex = null } = {}) {
   const previousScrollTop = preserveScroll ? resultsEl.scrollTop : 0;
   if (!state.config) {
     const html = `<div class="empty">配置加载中…</div>`;
@@ -983,21 +988,42 @@ function render({ preserveScroll = false } = {}) {
         : state.scope === "memo"
           ? { loading: state.memoLoading, hasMore: state.memoHasMore }
           : null;
+  windowedResults = m.length > 80;
+  let plan = null;
+  if (windowedResults) plan = resultWindow.plan(m, resultKey, previousScrollTop, resultsEl.clientHeight, targetIndex);
+  const resultHtml = plan
+    ? `<div aria-hidden="true" style="height:${plan.before}px"></div>${renderResults(m, plan.from, plan.to)}<div aria-hidden="true" style="height:${plan.after}px"></div>`
+    : renderResults(m);
   const html = !m.length
     ? `<div class="empty">${paging?.loading ? "正在加载…" : "没有匹配项"}</div>`
-    : `${renderResults(m)}${paging && (paging.loading || !paging.hasMore) ? `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>` : ""}`;
+    : `${resultHtml}${paging && (paging.loading || !paging.hasMore) ? `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>` : ""}`;
   if (html !== lastResultsHtml) {
     resultsEl.innerHTML = html;
     lastResultsHtml = html;
   }
+  if (plan) {
+    for (const group of plan.groups) {
+      const row = resultsEl.querySelector(`.result[data-i="${group.start}"]`);
+      if (!row) continue;
+      const element = m[group.start].usageSection ? row.parentElement : row;
+      const style = getComputedStyle(element);
+      const height = element.getBoundingClientRect().height + parseFloat(style.marginTop || 0) + parseFloat(style.marginBottom || 0);
+      const heading = m[group.start].usageSection ? element.previousElementSibling?.getBoundingClientRect().height || 0 : 0;
+      resultWindow.heights.set(group.id, height + heading);
+    }
+  }
   if (!m.length) return;
-  if (preserveScroll) {
+  if (targetIndex != null && plan) resultsEl.scrollTop = plan.targetTop;
+  else if (preserveScroll) {
     resultsEl.scrollTop = previousScrollTop;
+  } else {
+    resultsEl.scrollTop = 0;
   }
 }
 
 function revealActiveResult() {
   resultsEl.querySelector(".result.active")?.classList.remove("active");
+  if (windowedResults && !resultsEl.querySelector(`.result[data-i="${state.index}"]`)) render({ preserveScroll: true, targetIndex: state.index });
   const active = resultsEl.querySelector(`.result[data-i="${state.index}"]`);
   if (!active) return;
   active.classList.add("active");
@@ -1475,7 +1501,7 @@ async function hydrateClipboardAssets(records, token, preserveScroll) {
 
 async function refreshApps({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
-  if (append && (state.scope !== "app" || state.appLoading || !state.appHasMore)) return;
+  if (append && (state.appLoading || !state.appHasMore)) return;
   const token = ++appSearchToken;
   if (!append) appIconSearchToken += 1;
   const iconToken = appIconSearchToken;
@@ -1603,14 +1629,23 @@ async function refreshAllScopes() {
   if (state.scope !== "all") return;
   const token = ++allScopeRefreshToken;
   const query = state.query;
+  let queued = false;
+  const publish = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      if (token === allScopeRefreshToken && state.scope === "all" && state.query === query) render({ preserveScroll: true });
+    });
+  };
   await Promise.allSettled([
     refreshClipboard({ deferRender: true }),
     refreshApps({ deferRender: true }),
     refreshWeb({ deferRender: true }),
     refreshMemos({ deferRender: true })
-  ]);
+  ].map(task => task.finally(publish)));
   if (token !== allScopeRefreshToken || state.scope !== "all" || state.query !== query) return;
-  render();
+  render({ preserveScroll: true });
 }
 
 function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
@@ -1696,6 +1731,7 @@ resultsEl.addEventListener("error", (event) => {
   if (icon?.dataset.webIcon) failedWebIcons.add(icon.dataset.webIcon);
 }, true);
 resultsEl.addEventListener("scroll", () => {
+  if (windowedResults && !windowRenderFrame) windowRenderFrame = requestAnimationFrame(() => { windowRenderFrame = 0; render({ preserveScroll: true }); });
   if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight >= 160) return;
   if (state.scope === "all") void loadMoreAll();
   else if (state.scope === "clipboard") void refreshClipboard({ append: true });
@@ -1746,6 +1782,14 @@ resultsEl.addEventListener("mousemove", (e) => {
 
 function focusSearch() { q?.focus(); q?.select(); }
 function prepareForShow() {
+  allResultKeys = null;
+  allInitialResults = [];
+  allScopeRefreshToken += 1;
+  clearTimeout(clipboardSearchTimer);
+  for (const id of ["clipboard", "app", "web", "memo"]) {
+    state[id + "Results"] = state.emptyResults[id].slice();
+    state[id + "LoadedQuery"] = "";
+  }
   if (q) q.value = "";
   state.query = "";
   state.index = 0;
@@ -1761,8 +1805,14 @@ function prepareForShow() {
   clearTimeout(dnsSearchTimer);
   dnsSearchToken += 1;
   state.dnsResult = null;
-  invalidateClipboardPaging();
-  invalidatePluginPaging();
+  invalidateClipboardPaging({ resetPaging: false });
+  invalidatePluginPaging({ resetPaging: false });
+  state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
+  state.appHasMore = state.appResults.length >= 3;
+  state.appLoadedLimit = state.appResults.length;
+  state.webHasMore = state.webResults.length >= 12;
+  state.memoHasMore = state.memoResults.length >= 12;
+  resultsEl.scrollTop = 0;
   render();
   focusSearch();
 }

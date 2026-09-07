@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+global.window={}; require('../ui/search-window.js');
+const w=new window.FlowHubResultWindow();
+const items=Array.from({length:3000},(_,id)=>({id}));
+const key=x=>String(x.id);
+let p=w.plan(items,key,0,400);assert.equal(p.from,0);assert(p.to<40);
+p=w.plan(items,key,239999,400);assert.equal(p.to,3000);assert(p.to-p.from<40);
+p=w.plan(items,key,0,400,1500);assert(p.from<=1500&&p.to>1500);
+w.heights.set('0',1200);p=w.plan(items,key,1250,400);assert(p.groups.some(g=>g.start===1));
+const usage=[{id:'u1',usageSection:'frequent'},{id:'u2',usageSection:'frequent'},...items];p=w.plan(usage,key,0,400);assert.equal(p.groups[0].end,2);
+console.log('PASS: bounded 3000-row window, last row, keyboard target, expanded-height offsets, indivisible usage groups');
