@@ -495,7 +495,64 @@ function withoutUsageDuplicates(items, usedItems) {
   return items.filter((item) => !used.has(usageKey(item)));
 }
 
+let allResultKeys = null;
+let allInitialResults = [];
+let allPaging = false;
+const resultKey = (item) => `${item.type || item.kind}:${item.id || item.path || item.url || item.title}`;
+function allCandidates() {
+  return [
+    ...(pluginEnabled("clipboard") ? clipboardMatches() : []),
+    ...(pluginEnabled("app") ? appMatches() : []),
+    ...(pluginEnabled("web") ? pageMatches().map(page => ({ ...page, type: "page" })) : []),
+    ...(pluginEnabled("memo") ? memoMatches() : [])
+  ];
+}
+function allHasMore() {
+  const shown = new Set(allResultKeys || matches().map(resultKey));
+  return allCandidates().some(item => !shown.has(resultKey(item)))
+    || (pluginEnabled("clipboard") && state.clipboardHasMore)
+    || (pluginEnabled("app") && state.appHasMore)
+    || (pluginEnabled("web") && state.webHasMore)
+    || (pluginEnabled("memo") && state.memoHasMore);
+}
+async function loadMoreAll() {
+  if (allPaging || state.scope !== "all") return;
+  // Do not page old-query data while the debounced first page is pending.
+  if ((pluginEnabled("clipboard") && state.clipboardLoadedQuery !== state.query)
+    || (pluginEnabled("app") && state.appLoadedQuery !== state.query)
+    || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
+    || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query)) return;
+  if (!allResultKeys) { allInitialResults = matches(); allResultKeys = allInitialResults.map(resultKey); }
+  const token = allScopeRefreshToken;
+  const shown = new Set(allResultKeys);
+  allPaging = true;
+  try {
+    let next = allCandidates().filter(item => !shown.has(resultKey(item)));
+    if (!next.length) {
+      await Promise.allSettled([
+        state.clipboardHasMore ? refreshClipboard({ append: true, deferRender: true }) : null,
+        state.appHasMore ? refreshApps({ append: true, deferRender: true }) : null,
+        state.webHasMore ? refreshWeb({ append: true, deferRender: true }) : null,
+        state.memoHasMore ? refreshMemos({ append: true, deferRender: true }) : null
+      ]);
+      if (token !== allScopeRefreshToken || state.scope !== "all") return;
+      next = allCandidates().filter(item => !shown.has(resultKey(item)));
+    }
+    for (const item of next.slice(0, 12)) {
+      const key = resultKey(item);
+      if (!shown.has(key)) { allResultKeys.push(key); shown.add(key); }
+    }
+  } finally {
+    allPaging = false;
+    if (token === allScopeRefreshToken && state.scope === "all") render({ preserveScroll: true });
+  }
+}
+
 function matches() {
+  if (state.scope === "all" && allResultKeys) {
+    const pool = new Map([...allInitialResults, ...usageMatches(), ...toolSuggestions(), ...allCandidates()].map(item => [resultKey(item), item]));
+    return allResultKeys.map(key => pool.get(key)).filter(Boolean);
+  }
   const tools = state.scope === "clipboard" ? [] : toolSuggestions();
   const pages = pluginEnabled("web") ? pageMatches().map((page) => ({ ...page, type: "page" })) : [];
   const addWeb = pluginEnabled("web") && state.query.trim() ? webAddSuggestion(pages) : null;
@@ -915,7 +972,9 @@ function render({ preserveScroll = false } = {}) {
     return;
   }
   const m = matches();
-  const paging = state.scope === "clipboard"
+  const paging = state.scope === "all"
+    ? { loading: allPaging, hasMore: allHasMore() }
+    : state.scope === "clipboard"
     ? { loading: state.clipboardLoading, hasMore: state.clipboardHasMore }
     : state.scope === "app"
       ? { loading: state.appLoading, hasMore: state.appHasMore }
@@ -1200,6 +1259,7 @@ function invalidatePluginPaging({ resetPaging = true } = {}) {
 }
 
 function setScope(scope) {
+  allResultKeys = null;
   allScopeRefreshToken += 1;
   invalidateClipboardPaging({ resetPaging: false });
   invalidatePluginPaging({ resetPaging: false });
@@ -1439,7 +1499,7 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
     const sameLoadedQuery = state.appLoadedQuery === state.query;
     state.appLoadedQuery = state.query;
     state.appLoadedLimit = append && sameLoadedQuery ? Math.max(state.appLoadedLimit, offset + limit) : limit;
-    state.appHasMore = state.scope === "app" && next.length === limit;
+    state.appHasMore = next.length === limit;
     void hydrateAppIcons(next, iconToken);
   } catch {
     if (!append) state.appResults = [];
@@ -1572,7 +1632,7 @@ function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
       void refreshWeb();
       void refreshMemos();
     }
-    void refreshUsage();
+    // Nonempty searches do not display usage cards; usage events refresh their cache.
   }, delay);
 }
 
@@ -1592,6 +1652,7 @@ q.addEventListener("compositionend", () => {
   searchCompositionEndedAt = performance.now();
 });
 q.addEventListener("input", () => {
+  allResultKeys = null;
   allScopeRefreshToken += 1;
   invalidateClipboardPaging();
   invalidatePluginPaging();
@@ -1636,7 +1697,8 @@ resultsEl.addEventListener("error", (event) => {
 }, true);
 resultsEl.addEventListener("scroll", () => {
   if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight >= 160) return;
-  if (state.scope === "clipboard") void refreshClipboard({ append: true });
+  if (state.scope === "all") void loadMoreAll();
+  else if (state.scope === "clipboard") void refreshClipboard({ append: true });
   else if (state.scope === "app") void refreshApps({ append: true });
   else if (state.scope === "web") void refreshWeb({ append: true });
   else if (state.scope === "memo") void refreshMemos({ append: true });

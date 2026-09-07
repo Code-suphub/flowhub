@@ -418,6 +418,10 @@ function clearDraft(key = draftStorageKey()) {
 }
 
 function persistDraftNow() {
+  return window.flowhubPerformance.measure("draft", persistDraftMeasured);
+}
+
+function persistDraftMeasured() {
   clearTimeout(draftTimer);
   draftTimer = null;
   if (!state.dirty || !state.config) return;
@@ -837,6 +841,7 @@ function renderDiagnostics() {
   const diagnostics = state.diagnostics || {};
   const toggle = $("#diagnosticsEnabled");
   if (!toggle) return;
+  window.flowhubPerformance.enable(diagnostics.enabled === true);
   toggle.checked = diagnostics.enabled === true;
   toggle.disabled = document.documentElement.dataset.weborgRuntime === "browser";
   $("#diagnosticsPath").textContent = diagnostics.path || "仅正式 App 可用";
@@ -1601,6 +1606,8 @@ function handleAction(action, actionTarget) {
   if (action === "set-menu-bar-item-hidden") return setMenuBarItemHidden(actionTarget);
   if (action === "check-update") return checkAppUpdate();
   if (action === "update-primary") return runPrimaryUpdateAction();
+  if (action === "show-ui-performance") { $("#uiPerformanceReport").textContent = window.flowhubPerformance.report(); return; }
+  if (action === "reset-ui-performance") { window.flowhubPerformance.reset(); $("#uiPerformanceReport").textContent = "测量已重置"; return; }
   if (action === "sample-diagnostics") return sampleDiagnosticsFromSettings();
   if (action === "clear-diagnostics") return clearDiagnosticsFromSettings();
   if (action === "choose-config-path") return chooseConfigPath();
@@ -1759,6 +1766,7 @@ document.addEventListener("dragend", () => {
 });
 
 document.addEventListener("input", (event) => {
+  return window.flowhubPerformance.measure("input", () => {
   if (event.target.id === "jsonEditor") {
     state.jsonDirty = jsonEditorDiffersFromConfig();
     markDirty("JSON 已修改");
@@ -1809,7 +1817,7 @@ document.addEventListener("input", (event) => {
     state.config.core.menuBar ||= { ...DEFAULT_MENU_BAR };
     state.config.core.menuBar[menuBarField] = event.target.checked;
     markDirty();
-    renderSettingsFields();
+    if (menuBarField === "enabled") renderSettingsFields();
     return;
   }
   const notificationField = event.target.dataset.notificationField;
@@ -1818,7 +1826,7 @@ document.addEventListener("input", (event) => {
     state.config.core.notifications ||= { ...DEFAULT_NOTIFICATIONS };
     state.config.core.notifications[notificationField] = event.target.checked;
     markDirty();
-    renderSettingsFields();
+    if (notificationField === "enabled") renderSettingsFields();
     return;
   }
   const organizerField = event.target.dataset.organizerField;
@@ -1827,7 +1835,7 @@ document.addEventListener("input", (event) => {
     state.config.core.menuBar ||= { ...DEFAULT_MENU_BAR };
     state.config.core.menuBar[organizerField] = event.target.checked;
     markDirty();
-    renderSettingsFields();
+    if (organizerField === "organizerEnabled") renderSettingsFields();
     return;
   }
   const shortcutScope = event.target.dataset.coreScopeShortcut;
@@ -1879,6 +1887,7 @@ document.addEventListener("input", (event) => {
       : event.target.value;
     markDirty();
   }
+  });
 });
 
 document.addEventListener("change", (event) => {

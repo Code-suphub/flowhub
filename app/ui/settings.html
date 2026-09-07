@@ -902,7 +902,7 @@
                 <div class="settings-block wide update-block hidden" data-core-section-panel="data">
                   <div class="update-heading"><div class="update-title"><strong>性能监控</strong><code>本机数据</code></div><label class="switch-field"><input id="diagnosticsEnabled" type="checkbox" />启用采样</label></div>
                   <p class="update-copy">记录 FlowHub 与 WebKit 的资源占用，帮助定位搜索卡顿；数据不会上传网络。</p>
-                  <div class="field-hint" id="diagnosticsPath">仅正式 App 可用</div>
+                  <pre class="field-hint" id="uiPerformanceReport" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite"></pre><div class="update-actions"><button class="button" type="button" data-action="show-ui-performance">读取界面测量</button><button class="button" type="button" data-action="reset-ui-performance">重置界面测量</button></div><div class="field-hint" id="diagnosticsPath">仅正式 App 可用</div>
                   <div class="update-actions"><button class="button" type="button" data-action="sample-diagnostics">立即采样</button><button class="button danger" type="button" data-action="clear-diagnostics">清理数据</button></div>
                 </div>
               </div>
@@ -1047,6 +1047,7 @@
     <script src="tauri-adapter.js"></script>
     <script src="browser-adapter.js"></script>
     <script src="icons.js"></script>
+    <script src="ui-performance.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

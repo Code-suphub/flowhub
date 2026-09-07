@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const s=fs.readFileSync(require('node:path').join(__dirname,'../ui/search.js'),'utf8');
+const block=s.slice(s.indexOf('let allResultKeys'),s.indexOf('function usageIndices'));
+const clips=Array.from({length:40},(_,i)=>({type:'clipboard',id:i+1}));
+let rendered=0;
+const state={scope:'all',query:'',clipboardLoadedQuery:'',appLoadedQuery:'',webLoadedQuery:'',memoLoadedQuery:'',clipboardHasMore:false,appHasMore:false,webHasMore:false,memoHasMore:false};
+const ctx=vm.createContext({state,allScopeRefreshToken:0,Set,Map,Promise,pluginEnabled:x=>x==='clipboard',clipboardMatches:()=>clips,appMatches:()=>[],pageMatches:()=>[],memoMatches:()=>[],usageMatches:()=>[],toolSuggestions:()=>[],webAddSuggestion:()=>null,withoutUsageDuplicates:x=>x,render:()=>rendered++});
+vm.runInContext(block,ctx);
+(async()=>{const first=ctx.matches().map(x=>x.id);assert.equal(first.length,6);await ctx.loadMoreAll();assert.equal(ctx.matches().length,18);assert.deepEqual(ctx.matches().slice(0,6).map(x=>x.id),first);await ctx.loadMoreAll();await ctx.loadMoreAll();assert.equal(ctx.matches().length,40);assert.equal(ctx.allHasMore(),false);assert.equal(new Set(ctx.matches().map(x=>x.id)).size,40);let fetches=0, resolveFetch;
+state.clipboardHasMore=true;
+ctx.refreshClipboard=async()=>{ fetches++; await new Promise(r=>resolveFetch=r); clips.push(...Array.from({length:12},(_,i)=>({type:'clipboard',id:41+i}))); state.clipboardHasMore=false; };
+const pending=ctx.loadMoreAll(); await ctx.loadMoreAll(); assert.equal(fetches,1); resolveFetch(); await pending;
+assert.equal(ctx.matches().length,52); assert.deepEqual(ctx.matches().slice(0,6).map(x=>x.id),first); assert.equal(ctx.allHasMore(),false);
+console.log('PASS all view: cached pages, backend append, concurrent-scroll guard, stable prefix, 52 unique rows, terminal state');})().catch(e=>{console.error(e);process.exitCode=1});
