@@ -31,6 +31,8 @@ const DEFAULT_MENU_BAR = { enabled: true, showOpenLauncher: true, showOpenSettin
 const DEFAULT_NOTIFICATIONS = { enabled: true, updates: true };
 const PROXY_ADAPTERS = new Set(["auto", "mihomo", "clash-rest", "system"]);
 const TOOL_SETTINGS = {
+  ping: "Ping 连通性",
+  curl: "HTTP 请求",
   port: "端口与进程",
   calculator: "计算表达式",
   timestamp: "时间戳转换",
@@ -184,7 +186,6 @@ function renderMemoTreeBranch(branch, depth = 0) {
     html += `<div class="memo-tree-group" style="--memo-depth:${depth}">
       <div class="memo-tree-label"><span class="memo-tree-joint" aria-hidden="true"></span><strong>${esc(label)}</strong><small>${total}</small></div>
       ${renderMemoTreeBranch(child, depth + 1)}
-      ${child.items.map((item) => renderMemoListItem(item, depth + 1)).join("")}
     </div>`;
   }
   html += branch.items.map((item) => renderMemoListItem(item, depth)).join("");
@@ -1014,9 +1015,9 @@ function renderMemoSettings() {
       <div class="form-grid memo-form">
         <div class="field"><label>标题</label><input data-memo-field="title" value="${esc(selected.title)}" /></div>
         <div class="field"><label>目录路径</label><input data-memo-field="category" value="${esc(memoCategoryPath(selected))}" placeholder="编程 / 数据库 / MySQL" /><div class="field-hint">使用 / 分隔层级，例如“编程 / 数据库 / MySQL”。</div></div>
+        <div class="field wide"><label>命令或备忘内容</label><textarea class="memo-content-editor" data-memo-field="content" spellcheck="false">${esc(selected.content)}</textarea></div>
         <div class="field wide"><label>说明</label><input data-memo-field="description" value="${esc(selected.description)}" placeholder="这条命令用于什么场景" /></div>
         <div class="field wide"><label>搜索标签</label><input data-memo-field="tags" value="${esc(memoTags(selected).join(", "))}" placeholder="磁盘, 占用, du" /><div class="field-hint">使用逗号分隔；标题、分类、说明、标签和命令正文都会参与搜索。</div></div>
-        <div class="field wide"><label>命令或备忘内容</label><textarea class="memo-content-editor" data-memo-field="content" spellcheck="false">${esc(selected.content)}</textarea></div>
       </div>` : `<div class="empty-editor"><strong>还没有备忘录</strong>点击“新增备忘”创建第一条内容。</div>`;
   }
 }
@@ -1030,7 +1031,11 @@ function syncJson({ force = false } = {}) {
 function renderMode() {
   $("#structurePanel").classList.toggle("hidden", state.mode !== "structure");
   $("#jsonPanel").classList.toggle("hidden", state.mode !== "json");
-  document.querySelectorAll(".mode-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.mode === state.mode));
+  document.querySelectorAll(".mode-tab").forEach((tab) => {
+    const active = tab.dataset.mode === state.mode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function renderModule() {

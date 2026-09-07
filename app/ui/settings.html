@@ -917,6 +917,8 @@
             <section class="selected-card clipboard-settings-card">
               <div class="selected-banner"><span class="selected-icon">✦</span><div><strong>工具开关</strong><small>关闭后对应能力不会参与搜索，也不会发起查询。</small></div></div>
               <div class="tool-settings-grid">
+                <label class="switch-field"><input type="checkbox" data-tool-setting="ping" />Ping 连通性（ping 主机）</label>
+                <label class="switch-field"><input type="checkbox" data-tool-setting="curl" />HTTP 请求（curl URL）</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="port" />端口与进程（port 9000）</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="calculator" />计算表达式</label>
                 <label class="switch-field"><input type="checkbox" data-tool-setting="timestamp" />时间戳转换</label>
@@ -934,8 +936,8 @@
 
           <div class="editor-inner module-panel hidden" data-module-panel="web">
             <div class="editor-head">
-              <div><h2>目录与页面</h2><p>把常用平台整理成可搜索的层级入口，任意节点都可以配置页面链接。</p></div>
-              <div class="mode-tabs" role="tablist">
+              <div><h2>目录与页面</h2><p>在左侧选择目录或页面，在这里编辑名称、链接和打开方式。</p></div>
+              <div class="mode-tabs" role="group" aria-label="编辑模式">
                 <button class="mode-tab active" data-mode="structure">结构化</button>
                 <button class="mode-tab" data-mode="json">JSON</button>
               </div>
@@ -971,21 +973,22 @@
 
           <div class="editor-inner module-panel hidden" data-module-panel="memo">
             <div class="editor-head">
-              <div><div class="editor-kicker">Field Notes</div><h2>备忘录与命令速查</h2><p>把容易忘记、经常查询的命令整理成可搜索、可直接粘贴的个人手册。</p></div>
+              <div><h2>备忘录与命令速查</h2><p>选择或新增备忘，编辑可搜索的命令与笔记。</p></div>
               <span class="module-state">本地配置</span>
             </div>
-            <div class="clipboard-overview memo-overview">
-              <article class="overview-card"><span>内容数量</span><strong id="memoCountValue">0 条</strong><small>标题、标签和正文均可检索</small></article>
-              <article class="overview-card"><span>分类数量</span><strong id="memoCategoryValue">0 类</strong><small>适合按技术栈组织命令</small></article>
-              <article class="overview-card"><span>数据来源</span><strong id="memoSourceValue">内置命令库</strong><small>自定义后随主配置保存</small></article>
+            <div class="memo-overview" aria-label="备忘录概况">
+              <span>内容 <strong id="memoCountValue">0 条</strong></span>
+              <span>分类 <strong id="memoCategoryValue">0 类</strong></span>
+              <span>来源 <strong id="memoSourceValue">内置命令库</strong></span>
             </div>
             <section class="memo-workspace">
               <div class="memo-library">
                 <div class="memo-library-head">
                   <input id="memoFilter" placeholder="筛选标题、分类或命令…" />
-                  <div class="memo-library-actions"><button class="button primary" type="button" data-action="add-memo">＋ 新增备忘</button><button class="button" type="button" data-action="reset-memos">恢复内置</button></div>
+                  <div class="memo-library-actions"><button class="button primary" type="button" data-action="add-memo">＋ 新增备忘</button></div>
                 </div>
                 <div class="memo-list" id="memoList"></div>
+                <details class="memo-maintenance"><summary>管理命令库</summary><p>恢复内置会替换所有自定义备忘和修改。</p><button class="button danger" type="button" data-action="reset-memos">恢复内置命令库</button></details>
               </div>
               <div class="memo-editor-card" id="memoEditor"></div>
             </section>

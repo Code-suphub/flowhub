@@ -1,0 +1,20 @@
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const context=vm.createContext({window:{},URL});
+for(const file of ['tool-registry.js','network-tools.js'])vm.runInContext(fs.readFileSync(`${__dirname}/../ui/${file}`,'utf8'),context);
+const {parse,command}=context.window.FlowHubNetworkTools;
+assert.equal(parse('ping example.com').kind,'ping');assert.equal(parse('curl -I https://example.com').head,true);
+for(const q of ['curl -i https://example.com','ping -c 100','ping host;whoami','curl file:///etc/passwd','curl https://user:pass@example.com','curl -X POST https://example.com'])assert.equal(parse(q),null);
+assert(command(parse('ping 2001:db8::1')).startsWith('ping6'));assert.equal(parse('ping ::1').target,'::1');
+assert(command(parse('ping 2001:db8::1'),true).startsWith('ping -6'));
+let query='curl https://example.com',calls=0,resolve,copied='';
+const ctx={query,queryNow:()=>query,enabled:()=>true,render(){},status(){},copy:async text=>copied=text,api:{runNetworkDiagnostic:()=>{calls++;return new Promise(r=>resolve=r);}}};
+const reg=context.window.FlowHubTools;
+(async()=>{
+ const item=reg.suggestions(ctx)[0];assert.equal(calls,0);
+ const first=reg.choose(item,ctx);await reg.choose(item,ctx);assert.equal(calls,1);
+ query='ping localhost';reg.queryChanged({...ctx,query});resolve({output:'old response',exitCode:0,elapsedMs:1});await first;
+ query=ctx.query;const html=reg.render(reg.suggestions(ctx)[0],{esc:String,index:0,active:true});assert(!html.includes('old response'));
+ await reg.action('curl','command',{},ctx);assert(copied.includes('--max-time 10'));
+ assert.equal(reg.suggestions({...ctx,enabled:()=>false}).length,0);
+ console.log('PASS: network input validation, explicit execution, duplicate suppression, stale response, command copy, disabled tools');
+})().catch(e=>{console.error(e);process.exitCode=1});

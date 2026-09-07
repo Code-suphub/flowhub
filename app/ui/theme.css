@@ -325,3 +325,51 @@ body > .app::before { content: ""; position: fixed; inset: 0; z-index: -1; point
   .process-properties th { width:72px; }
   .process-properties th, .process-properties td { padding:7px 8px; }
 }
+.network-output { max-height:230px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:10px; border-radius:6px; background:rgba(0,0,0,.14); color:var(--text); font:11px/1.6 var(--mono); user-select:text; }
+
+/* Collection editors: keep navigation and the editable content in view. */
+.editor-inner[data-module-panel="web"],
+.editor-inner[data-module-panel="memo"] { container-type: inline-size; }
+.editor-inner[data-module-panel="web"] .editor-head,
+.editor-inner[data-module-panel="memo"] .editor-head { gap: 12px; margin-bottom: 16px !important; flex-wrap: wrap; }
+.editor-inner[data-module-panel="web"] .editor-head > div:first-child { flex: 1 1 240px; min-width: 0; }
+.mode-tabs { flex: 0 0 auto; align-self: flex-start; white-space: nowrap; }
+.mode-tab { min-height: 32px; white-space: nowrap; }
+#structurePanel > .toolbar { position: static; padding: 0 0 14px; margin-bottom: 16px; border-bottom: 1px solid var(--line); background: none; backdrop-filter: none; gap: 8px 12px; }
+#structurePanel > .toolbar .toolbar-group { padding: 0; border: 0; background: none; gap: 5px; }
+#structurePanel > .toolbar .button { min-height: 32px; padding: 0 10px; white-space: nowrap; }
+#structurePanel > .toolbar .toolbar-label { font-size: 11px; }
+#nodeEditor > .selected-card { padding: 18px; }
+#nodeEditor .selected-banner { margin-bottom: 16px; padding-bottom: 14px; gap: 12px; }
+#nodeEditor .selected-icon { width: 36px; height: 36px; flex: 0 0 36px; font-size: 22px; border-radius: 10px; }
+#nodeEditor .form-section { padding: 0; border: 0; border-radius: 0; background: none; }
+#nodeEditor .form-section + .form-section { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+#nodeEditor .form-section-head { margin-bottom: 12px; flex-wrap: wrap; gap: 5px; }
+#nodeEditor .form-grid, .memo-form { gap: 12px; }
+#nodeEditor .field, .memo-form .field { min-width: 0; }
+.memo-overview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.memo-overview > span { display: flex; gap: 8px; align-items: baseline; }
+.memo-overview strong { color: var(--text-strong); font-size: 12px; font-weight: 600; }
+.memo-workspace { grid-template-columns: minmax(200px, .65fr) minmax(0, 1.45fr); gap: 16px; }
+.memo-library { position: sticky; top: 0; min-width: 0; }
+.memo-library-head { padding: 12px; }
+.memo-library-actions .button { min-height: 32px; }
+.memo-list { max-height: clamp(180px, calc(100dvh - 370px), 560px); }
+.memo-editor-card { min-width: 0; padding: 16px; }
+.memo-editor-head { margin-bottom: 14px; padding-bottom: 12px; }
+.memo-maintenance { border-top: 1px solid var(--line); padding: 12px; font-size: 11px; color: var(--muted); }
+.memo-maintenance summary { cursor: pointer; padding: 4px 0; }
+.memo-maintenance p { margin: 8px 0; line-height: 1.6; }
+.memo-maintenance .button { min-height: 32px; font-size: 11px; }
+@container (max-width: 620px) {
+  .memo-workspace { grid-template-columns: minmax(0, 1fr); }
+  .memo-library { position: static; }
+  .memo-list { max-height: 200px; }
+  #nodeEditor .form-grid, .memo-form { grid-template-columns: minmax(0, 1fr); }
+  #nodeEditor .form-grid .wide, .memo-form .wide { grid-column: 1; }
+}
+@media (max-width: 760px) {
+  .workspace:not(.single-pane) { overflow-y: auto; }
+  .workspace:not(.single-pane) > .sidebar { display: block !important; max-height: 290px; overflow-y: auto; border-bottom: 1px solid var(--line); }
+  .workspace:not(.single-pane) > .editor { overflow: visible; }
+}

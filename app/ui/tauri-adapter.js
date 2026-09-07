@@ -226,6 +226,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     loadAppIcons,
     loadClipboardAssets: (ids = []) => invoke("load_clipboard_assets", { ids }),
     lookupDns,
+    runNetworkDiagnostic: (kind, target, head) => invoke("run_network_diagnostic", { kind, target, head }),
     inspectPort: (port) => invoke("inspect_port", { port }),
     terminatePortProcess: (port, pid, identity) => invoke("terminate_port_process", { port, pid, identity }),
     lookupLocalIp,

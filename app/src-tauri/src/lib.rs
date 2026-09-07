@@ -42,6 +42,7 @@ use tauri_plugin_opener::OpenerExt;
 mod clipboard;
 mod diagnostics;
 mod port_inspector;
+mod network_diagnostics;
 #[cfg(target_os = "macos")]
 mod macos_accessibility;
 #[cfg(target_os = "macos")]
@@ -3264,6 +3265,7 @@ pub fn run() {
             search_usage,
             open_settings,
             close_settings,
+            network_diagnostics::run_network_diagnostic,
             port_inspector::inspect_port,
             port_inspector::terminate_port_process,
             open_accessibility_settings,
