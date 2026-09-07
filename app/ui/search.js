@@ -53,7 +53,7 @@ function renderVersion(update) {
   const version = String(update?.currentVersion || "").trim();
   const text = version ? `v${version}` : "浏览器预览";
   const hasUpdate = update?.status === "available" || update?.status === "downloaded";
-  versionBadge.textContent = text;
+  versionBadge.textContent = version ? `v${version.split("-")[0]}${version.includes("-local") ? " · 本地版" : ""}` : text;
   versionBadge.classList.toggle("update", hasUpdate);
   versionBadge.title = hasUpdate ? `发现正式版 v${update.availableVersion || "新版本"}` : `当前应用版本：${text}`;
 }
@@ -1759,3 +1759,41 @@ async function initialize() {
 }
 
 void initialize();
+
+
+// Pinning applies for this app session; explicit Escape/open actions still close it.
+let launcherPinned = false;
+function renderPinState(pinned) {
+  launcherPinned = pinned;
+  pinBtn.setAttribute("aria-pressed", String(pinned));
+  const label = pinned
+    ? "取消固定：切换到其他应用时自动收起"
+    : "固定窗口：切换到其他应用时不自动收起";
+  pinBtn.title = label;
+  pinBtn.setAttribute("aria-label", label);
+  pinBtn.dataset.tooltip = label;
+}
+if (pinBtn) {
+  pinBtn.innerHTML = window.flowhubIcon("pin");
+  renderPinState(false);
+  pinBtn.disabled = !window.weborg?.setLauncherPinned;
+  if (pinBtn.disabled) {
+    pinBtn.title = pinBtn.dataset.tooltip = "固定窗口仅在桌面应用中可用";
+  } else {
+    window.weborg.getLauncherPinned().then(renderPinState).catch(() => {});
+    pinBtn.addEventListener("click", async () => {
+      pinBtn.disabled = true;
+      try {
+        renderPinState(await window.weborg.setLauncherPinned(!launcherPinned));
+      } catch (error) {
+        pinBtn.title = pinBtn.dataset.tooltip = `固定窗口失败：${error.message || error}`;
+      } finally {
+        pinBtn.disabled = false;
+      }
+    });
+  }
+}
+settingsBtn.innerHTML = window.flowhubIcon("settings");
+settingsBtn.title = "打开 FlowHub 设置";
+settingsBtn.setAttribute("aria-label", settingsBtn.title);
+settingsBtn.dataset.tooltip = settingsBtn.title;

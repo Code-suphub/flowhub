@@ -2409,6 +2409,19 @@ pub(crate) fn hide_main(app: &tauri::AppHandle) {
     }
 }
 
+static LAUNCHER_PINNED: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn get_launcher_pinned() -> bool {
+    LAUNCHER_PINNED.load(AtomicOrdering::Acquire)
+}
+
+#[tauri::command]
+fn set_launcher_pinned(pinned: bool) -> bool {
+    LAUNCHER_PINNED.store(pinned, AtomicOrdering::Release);
+    pinned
+}
+
 #[tauri::command]
 fn hide_main_window(app: tauri::AppHandle) -> Result<Value, String> {
     hide_main(&app);
@@ -2649,6 +2662,14 @@ fn text_field(value: &Value, key: &str) -> String {
 
 fn number(value: &Value, key: &str) -> f64 {
     value.get(key).and_then(Value::as_f64).unwrap_or(0.0)
+}
+
+#[tauri::command]
+fn close_settings(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("settings") {
+        window.close().map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -3178,7 +3199,8 @@ pub fn run() {
                         let blur_window = main_window.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(Duration::from_millis(120));
-                            if !blur_window.is_focused().unwrap_or(false) {
+                            if !LAUNCHER_PINNED.load(AtomicOrdering::Acquire)
+                                && !blur_window.is_focused().unwrap_or(false) {
                                 eprintln!("[flowhub-tauri] 失焦后隐藏主窗口");
                                 let _ = blur_window.hide();
                             }
@@ -3215,9 +3237,12 @@ pub fn run() {
             load_application_icons,
             activate_target,
             hide_main_window,
+            get_launcher_pinned,
+            set_launcher_pinned,
             get_proxy_info,
             search_usage,
             open_settings,
+            close_settings,
             open_accessibility_settings,
             get_menu_bar_management_state,
             request_menu_bar_management_permission,

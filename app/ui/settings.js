@@ -910,7 +910,7 @@ function renderAppUpdate() {
   const topbarVersion = $("#topbarVersion");
   if (topbarVersion) {
     const visibleVersion = currentVersion === "—" ? "浏览器预览" : `v${currentVersion}`;
-    topbarVersion.textContent = visibleVersion;
+    topbarVersion.textContent = currentVersion === "—" ? visibleVersion : `v${currentVersion.split("-")[0]}${isLocalBuild ? " · 本地版" : ""}`;
     topbarVersion.title = currentVersion === "—" ? "浏览器预览，不代表已安装的 App 版本" : `当前版本 ${visibleVersion}`;
   }
   badge.textContent = labels[update.status] || "待检查";
@@ -1052,7 +1052,10 @@ function renderCoreSection() {
     general: { icon: "F", title: "启动与唤出", description: "修改快捷键或登录启动设置，保存后立即生效。" },
     search: { icon: "⌘", title: "搜索入口", description: "集中管理搜索来源、启停状态和范围快捷键。" },
     network: { icon: "↗", title: "网络与代理", description: "选择 FlowHub 读取本机代理状态的方式。" },
-    system: { icon: "⌂", title: "数据与更新", description: "管理主配置文件位置并检查 FlowHub 更新。" }
+    menubar: { icon: "⌂", title: "菜单栏", description: "设置 FlowHub 菜单内容，以及菜单栏图标的显示与整理。" },
+    notifications: { icon: "·", title: "通知", description: "选择需要接收的应用通知，并检查系统通知权限。" },
+    data: { icon: "▤", title: "数据与诊断", description: "查看配置文件位置，或采样本机性能数据以排查问题。" },
+    updates: { icon: "↻", title: "应用更新", description: "查看版本和安装进度，设置自动检查与安装策略。" }
   };
   if (!sections[state.coreSection]) state.coreSection = "general";
   document.querySelectorAll("[data-core-section]").forEach((button) => {
@@ -1079,21 +1082,19 @@ function renderPluginModules() {
     const active = moduleId === state.module;
     const disabled = !plugin.available || !moduleId;
     const hint = !plugin.available ? "未安装" : !plugin.enabled ? "已停用" : plugin.settingsHint;
-    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""} title="${esc(hint || plugin.name)}"><i class="module-nav-icon">${esc(plugin.icon || "·")}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button>`;
+    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""} title="${esc(hint || plugin.name)}"><i class="module-nav-icon">${window.flowhubIcon(plugin.id)}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button>`;
   };
-  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">F</i><span class="module-nav-copy"><strong>通用设置</strong><small>App 配置</small></span></button>`;
-  const categoryMenu = (label, icon, ids) => {
+  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">${window.flowhubIcon("settings")}</i><span class="module-nav-copy"><strong>通用设置</strong><small>App 配置</small></span></button>`;
+  const categoryMenu = (label, ids) => {
     const items = ids.map((id) => pluginsById.get(id)).filter((plugin) => plugin?.available && plugin.enabled);
     if (!items.length) return "";
-    const activePlugin = items.find((plugin) => plugin.settingsPanel === state.module);
-    const title = activePlugin ? `${label} · 当前为${activePlugin.settingsName || activePlugin.name}` : `${label} · ${items.length} 个模块`;
-    return `<details class="module-nav-menu${activePlugin ? " current" : ""}"${activePlugin ? " open" : ""}><summary class="module-nav-menu-trigger" title="${esc(title)}"><i class="module-nav-icon">${esc(activePlugin?.icon || icon)}</i><strong>${esc(label)}</strong><span class="module-nav-menu-chevron">⌄</span></summary><div class="module-nav-popover">${items.map(pluginButton).join("")}</div></details>`;
+    return `<section class="module-nav-section" aria-label="${esc(label)}"><h2 class="module-nav-section-title">${esc(label)}</h2><div class="module-nav-section-items">${items.map(pluginButton).join("")}</div></section>`;
   };
   $("#moduleSwitcher").innerHTML = [
     coreButton,
-    categoryMenu("入口", "◇", ["web", "app"]),
-    categoryMenu("文本", "▤", ["clipboard", "memo"]),
-    categoryMenu("工具", "✦", ["tools"])
+    categoryMenu("入口", ["web", "app"]),
+    categoryMenu("文本", ["clipboard", "memo"]),
+    categoryMenu("工具", ["tools"])
   ].join("");
 
   const controls = $("#corePluginControls");
@@ -1109,7 +1110,7 @@ function renderPluginModules() {
       const shortcut = Object.prototype.hasOwnProperty.call(DEFAULT_SCOPE_SHORTCUTS, plugin.id)
         ? `<label class="plugin-shortcut" for="scopeShortcut${esc(plugin.id)}"><span>范围键</span><button id="scopeShortcut${esc(plugin.id)}" class="shortcut-capture" type="button" data-core-scope-shortcut="${esc(plugin.id)}" ${plugin.available && plugin.enabled ? "" : "disabled"} aria-label="${esc(plugin.settingsName || plugin.name)}范围快捷键">${esc(state.config?.core?.scopeShortcuts?.[plugin.id] ?? DEFAULT_SCOPE_SHORTCUTS[plugin.id] ?? "点击后按键")}</button><small class="shortcut-conflict" hidden></small></label>`
         : `<span></span>`;
-      return `<div class="plugin-control-item" title="${esc(hint)}"><i class="plugin-control-icon">${esc(plugin.icon || "·")}</i><span class="plugin-control-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(plugin.settingsHint || hint)}</small></span>${shortcut}<label class="plugin-enable" title="${plugin.enabled ? "停用" : "启用"}${esc(plugin.name)}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
+      return `<div class="plugin-control-item" title="${esc(hint)}"><i class="plugin-control-icon">${window.flowhubIcon(plugin.id)}</i><span class="plugin-control-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(plugin.settingsHint || hint)}</small></span>${shortcut}<label class="plugin-enable" title="${plugin.enabled ? "停用" : "启用"}${esc(plugin.name)}"><input type="checkbox" data-plugin-toggle="${esc(plugin.id)}" ${plugin.enabled ? "checked" : ""} ${plugin.available ? "" : "disabled"} aria-label="启用${esc(plugin.name)}" /></label></div>`;
     }).join("");
     return `<section class="plugin-control-group"><header class="plugin-control-group-head"><strong>${esc(group.label)}</strong><small>${esc(group.description)}</small></header>${items}</section>`;
   }).join("");
@@ -1536,11 +1537,16 @@ function resetMemos() {
   renderMemoSettings();
 }
 
-function closeSettings() {
+async function closeSettings() {
   if (state.dirty && !window.confirm("当前有未保存修改，确定关闭设置吗？修改仍会保留在本地草稿中。")) return;
   allowUnload = true;
-  if (document.documentElement.dataset.weborgRuntime !== "browser") {
-    window.close();
+  if (window.weborg?.closeSettings) {
+    try {
+      await window.weborg.closeSettings();
+    } catch (error) {
+      allowUnload = false;
+      toast(`关闭设置失败：${error.message || error}`, true);
+    }
     return;
   }
   if (window.opener && !window.opener.closed) {
@@ -1633,6 +1639,7 @@ document.addEventListener("click", (event) => {
   if (coreSection) {
     state.coreSection = coreSection;
     renderCoreSection();
+    document.querySelector(".editor")?.scrollTo({ top: 0 });
     return;
   }
   const module = event.target.closest("[data-module]")?.dataset.module;
