@@ -1323,11 +1323,24 @@ window.weborg.onConfig(async (cfg) => {
   }
 });
 
+function returnToSearch() {
+  scopeTabHeld = false;
+  scopeTabUsedWithArrow = false;
+  q.focus({ preventScroll: true });
+  q.select();
+}
+document.getElementById("returnSearchBtn")?.addEventListener("click", returnToSearch);
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "F6") { e.preventDefault(); (resultsEl.querySelector(".result.active .tool-action") || resultsEl.querySelector(".tool-action") || q)?.focus(); return; }
   if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
+  if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyK" || e.key.toLowerCase() === "k")) {
+    e.preventDefault();
+    returnToSearch();
+    return;
+  }
   if (e.key === "Escape") {
     e.preventDefault();
     if (window.weborg?.hideMain) void window.weborg.hideMain();

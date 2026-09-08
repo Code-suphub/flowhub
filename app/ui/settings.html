@@ -762,6 +762,7 @@
           </div>
         </aside>
 
+        <div id="webPaneDivider" class="collection-divider" role="separator" tabindex="0" aria-label="调整网页目录宽度" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="380" aria-valuenow="260" title="拖动调整目录宽度；方向键微调，双击恢复"></div>
         <main class="editor">
           <div class="editor-inner module-panel" data-module-panel="core">
             <div class="editor-head core-editor-head">
@@ -935,6 +936,7 @@
           </div>
 
           <div class="editor-inner module-panel hidden" data-module-panel="web">
+            <button class="button collection-back" type="button" data-collection-back="web">← 返回目录</button>
             <div class="editor-head">
               <div><h2>目录与页面</h2><p>在左侧选择目录或页面，在这里编辑名称、链接和打开方式。</p></div>
               <div class="mode-tabs" role="group" aria-label="编辑模式">
@@ -984,13 +986,13 @@
             <section class="memo-workspace">
               <div class="memo-library">
                 <div class="memo-library-head">
-                  <input id="memoFilter" placeholder="筛选标题、分类或命令…" />
-                  <div class="memo-library-actions"><button class="button primary" type="button" data-action="add-memo">＋ 新增备忘</button></div>
+                  <input id="memoFilter" aria-label="筛选备忘录" placeholder="搜索备忘…" />
+                  <div class="memo-library-actions"><button class="button primary" type="button" data-action="add-memo">＋ 新增</button></div>
                 </div>
                 <div class="memo-list" id="memoList"></div>
                 <details class="memo-maintenance"><summary>管理命令库</summary><p>恢复内置会替换所有自定义备忘和修改。</p><button class="button danger" type="button" data-action="reset-memos">恢复内置命令库</button></details>
               </div>
-              <div class="memo-editor-card" id="memoEditor"></div>
+              <div class="memo-detail"><button class="button collection-back" type="button" data-collection-back="memo">← 返回备忘列表</button><div class="memo-editor-card" id="memoEditor"></div></div>
             </section>
           </div>
 
@@ -1053,6 +1055,7 @@
     <script src="browser-adapter.js"></script>
     <script src="icons.js"></script>
     <script src="ui-performance.js"></script>
+    <script src="collection-layout.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

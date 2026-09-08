@@ -16,6 +16,7 @@ const state = {
   draftSavedAt: 0,
   selectedMemoId: "",
   memoFilter: "",
+  memoCollapsedCategories: new Set(),
   coreSection: "general",
   appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" },
   diagnostics: { enabled: false, available: false, path: "" },
@@ -179,16 +180,17 @@ function memoTree(items) {
   return root;
 }
 
-function renderMemoTreeBranch(branch, depth = 0) {
-  let html = "";
+function renderMemoTreeBranch(branch, depth = 0, path = []) {
+  let html = branch.items.map((item) => renderMemoListItem(item, 0)).join("");
   for (const [label, child] of branch.children) {
-    const total = countMemoTreeItems(child);
-    html += `<div class="memo-tree-group" style="--memo-depth:${depth}">
-      <div class="memo-tree-label"><span class="memo-tree-joint" aria-hidden="true"></span><strong>${esc(label)}</strong><small>${total}</small></div>
-      ${renderMemoTreeBranch(child, depth + 1)}
-    </div>`;
+    const nextPath = [...path, label];
+    const category = nextPath.join(" / ");
+    const open = state.memoFilter.trim() || !state.memoCollapsedCategories.has(category);
+    html += `<details class="memo-category" data-memo-category="${esc(category)}" ${open ? "open" : ""}>
+      <summary class="memo-tree-label" title="${esc(category)}"><strong>${esc(label)}</strong><small>${countMemoTreeItems(child)}</small></summary>
+      <div class="memo-category-children">${renderMemoTreeBranch(child, depth + 1, nextPath)}</div>
+    </details>`;
   }
-  html += branch.items.map((item) => renderMemoListItem(item, depth)).join("");
   return html;
 }
 
@@ -392,6 +394,7 @@ function prepareAddWebUrl(value) {
   state.selectedId = node.id;
   markDirty("已添加待确认的网页链接");
   render();
+  window.flowhubCollectionLayout?.open("web");
   toast("链接已填入网页配置，请确认后保存");
 }
 window.prepareAddWebUrl = prepareAddWebUrl;
@@ -585,11 +588,11 @@ function renderTree() {
     return;
   }
   tree.innerHTML = entries.map(({ node, level }) => `
-    <div class="tree-row ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0" aria-grabbed="${state.draggingId === node.id}">
+    <div class="tree-row ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0" title="${esc(node.title || node.id)}" aria-grabbed="${state.draggingId === node.id}">
       <span class="tree-drag-handle" draggable="true" title="拖拽移动节点" aria-label="拖拽移动 ${esc(node.title || node.id)}"><i></i><i></i><i></i><i></i><i></i><i></i></span>
       ${node.children?.length ? `<button class="tree-toggle" data-toggle-node="${esc(node.id)}" aria-expanded="${state.expanded.has(node.id)}" aria-label="${state.expanded.has(node.id) ? "收缩" : "展开"}"></button>` : `<span class="tree-toggle-spacer"></span>`}
       ${iconHtml(node)}
-      <span class="tree-copy"><strong>${esc(node.title || node.id)}</strong><small>${node.url ? "页面" : `${node.children?.length || 0} 个下级`}</small></span>
+      <span class="tree-copy"><strong>${esc(node.title || node.id)}</strong><small>${node.url ? "页面" : `${node.children?.length || 0}`}</small></span>
     </div>
   `).join("");
   bindIconFallbacks();
@@ -610,18 +613,18 @@ function renderSelected() {
       </div>
       <div class="form-section">
         <div class="form-section-head"><strong>基础信息</strong><small>决定搜索结果中的名称与打开行为</small></div>
-        <div class="form-grid">
-          <div class="field"><label>标题</label><input data-node-field="title" value="${esc(node.title || "")}" /></div>
-          <div class="field"><label>节点 ID</label><input readonly value="${esc(node.id)}" /><div class="field-hint">用于目录定位；需要修改时请切换 JSON 模式。</div></div>
-          <div class="field wide"><label>页面链接 URL</label><input data-node-field="url" value="${esc(node.url || "")}" placeholder="https://example.com/" /><div class="field-hint">留空时作为目录；填写后可以直接打开，同时仍可保留子节点。</div></div>
+        <div class="form-grid node-properties">
+          <div class="field"><label for="nodeTitle">标题</label><input id="nodeTitle" data-node-field="title" value="${esc(node.title || "")}" /></div>
+          <div class="field"><label for="nodeId">节点 ID <span class="field-tag" title="用于目录定位；需要修改时请切换 JSON 模式。">只读</span></label><input id="nodeId" readonly value="${esc(node.id)}" title="用于目录定位；需要修改时请切换 JSON 模式。" /></div>
+          <div class="field wide"><label for="nodeUrl">页面链接 <span class="field-optional">可选</span></label><input id="nodeUrl" data-node-field="url" value="${esc(node.url || "")}" placeholder="https://example.com/" /><div class="field-hint">留空作为目录；填写链接后可直接打开，也可保留子节点。</div></div>
         </div>
       </div>
       <div class="form-section">
         <div class="form-section-head"><strong>外观与说明</strong><small>可选，不影响节点打开</small></div>
-        <div class="form-grid">
-          <div class="field"><label>图标（Emoji 或图片 URL）</label><input data-node-field="icon" value="${esc(node.icon || "")}" placeholder="☁ 或 https://..." /></div>
-          <div class="field"><label>强调色</label><input data-node-field="accent" value="${esc(node.accent || "#4bd0b8")}" placeholder="#4bd0b8" /></div>
-          <div class="field wide"><label>备注</label><textarea data-node-field="note" placeholder="可选：显示在搜索结果或页面说明中">${esc(node.note || "")}</textarea></div>
+        <div class="form-grid node-properties">
+          <div class="field"><label for="nodeIcon">图标 <span class="field-optional">Emoji / 图片 URL</span></label><input id="nodeIcon" data-node-field="icon" value="${esc(node.icon || "")}" placeholder="☁ 或 https://..." /></div>
+          <div class="field"><label for="nodeAccent">强调色</label><input id="nodeAccent" data-node-field="accent" value="${esc(node.accent || "#4bd0b8")}" placeholder="#4bd0b8" /></div>
+          <div class="field wide"><label for="nodeNote">备注</label><textarea id="nodeNote" rows="3" data-node-field="note" placeholder="可选：显示在搜索结果或页面说明中">${esc(node.note || "")}</textarea></div>
         </div>
       </div>
     </div>
@@ -1011,14 +1014,13 @@ function renderMemoSettings() {
   }
   if ($("#memoEditor")) {
     $("#memoEditor").innerHTML = selected ? `
-      <div class="memo-editor-head"><div><span>${esc(memoCategoryPath(selected).replaceAll(" / ", "  ›  "))}</span><strong>${esc(selected.title || "未命名备忘")}</strong></div><button class="button danger" type="button" data-action="delete-memo">删除</button></div>
       <div class="form-grid memo-form">
-        <div class="field"><label>标题</label><input data-memo-field="title" value="${esc(selected.title)}" /></div>
-        <div class="field"><label>目录路径</label><input data-memo-field="category" value="${esc(memoCategoryPath(selected))}" placeholder="编程 / 数据库 / MySQL" /><div class="field-hint">使用 / 分隔层级，例如“编程 / 数据库 / MySQL”。</div></div>
-        <div class="field wide"><label>命令或备忘内容</label><textarea class="memo-content-editor" data-memo-field="content" spellcheck="false">${esc(selected.content)}</textarea></div>
-        <div class="field wide"><label>说明</label><input data-memo-field="description" value="${esc(selected.description)}" placeholder="这条命令用于什么场景" /></div>
-        <div class="field wide"><label>搜索标签</label><input data-memo-field="tags" value="${esc(memoTags(selected).join(", "))}" placeholder="磁盘, 占用, du" /><div class="field-hint">使用逗号分隔；标题、分类、说明、标签和命令正文都会参与搜索。</div></div>
-      </div>` : `<div class="empty-editor"><strong>还没有备忘录</strong>点击“新增备忘”创建第一条内容。</div>`;
+        <div class="field"><label for="memoTitle">标题</label><input id="memoTitle" data-memo-field="title" value="${esc(selected.title)}" /></div>
+        <div class="field"><label for="memoCategory">分类路径 <small>用 / 分层</small></label><input id="memoCategory" data-memo-field="category" value="${esc(memoCategoryPath(selected))}" placeholder="编程 / 数据库 / MySQL" /></div>
+        <div class="field wide"><label for="memoContent">命令或备忘内容</label><textarea id="memoContent" rows="12" class="memo-content-editor" data-memo-field="content" spellcheck="false">${esc(selected.content)}</textarea></div>
+        <div class="field"><label for="memoDescription">说明</label><input id="memoDescription" data-memo-field="description" value="${esc(selected.description)}" placeholder="这条命令用于什么场景" /></div>
+        <div class="field"><label for="memoTags">搜索标签 <small>用逗号分隔</small></label><input id="memoTags" data-memo-field="tags" value="${esc(memoTags(selected).join(", "))}" placeholder="磁盘, 占用, du" /></div>
+      </div><div class="memo-editor-footer"><button class="button danger" type="button" data-action="delete-memo">删除这条备忘</button></div>` : `<div class="empty-editor"><strong>还没有备忘录</strong>点击“新增备忘”创建第一条内容。</div>`;
   }
 }
 
@@ -1093,9 +1095,9 @@ function renderPluginModules() {
     const active = moduleId === state.module;
     const disabled = !plugin.available || !moduleId;
     const hint = !plugin.available ? "未安装" : !plugin.enabled ? "已停用" : plugin.settingsHint;
-    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""} title="${esc(hint || plugin.name)}"><i class="module-nav-icon">${window.flowhubIcon(plugin.id)}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button>`;
+    return `<button class="module-button${active ? " active" : ""}" type="button" ${moduleId ? `data-module="${esc(moduleId)}"` : ""} ${disabled ? "disabled" : ""} title="${esc(plugin.settingsName || plugin.name)}" aria-label="${esc(plugin.settingsName || plugin.name)}" data-tooltip="${esc(plugin.settingsName || plugin.name)}"><i class="module-nav-icon">${window.flowhubIcon(plugin.id)}</i><span class="module-nav-copy"><strong>${esc(plugin.settingsName || plugin.name)}</strong><small>${esc(hint || "")}</small></span></button>`;
   };
-  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core"><i class="module-nav-icon">${window.flowhubIcon("settings")}</i><span class="module-nav-copy"><strong>通用设置</strong><small>App 配置</small></span></button>`;
+  const coreButton = `<button class="module-button${state.module === "core" ? " active" : ""}" type="button" data-module="core" aria-label="通用设置" title="通用设置" data-tooltip="通用设置"><i class="module-nav-icon">${window.flowhubIcon("settings")}</i><span class="module-nav-copy"><strong>通用设置</strong><small>App 配置</small></span></button>`;
   const categoryMenu = (label, ids) => {
     const items = ids.map((id) => pluginsById.get(id)).filter((plugin) => plugin?.available && plugin.enabled);
     if (!items.length) return "";
@@ -1653,10 +1655,20 @@ function switchModule(module) {
   if (!["core", "web", "clipboard", "app", "memo", "tools"].includes(module)) return;
   if (state.module === module) return;
   state.module = module;
+  window.flowhubCollectionLayout?.reset();
   renderModule();
   document.querySelector(".editor")?.scrollTo({ top: 0 });
   if (isMenuBarPageVisible()) void refreshMenuBarManagementState();
 }
+
+// Native disclosure keeps focus and the current editor untouched when folding a category.
+document.addEventListener("toggle", (event) => {
+  const group = event.target;
+  if (!group.matches?.("details[data-memo-category]") || state.memoFilter.trim()) return;
+  const category = group.dataset.memoCategory;
+  if (group.open) state.memoCollapsedCategories.delete(category);
+  else state.memoCollapsedCategories.add(category);
+}, true);
 
 document.addEventListener("click", (event) => {
   const shortcutButton = event.target.closest(".shortcut-capture");
@@ -1729,6 +1741,7 @@ document.addEventListener("keydown", (event) => {
     renderTree();
     renderSelected();
     updateMoveActions();
+    window.flowhubCollectionLayout?.open("web");
   }
 });
 

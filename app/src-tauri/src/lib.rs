@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod macos_launcher_position;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 #[cfg(target_os = "macos")]
@@ -2861,14 +2863,14 @@ fn toggle_main(app: &tauri::AppHandle) {
         let _ = window.hide();
         return;
     }
-    // On macOS, the native collection behavior is configured below.  The
-    // generic Tauri helper maps to `CanJoinAllSpaces`, which can leave an
-    // agent window on the desktop Space instead of the Space containing the
-    // currently active fullscreen app.
+    // macOS uses a non-activating fullscreen-compatible panel. Select the
+    // pointer's NSScreen and position it on the main thread immediately before
+    // showing; NSWindow::center does not explicitly choose the pointer screen.
     #[cfg(not(target_os = "macos"))]
     let _ = window.set_visible_on_all_workspaces(true);
     #[cfg(not(target_os = "macos"))]
     let _ = window.set_always_on_top(true);
+    #[cfg(not(target_os = "macos"))]
     let _ = window.center();
     LAST_MAIN_SHOW_MILLIS.store(
         SystemTime::now()
@@ -2917,7 +2919,12 @@ fn show_macos_window(window: &tauri::WebviewWindow) {
     let handle = window.app_handle().clone();
     let panel_handle = handle.clone();
     let _ = handle.run_on_main_thread(move || match panel_handle.get_webview_panel("main") {
-        Ok(panel) => panel.show_and_make_key(),
+        Ok(panel) => {
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                macos_launcher_position::position_at_pointer(panel.as_panel(), mtm);
+            }
+            panel.show_and_make_key();
+        },
         Err(error) => eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}"),
     });
 }

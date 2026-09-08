@@ -39,7 +39,7 @@ html[data-weborg-runtime="browser"][data-weborg-page="search"] .shell {
 }
 
 html[data-weborg-runtime="browser"][data-weborg-page="settings"] body {
-  min-width: 760px;
+  min-width: 0;
 }
 
 html[data-weborg-runtime="browser"][data-weborg-page="settings"] body::before {
