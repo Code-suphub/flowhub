@@ -9,6 +9,10 @@ const state = {
   mode: "structure",
   module: "core",
   dirty: false,
+  editVersion: 0,
+  saving: false,
+  reloading: false,
+  saveConflict: null,
   jsonDirty: false,
   expanded: new Set(),
   draggingId: "",
@@ -402,6 +406,7 @@ function prepareAddWebUrl(value) {
 window.prepareAddWebUrl = prepareAddWebUrl;
 
 function draftStorageKey(configFile = state.configFile) {
+  if (configFile === state.configFile && state.saveConflict) return state.saveConflict.draftKey;
   const identity = String(configFile?.activePath || configFile?.resolvedPath || configFile?.defaultPath || "default");
   return `${DRAFT_KEY_PREFIX}${identity}`;
 }
@@ -437,7 +442,7 @@ function persistDraftMeasured() {
     localStorage.setItem(draftStorageKey(), JSON.stringify({
       version: 1,
       savedAt,
-      baseSignature: configSignature(state.savedConfig),
+      baseSignature: configSignature(state.saveConflict?.sourceConfig || state.savedConfig),
       config: state.config,
       selectedId: state.selectedId,
       selectedMemoId: state.selectedMemoId,
@@ -445,12 +450,15 @@ function persistDraftMeasured() {
       expanded: [...state.expanded],
       module: state.module,
       mode: state.mode,
-      jsonText: state.mode === "json" ? $("#jsonEditor")?.value || "" : ""
+      jsonDirty: state.jsonDirty,
+      jsonText: state.jsonDirty || state.mode === "json" ? $("#jsonEditor")?.value || "" : ""
     }));
     state.draftSavedAt = savedAt;
     updateStatus();
+    return true;
   } catch (error) {
     console.warn("[FlowHub] 无法保存配置草稿", error);
+    return false;
   }
 }
 
@@ -489,7 +497,8 @@ function jsonEditorDiffersFromConfig() {
 }
 
 function markDirty(message = "有未保存修改") {
-  state.dirty = !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
+  state.editVersion += 1;
+  state.dirty = Boolean(state.saveConflict) || !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
   state.draftSavedAt = 0;
   renderUpdateNotice();
   if (!state.dirty) {
@@ -501,10 +510,10 @@ function markDirty(message = "有未保存修改") {
   status.textContent = message;
   status.classList.add("dirty");
   const saveButton = $("#saveBtn");
-  if (saveButton) saveButton.disabled = false;
+  if (saveButton) saveButton.disabled = Boolean(state.saving || state.reloading || state.saveConflict);
   const reloadButton = document.querySelector('[data-action="reload"]');
   if (reloadButton) {
-    reloadButton.disabled = false;
+    reloadButton.disabled = Boolean(state.saving || state.reloading);
     reloadButton.textContent = "重置未保存";
     reloadButton.title = "放弃未保存修改并恢复已保存配置";
   }
@@ -552,7 +561,7 @@ function renderUpdateNotice() {
 function updateStatus() {
   renderUpdateNotice();
   const status = $("#status");
-  const message = state.dirty ? (state.draftSavedAt ? "草稿已自动保存" : "有未保存修改") : "已保存";
+  const message = state.saveConflict ? "源草稿已保留；请重置以查看目标配置" : state.saving ? "正在保存，仍可继续编辑" : state.dirty ? (state.draftSavedAt ? "草稿已自动保存" : "有未保存修改") : "已保存";
   status.textContent = message;
   status.title = state.dirty && state.draftSavedAt
     ? `草稿保存于 ${new Date(state.draftSavedAt).toLocaleTimeString()}，尚未写入正式配置`
@@ -561,11 +570,11 @@ function updateStatus() {
   const actionbarStatus = $("#actionbarStatus");
   if (actionbarStatus) actionbarStatus.textContent = message;
   const saveButton = $("#saveBtn");
-  if (saveButton) saveButton.disabled = !state.dirty;
+  if (saveButton) saveButton.disabled = !state.dirty || Boolean(state.saving || state.reloading || state.saveConflict);
   const reloadButton = document.querySelector('[data-action="reload"]');
   if (reloadButton) {
     reloadButton.textContent = "重置未保存";
-    reloadButton.disabled = !state.dirty;
+    reloadButton.disabled = !state.dirty || Boolean(state.saving || state.reloading);
     reloadButton.title = state.dirty ? "放弃未保存修改并恢复已保存配置" : "当前没有可重置的未保存修改";
   }
 }
@@ -1293,45 +1302,91 @@ function readJsonEditor() {
 }
 
 async function save() {
+  if (state.saving || state.reloading) return;
+  if (state.saveConflict) return toast("源草稿已保留，请先重置以查看目标配置；不会将源目录写入目标", true);
+  state.saving = true;
+  updateStatus();
   try {
     const previousDraftKey = draftStorageKey();
-    if (state.mode === "json") {
-      state.config = clone(readJsonEditor());
-      state.jsonDirty = false;
-    }
-    normalizeConfig(state.config);
-    const result = await window.weborg.saveConfig(state.config);
+    const sourceConfig = clone(state.savedConfig);
+    const version = state.editVersion;
+    // Never give the adapter an object that input handlers can still mutate.
+    const snapshot = clone(normalizeConfig(clone(state.mode === "json" ? readJsonEditor() : state.config)));
+    persistDraftNow();
+    const result = await window.weborg.saveConfig(snapshot);
     if (!result?.ok) throw new Error(result?.reason || "保存失败");
-    state.config = clone(normalizeConfig(result.config || state.config));
-    state.savedConfig = clone(state.config);
-    state.pendingAddId = "";
-    [state.plugins, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
-    state.dirty = false;
-    clearDraft(previousDraftKey);
+    const committed = clone(normalizeConfig(result.config || snapshot));
+    // Metadata failure does not turn an already committed save into a failed save.
+    const metadata = await Promise.allSettled([
+      window.weborg.listPlugins(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()
+    ]);
+    const changed = state.editVersion !== version;
+    const opened = result.storageState?.operation === "open";
+    const pathUnknown = metadata[2].status === "rejected";
+    if ((opened && changed) || pathUnknown) {
+      // Keep source edits separate from the newly active target, including raw JSON.
+      state.saveConflict = { draftKey: previousDraftKey, sourceConfig };
+    }
+    state.savedConfig = clone(committed);
+    if (!changed && !state.saveConflict) {
+      state.config = clone(committed);
+      state.jsonDirty = false;
+      state.pendingAddId = "";
+    }
+    if (metadata[0].status === "fulfilled") state.plugins = metadata[0].value;
+    if (metadata[1].status === "fulfilled") state.clipboardStorage = metadata[1].value;
+    if (!pathUnknown) state.configFile = metadata[2].value;
+    state.dirty = Boolean(state.saveConflict) || !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
+    if (state.dirty) {
+      const draftPersisted = persistDraftNow();
+      if (draftPersisted && !state.saveConflict && previousDraftKey !== draftStorageKey()) {
+        try { localStorage.removeItem(previousDraftKey); } catch (error) { console.warn(error); }
+      }
+    } else clearDraft(previousDraftKey);
     render();
     if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
       void refreshMenuBarItems();
     }
-    toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 项系统设置未能生效` : result.storageState?.operation === "open" ? "已打开目标数据库，网页目录已加载；当前网页草稿未写入目标" : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
+    toast(state.saveConflict ? "配置已提交，源草稿已保留；请重置以查看目标配置，再返回源位置恢复草稿"
+      : result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 项系统设置未能生效`
+      : opened ? "已打开目标数据库，网页目录已加载；当前网页草稿未写入目标"
+      : state.dirty ? "提交的配置已保存，后续修改仍保留为未保存草稿" : "配置已保存，插件状态已生效",
+      Boolean(state.saveConflict || result.pluginFailures?.length));
+    if (metadata.some(entry => entry.status === "rejected")) toast("配置已提交，但状态刷新失败；请稍后重新打开设置查看", true);
   } catch (error) {
+    persistDraftNow();
     toast(error.message, true);
+  } finally {
+    state.saving = false;
+    updateStatus();
   }
 }
 
 async function reload() {
-  if (!state.dirty) return;
-  if (!window.confirm("当前有未保存修改，确定重置未保存修改并恢复已保存配置吗？")) return;
+  if (state.saving || state.reloading || !state.dirty) return;
+  if (!window.confirm(state.saveConflict ? "源草稿将保留，是否重置编辑器并加载当前目标配置？" : "当前有未保存修改，确定重置未保存修改并恢复已保存配置吗？")) return;
+  state.reloading = true;
+  updateStatus();
+  const version = state.editVersion;
   try {
-    clearDraft();
-    [state.plugins, state.config, state.clipboardStorage, state.configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
-    normalizeConfig(state.config);
-    state.savedConfig = clone(state.config);
-    state.jsonDirty = false;
-    state.dirty = false;
+    const [plugins, config, clipboardStorage, configFile] = await Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.weborg.getClipboardStorageInfo(), window.weborg.getConfigPathInfo()]);
+    const loaded = clone(normalizeConfig(config));
+    if (state.editVersion !== version) {
+      persistDraftNow();
+      return toast("重置期间有新修改，已保留编辑与草稿；请再次重置", true);
+    }
+    if (state.saveConflict) persistDraftNow();
+    else clearDraft();
+    state.saveConflict = null;
+    Object.assign(state, { plugins, config: loaded, savedConfig: clone(loaded), clipboardStorage, configFile, jsonDirty: false, dirty: false, pendingAddId: "" });
     render();
     toast("已重置未保存修改");
   } catch (error) {
+    persistDraftNow();
     toast(error.message, true);
+  } finally {
+    state.reloading = false;
+    updateStatus();
   }
 }
 
@@ -1479,7 +1534,9 @@ async function performPrimaryUpdateAction() {
 }
 
 async function chooseConfigPath() {
+  const editingConfig = state.config;
   const result = await window.weborg.chooseConfigPath();
+  if (state.config !== editingConfig) return toast("配置已重新加载，请重新选择位置", true);
   if (!result?.ok) {
     if (!result?.canceled) toast(result?.reason || "无法选择配置文件位置", true);
     return;
@@ -1507,7 +1564,9 @@ function resetConfigPath() {
 }
 
 async function chooseClipboardStorage() {
+  const editingConfig = state.config;
   const result = await window.weborg.chooseClipboardStorage();
+  if (state.config !== editingConfig) return toast("配置已重新加载，请重新选择位置", true);
   if (!result?.ok) {
     if (!result?.canceled) toast(result?.reason || "无法选择存放目录", true);
     return;
@@ -1571,6 +1630,7 @@ function resetMemos() {
 
 async function closeSettings() {
   if (state.dirty && !window.confirm("当前有未保存修改，确定关闭设置吗？修改仍会保留在本地草稿中。")) return;
+  persistDraftNow();
   allowUnload = true;
   if (window.weborg?.closeSettings) {
     try {
@@ -1925,7 +1985,10 @@ document.addEventListener("change", (event) => {
   if (!event.target.dataset.memoField) return;
   if (event.target.dataset.memoField === "category") {
     const memo = materializeMemoItems().find((item) => item.id === state.selectedMemoId);
-    if (memo) memo.category = memoCategoryPath(memo);
+    if (memo && memo.category !== memoCategoryPath(memo)) {
+      memo.category = memoCategoryPath(memo);
+      markDirty();
+    }
   }
   renderMemoSettings();
 });
@@ -1968,9 +2031,8 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   try { if (draft?.config) draftConfig = clone(normalizeConfig(draft.config)); }
   catch (error) { console.warn("[FlowHub] 配置草稿已损坏，已忽略", error); }
   const hasConfigChanges = draftConfig && JSON.stringify(draftConfig) !== JSON.stringify(loadedConfig);
-  const hasJsonChanges = draft?.mode === "json"
-    && String(draft.jsonText || "").trim()
-    && jsonTextDiffersFromConfig(draft.jsonText, draftConfig || loadedConfig);
+  const hasJsonChanges = (draft?.jsonDirty || Boolean(String(draft?.jsonText || "").trim()))
+    && jsonTextDiffersFromConfig(draft.jsonText || "", draftConfig || loadedConfig);
   const sourceChanged = draft?.baseSignature && draft.baseSignature !== configSignature(loadedConfig);
   const recoveryMessage = `检测到 ${new Date(draft?.savedAt || Date.now()).toLocaleString()} 的未保存配置草稿${sourceChanged ? "，且正式配置在草稿保存后发生过变化" : ""}，是否恢复？`;
   if ((hasConfigChanges || hasJsonChanges) && window.confirm(recoveryMessage)) {
@@ -1980,7 +2042,7 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     state.memoFilter = String(draft.memoFilter || "");
     state.expanded = new Set(Array.isArray(draft.expanded) ? draft.expanded : []);
     state.module = ["core", "web", "clipboard", "app", "memo", "tools"].includes(draft.module) ? draft.module : "core";
-    state.mode = draft.mode === "json" ? "json" : "structure";
+    state.mode = hasJsonChanges || draft.mode === "json" ? "json" : "structure";
     state.dirty = Boolean(hasConfigChanges || hasJsonChanges);
     state.draftSavedAt = Number(draft.savedAt) || Date.now();
     render();
@@ -1988,10 +2050,10 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
       void refreshMenuBarItems();
     }
     applyInitialWebUrl();
-    if (state.mode === "json" && draft.jsonText) {
+    if (state.mode === "json" && typeof draft.jsonText === "string") {
       $("#jsonEditor").value = draft.jsonText;
       state.jsonDirty = jsonEditorDiffersFromConfig();
-      state.dirty = !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
+      state.dirty = Boolean(state.saveConflict) || !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
       updateStatus();
     }
     toast("已恢复未保存的配置草稿");

@@ -3,35 +3,149 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../ui/settings.js'), 'utf8');
-const save = source.slice(source.indexOf('async function save()'), source.indexOf('async function reload()'));
 const clone = value => JSON.parse(JSON.stringify(value));
-(async () => {
-  for (const mode of ['form', 'json']) {
-    const original = {plugins: {web: {settings: {items: [{id: 'A-draft'}]}}}};
-    const committed = {plugins: {web: {settings: {items: [{id: 'B'}], catalogCount: 1}}}};
-    const state = {mode, config: original, dirty: true};
-    let broadcastConfig, message, cleared;
-    const context = vm.createContext({
-      state, clone, normalizeConfig: value => value, readJsonEditor: () => original,
-      draftStorageKey: () => 'old-draft', clearDraft: key => {cleared = key},
-      render: () => { broadcastConfig = clone(state.config) },
-      toast: text => { message = text },
-      window: {weborg: {
-        saveConfig: async submitted => {
-          assert.equal(submitted.plugins.web.settings.items[0].id, 'A-draft');
-          return {ok: true, config: committed, storageState: {operation: 'open'}};
-        },
-        listPlugins: async () => [], getClipboardStorageInfo: async () => ({}), getConfigPathInfo: async () => ({}),
-      }},
-    });
-    vm.runInContext(save, context);
-    await context.save();
-    assert.deepEqual(state.config, committed);
-    assert.deepEqual(state.savedConfig, committed);
-    assert.deepEqual(broadcastConfig, committed);
-    assert.equal(state.dirty, false);
-    assert.equal(cleared, 'old-draft');
-    assert.match(message, /已打开目标数据库/);
+const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => {resolve=a; reject=b}); return {promise,resolve,reject}; };
+const config = label => ({core:{configPath:label}, plugins:{web:{settings:{items:[{id:label}]}}}});
+function harness(mode = 'structure') {
+  const nodes = new Map();
+  const element = id => {
+    if (!nodes.has(id)) nodes.set(id, {value:'', dataset:{}, classList:{add(){},remove(){},toggle(){}}, setAttribute(){},addEventListener(){}});
+    return nodes.get(id);
+  };
+  const listeners = {}, timers = new Map(), storage = new Map();
+  let timerId=0, calls=0, submitted;
+  const saving=deferred(), metadata=deferred(), loading=deferred();
+  const ctx=vm.createContext({console, URL, URLSearchParams, Set, Map, Date, JSON,
+    setTimeout: fn => {timers.set(++timerId,fn); return timerId}, clearTimeout: id => timers.delete(id),
+    localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
+    document:{querySelector:s=>s==='.settings-actionbar'?null:element(s),querySelectorAll:()=>[],addEventListener:(n,f)=>(listeners[n] ||= []).push(f)},
+    window:{location:{search:''},addEventListener(){},confirm:()=>true,flowhubPerformance:{measure:(_,fn)=>fn()},weborg:{
+      saveConfig: c=>{calls++;submitted=c;return saving.promise}, listPlugins:()=>metadata.promise,
+      getClipboardStorageInfo:async()=>({}),getConfigPathInfo:async()=>({activePath:'B'}),getConfig:()=>loading.promise,
+      closeSettings:async()=>{}, getUpdateState:async()=>({}), getDiagnosticsState:async()=>({}), getMenuBarManagementState:async()=>({}),
+    }}
+  });
+  vm.runInContext(source.slice(0,source.lastIndexOf('\nPromise.all([window.weborg.listPlugins()')),ctx);
+  vm.runInContext(`normalizeConfig = value => value; render = () => { syncJson(); }; renderUpdateNotice = () => {}; renderMemoSettings = () => {};`,ctx);
+  const state=vm.runInContext('state',ctx);
+  Object.assign(state,{mode,config:config('A'),savedConfig:config('baseline'),configFile:{activePath:'A'},dirty:true});
+  element('#jsonEditor').value=JSON.stringify(state.config);
+  const input=(target)=>listeners.input.forEach(fn=>fn({target}));
+  const edit=value=>input({dataset:{coreField:'name'},type:'text',value});
+  const json=text=>{element('#jsonEditor').value=text; input({id:'jsonEditor'})};
+  return {ctx,state,saving,metadata,loading,storage,edit,json,element,
+    change:target=>listeners.change.forEach(fn=>fn({target})),
+    initialize:()=>vm.runInContext(source.slice(source.lastIndexOf('\nPromise.all([window.weborg.listPlugins()')),ctx), calls:()=>calls,submitted:()=>submitted,
+    flush(){const pending=[...timers.values()];timers.clear();pending.forEach(fn=>fn())},
+    commit(c=config('A'),operation='save'){saving.resolve({ok:true,config:c,storageState:{operation}})},
+    async tick(){await new Promise(resolve=>setImmediate(resolve))},
+  };
+}
+(async()=>{
+  for(const mode of ['structure','json']) {
+    const h=harness(mode);const p=h.ctx.save();
+    await h.ctx.save(); assert.equal(h.calls(),1);
+    assert.equal(h.element('#saveBtn').disabled,true);
+    await h.ctx.reload();assert.equal(h.state.reloading,false,'reload is blocked during save');
+    if(mode==='json') h.json('{"unfinished":'); else h.edit('during-save');
+    assert.equal(h.submitted().core.name,undefined,'submission snapshot is isolated');
+    h.commit();await h.tick();
+    await h.ctx.save(); assert.equal(h.calls(),1,'metadata phase also deduplicated');
+    if(mode==='structure') h.edit('during-metadata');
+    h.flush();assert.ok(h.storage.size,'timer retains draft');
+    h.metadata.resolve([]);await p;
+    assert.equal(h.state.dirty,true);assert.equal(h.state.saving,false);
+    const draft=JSON.parse([...h.storage.values()][0]);
+    if(mode==='json') {assert.equal(h.element('#jsonEditor').value,'{"unfinished":');assert.equal(draft.jsonText,'{"unfinished":');}
+    else {assert.equal(h.state.config.core.name,'during-metadata');assert.equal(draft.config.core.name,'during-metadata');}
+    assert.equal(h.state.savedConfig.core.name,undefined);
   }
-  console.log('PASS: form and JSON storage saves adopt target catalog and explain open semantics');
-})().catch(error => {console.error(error); process.exitCode = 1});
+  for(const mode of ['structure','json']) {
+    const h=harness(mode);const p=h.ctx.save(); h.commit(config('B'),'open');h.metadata.resolve([]); await p;
+    assert.deepEqual(clone(h.state.config),config('B'));assert.equal(h.state.dirty,false);assert.equal(h.storage.size,0);
+    h.edit('after');h.flush();assert.equal(h.state.dirty,true);assert.ok(h.storage.has('flowhub:settings-draft:v1:B'));
+  }
+  for(const mode of ['structure','json']) {
+    const h=harness(mode);const p=h.ctx.save();
+    if(mode==='json') h.json(JSON.stringify(config('new-json')));else h.edit('new-source');
+    h.commit(config('B'),'open');h.metadata.resolve([]);await p;
+    assert.equal(h.state.dirty,true);assert.ok(h.state.saveConflict);
+    await h.ctx.save();assert.equal(h.calls(),1,'source cannot overwrite B');
+    h.flush();assert.ok(h.storage.has('flowhub:settings-draft:v1:A'));assert.equal(h.storage.has('flowhub:settings-draft:v1:B'),false);
+    const reload=h.ctx.reload();h.loading.resolve(config('B'));await reload;
+    assert.deepEqual(clone(h.state.config),config('B'));assert.equal(h.state.dirty,false);
+    assert.ok(h.storage.has('flowhub:settings-draft:v1:A'),'reset to B preserves source recovery');
+  }
+  for(const mode of ['structure','json']) {
+    const h=harness(mode);const p=h.ctx.save();
+    if(mode==='json')h.json('{bad');else h.edit('retained');
+    h.saving.reject(new Error('disk full'));await p;
+    assert.equal(h.state.dirty,true);assert.equal(h.state.saving,false);assert.ok(h.storage.size);
+    assert.deepEqual(clone(h.state.savedConfig),config('baseline'));
+  }
+  {
+    const h=harness();const p=h.ctx.save();h.commit();h.metadata.reject(new Error('metadata unavailable'));await p;
+    assert.deepEqual(clone(h.state.savedConfig),config('A'));
+    assert.equal(h.state.dirty,false,'metadata error does not undo committed config');
+  }
+  {
+    const h=harness();const p=h.ctx.reload();h.edit('reload-race');h.metadata.resolve([]);h.loading.resolve(config('B'));await p;
+    assert.equal(h.state.config.core.name,'reload-race');assert.equal(h.state.dirty,true);assert.ok(h.storage.size);
+  }
+  {
+    const h=harness();h.edit('close-race');await h.ctx.closeSettings();assert.ok(h.storage.size,'close synchronously flushes draft');
+  }
+  {
+    const h=harness();h.ctx.window.weborg.getConfigPathInfo=async()=>{throw new Error('path unavailable')};
+    const p=h.ctx.save();h.commit(config('B'),'open');h.metadata.resolve([]);await p;
+    assert.ok(h.state.saveConflict);await h.ctx.save();assert.equal(h.calls(),1);
+    assert.ok(h.storage.has('flowhub:settings-draft:v1:A'));
+  }
+  {
+    const h=harness();const p=h.ctx.reload();h.loading.reject(new Error('reload failed'));h.metadata.resolve([]);await p;
+    assert.equal(h.state.dirty,true);assert.ok(h.storage.size);assert.equal(h.state.reloading,false);
+  }
+  for (const text of ['', '{invalid']) {
+    const h=harness('json');h.json(text);h.state.mode='structure';h.flush();
+    const draft=[...h.storage.values()][0];
+    const recovered=harness();recovered.storage.set('flowhub:settings-draft:v1:B',draft);
+    const init=recovered.initialize();recovered.metadata.resolve([]);recovered.loading.resolve(config('A'));await init;
+    assert.equal(recovered.state.mode,'json');assert.equal(recovered.element('#jsonEditor').value,text);
+    assert.equal(recovered.state.dirty,true);
+  }
+  {
+    const h=harness();const init=h.initialize();h.metadata.resolve([]);h.loading.resolve(config('A'));await init;
+    assert.deepEqual(clone(h.state.config),config('A'),'startup without draft works');
+  }
+  {
+    const h=harness('json');h.json('{invalid');await h.ctx.save();
+    assert.equal(h.calls(),0);assert.equal(h.state.dirty,true);assert.equal(h.state.saving,false);
+    assert.ok(h.storage.size,'invalid JSON is still recoverable');
+  }
+  {
+    const h=harness();const p=h.ctx.save();h.edit('rejected');h.saving.resolve({ok:false,reason:'rejected'});await p;
+    assert.equal(h.state.dirty,true);assert.equal(h.element('#saveBtn').disabled,false);
+    assert.equal(h.state.config.core.name,'rejected');
+  }
+  {
+    const h=harness();const p=h.ctx.save();h.commit();h.metadata.resolve([]);await p;
+    h.edit('next-save');await h.ctx.save();assert.equal(h.calls(),2,'new submission allowed after completion');
+    assert.equal(h.submitted().core.name,'next-save');
+  }
+  {
+    const h=harness();const picker=deferred();h.ctx.window.weborg.chooseConfigPath=()=>picker.promise;
+    const choosing=h.ctx.chooseConfigPath();const reload=h.ctx.reload();h.loading.resolve(config('B'));h.metadata.resolve([]);await reload;
+    picker.resolve({ok:true,path:'stale-choice'});await choosing;
+    assert.equal(h.state.config.core.configPath,'B','late picker cannot modify replacement config');
+  }
+  {
+    const h=harness();h.state.config.plugins.memo={settings:{items:[{id:'memo',category:' A / B '}]}};
+    h.state.selectedMemoId='memo';
+    h.ctx.window.FlowHubMemoCatalog={categorySegments:()=>['A','B']};
+    const p=h.ctx.save();h.change({dataset:{memoField:'category'}});
+    h.commit();h.metadata.resolve([]);await p;
+    assert.equal(h.state.config.plugins.memo.settings.items[0].category,'A / B');
+    assert.equal(h.state.dirty,true,'change-only category normalization increments revision');
+  }
+  console.log('PASS: isolated snapshots, edits during save/metadata, deduplication, failure, JSON, target-open conflicts, draft timers, reload and close');
+})().catch(error=>{console.error(error);process.exitCode=1});
