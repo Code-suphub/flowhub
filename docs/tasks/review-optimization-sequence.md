@@ -29,7 +29,7 @@
 - 05：完成并整合。任务 `01a08211-6ba8-7b01-bc83-38d5aef5cb73`，worktree `/Users/bilibili/.codex/worktrees/cbb4/web_organization`，源提交 `8d8096fca8f18a3ff49e07daf72377745223d552`。回环监听、Host/Origin/写令牌、静态白名单、请求边界与原子写；停用服务端探测，保留页面和CLI写、扩展读。协调复核隔离安全测试8项通过，CLI语法及diff检查通过；实现任务另有69项Rust/全部UI及隔离浏览器保存验证。令牌不隔离恶意本机进程，不承诺断电目录持久化，未操作真实配置。
 - 06：完成并整合。任务 `01a0821c-f3f1-7502-9f89-f0b69e6564e1`，worktree `/Users/bilibili/.codex/worktrees/6152/web_organization`，源提交 `0f9b2c36cdb81e4b41b23b7952dc6dd5fccfb37a`。周期分批清理、搜索过期过滤、默认关闭的条数/逻辑字节上限、安全受管附件回收、退出排空。协调76项Rust/全部UI及diff检查通过，实现任务根目录8项安全测试通过。容量可暂时超限，超大库查询/目录扫描尚未基准，未做真实原生退出集成；未操作真实数据。
 - 07：完成并整合。任务 `01a08228-5933-78a3-b12e-69f358acb342`，worktree `/Users/bilibili/.codex/worktrees/fa5c/web_organization`，源提交 `0d25a8e5ee76e4d458c23974c856a6cd01f0f22b`。预览后端非GET立即405不读body，移除配置写入；前端禁配置/剪贴板写。协调4项预览测试/全部UI及diff检查通过；实现任务低调试编译76项Rust及根服务8项通过。首次编译磁盘不足已恢复；未操作真实数据。
-- 08：已派发“优化 08：设置保存与目录迁移解耦”，待解析真实ID，禁止重复派发。
+- 08：已派发“优化 08：设置保存与目录迁移解耦”，任务 `01a08234-312e-7d10-9c08-9b9e2ca4ae5d`，worktree `/Users/bilibili/.codex/worktrees/5549/web_organization`，禁止重复派发。
 - 09–12：等待前置任务完成。
 - 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
 
