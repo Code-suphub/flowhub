@@ -208,17 +208,8 @@ if (!window.weborg) {
 
   window.weborg = {
     getConfig,
-    async saveConfig(config) {
-      const response = await fetch("/__weborg/config", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(config)
-      });
-      const result = await response.json();
-      if (!response.ok || !result.ok) return result;
-      configPromise = Promise.resolve(result.config);
-      configListeners.forEach((listener) => listener(result.config));
-      return result;
+    async saveConfig() {
+      return { ok: false, preview: true, readonly: true, reason: "浏览器预览不能修改配置" };
     },
     listPlugins,
     pluginSearch,

@@ -1,16 +1,13 @@
 import { defineConfig } from "vite";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isIP } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import initSqlJs from "sql.js";
-import configPersistence from "./config-persistence.js";
-
-const { stripWebCatalogMirror } = configPersistence;
 
 const appDirectory = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = resolve(appDirectory, "ui");
@@ -20,7 +17,6 @@ const applicationIconCache = new Map();
 const applicationIndexPath = join(homedir(), "Library", "Application Support", "FlowHub", "application-index.json");
 let applicationsPromise;
 let sqlJsPromise;
-const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
 function configLocatorCandidates() {
   const applicationSupport = join(homedir(), "Library", "Application Support");
@@ -433,75 +429,6 @@ async function loadApplicationIcons(paths = []) {
   return Object.fromEntries(selected.map((path) => [path, applicationIconCache.get(path) || ""]));
 }
 
-function validateScopeShortcuts(scopeShortcuts) {
-  if (scopeShortcuts === undefined) return;
-  if (!scopeShortcuts || typeof scopeShortcuts !== "object" || Array.isArray(scopeShortcuts)) throw new Error("范围快捷键必须是对象");
-  const modifierAliases = { option: "alt", control: "ctrl", cmd: "meta", command: "meta", cmdorctrl: "commandorcontrol" };
-  const modifiers = new Set(["shift", "alt", "ctrl", "meta", "commandorcontrol"]);
-  const used = new Set();
-  for (const scope of Object.keys(DEFAULT_SCOPE_SHORTCUTS)) {
-    const shortcut = scopeShortcuts[scope];
-    if (shortcut === undefined) continue;
-    if (typeof shortcut !== "string") throw new Error(`${scope} 的范围快捷键必须是字符串`);
-    const parts = shortcut.replace(/\s+/g, "").toLowerCase().split("+").filter(Boolean).map((part) => modifierAliases[part] || part);
-    if (!parts.length) continue;
-    const keys = parts.filter((part) => !modifiers.has(part));
-    if (keys.length !== 1 || (!parts.some((part) => modifiers.has(part)) && !/^f(?:[1-9]|1\d|2[0-4])$/.test(keys[0]))) throw new Error(`${scope} 的范围快捷键格式无效：${shortcut}`);
-    const canonical = [...new Set(parts.filter((part) => modifiers.has(part)))].sort().join("+") + `+${keys[0]}`;
-    if (used.has(canonical)) throw new Error(`范围快捷键重复：${shortcut}`);
-    used.add(canonical);
-  }
-}
-
-function validateConfig(config) {
-  if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("配置必须是 JSON 对象");
-  if (!config.core || typeof config.core !== "object") throw new Error("配置缺少 core 对象");
-  const configuredConfigPath = config.core.configPath;
-  if (configuredConfigPath !== undefined && typeof configuredConfigPath !== "string") throw new Error("配置文件位置必须是字符串");
-  if (String(configuredConfigPath || "").trim() && !isAbsolute(configuredConfigPath.trim())) throw new Error("配置文件位置必须是绝对路径");
-  validateScopeShortcuts(config.core.scopeShortcuts);
-  if (!config.plugins || typeof config.plugins !== "object") throw new Error("配置缺少 plugins 对象");
-  const items = config.plugins.web?.settings?.items;
-  if (!Array.isArray(items)) throw new Error("网页插件配置缺少 items 数组");
-  const storagePath = config.plugins.clipboard?.settings?.storagePath;
-  if (storagePath !== undefined && typeof storagePath !== "string") throw new Error("剪切板存放位置必须是字符串");
-  if (String(storagePath || "").trim() && !isAbsolute(storagePath.trim())) throw new Error("剪切板存放位置必须是绝对路径");
-  const memoItems = config.plugins.memo?.settings?.items;
-  if (memoItems !== undefined && !Array.isArray(memoItems)) throw new Error("备忘录插件配置的 items 必须是数组");
-  if (Array.isArray(memoItems)) {
-    const memoIds = new Set();
-    for (const item of memoItems) {
-      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("备忘录条目必须是对象");
-      const id = String(item.id || "").trim();
-      if (!id) throw new Error("每条备忘录都需要 id");
-      if (memoIds.has(id)) throw new Error(`备忘录 id 重复：${id}`);
-      if (!String(item.title || "").trim()) throw new Error(`备忘录 ${id} 缺少标题`);
-      if (!String(item.content || "").trim()) throw new Error(`备忘录 ${id} 缺少内容`);
-      memoIds.add(id);
-    }
-  }
-  const ids = new Set();
-  const visit = (nodes) => {
-    for (const node of nodes) {
-      if (!node || typeof node !== "object" || Array.isArray(node)) throw new Error("目录节点必须是对象");
-      const id = String(node.id || "").trim();
-      if (!id) throw new Error("每个目录节点都需要 id");
-      if (ids.has(id)) throw new Error(`目录 id 重复：${id}`);
-      ids.add(id);
-      if (node.children !== undefined && !Array.isArray(node.children)) throw new Error(`节点 ${id} 的 children 必须是数组`);
-      visit(node.children || []);
-    }
-  };
-  visit(items);
-  return config;
-}
-
-async function requestBody(request) {
-  const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 function sendJson(response, status, value) {
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
@@ -563,46 +490,20 @@ function localConfigApi() {
     name: "weborg-local-config-api",
     configureServer(server) {
       server.middlewares.use("/__weborg/config", async (request, response) => {
+        // Reject before resolving user paths or consuming any request body.
+        if (request.method !== "GET") {
+          response.setHeader("allow", "GET");
+          sendJson(response, 405, { ok: false, readonly: true, reason: "浏览器预览不能修改配置" });
+          return;
+        }
         try {
           if ((request.url || "").startsWith("/location")) {
-            if (request.method !== "GET") {
-              response.statusCode = 405;
-              response.setHeader("allow", "GET");
-              response.end("Read only");
-              return;
-            }
             sendJson(response, 200, { ok: true, readonly: true, ...(await configFileInfo()) });
             return;
           }
           const configPath = await activeConfigPath();
-          if (request.method === "GET") {
-            const config = JSON.parse(await readFile(configPath, "utf8"));
-            sendJson(response, 200, await hydrateWebCatalog(config));
-            return;
-          }
-          if (request.method === "POST") {
-            const config = validateConfig(JSON.parse(await requestBody(request)));
-            const currentConfig = JSON.parse(await readFile(configPath, "utf8"));
-            const currentConfigPath = String(currentConfig.core?.configPath || "").trim();
-            const nextConfigPath = String(config.core?.configPath || "").trim();
-            if (currentConfigPath !== nextConfigPath) throw new Error("请在 FlowHub App 中修改配置文件位置");
-            const currentStoragePath = String(currentConfig.plugins?.clipboard?.settings?.storagePath || "").trim();
-            const nextStoragePath = String(config.plugins?.clipboard?.settings?.storagePath || "").trim();
-            if (currentStoragePath !== nextStoragePath) throw new Error("请在 FlowHub App 中修改剪切板存放位置");
-            const storedItems = await readWebCatalog();
-            if (webCatalogSignature(config.plugins.web.settings.items) !== webCatalogSignature(storedItems)) {
-              throw new Error("浏览器预览不能修改 SQLite 网页目录，请在 FlowHub App 的设置中编辑");
-            }
-            const persistedConfig = stripWebCatalogMirror(config);
-            const temporaryPath = `${configPath}.vite-${process.pid}`;
-            await writeFile(temporaryPath, `${JSON.stringify(persistedConfig, null, 2)}\n`, "utf8");
-            await rename(temporaryPath, configPath);
-            sendJson(response, 200, { ok: true, config: await hydrateWebCatalog(persistedConfig) });
-            return;
-          }
-          response.statusCode = 405;
-          response.setHeader("allow", "GET, POST");
-          response.end("Method not allowed");
+          const config = JSON.parse(await readFile(configPath, "utf8"));
+          sendJson(response, 200, await hydrateWebCatalog(config));
         } catch (error) {
           sendJson(response, 400, { ok: false, reason: error.message });
         }
