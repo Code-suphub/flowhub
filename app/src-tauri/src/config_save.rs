@@ -1,9 +1,21 @@
 //! Undo journal for the SQLite + JSON save. No AppState database leases may be
 //! acquired here. Lock order: config_save -> optional clipboard drain (no storage
 //! lease held) -> storage_access -> paths. Integrations run after storage unlock.
-use super::*;
+use crate::storage::{
+    catalog_items, catalog_meta, count_catalog_nodes, ensure_object_path, prepare_storage,
+    read_json, replace_catalog, validate_catalog,
+};
+use crate::{AppPaths, AppState};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use serde_json::{json, Map, Value};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const JOURNAL: &str = ".flowhub-config-save";
 
@@ -469,7 +481,12 @@ pub(super) fn saved_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::{
+        configured_path, database, hydrated_config, initialize_schema, initialize_startup_catalog,
+        validate_existing_storage, write_json_atomic,
+    };
     use crate::storage_tests::Fixture;
+    use std::time::Duration;
 
     fn seed(f: &Fixture) -> Value {
         let config = json!({ "core": {}, "plugins": { "web": { "settings": { "items": [] } } }, "version": "before" });

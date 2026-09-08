@@ -294,10 +294,12 @@ mod tests {
                 let _ = self.0.wait();
             }
         }
-        let script="import socket,time\nt=socket.socket();t.bind(('127.0.0.1',0));t.listen();p=t.getsockname()[1]\nu=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);u.bind(('127.0.0.1',p))\nprint(p,flush=True)\ntime.sleep(60)";
+        // Force the first UDP collision to exercise retry on every run. The
+        // child reserves both protocols before publishing its selected port.
+        let script = include_str!("../tests/port_listener.py");
         let mut child = TestChild(
             Command::new("python3")
-                .args(["-u", "-c", script])
+                .args(["-u", "-c", script, "1"])
                 .stdout(Stdio::piped())
                 .spawn()
                 .unwrap(),
@@ -326,5 +328,17 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
         }
         panic!("SIGTERM did not stop the test listener");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn listener_port_conflicts_have_a_bounded_failure_path() {
+        let output = Command::new("python3")
+            .args(["-u", "-c", include_str!("../tests/port_listener.py"), "32"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("exhausted after 32 attempts"));
     }
 }

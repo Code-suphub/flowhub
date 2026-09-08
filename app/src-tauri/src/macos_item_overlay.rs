@@ -48,7 +48,7 @@ fn watch_pointer(app: tauri::AppHandle) {
                 let should_close = SESSION.with(|state| {
                     let mut state = state.borrow_mut();
                     let Some(session) = state.as_mut() else { return false; };
-                    if crate::ORGANIZER_ITEM_MOVE_ACTIVE.load(Ordering::Acquire) {
+                    if crate::menu_bar::organizer_item_move_active() {
                         session.pointer_left_at = None;
                         return false;
                     }
@@ -251,7 +251,7 @@ fn close(reason: &str) {
     if DEFERRED_REFRESH.swap(false, Ordering::AcqRel) {
         let app = session.app.clone();
         tauri::async_runtime::spawn(async move {
-            crate::schedule_flowhub_menu_refresh(&app);
+            crate::menu_bar::schedule_flowhub_menu_refresh(&app);
         });
     }
 }
@@ -431,9 +431,9 @@ fn show_cascade(header: &ItemMenuView, menu: &NSMenu, initial_depth: usize) {
     // The source menu may outlive a divider toggle; refresh this dynamic label
     // when opening, without rebuilding any already-visible ancestor panel.
     if let Some(toggle) = parent.itemAtIndex(0) {
-        let title = if !crate::ORGANIZER_ENABLED.load(Ordering::Acquire) {
+        let title = if !crate::menu_bar::organizer_enabled() {
             "启用隐藏分区"
-        } else if crate::ORGANIZER_COLLAPSED.load(Ordering::Acquire) {
+        } else if crate::menu_bar::organizer_collapsed() {
             "展开隐藏区"
         } else {
             "收起隐藏区"

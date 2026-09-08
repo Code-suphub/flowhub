@@ -142,7 +142,7 @@ define_class!(
             crate::diagnostics::record_event(
                 &self.ivars().app,
                 "menu_bar_submenu_closed",
-                serde_json::json!({"busyRows": busy_rows, "moveActive": crate::ORGANIZER_ITEM_MOVE_ACTIVE.load(Ordering::Acquire), "refreshDeferred": DEFERRED_REFRESH.load(Ordering::Acquire)}),
+                serde_json::json!({"busyRows": busy_rows, "moveActive": crate::menu_bar::organizer_item_move_active(), "refreshDeferred": DEFERRED_REFRESH.load(Ordering::Acquire)}),
             );
             if self.ivars().tracking.replace(false) {
                 TRACKING.fetch_sub(1, Ordering::AcqRel);
@@ -155,7 +155,7 @@ define_class!(
             // run_on_main_thread may execute inline when called on the UI
             // thread. Start on a worker so it queues beyond this callback.
             tauri::async_runtime::spawn(async move {
-                crate::schedule_flowhub_menu_refresh(&app);
+                crate::menu_bar::schedule_flowhub_menu_refresh(&app);
             });
         }
     }
@@ -199,7 +199,7 @@ define_class!(
             if iv.busy.get() || !iv.capable.get() {
                 return;
             }
-            if !crate::ORGANIZER_ENABLED.load(Ordering::Acquire)
+            if !crate::menu_bar::organizer_enabled()
                 || !crate::macos_accessibility::is_trusted()
             {
                 iv.switch.setState(if iv.hidden.get() { 0 } else { 1 });
@@ -239,7 +239,7 @@ define_class!(
             let generation = iv.generation;
             let window_id = iv.window_id;
             tauri::async_runtime::spawn(async move {
-                let result = crate::set_menu_bar_item_hidden(app.clone(), window_id, hidden).await;
+                let result = crate::menu_bar::set_menu_bar_item_hidden(app.clone(), window_id, hidden).await;
                 // Only Rust values cross threads. Resolve weak objects afresh on
                 // the main thread; never capture a Retained or a raw pointer.
                 let _ = app.run_on_main_thread(move || complete(generation, window_id, result));
@@ -307,7 +307,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
     while menu.numberOfItems() > 1 {
         menu.removeItemAtIndex(menu.numberOfItems() - 1);
     }
-    if !crate::ORGANIZER_ENABLED.load(Ordering::Acquire) {
+    if !crate::menu_bar::organizer_enabled() {
         message(menu, "请先启用菜单栏整理", mtm);
         return;
     }
@@ -315,8 +315,8 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         message(menu, "请先在设置中授予辅助功能权限", mtm);
         return;
     }
-    let inventory = crate::organizer_window_ids()
-        .and_then(|(_, boundary, always)| crate::managed_menu_bar_items(boundary, always));
+    let inventory = crate::menu_bar::organizer_window_ids()
+        .and_then(|(_, boundary, always)| crate::menu_bar::managed_menu_bar_items(boundary, always));
     let items = match inventory {
         Ok(items) => items,
         Err(error) => {
@@ -335,7 +335,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
             continue;
         }
         let hidden = section == "alwaysHidden";
-        let title = crate::menu_bar_item_display_name(&item);
+        let title = crate::menu_bar::menu_bar_item_display_name(&item);
         let switch = NSSwitch::initWithFrame(NSSwitch::alloc(mtm), rect(256.0, 7.0, 36.0, 20.0));
         switch.setControlSize(NSControlSize::Small);
         switch.setState(if hidden { 0 } else { 1 });
@@ -441,8 +441,8 @@ fn complete(generation: u64, window_id: u32, result: Result<serde_json::Value, S
     let outcome = operation_result(result);
     // Even an unsuccessful move may have changed geometry. Reconcile against
     // fresh inventory instead of trusting either the request or its old state.
-    let actual = crate::organizer_window_ids()
-        .and_then(|(_, boundary, always)| crate::managed_menu_bar_items(boundary, always))
+    let actual = crate::menu_bar::organizer_window_ids()
+        .and_then(|(_, boundary, always)| crate::menu_bar::managed_menu_bar_items(boundary, always))
         .and_then(|items| {
             items
                 .into_iter()
@@ -480,7 +480,7 @@ fn complete(generation: u64, window_id: u32, result: Result<serde_json::Value, S
     iv.busy.set(false);
     iv.switch.setEnabled(
         iv.capable.get()
-            && crate::ORGANIZER_ENABLED.load(Ordering::Acquire)
+            && crate::menu_bar::organizer_enabled()
             && crate::macos_accessibility::is_trusted(),
     );
 }

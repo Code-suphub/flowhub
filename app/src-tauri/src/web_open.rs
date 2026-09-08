@@ -158,7 +158,7 @@ pub fn open(app: &AppHandle, input: &str) -> Result<Value, String> {
     let state = app.state::<crate::AppState>();
     let config_started = std::time::Instant::now();
     // This preference is in the config file; opening a URL needs no catalog hydration.
-    let config = crate::read_json(&state.paths().config_path).unwrap_or(Value::Null);
+    let config = crate::storage::read_json(&state.paths().config_path).unwrap_or(Value::Null);
     let enabled = config
         .pointer("/core/reuseBrowserTabs")
         .and_then(Value::as_bool)

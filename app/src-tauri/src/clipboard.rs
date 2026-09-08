@@ -1,4 +1,5 @@
-use crate::{application_icon_data_urls, database, hide_main, AppState};
+use crate::storage::database;
+use crate::{application_icon_data_urls, hide_main, AppState};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::Utc;
 use clipboard_rs::{
@@ -695,7 +696,7 @@ pub fn search_clipboard(
 ) -> Result<Vec<Value>, String> {
     let connection = database(&state)?;
     let policy = CleanupPolicy::from_config(
-        &crate::read_json(&state.paths().config_path).unwrap_or_default(),
+        &crate::storage::read_json(&state.paths().config_path).unwrap_or_default(),
     );
     let cutoff = (Utc::now() - chrono::Duration::days(policy.days)).to_rfc3339();
     let mut statement = connection
@@ -1211,7 +1212,7 @@ mod writer_tests {
         stopper.join().unwrap();
         assert_eq!(budget.load(Ordering::Acquire), 0);
         let target = fixture.root.join("target");
-        crate::switch_storage(&fixture.state, &target).unwrap();
+        crate::storage::switch_storage(&fixture.state, &target).unwrap();
         let connection = database(&fixture.state).unwrap();
         let count: i64 = connection
             .query_row("SELECT count(*) FROM clipboard_records", [], |r| r.get(0))
@@ -1419,9 +1420,9 @@ mod cleanup_tests {
         let db = database(&f.state).unwrap();
         db.execute("INSERT INTO usage_records(target_type,target_key,title,first_used_at,last_used_at) VALUES ('web','keep','keep','now','now')", []).unwrap();
         drop(db);
-        crate::replace_catalog(&mut database(&f.state).unwrap(), &[json!({"id":"keep"})]).unwrap();
+        crate::storage::replace_catalog(&mut database(&f.state).unwrap(), &[json!({"id":"keep"})]).unwrap();
         let target = f.root.join("target");
-        crate::switch_storage(&f.state, &target).unwrap();
+        crate::storage::switch_storage(&f.state, &target).unwrap();
         let orphan = format!("{}.png", "b".repeat(64));
         fs::write(target.join("images").join(&orphan), b"orphan").unwrap();
         fs::write(target.join("images/user.png"), b"user").unwrap();
@@ -1440,7 +1441,7 @@ mod cleanup_tests {
         remove_managed_image(&target, "../../outside");
         assert_eq!(fs::read(outside).unwrap(), b"safe");
         let db = database(&f.state).unwrap();
-        assert_eq!(crate::catalog_items(&db).unwrap()[0]["id"], "keep");
+        assert_eq!(crate::storage::catalog_items(&db).unwrap()[0]["id"], "keep");
         assert_eq!(
             db.query_row("SELECT count(*) FROM usage_records", [], |r| r
                 .get::<_, i64>(0))

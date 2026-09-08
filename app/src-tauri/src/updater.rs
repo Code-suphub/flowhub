@@ -175,7 +175,7 @@ pub(crate) async fn check_for_updates(
                 }),
             );
             let config =
-                crate::hydrated_config(&app.state::<crate::AppState>()).unwrap_or_default();
+                crate::storage::hydrated_config(&app.state::<crate::AppState>()).unwrap_or_default();
             let notifications_enabled = config
                 .pointer("/core/notifications/enabled")
                 .and_then(Value::as_bool)
