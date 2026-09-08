@@ -716,6 +716,8 @@ function renderSettingsFields() {
     input.checked = pluginConfig("tools")?.settings?.[input.dataset.toolSetting] !== false;
   });
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
+  $("#clipboardMaxRecords").value = Number(pluginConfig("clipboard")?.settings?.maxRecords ?? 0);
+  $("#clipboardMaxBytes").value = Number(pluginConfig("clipboard")?.settings?.maxBytes ?? 0);
   renderClipboardStorage();
   renderClipboardSummary();
   renderAppUpdate();
@@ -1018,7 +1020,7 @@ function renderClipboardSummary() {
   const retentionDays = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   const statusText = enabled ? "正在记录" : "已暂停";
   if ($("#clipboardStatusValue")) $("#clipboardStatusValue").textContent = statusText;
-  if ($("#clipboardRetentionValue")) $("#clipboardRetentionValue").textContent = retentionDays === 0 ? "永久保留" : `${retentionDays} 天`;
+  if ($("#clipboardRetentionValue")) $("#clipboardRetentionValue").textContent = retentionDays === 0 ? "无期限（仍受容量设置约束）" : `${retentionDays} 天`;
   if ($("#clipboardModuleState")) {
     $("#clipboardModuleState").textContent = statusText;
     $("#clipboardModuleState").classList.toggle("paused", !enabled);
@@ -1960,6 +1962,11 @@ document.addEventListener("input", (event) => {
       clipboard.settings ||= {};
       const days = Number(event.target.value);
       clipboard.settings.retentionDays = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0;
+    } else if (["clipboardMaxRecords", "clipboardMaxBytes"].includes(configField)) {
+      const clipboard = pluginConfig("clipboard");
+      clipboard.settings ||= {};
+      const value = Number(event.target.value);
+      clipboard.settings[configField === "clipboardMaxRecords" ? "maxRecords" : "maxBytes"] = Number.isFinite(value) ? Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value))) : 0;
     } else if (configField === "proxyAdapter") {
       const tools = pluginConfig("tools");
       if (!tools) return;

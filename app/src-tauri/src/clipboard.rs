@@ -252,12 +252,34 @@ struct ClipboardWriter {
     worker: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 impl ClipboardWriter {
-    fn start(app: tauri::AppHandle) -> Result<Self, String> {
+    fn start(app: tauri::AppHandle, policy: CleanupPolicy) -> Result<Self, String> {
         let (sender, receiver) = mpsc::sync_channel::<PendingClipboard>(WRITE_QUEUE_CAPACITY);
         let worker = thread::Builder::new()
             .name("clipboard-writer".into())
             .spawn(move || {
-                while let Ok(job) = receiver.recv() {
+                let mut deadline = Instant::now();
+                loop {
+                    let Some(job) = scheduled_receive(&receiver, &mut deadline, || {
+                        let result = cleanup_at(&app.state::<AppState>(), policy, Utc::now());
+                        match result {
+                            Ok(count) => {
+                                if count > 0 {
+                                    let _ = app.emit("flowhub:clipboard-updated", ());
+                                }
+                                if count == CLEANUP_BATCH {
+                                    Duration::from_secs(1)
+                                } else {
+                                    CLEANUP_INTERVAL
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!("[flowhub][clipboard] cleanup failed: {error}");
+                                CLEANUP_INTERVAL
+                            }
+                        }
+                    }) else {
+                        break;
+                    };
                     let queue_wait_ms = job.queued_at.elapsed().as_secs_f64() * 1000.0;
                     crate::diagnostics::record_event(
                         &app,
@@ -527,7 +549,7 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn start_monitor(app: &tauri::AppHandle) -> Result<(), String> {
+fn start_monitor(app: &tauri::AppHandle, policy: CleanupPolicy) -> Result<(), String> {
     let runtime = app.state::<ClipboardRuntime>();
     let mut shutdown = runtime
         .shutdown
@@ -536,20 +558,20 @@ pub fn start_monitor(app: &tauri::AppHandle) -> Result<(), String> {
     if shutdown.is_some() {
         return Ok(());
     }
+    #[cfg(target_os = "macos")]
+    let mut watcher = ClipboardWatcherContext::new_with_interval(Duration::from_millis(100))
+        .map_err(|error| error.to_string())?;
+    #[cfg(not(target_os = "macos"))]
+    let mut watcher = ClipboardWatcherContext::new().map_err(|error| error.to_string())?;
     // Stop joins the watcher before closing and draining this writer.
     let mut writer = runtime
         .writer
         .lock()
         .expect("clipboard writer lock poisoned");
     if writer.is_none() {
-        *writer = Some(ClipboardWriter::start(app.clone())?);
+        *writer = Some(ClipboardWriter::start(app.clone(), policy)?);
     }
     drop(writer);
-    #[cfg(target_os = "macos")]
-    let mut watcher = ClipboardWatcherContext::new_with_interval(Duration::from_millis(100))
-        .map_err(|error| error.to_string())?;
-    #[cfg(not(target_os = "macos"))]
-    let mut watcher = ClipboardWatcherContext::new().map_err(|error| error.to_string())?;
     let channel = watcher
         .add_handler(ClipboardChangeHandler { app: app.clone() })
         .get_shutdown_channel();
@@ -589,16 +611,12 @@ pub fn apply_config(app: &tauri::AppHandle, config: &Value) -> Result<(), String
         .pointer("/plugins/clipboard/enabled")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    stop_monitor(app)?;
     if enabled {
-        start_monitor(app)?;
+        start_monitor(app, CleanupPolicy::from_config(config))?;
     } else {
         stop_monitor(app)?;
     }
-    let retention_days = config
-        .pointer("/plugins/clipboard/settings/retentionDays")
-        .and_then(Value::as_i64)
-        .unwrap_or(30);
-    cleanup(&app.state::<AppState>(), retention_days)?;
     Ok(())
 }
 
@@ -676,6 +694,10 @@ pub fn search_clipboard(
     offset: usize,
 ) -> Result<Vec<Value>, String> {
     let connection = database(&state)?;
+    let policy = CleanupPolicy::from_config(
+        &crate::read_json(&state.paths().config_path).unwrap_or_default(),
+    );
+    let cutoff = (Utc::now() - chrono::Duration::days(policy.days)).to_rfc3339();
     let mut statement = connection
         .prepare(
             "SELECT id, kind, hash, content, file_name, source_name, file_paths, file_types,
@@ -700,6 +722,7 @@ pub fn search_clipboard(
                  || COALESCE(file_paths, '') || ' ' || hash
                ), ?2) > 0
              )
+             AND (?5 = 0 OR julianday(last_seen_at) >= julianday(?6))
              ORDER BY last_seen_at DESC
              LIMIT ?3 OFFSET ?4",
         )
@@ -712,7 +735,14 @@ pub fn search_clipboard(
     let page_limit = limit.clamp(1, 100);
     let rows = statement
         .query_map(
-            params![normalized_kind, keyword, page_limit as i64, offset as i64],
+            params![
+                normalized_kind,
+                keyword,
+                page_limit as i64,
+                offset as i64,
+                policy.days,
+                cutoff
+            ],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -959,7 +989,7 @@ pub fn delete_clipboard(
     let connection = database(&state)?;
     let file_name: Option<String> = connection
         .query_row(
-            "SELECT file_name FROM clipboard_records WHERE id = ?",
+            "SELECT file_name FROM clipboard_records WHERE id = ? AND kind = 'image'",
             [id],
             |row| row.get(0),
         )
@@ -973,37 +1003,160 @@ pub fn delete_clipboard(
         return Ok(json!({ "ok": false, "reason": "剪贴板记录不存在或已删除" }));
     }
     if let Some(file_name) = file_name {
-        let _ = fs::remove_file(connection.storage_dir.join("images").join(file_name));
+        let referenced: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM clipboard_records WHERE file_name=?)",
+                [&file_name],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !referenced {
+            remove_managed_image(&connection.storage_dir, &file_name);
+        }
     }
     let _ = app.emit("flowhub:clipboard-updated", ());
     Ok(json!({ "ok": true }))
 }
 
-pub fn cleanup(state: &AppState, retention_days: i64) -> Result<usize, String> {
-    if retention_days <= 0 {
-        return Ok(0);
+// Maintenance is checked before every queued job as well as on idle timeout,
+// so a continuously nonempty queue cannot starve it. Disconnect wakes immediately.
+fn scheduled_receive<T>(
+    receiver: &mpsc::Receiver<T>,
+    deadline: &mut Instant,
+    mut maintain: impl FnMut() -> Duration,
+) -> Option<T> {
+    loop {
+        if Instant::now() >= *deadline {
+            *deadline = Instant::now() + maintain();
+        }
+        match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(job) => return Some(job),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+        }
     }
-    let cutoff = (Utc::now() - chrono::Duration::days(retention_days)).to_rfc3339();
-    let connection = database(state)?;
-    let mut statement = connection
-        .prepare("SELECT file_name FROM clipboard_records WHERE last_seen_at < ? AND file_name IS NOT NULL")
-        .map_err(|error| error.to_string())?;
-    let expired: Vec<String> = statement
-        .query_map([&cutoff], |row| row.get(0))
-        .map_err(|error| error.to_string())?
-        .filter_map(Result::ok)
-        .collect();
-    drop(statement);
-    let removed = connection
-        .execute(
-            "DELETE FROM clipboard_records WHERE last_seen_at < ?",
-            [&cutoff],
-        )
-        .map_err(|error| error.to_string())?;
-    for file_name in expired {
-        let _ = fs::remove_file(connection.storage_dir.join("images").join(file_name));
+}
+
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+const CLEANUP_BATCH: usize = 256;
+
+#[derive(Clone, Copy, Debug)]
+struct CleanupPolicy {
+    days: i64,
+    max_records: i64,
+    max_bytes: i64,
+}
+impl CleanupPolicy {
+    fn from_config(config: &Value) -> Self {
+        let settings = &config["plugins"]["clipboard"]["settings"];
+        Self {
+            days: settings["retentionDays"]
+                .as_i64()
+                .unwrap_or(30)
+                .clamp(0, 3650),
+            max_records: settings["maxRecords"].as_i64().unwrap_or(0).max(0),
+            max_bytes: settings["maxBytes"].as_i64().unwrap_or(0).max(0),
+        }
     }
-    Ok(removed)
+}
+
+// Only generated SHA-256 PNG basenames, regular files, and a real images
+// directory are managed. Never follow symlinks or delete referenced user files.
+fn remove_managed_image(storage: &Path, name: &str) {
+    let Some(hash) = name.strip_suffix(".png") else {
+        return;
+    };
+    if hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return;
+    }
+    let directory = storage.join("images");
+    if !fs::symlink_metadata(&directory)
+        .map(|m| m.file_type().is_dir())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let path = directory.join(name);
+    if fs::symlink_metadata(&path)
+        .map(|m| m.file_type().is_file())
+        .unwrap_or(false)
+    {
+        let _ = fs::remove_file(path); // A failed unlink is retried by the orphan sweep.
+    }
+}
+
+fn cleanup_at(
+    state: &AppState,
+    policy: CleanupPolicy,
+    now: chrono::DateTime<Utc>,
+) -> Result<usize, String> {
+    let mut connection = database(state)?;
+    let storage = connection.storage_dir.clone();
+    let tx = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    // Logical payload bytes: UTF-8 text, encoded PNG, serialized file paths.
+    // Referenced files' sizes and SQLite pages/WAL/index overhead are excluded.
+    let cutoff = (now - chrono::Duration::days(policy.days)).to_rfc3339();
+    let ids: Vec<i64> = {
+        let mut stmt = tx
+            .prepare(
+                "WITH ranked AS (
+            SELECT id, last_seen_at,
+              row_number() OVER (ORDER BY last_seen_at DESC, id DESC) AS position,
+              sum(CASE WHEN kind='image' THEN max(size,0)
+                       WHEN kind='text' THEN length(CAST(COALESCE(content,'') AS BLOB))
+                       ELSE length(CAST(COALESCE(file_paths,'') AS BLOB)) END)
+                OVER (ORDER BY last_seen_at DESC, id DESC) AS bytes
+            FROM clipboard_records)
+            SELECT id FROM ranked WHERE (?1 > 0 AND julianday(last_seen_at) < julianday(?2))
+              OR (?3 > 0 AND position > ?3) OR (?4 > 0 AND bytes > ?4)
+            ORDER BY last_seen_at, id LIMIT ?5",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(
+                params![
+                    policy.days,
+                    cutoff,
+                    policy.max_records,
+                    policy.max_bytes,
+                    CLEANUP_BATCH as i64
+                ],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+    };
+    for id in &ids {
+        tx.execute("DELETE FROM clipboard_records WHERE id=?", [id])
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    // Keep the storage lease through unlink; the writer serializes image writes
+    // with this sweep, and config saves drain it before switching directories.
+    let referenced: std::collections::HashSet<String> = {
+        let mut stmt = connection
+            .prepare("SELECT file_name FROM clipboard_records WHERE file_name IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+    };
+    if let Ok(entries) = fs::read_dir(storage.join("images")) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !referenced.contains(&name) {
+                remove_managed_image(&storage, &name);
+            }
+        }
+    }
+    Ok(ids.len())
 }
 
 #[cfg(test)]
@@ -1120,5 +1273,179 @@ mod writer_tests {
         assert_eq!(budget.load(Ordering::Acquire), 42);
         drop(small);
         assert_eq!(budget.load(Ordering::Acquire), 0);
+    }
+}
+
+#[cfg(test)]
+mod cleanup_tests {
+    use super::*;
+    use crate::storage_tests::Fixture;
+    fn now() -> chrono::DateTime<Utc> {
+        "2026-09-09T00:00:00Z".parse().unwrap()
+    }
+    fn policy(days: i64, max_records: i64, max_bytes: i64) -> CleanupPolicy {
+        CleanupPolicy {
+            days,
+            max_records,
+            max_bytes,
+        }
+    }
+    fn text(f: &Fixture, hash: &str, time: &str, content: &str) {
+        database(&f.state).unwrap().execute("INSERT INTO clipboard_records(kind,hash,content,size,created_at,last_seen_at) VALUES ('text',?1,?2,999999,?3,?3)", params![hash, content, time]).unwrap();
+    }
+    fn count(f: &Fixture) -> i64 {
+        database(&f.state)
+            .unwrap()
+            .query_row("SELECT count(*) FROM clipboard_records", [], |r| r.get(0))
+            .unwrap()
+    }
+    #[test]
+    fn idle_timeout_cleans_without_save_or_restart_and_zero_keeps_history() {
+        let f = Fixture::new();
+        text(&f, "boundary", "2026-09-08T00:00:00Z", "abc");
+        text(&f, "old", "2026-09-07T23:59:59Z", "abc");
+        assert_eq!(cleanup_at(&f.state, policy(0, 0, 0), now()).unwrap(), 0);
+        assert_eq!(cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(), 1);
+        let (tx, rx) = mpsc::channel::<()>();
+        let state = f.state.clone();
+        let (cleaned_tx, cleaned_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let mut deadline = Instant::now() + Duration::from_millis(5);
+            assert!(scheduled_receive(&rx, &mut deadline, || {
+                let removed = cleanup_at(
+                    &state,
+                    policy(1, 0, 0),
+                    now() + chrono::Duration::seconds(1),
+                )
+                .unwrap();
+                cleaned_tx.send(removed).unwrap();
+                Duration::from_secs(60)
+            })
+            .is_none());
+        });
+        assert_eq!(cleaned_rx.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
+        drop(tx);
+        worker.join().unwrap();
+    }
+    #[test]
+    fn opt_in_limits_use_utf8_bytes_and_stable_oldest_first_order() {
+        let f = Fixture::new();
+        assert_eq!(CleanupPolicy::from_config(&json!({})).max_records, 0);
+        assert_eq!(CleanupPolicy::from_config(&json!({})).max_bytes, 0);
+        for hash in ["a", "b", "c"] {
+            text(&f, hash, "2026-09-09T00:00:00Z", "中文");
+        }
+        assert_eq!(cleanup_at(&f.state, policy(0, 2, 0), now()).unwrap(), 1);
+        assert_eq!(cleanup_at(&f.state, policy(0, 0, 6), now()).unwrap(), 1);
+        let hash: String = database(&f.state)
+            .unwrap()
+            .query_row("SELECT hash FROM clipboard_records", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(hash, "c");
+        assert_eq!(cleanup_at(&f.state, policy(0, 0, 5), now()).unwrap(), 1);
+        assert_eq!(count(&f), 0);
+    }
+    #[test]
+    fn batches_bound_deletes_under_continuous_writes() {
+        let f = Fixture::new();
+        for id in 0..300 {
+            text(&f, &id.to_string(), "2026-09-01T00:00:00Z", "x");
+        }
+        assert_eq!(
+            cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(),
+            CLEANUP_BATCH
+        );
+        text(&f, "new", "2026-09-09T00:00:00Z", "x");
+        assert_eq!(cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(), 44);
+        assert_eq!(count(&f), 1);
+    }
+    #[test]
+    fn nonempty_queue_does_not_starve_maintenance() {
+        let (tx, rx) = mpsc::channel();
+        for id in 0..100 {
+            tx.send(id).unwrap();
+        }
+        let mut deadline = Instant::now();
+        let mut runs = 0;
+        for id in 0..100 {
+            assert_eq!(
+                scheduled_receive(&rx, &mut deadline, || {
+                    runs += 1;
+                    Duration::ZERO
+                }),
+                Some(id)
+            );
+        }
+        assert_eq!(runs, 100);
+    }
+    #[test]
+    fn file_reference_bytes_exclude_original_file_size() {
+        let f = Fixture::new();
+        database(&f.state).unwrap().execute("INSERT INTO clipboard_records(kind,hash,file_paths,size,created_at,last_seen_at) VALUES ('file','f','[\"/a\"]',999999999,'2026-09-09T00:00:00Z','2026-09-09T00:00:00Z')", []).unwrap();
+        assert_eq!(cleanup_at(&f.state, policy(0, 0, 6), now()).unwrap(), 0);
+        assert_eq!(cleanup_at(&f.state, policy(0, 0, 5), now()).unwrap(), 1);
+    }
+    #[test]
+    fn recovery_journal_blocks_cleanup_and_images_directory_symlink_is_preserved() {
+        let f = Fixture::new();
+        text(&f, "old", "2026-09-01T00:00:00Z", "x");
+        let journal = f.root.join(".flowhub-config-save");
+        fs::create_dir(&journal).unwrap();
+        fs::write(
+            journal.join("journal.json"),
+            serde_json::to_vec(
+                &json!({"committed":false,"database":f.state.paths().db_path,"files":[]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(cleanup_at(&f.state, policy(1, 0, 0), now()).is_err());
+        fs::remove_dir_all(journal).unwrap();
+        assert_eq!(count(&f), 1);
+        let outside = f.root.join("outside-images");
+        fs::create_dir(&outside).unwrap();
+        let name = format!("{}.png", "d".repeat(64));
+        fs::write(outside.join(&name), b"safe").unwrap();
+        std::os::unix::fs::symlink(&outside, f.state.paths().storage_dir.join("images")).unwrap();
+        assert_eq!(cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(), 1);
+        assert!(outside.join(name).exists());
+    }
+    #[test]
+    fn attachments_orphans_other_tables_and_migration_are_isolated() {
+        let f = Fixture::new();
+        let source = f.state.paths().storage_dir;
+        let hash = "a".repeat(64);
+        add_image(&f.state, b"png", &hash, "2026-09-01T00:00:00Z").unwrap();
+        let db = database(&f.state).unwrap();
+        db.execute("INSERT INTO usage_records(target_type,target_key,title,first_used_at,last_used_at) VALUES ('web','keep','keep','now','now')", []).unwrap();
+        drop(db);
+        crate::replace_catalog(&mut database(&f.state).unwrap(), &[json!({"id":"keep"})]).unwrap();
+        let target = f.root.join("target");
+        crate::switch_storage(&f.state, &target).unwrap();
+        let orphan = format!("{}.png", "b".repeat(64));
+        fs::write(target.join("images").join(&orphan), b"orphan").unwrap();
+        fs::write(target.join("images/user.png"), b"user").unwrap();
+        let outside = f.root.join("outside");
+        fs::write(&outside, b"safe").unwrap();
+        let link = target
+            .join("images")
+            .join(format!("{}.png", "c".repeat(64)));
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert_eq!(cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(), 1);
+        assert!(source.join(format!("images/{hash}.png")).exists());
+        assert!(!target.join(format!("images/{hash}.png")).exists());
+        assert!(!target.join("images").join(orphan).exists());
+        assert!(target.join("images/user.png").exists());
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        remove_managed_image(&target, "../../outside");
+        assert_eq!(fs::read(outside).unwrap(), b"safe");
+        let db = database(&f.state).unwrap();
+        assert_eq!(crate::catalog_items(&db).unwrap()[0]["id"], "keep");
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM usage_records", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
 }

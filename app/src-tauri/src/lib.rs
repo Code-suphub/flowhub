@@ -3492,8 +3492,15 @@ pub fn run() {
             send_test_notification,
             toggle_menu_bar_items
         ])
-        .run(tauri::generate_context!())
-        .expect("FlowHub failed to run");
+        .build(tauri::generate_context!())
+        .expect("FlowHub failed to build")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                if let Err(error) = clipboard::stop_monitor(app) {
+                    eprintln!("[flowhub][clipboard] shutdown failed: {error}");
+                }
+            }
+        });
 }
 
 #[cfg(test)]
