@@ -32,7 +32,7 @@
 - 08：完成并整合。任务 `01a08234-312e-7d10-9c08-9b9e2ca4ae5d`，worktree `/Users/bilibili/.codex/worktrees/5549/web_organization`，源提交 `cd97884d7f73e04d883e2aa4d92f37e7b6078495`。后端按可信状态选择五类保存计划，普通设置不重写目录或备份数据库；系统能力按相关配置变化应用。协调复核81项Rust、全部UI、4项预览及diff检查通过。目录变更仍整库快照；无变化保存不重试此前失败的系统集成，未做真实原生集成。
 - 09：完成并整合。任务 `01a08241-b93b-76c0-beef-d55fe878c82c`，worktree `/Users/bilibili/.codex/worktrees/6278/web_organization`，源提交 `3d3cc751ae3b9a203c8fe02175af875cad0fecc0`。明确旧版顶层items边界，桌面格式显式拒绝；扩展无效配置不覆盖缓存，网页加载失败禁编辑，CLI对齐旧版。协调13项根测试、4项预览和diff通过；预览用已有依赖临时链接补测后移除。实现任务Rust/UI/隔离浏览器验证通过。不提供桌面到扩展实时同步，未操作真实数据。
 - 10：完成并整合。任务 `01a0824c-f589-7972-a741-4efacd430967`，worktree `/Users/bilibili/.codex/worktrees/7305/web_organization`，源提交 `57c0a4fba1a61646443f7389b5a0ca2f04385e84`。字段惰性预计算、查询分词复用、单查询排序缓存与目录事件失效，旧get_config响应不覆盖新快照。协调全部UI（含5项新增搜索行为）及diff检查通过；实现任务81项Rust、4项预览、合成基准/浏览器通过。万条首查中位23.85→10.08ms，连续查询192.66→6.16ms（合成环境）；新查询仍全量扫描排序，未验证真实Tauri。
-- 11：已派发“优化 11：持久化与菜单栏模块拆分”，任务 `01a08258-2873-7733-a7a0-55d1b99059f2`，worktree `/Users/bilibili/.codex/worktrees/4f59/web_organization`，禁止重复派发。
+- 11：完成并整合。任务 `01a08258-2873-7733-a7a0-55d1b99059f2`，worktree `/Users/bilibili/.codex/worktrees/4f59/web_organization`，源提交 `3bb4cff4c0e4aa93120f270242f23845b005c2e2`。storage/usage及menu_bar职责提取，lib.rs 3566→1481行；恢复就绪检查与保存锁异常重试覆盖，端口fixture有界重试和强制冲突测试。协调85项Rust及diff通过；实现任务全UI、4项预览及端口200次重复执行通过。原生菜单栏人工交互未实测，未操作真实数据。
 - 12：等待前置任务完成。
 - 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
 
