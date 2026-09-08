@@ -2918,14 +2918,31 @@ fn toggle_main(app: &tauri::AppHandle) {
 fn show_macos_window(window: &tauri::WebviewWindow) {
     let handle = window.app_handle().clone();
     let panel_handle = handle.clone();
-    let _ = handle.run_on_main_thread(move || match panel_handle.get_webview_panel("main") {
-        Ok(panel) => {
-            if let Some(mtm) = objc2::MainThreadMarker::new() {
-                macos_launcher_position::position_at_pointer(panel.as_panel(), mtm);
+    let queued_at = std::time::Instant::now();
+    let _ = handle.run_on_main_thread(move || {
+        let queue_ms = queued_at.elapsed().as_secs_f64() * 1000.0;
+        let mut detail = match panel_handle.get_webview_panel("main") {
+            Ok(panel) => {
+                let mut detail = objc2::MainThreadMarker::new()
+                    .map(|mtm| macos_launcher_position::position_at_pointer(panel.as_panel(), mtm))
+                    .unwrap_or_else(|| json!({"status": "missing-main-thread"}));
+                panel.show_and_make_key();
+                detail["visible"] = json!(panel.as_panel().isVisible());
+                detail["keyWindow"] = json!(panel.as_panel().isKeyWindow());
+                detail
             }
-            panel.show_and_make_key();
-        },
-        Err(error) => eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}"),
+            Err(error) => {
+                eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}");
+                json!({"status": "panel-error", "error": format!("{error:?}")})
+            }
+        };
+        detail["mainThreadQueueMs"] = json!(queue_ms);
+        detail["nativeShowMs"] = json!(queued_at.elapsed().as_secs_f64() * 1000.0);
+        // Disk access must not delay the panel's first frame. Diagnostics retain
+        // the existing opt-in setting and contain geometry, never search text.
+        tauri::async_runtime::spawn_blocking(move || {
+            diagnostics::record_event(&panel_handle, "launcher-show", detail);
+        });
     });
 }
 

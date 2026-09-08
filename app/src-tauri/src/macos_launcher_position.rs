@@ -1,5 +1,6 @@
 //! Keep pointer selection, screen geometry, and panel placement in AppKit points.
 use objc2::MainThreadMarker;
+use serde_json::{json, Value};
 use objc2_app_kit::{NSEvent, NSPanel, NSScreen};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
@@ -17,7 +18,11 @@ fn centered_origin(bounds: NSRect, size: NSSize) -> NSPoint {
     )
 }
 
-pub(super) fn position_at_pointer(panel: &NSPanel, mtm: MainThreadMarker) {
+fn rect_json(rect: NSRect) -> Value {
+    json!({"x": rect.origin.x, "y": rect.origin.y, "width": rect.size.width, "height": rect.size.height})
+}
+
+pub(super) fn position_at_pointer(panel: &NSPanel, mtm: MainThreadMarker) -> Value {
     let pointer = NSEvent::mouseLocation();
     let screens = NSScreen::screens(mtm);
     let frames: Vec<_> = screens.iter().map(|screen| screen.frame()).collect();
@@ -27,7 +32,7 @@ pub(super) fn position_at_pointer(panel: &NSPanel, mtm: MainThreadMarker) {
         .or_else(|| screens.firstObject());
     let Some(screen) = screen else {
         eprintln!("[flowhub-tauri] launcher-position: no screens available");
-        return;
+        return json!({"status": "no-screens", "screenCount": 0});
     };
     let before = panel.frame();
     let bounds = screen.visibleFrame();
@@ -37,6 +42,20 @@ pub(super) fn position_at_pointer(panel: &NSPanel, mtm: MainThreadMarker) {
         "[flowhub-tauri] launcher-position pointer={pointer:?} screenIndex={index:?} screen={:?} visible={bounds:?} scale={} before={before:?} after={:?}",
         screen.frame(), screen.backingScaleFactor(), panel.frame()
     );
+    json!({
+        "status": "positioned",
+        "coordinateSystem": "appkit-points",
+        "pointer": {"x": pointer.x, "y": pointer.y},
+        "screenCount": frames.len(),
+        "pointerScreenIndex": index,
+        "selection": if index.is_some() { "pointer" } else { "fallback" },
+        "screens": frames.into_iter().map(rect_json).collect::<Vec<_>>(),
+        "target": rect_json(screen.frame()),
+        "visibleFrame": rect_json(bounds),
+        "scale": screen.backingScaleFactor(),
+        "before": rect_json(before),
+        "after": rect_json(panel.frame())
+    })
 }
 
 #[cfg(test)]
