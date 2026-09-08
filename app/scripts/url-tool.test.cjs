@@ -1,0 +1,23 @@
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const window={FlowHubTools:{register(t){window.tool=t;}}};
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../ui/url-tool.js'),'utf8'),{window,URL});
+const parse=window.FlowHubUrl.parse;
+const url='https://example.com:9000/a%20b?x=1&x=2&q=a+b#%E4%B8%AD';
+const value=parse(url);
+assert.equal(value.rows.filter(r=>r[0]==='参数 · x').length,2);
+assert(value.rows.some(r=>r[0]==='参数 · q'&&r[1]==='a b'));
+assert(value.rows.some(r=>r[0]==='路径（解码）'&&r[1]==='/a b'));
+assert.equal(parse('urlencode 中文 +').value,'%E4%B8%AD%E6%96%87%20%2B');
+assert.equal(parse('urldecode a+b%20c').value,'a+b c');
+assert(parse('urldecode %FF').error);
+for(const text of ['javascript:alert(1)','just text','https://','https://a b'])assert.equal(parse(text),null);
+assert.equal(parse('x'.repeat(65537)),null);
+(async()=>{
+ let copied;const ctx={query:url,queryNow(){return this.query},copy:async v=>copied=v,status(){}};
+ assert.equal(window.tool.suggestions(ctx).length,1);
+ await window.tool.action('value',{dataset:{part:'2'}},ctx);assert.equal(copied,'9000');
+ await window.tool.choose({},ctx);assert(copied.includes('参数 · x: 1\n参数 · x: 2'));
+ ctx.query='urldecode %3Cscript%3E';window.tool.suggestions(ctx);
+ assert(!window.tool.render({}, {esc:s=>s.replaceAll('<','&lt;'),index:0,active:true}).includes('<script>'));
+ console.log('PASS: URL fields, duplicate parameters, plus rules, encoding errors, safe schemes/preview, copy');
+})().catch(e=>{console.error(e);process.exitCode=1});

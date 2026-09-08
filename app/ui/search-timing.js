@@ -21,6 +21,11 @@
       catch (error) { entry.status = 'error'; throw error; }
       finally { entry.durationMs = now() - start; entry.stale = current !== run; }
     },
+    phases() {
+      const run = current; if (!run) return null;
+      let last = now();
+      return name => { const end = now(); (run.phases ??= []); if (run.phases.length < 500) run.phases.push({name, ms:end-last}); last=end; };
+    },
     applied() { if (current) current.hasAppliedSource = true; },
     render(task) {
       const run = current, start = now();

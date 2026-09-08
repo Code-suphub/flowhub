@@ -615,6 +615,14 @@ function moveVertical(items, offset) {
   state.index = Math.max(0, Math.min(items.length - 1, state.index + offset));
 }
 
+function clipboardTextHtml(text) {
+  // Render frequent status symbols as lightweight inline vectors. The original
+  // clipboard string remains untouched for copy/paste and expanded content.
+  return esc(text).replace(/[❌✅]/gu, symbol => symbol === "❌"
+    ? '<svg role="img" aria-label="❌" width="14" height="14" viewBox="0 0 16 16" style="vertical-align:-2px;color:#ec6767"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>'
+    : '<svg role="img" aria-label="✅" width="14" height="14" viewBox="0 0 16 16" style="vertical-align:-2px"><rect width="16" height="16" rx="3" fill="#4eaa75"/><path d="m3 8 3 3 7-7" stroke="white" fill="none" stroke-width="2"/></svg>');
+}
+
 function isExpandableClipboard(item) {
   if (item.kind !== "text") return false;
   const content = String(item.content || "");
@@ -904,7 +912,7 @@ function renderResultBody(item, index, items) {
     const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
     const title = item.kind === "image"
       ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
-      : isFile ? esc(fileLabel) : esc((expanded ? preview : preview.slice(0, 300) + (preview.length > 300 ? "…" : "")) || "空文本");
+      : isFile ? esc(fileLabel) : (expanded ? esc : clipboardTextHtml)((expanded ? preview : preview.slice(0, 300).split("\n").slice(0, 5).join("\n") + (preview.length > 300 || preview.slice(0, 300).split("\n").length > 5 ? "…" : "")) || "空文本");
     const toggle = expandable
       ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
       : "";
@@ -944,7 +952,12 @@ function render(options = {}) {
 }
 
 function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
-  const previousScrollTop = preserveScroll ? resultsEl.scrollTop : 0;
+  const phase = window.flowhubSearchTiming?.phases?.();
+  const currentScrollTop = resultsEl.scrollTop;
+  const previousScrollTop = preserveScroll ? currentScrollTop : 0;
+  // Reset before DOM mutation. Reassigning the same scrollTop afterwards forces
+  // WebKit to lay out the newly inserted rows synchronously, even at zero.
+  if (!preserveScroll && currentScrollTop !== 0) resultsEl.scrollTop = 0;
   if (!state.config) {
     const html = `<div class="empty">配置加载中…</div>`;
     if (html !== lastResultsHtml) {
@@ -954,6 +967,7 @@ function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
     return;
   }
   const m = matches();
+  phase?.("matches");
   const paging = state.scope === "all"
     ? { loading: allPaging, hasMore: allHasMore() }
     : state.scope === "clipboard"
@@ -974,10 +988,12 @@ function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
   const html = !m.length
     ? `<div class="empty">${paging?.loading ? "正在加载…" : "没有匹配项"}</div>`
     : `${resultHtml}${paging && (paging.loading || !paging.hasMore) ? `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>` : ""}`;
+  phase?.("markup");
   if (html !== lastResultsHtml) {
     resultsEl.innerHTML = html;
     lastResultsHtml = html;
   }
+  phase?.("dom");
   if (plan) {
     for (const group of plan.groups) {
       const row = resultsEl.querySelector(`.result[data-i="${group.start}"]`);
@@ -989,13 +1005,10 @@ function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
       resultWindow.heights.set(group.id, height + heading);
     }
   }
+  phase?.("layout");
   if (!m.length) return;
   if (targetIndex != null && plan) resultsEl.scrollTop = plan.targetTop;
-  else if (preserveScroll) {
-    resultsEl.scrollTop = previousScrollTop;
-  } else {
-    resultsEl.scrollTop = 0;
-  }
+  phase?.("scroll");
 }
 
 function revealActiveResult() {
@@ -1412,7 +1425,7 @@ window.addEventListener("blur", () => {
 
 async function refreshClipboard({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("clipboard") || !["all", "clipboard"].includes(state.scope)) return;
-  if (append && (state.scope !== "clipboard" || state.clipboardLoading || !state.clipboardHasMore)) return;
+  if (append && (!["all", "clipboard"].includes(state.scope) || state.clipboardLoading || !state.clipboardHasMore)) return;
   const token = ++clipboardSearchToken;
   const offset = append ? state.clipboardResults.length : 0;
   state.clipboardLoading = true;
@@ -1519,7 +1532,7 @@ async function hydrateAppIcons(applications, token) {
 
 async function refreshWeb({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("web") || !["all", "web"].includes(state.scope)) return;
-  if (append && (state.scope !== "web" || state.webLoading || !state.webHasMore)) return;
+  if (append && (!["all", "web"].includes(state.scope) || state.webLoading || !state.webHasMore)) return;
   const token = ++webSearchToken;
   const limit = state.scope === "web" ? PLUGIN_PAGE_SIZE : 12;
   const offset = append ? state.webResults.length : 0;
@@ -1548,7 +1561,7 @@ async function refreshWeb({ append = false, deferRender = false } = {}) {
 
 async function refreshMemos({ append = false, deferRender = false } = {}) {
   if (!pluginEnabled("memo") || !["all", "memo"].includes(state.scope)) return;
-  if (append && (state.scope !== "memo" || state.memoLoading || !state.memoHasMore)) return;
+  if (append && (!["all", "memo"].includes(state.scope) || state.memoLoading || !state.memoHasMore)) return;
   const token = ++memoSearchToken;
   const limit = state.scope === "memo" ? PLUGIN_PAGE_SIZE : 12;
   const offset = append ? state.memoResults.length : 0;

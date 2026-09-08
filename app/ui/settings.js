@@ -39,6 +39,7 @@ const TOOL_SETTINGS = {
   timestamp: "时间戳转换",
   jwt: "JWT 解析",
   json: "JSON 格式化",
+  url: "URL 解析与编解码",
   dns: "DNS 解析",
   dnsIpGeo: "DNS 自动查询 IP 归属地",
   cloudflare: "Cloudflare 检测",

@@ -26,7 +26,7 @@
         await settle();
         const deadline = performance.now() + 3000;
         while (!window.flowhubSearchTiming.report().some(run => run.sources.length && run.sources.every(source => source.status !== 'pending')) && performance.now() < deadline) await sleep(50);
-        report.inputs.push({ scope, queryCase: report.inputs.length % 3, runs: window.flowhubSearchTiming.report(), rows: resultsEl.querySelectorAll('.result').length });
+        report.inputs.push({ scope, queryCase: report.inputs.length % 3, runs: window.flowhubSearchTiming.report(), rows: resultsEl.querySelectorAll('.result').length, sizes:matches().map(item=>({type:item.type,content:String(item.content||'').length,preview:String(item.content||'').split('\n').slice(0,2).join('\n').length,description:String(item.description||'').length,title:String(item.title||'').length,icon:String(item.iconUrl||item.imageUrl||'').length})), htmlChars:resultsEl.innerHTML.length });
       }
     }
     q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); await settle();
@@ -43,7 +43,7 @@
     await refreshAllScopes(); await settle();
     let pages = 0, maxRows = 0; const times = [];
     let stopped = "limit";
-    while (allHasMore() && pages < 100) {
+    while (allHasMore() && pages < 400) {
       const deadline = performance.now() + 10000;
       while (allPaging && performance.now() < deadline) await sleep(20);
       const before = matches().length;
@@ -53,8 +53,8 @@
       maxRows = Math.max(maxRows, resultsEl.querySelectorAll('.result').length);
       pages++;
     }
-    report.paging = { pages, times, maxRows, loaded: matches().length, hasMore: allHasMore(), stopped,
-      queriesCurrent: ['clipboard','app','web','memo'].map(id => ({source:id,current:state[id+'LoadedQuery']===state.query})) };
+    report.paging = { pages, times, maxRows, loaded: matches().length, hasMore: allHasMore(), stopped: allHasMore() ? stopped : "end",
+      queriesCurrent: ['clipboard','app','web','memo'].map(id => ({source:id,current:state[id+'LoadedQuery']===state.query,hasMore:state[id+'HasMore'],count:state[id+'Results'].length})) };
     const frameIntervals=[];
     for (let step=0;step<60;step++) {
       const t=performance.now();
@@ -63,6 +63,11 @@
       frameIntervals.push(performance.now()-t);
     }
     report.scroll={twoFrameWaitMs:frameIntervals,rows:resultsEl.querySelectorAll('.result').length};
+    report.urlChecks=[];
+    for (const query of ['https://example.com:9000/a?x=1&x=2','urlencode 中文 +','urldecode %E4%B8%AD']) {
+      setScope('all'); q.value=query;q.dispatchEvent(new Event('input',{bubbles:true}));await settle();
+      report.urlChecks.push({recognized:matches().some(item=>item.toolId==='url'),buttons:resultsEl.querySelectorAll('[data-tool-id="url"]').length});
+    }
   } catch (error) { report.error = error.message === 'query-timeout' ? 'query-timeout' : 'runner-failed'; }
   finally {
     report.elapsedMs = performance.now() - started;

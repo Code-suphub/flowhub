@@ -104,9 +104,8 @@
       .clipboard-result { align-items: flex-start; }
       .clipboard-result .r-icon, .clipboard-result .r-kind { margin-top: 2px; }
       .r-title.clipboard-title {
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 3;
+        display: block;
+        max-height: 4.05em;
         overflow: hidden;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
@@ -114,7 +113,7 @@
         line-height: 1.35;
         text-overflow: clip;
       }
-      .r-title.clipboard-title.expandable { -webkit-line-clamp: 5; }
+      .r-title.clipboard-title.expandable { max-height: 6.75em; }
       .r-title.clipboard-title.is-expanded {
         display: block;
         max-height: 240px;
@@ -238,6 +237,7 @@
     <script src="local-ip-tool.js"></script>
     <script src="network-tools.js"></script>
     <script src="json-tool.js"></script>
+    <script src="url-tool.js"></script>
     <script src="search-timing.js"></script>
     <script src="search.js"></script>
   </body>
