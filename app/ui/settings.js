@@ -13,6 +13,7 @@ const state = {
   saving: false,
   reloading: false,
   saveConflict: null,
+  draftOrigin: null,
   jsonDirty: false,
   expanded: new Set(),
   draggingId: "",
@@ -30,7 +31,7 @@ const state = {
   menuBarItemsError: ""
 };
 
-const DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
+const LEGACY_DRAFT_KEY_PREFIX = "flowhub:settings-draft:v1:";
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 const DEFAULT_MENU_BAR = { enabled: true, showOpenLauncher: true, showOpenSettings: true, showVersion: true, showQuit: true, organizerEnabled: false, collapseOnLaunch: false };
 const DEFAULT_NOTIFICATIONS = { enabled: true, updates: true };
@@ -405,16 +406,30 @@ function prepareAddWebUrl(value) {
 }
 window.prepareAddWebUrl = prepareAddWebUrl;
 
-function draftStorageKey(configFile = state.configFile) {
-  if (configFile === state.configFile && state.saveConflict) return state.saveConflict.draftKey;
-  const identity = String(configFile?.activePath || configFile?.resolvedPath || configFile?.defaultPath || "default");
-  return `${DRAFT_KEY_PREFIX}${identity}`;
+// The catalog belongs to the active database, not to the editable storagePath
+// or the config.json locator (which can be shared by several databases).
+function activeDraftOrigin(configFile = state.configFile, storage = state.clipboardStorage, config = state.savedConfig) {
+  return {
+    configPath: String(configFile?.activePath || configFile?.resolvedPath || configFile?.defaultPath || "default"),
+    storagePath: String(storage?.activePath || storage?.resolvedPath || storage?.defaultPath || config?.plugins?.clipboard?.settings?.storagePath || "default")
+  };
 }
 
-function readDraft(configFile = state.configFile) {
+function draftStorageKey(origin = state.draftOrigin || activeDraftOrigin()) {
+  if (state.saveConflict) return state.saveConflict.draftKey;
+  return `flowhub:settings-draft:v2:${JSON.stringify([origin.configPath, origin.storagePath])}`;
+}
+
+function readDraft() {
   try {
-    const raw = localStorage.getItem(draftStorageKey(configFile));
-    return raw ? JSON.parse(raw) : null;
+    const key = draftStorageKey();
+    const raw = localStorage.getItem(key);
+    if (raw) return { ...JSON.parse(raw), recoveryKey: key };
+    // v1 did not record which database supplied the catalog. Keep it recoverable,
+    // but a confirmation alone must never authorize writing it to the active DB.
+    const legacyKey = `${LEGACY_DRAFT_KEY_PREFIX}${state.draftOrigin.configPath}`;
+    const legacy = localStorage.getItem(legacyKey);
+    return legacy ? { ...JSON.parse(legacy), origin: null, recoveryKey: legacyKey } : null;
   } catch (error) {
     console.warn("[FlowHub] 无法读取配置草稿", error);
     return null;
@@ -440,7 +455,9 @@ function persistDraftMeasured() {
   try {
     const savedAt = Date.now();
     localStorage.setItem(draftStorageKey(), JSON.stringify({
-      version: 1,
+      version: 2,
+      origin: state.saveConflict ? state.saveConflict.sourceOrigin : state.draftOrigin || activeDraftOrigin(),
+      saveConflict: state.saveConflict,
       savedAt,
       baseSignature: configSignature(state.saveConflict?.sourceConfig || state.savedConfig),
       config: state.config,
@@ -1309,6 +1326,7 @@ async function save() {
   try {
     const previousDraftKey = draftStorageKey();
     const sourceConfig = clone(state.savedConfig);
+    const sourceOrigin = clone(state.draftOrigin || activeDraftOrigin());
     const version = state.editVersion;
     // Never give the adapter an object that input handlers can still mutate.
     const snapshot = clone(normalizeConfig(clone(state.mode === "json" ? readJsonEditor() : state.config)));
@@ -1322,10 +1340,11 @@ async function save() {
     ]);
     const changed = state.editVersion !== version;
     const opened = result.storageState?.operation === "open";
-    const pathUnknown = metadata[2].status === "rejected";
+    const pathUnknown = metadata[2].status === "rejected" || (metadata[1].status === "rejected" && !result.storageState?.activePath);
     if ((opened && changed) || pathUnknown) {
       // Keep source edits separate from the newly active target, including raw JSON.
-      state.saveConflict = { draftKey: previousDraftKey, sourceConfig };
+      state.saveConflict = { draftKey: previousDraftKey, sourceConfig, sourceOrigin };
+      state.draftOrigin = sourceOrigin;
     }
     state.savedConfig = clone(committed);
     if (!changed && !state.saveConflict) {
@@ -1335,7 +1354,12 @@ async function save() {
     }
     if (metadata[0].status === "fulfilled") state.plugins = metadata[0].value;
     if (metadata[1].status === "fulfilled") state.clipboardStorage = metadata[1].value;
-    if (!pathUnknown) state.configFile = metadata[2].value;
+    if (metadata[2].status === "fulfilled") state.configFile = metadata[2].value;
+    if (!state.saveConflict) {
+      const storage = result.storageState?.activePath
+        ? { ...state.clipboardStorage, activePath: result.storageState.activePath } : state.clipboardStorage;
+      state.draftOrigin = activeDraftOrigin(state.configFile, storage, committed);
+    }
     state.dirty = Boolean(state.saveConflict) || !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
     if (state.dirty) {
       const draftPersisted = persistDraftNow();
@@ -1378,6 +1402,7 @@ async function reload() {
     if (state.saveConflict) persistDraftNow();
     else clearDraft();
     state.saveConflict = null;
+    state.draftOrigin = activeDraftOrigin(configFile, clipboardStorage, loaded);
     Object.assign(state, { plugins, config: loaded, savedConfig: clone(loaded), clipboardStorage, configFile, jsonDirty: false, dirty: false, pendingAddId: "" });
     render();
     toast("已重置未保存修改");
@@ -2026,7 +2051,8 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   state.menuBarManagement = menuBarManagement || state.menuBarManagement;
   const loadedConfig = clone(normalizeConfig(config));
   state.savedConfig = clone(loadedConfig);
-  const draft = readDraft(configFile);
+  state.draftOrigin = activeDraftOrigin(configFile, clipboardStorage, loadedConfig);
+  const draft = readDraft();
   let draftConfig = null;
   try { if (draft?.config) draftConfig = clone(normalizeConfig(draft.config)); }
   catch (error) { console.warn("[FlowHub] 配置草稿已损坏，已忽略", error); }
@@ -2036,14 +2062,36 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   const sourceChanged = draft?.baseSignature && draft.baseSignature !== configSignature(loadedConfig);
   const recoveryMessage = `检测到 ${new Date(draft?.savedAt || Date.now()).toLocaleString()} 的未保存配置草稿${sourceChanged ? "，且正式配置在草稿保存后发生过变化" : ""}，是否恢复？`;
   if ((hasConfigChanges || hasJsonChanges) && window.confirm(recoveryMessage)) {
-    state.config = draftConfig || loadedConfig;
+    const sourceMatches = draft.origin && configsEqual(draft.origin, state.draftOrigin);
+    state.config = draftConfig || clone(loadedConfig);
+    let recoveredJson = draft.jsonText;
+    if (sourceMatches) {
+      // Returning to A restores A's edits, not the old pending request to open B.
+      // Apply the same rebinding to valid JSON; malformed text remains untouched.
+      const restoreSourcePath = (value) => {
+        if (value?.plugins && typeof value.plugins === "object") {
+          value.plugins.clipboard ||= {};
+          value.plugins.clipboard.settings ||= {};
+          value.plugins.clipboard.settings.storagePath = loadedConfig.plugins?.clipboard?.settings?.storagePath || "";
+        }
+        return value;
+      };
+      restoreSourcePath(state.config);
+      if (typeof recoveredJson === "string") {
+        try { recoveredJson = JSON.stringify(restoreSourcePath(JSON.parse(recoveredJson)), null, 2); } catch {}
+      }
+      state.saveConflict = null;
+    } else {
+      state.saveConflict = { ...(draft.saveConflict || {}), draftKey: draft.recoveryKey,
+        sourceOrigin: draft.origin || null, sourceConfig: draft.saveConflict?.sourceConfig || null };
+    }
     state.selectedId = String(draft.selectedId || "");
     state.selectedMemoId = String(draft.selectedMemoId || "");
     state.memoFilter = String(draft.memoFilter || "");
     state.expanded = new Set(Array.isArray(draft.expanded) ? draft.expanded : []);
     state.module = ["core", "web", "clipboard", "app", "memo", "tools"].includes(draft.module) ? draft.module : "core";
     state.mode = hasJsonChanges || draft.mode === "json" ? "json" : "structure";
-    state.dirty = Boolean(hasConfigChanges || hasJsonChanges);
+    state.dirty = Boolean(state.saveConflict || hasConfigChanges || hasJsonChanges);
     state.draftSavedAt = Number(draft.savedAt) || Date.now();
     render();
     if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
@@ -2051,15 +2099,17 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     }
     applyInitialWebUrl();
     if (state.mode === "json" && typeof draft.jsonText === "string") {
-      $("#jsonEditor").value = draft.jsonText;
+      $("#jsonEditor").value = recoveredJson;
       state.jsonDirty = jsonEditorDiffersFromConfig();
       state.dirty = Boolean(state.saveConflict) || !configsEqual(state.config, state.savedConfig) || state.jsonDirty;
       updateStatus();
     }
-    toast("已恢复未保存的配置草稿");
+    persistDraftNow();
+    toast(state.saveConflict ? "草稿的数据来源无法确认，已保留但禁止保存到当前数据库；可重置查看当前配置"
+      : "已恢复当前源数据库的草稿，存储位置已设为当前源位置");
     return;
   }
-  if (draft) clearDraft(draftStorageKey(configFile));
+  if (draft?.origin && configsEqual(draft.origin, state.draftOrigin)) clearDraft(draft.recoveryKey);
   state.config = loadedConfig;
   state.jsonDirty = false;
   expandInitialTree();
