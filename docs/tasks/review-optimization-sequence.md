@@ -28,10 +28,12 @@
 - 04：完成并整合。任务 `01a08200-a424-7f62-93b3-1821396e5850`，worktree `/Users/bilibili/.codex/worktrees/245d/web_organization`，源提交 `b6a5ebbd99da37537844e56c79987df09ca9ec6e` + `8b8951938003d35efb25898d27b88a8d439835b9`。保存快照、编辑版本、防重、JSON与草稿保护；复核退回后补同一config.json跨库重开保护，草稿按实际数据库来源分区并持久化冲突。协调最终69项Rust/全部UI测试及diff检查通过。旧草稿来源未知时可恢复查看但禁止直接保存，跨库不自动合并；未操作真实用户数据。
 - 05：完成并整合。任务 `01a08211-6ba8-7b01-bc83-38d5aef5cb73`，worktree `/Users/bilibili/.codex/worktrees/cbb4/web_organization`，源提交 `8d8096fca8f18a3ff49e07daf72377745223d552`。回环监听、Host/Origin/写令牌、静态白名单、请求边界与原子写；停用服务端探测，保留页面和CLI写、扩展读。协调复核隔离安全测试8项通过，CLI语法及diff检查通过；实现任务另有69项Rust/全部UI及隔离浏览器保存验证。令牌不隔离恶意本机进程，不承诺断电目录持久化，未操作真实配置。
 - 06：完成并整合。任务 `01a0821c-f3f1-7502-9f89-f0b69e6564e1`，worktree `/Users/bilibili/.codex/worktrees/6152/web_organization`，源提交 `0f9b2c36cdb81e4b41b23b7952dc6dd5fccfb37a`。周期分批清理、搜索过期过滤、默认关闭的条数/逻辑字节上限、安全受管附件回收、退出排空。协调76项Rust/全部UI及diff检查通过，实现任务根目录8项安全测试通过。容量可暂时超限，超大库查询/目录扫描尚未基准，未做真实原生退出集成；未操作真实数据。
-- 07：已派发“优化 07：预览服务强制只读”，任务 `01a08228-5933-78a3-b12e-69f358acb342`，worktree `/Users/bilibili/.codex/worktrees/fa5c/web_organization`，禁止重复派发。
+- 07：完成并整合。任务 `01a08228-5933-78a3-b12e-69f358acb342`，worktree `/Users/bilibili/.codex/worktrees/fa5c/web_organization`，源提交 `0d25a8e5ee76e4d458c23974c856a6cd01f0f22b`。预览后端非GET立即405不读body，移除配置写入；前端禁配置/剪贴板写。协调4项预览测试/全部UI及diff检查通过；实现任务低调试编译76项Rust及根服务8项通过。首次编译磁盘不足已恢复；未操作真实数据。
 - 08–12：等待前置任务完成。
 - 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
 
 每项完成后记录提交和验证结果。上述各项按当时最新代码重新核对，已被前置任务完整解决的内容不重复修改。
 
 协调注意：list_threads 当前可能遗漏 worktree 任务，不能据此判定仍初始化。必要时用 git worktree list 找对应工作区，在 ~/.codex/sessions/当天目录中只按该 cwd 搜索 session_meta 解析真实任务 ID，然后用 wait_threads 核对完成状态。第 01 项此前因此误判为等待初始化，已纠正。
+
+构建资源：任务01–06完成worktree的app/src-tauri/target已清理，保留全部源码与git提交。后续Rust测试优先 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0，任务完成整合后及时清理其可重建target，防止磁盘再次耗尽。
