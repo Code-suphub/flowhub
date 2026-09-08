@@ -23,7 +23,7 @@
 ## 执行记录
 
 - 01：完成并快进整合到 main。任务 `01a081d3-b7c2-7bb2-a208-b160b1ca7890`，worktree `/Users/bilibili/.codex/worktrees/e3e0/web_organization`，提交 `7cb574714101109ec38c47d1e01760e585638bf4`。54 项 Rust 测试与全部 UI 测试通过，diff 检查通过。复核首次遇到旧端口测试随机 TCP/UDP 同端口占用失败，重跑通过；任务 11 补测试稳定性。暂停期间剪贴板不采集，未操作真实剪贴板集成验证。
-- 02：已创建“优化 02：配置保存失败恢复”，clientThreadId `client-new-thread:8be14889-de11-4a4f-9750-91cda7828fb1`，等待解析真实 ID；禁止重复派发。
+- 02：执行中，“优化 02：配置保存失败恢复”，真实任务 ID `01a081e3-7e71-76f3-9cc7-bed4f61f5d4d`，worktree `/Users/bilibili/.codex/worktrees/b9cd/web_organization`；禁止重复派发。
 - 03–12：等待前置任务完成。
 - 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
 
