@@ -1312,7 +1312,7 @@ async function save() {
     if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
       void refreshMenuBarItems();
     }
-    toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 个插件启动失败` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
+    toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 项系统设置未能生效` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
   } catch (error) {
     toast(error.message, true);
   }

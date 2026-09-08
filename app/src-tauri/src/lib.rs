@@ -1,3 +1,4 @@
+mod config_save;
 #[cfg(test)]
 mod storage_tests;
 mod web_open;
@@ -663,6 +664,8 @@ fn toggle_menu_bar_organizer(app: &tauri::AppHandle) -> Result<bool, String> {
 #[cfg(target_os = "macos")]
 fn enable_menu_bar_organizer(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
+    let _save = state.config_save.lock().map_err(|error| error.to_string())?;
+    config_save::check_ready(&state.root_dir)?;
     let paths = state.paths();
     let mut config = read_json(&paths.config_path)
         .unwrap_or_else(|| serde_json::from_str(DEFAULT_CONFIG).unwrap_or_else(|_| json!({})));
@@ -1506,6 +1509,7 @@ fn copy_directory_contents(source: &Path, target: &Path) -> Result<(), String> {
 
 fn initialize_state() -> Result<AppState, String> {
     let root_dir = app_support_dir()?;
+    config_save::recover(&root_dir)?;
     let application_index_path = root_dir.join("application-index.json");
     let application_icon_cache_dir = root_dir.join("application-icons");
     fs::create_dir_all(&application_icon_cache_dir).map_err(|error| error.to_string())?;
@@ -1607,6 +1611,7 @@ pub(crate) fn database(state: &AppState) -> Result<StorageConnection<'_>, String
         .storage_access
         .read()
         .map_err(|error| error.to_string())?;
+    config_save::check_ready(&state.root_dir)?;
     let paths = state.paths();
     Ok(StorageConnection {
         connection: Connection::open(paths.db_path).map_err(|error| error.to_string())?,
@@ -1824,9 +1829,9 @@ fn catalog_items(connection: &Connection) -> Result<Vec<Value>, String> {
 }
 
 pub(crate) fn hydrated_config(state: &AppState) -> Result<Value, String> {
+    let connection = database(state)?;
     let mut config = read_json(&state.paths().config_path)
         .unwrap_or_else(|| serde_json::from_str(DEFAULT_CONFIG).unwrap_or_else(|_| json!({})));
-    let connection = database(state)?;
     let items = catalog_items(&connection)?;
     let count = items.iter().map(count_catalog_nodes).sum::<usize>();
     let settings = ensure_object_path(&mut config, &["plugins", "web", "settings"])?;
@@ -1938,11 +1943,22 @@ fn copy_storage_snapshot(source: &Path, target: &Path) -> Result<(), String> {
     result
 }
 
+#[cfg(test)]
 fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     let _exclusive = state
         .storage_access
         .write()
         .map_err(|error| error.to_string())?;
+    let result = prepare_storage(state, target)?;
+    let active = PathBuf::from(result["activePath"].as_str().unwrap());
+    let mut paths = state.paths.write().expect("FlowHub paths lock poisoned");
+    paths.storage_dir = active.clone();
+    paths.db_path = active.join("weborg.db");
+    Ok(result)
+}
+
+// Caller holds exclusive storage access; preparing a destination never publishes it.
+fn prepare_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     let current = state.paths();
     if current.storage_dir == target {
         return Ok(json!({ "migrated": false, "activePath": target.to_string_lossy() }));
@@ -1976,10 +1992,6 @@ fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     let connection = Connection::open(&target_db).map_err(|error| error.to_string())?;
     initialize_schema(&connection)?;
     drop(connection);
-    let mut paths = state.paths.write().expect("FlowHub paths lock poisoned");
-    paths.storage_dir = target.to_path_buf();
-    paths.db_path = target_db;
-    drop(paths);
     Ok(json!({ "migrated": migrated, "activePath": target.to_string_lossy() }))
 }
 
@@ -2027,30 +2039,7 @@ fn save_config(
         }
         return Err(reason);
     }
-    let persisted = (|| -> Result<(Value, usize), String> {
-        let storage_state = switch_storage(&state, &target_storage)?;
-        let mut connection = database(&state)?;
-        let count = replace_catalog(&mut connection, &items)?;
-
-        let settings = ensure_object_path(&mut config, &["plugins", "web", "settings"])?;
-        settings.insert("items".to_string(), Value::Array(Vec::new()));
-        settings.insert(
-            "catalogStorage".to_string(),
-            Value::String("sqlite".to_string()),
-        );
-        settings.insert("catalogCount".to_string(), json!(count));
-        write_json_atomic(&target_config, &config)?;
-        write_json_atomic(
-            &state.root_dir.join("config-location.json"),
-            &json!({ "configPath": config.pointer("/core/configPath").and_then(Value::as_str).unwrap_or("") }),
-        )?;
-        state
-            .paths
-            .write()
-            .expect("FlowHub paths lock poisoned")
-            .config_path = target_config;
-        Ok((storage_state, count))
-    })();
+    let persisted = config_save::persist(&state, &mut config, &items, &target_storage, &target_config);
     let (storage_state, count) = match persisted {
         Ok(state) => state,
         Err(reason) => {
@@ -2061,26 +2050,31 @@ fn save_config(
         }
     };
 
-    // Resume before unrelated UI integration can fail.
-    clipboard::apply_config(&app, &config)?;
-    let hydrated = hydrated_config(&state)?;
-    let hotkey = hydrated
-        .pointer("/core/hotkey")
-        .and_then(Value::as_str)
-        .unwrap_or("Alt+Space");
-    let hotkey_state = register_hotkey(&app, hotkey);
-    let autostart_state = apply_autostart(&app, &hydrated);
-    let menu_bar_state = apply_menu_bar(&app, &hydrated)?;
-    let organizer_state = apply_menu_bar_organizer(&app, &hydrated);
-    let _ = app.emit("flowhub:config", json!({ "config": hydrated, "query": "" }));
-    Ok(json!({
-        "ok": true,
-        "config": hydrated,
-        "pluginFailures": [],
-        "coreState": { "hotkey": hotkey_state, "autostart": autostart_state, "menuBar": menu_bar_state, "organizer": organizer_state },
-        "storageState": storage_state,
-        "catalogState": { "count": count, "storage": "sqlite" }
-    }))
+    let mut hydrated = config.clone();
+    ensure_object_path(&mut hydrated, &["plugins", "web", "settings"])
+        .expect("validated persisted settings")
+        .insert("items".to_string(), Value::Array(items));
+    Ok(config_save::saved_response(
+        &hydrated,
+        storage_state,
+        count,
+        |name| match name {
+            "clipboard" => clipboard::apply_config(&app, &config)
+                .map(|_| json!({ "applied": true })),
+            "hotkey" => Ok(register_hotkey(
+                &app,
+                hydrated.pointer("/core/hotkey")
+                    .and_then(Value::as_str).unwrap_or("Alt+Space"),
+            )),
+            "autostart" => Ok(apply_autostart(&app, &hydrated)),
+            "menuBar" => apply_menu_bar(&app, &hydrated),
+            "organizer" => Ok(apply_menu_bar_organizer(&app, &hydrated)),
+            "broadcast" => app.emit("flowhub:config", json!({ "config": hydrated, "query": "" }))
+                .map(|_| json!({ "applied": true }))
+                .map_err(|error| error.to_string()),
+            _ => unreachable!("unknown settings integration"),
+        },
+    ))
 }
 
 fn validate_catalog(items: &[Value]) -> Result<(), String> {
