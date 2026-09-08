@@ -10,3 +10,14 @@ vm.runInContext(s.slice(s.indexOf('function clipboardTextHtml('),s.indexOf('func
 const original='<script>❌✅';const html=ctx.clipboardTextHtml(original);
 assert(!html.includes('<script>'));assert.equal((html.match(/<svg/g)||[]).length,2);assert(html.includes('aria-label="❌"'));assert.equal(original,'<script>❌✅');
 console.log('PASS: preserved scroll avoids post-DOM writes, reset precedes DOM, status preview escapes content and preserves source');
+const content='<script>\n'+'content line\n'.repeat(100);
+let expandedClass=false,aria,buttonText;
+const title={innerHTML:'',scrollTop:0,classList:{toggle(name,value){expandedClass=value}}};
+const row={querySelector:()=>title,getBoundingClientRect:()=>({height:expandedClass?280:100})};
+const button={dataset:{clipboardToggle:'7'},closest:()=>row,setAttribute(name,value){aria=value},set textContent(v){buttonText=v}};
+ctx.state.clipboardResults=[{id:7,kind:'text',content}];ctx.state.expandedClipboard=new Set();ctx.resultWindow={heights:new Map()};ctx.resultKey=item=>`${item.type}:${item.id}`;ctx.getComputedStyle=()=>({marginTop:'0',marginBottom:'4'});
+events=[];top=800;
+ctx.toggleClipboardPreview(button);assert.equal(top,800);assert.deepEqual(events,[]);assert.equal(aria,'true');assert(expandedClass);assert(title.innerHTML.includes('&lt;script>'));assert.equal(ctx.resultWindow.heights.get('clipboard:7'),284);
+ctx.toggleClipboardPreview(button);assert.equal(top,800);assert.equal(aria,'false');assert(!expandedClass);assert(title.innerHTML.length<content.length);assert.equal(ctx.resultWindow.heights.get('clipboard:7'),104);assert(buttonText.includes('展开'));
+assert(s.includes('toggleClipboardPreview(toggle);'));
+console.log('PASS: expand/collapse patches current row, keeps outer scroll, updates ARIA and virtual height, escapes full text');

@@ -623,6 +623,33 @@ function clipboardTextHtml(text) {
     : '<svg role="img" aria-label="✅" width="14" height="14" viewBox="0 0 16 16" style="vertical-align:-2px"><rect width="16" height="16" rx="3" fill="#4eaa75"/><path d="m3 8 3 3 7-7" stroke="white" fill="none" stroke-width="2"/></svg>');
 }
 
+function clipboardPreviewHtml(content, expanded) {
+  const preview = expanded ? content : content.slice(0, 300).split("\n").slice(0, 5).join("\n");
+  const text = preview + (!expanded && preview.length < content.length ? "…" : "");
+  return (expanded ? esc : clipboardTextHtml)(text || "空文本");
+}
+
+function toggleClipboardPreview(button) {
+  const id = Number(button.dataset.clipboardToggle);
+  const item = state.clipboardResults.find(record => Number(record.id) === id);
+  const row = button.closest(".clipboard-result");
+  const title = row?.querySelector(".clipboard-title");
+  if (!item || !title) return;
+  const expanded = !state.expandedClipboard.has(id);
+  if (expanded) state.expandedClipboard.add(id);
+  else state.expandedClipboard.delete(id);
+  // Keep the row and button alive: rebuilding results loses scroll and focus.
+  title.innerHTML = clipboardPreviewHtml(String(item.content || ""), expanded);
+  title.classList.toggle("is-expanded", expanded);
+  title.scrollTop = 0;
+  button.setAttribute("aria-expanded", String(expanded));
+  button.textContent = expanded ? "⌃ 收起" : "⌄ 展开";
+  const style = getComputedStyle(row);
+  resultWindow.heights.set(resultKey({...item,type:"clipboard"}),
+    row.getBoundingClientRect().height + parseFloat(style.marginTop || 0) + parseFloat(style.marginBottom || 0));
+  lastResultsHtml = "";
+}
+
 function isExpandableClipboard(item) {
   if (item.kind !== "text") return false;
   const content = String(item.content || "");
@@ -912,7 +939,7 @@ function renderResultBody(item, index, items) {
     const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
     const title = item.kind === "image"
       ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
-      : isFile ? esc(fileLabel) : (expanded ? esc : clipboardTextHtml)((expanded ? preview : preview.slice(0, 300).split("\n").slice(0, 5).join("\n") + (preview.length > 300 || preview.slice(0, 300).split("\n").length > 5 ? "…" : "")) || "空文本");
+      : isFile ? esc(fileLabel) : clipboardPreviewHtml(preview, expanded);
     const toggle = expandable
       ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
       : "";
@@ -1754,10 +1781,9 @@ resultsEl.addEventListener("click", (e) => {
   }
   const toggle = e.target.closest("[data-clipboard-toggle]");
   if (toggle) {
-    const id = Number(toggle.dataset.clipboardToggle);
-    if (state.expandedClipboard.has(id)) state.expandedClipboard.delete(id);
-    else state.expandedClipboard.add(id);
-    render();
+    e.preventDefault();
+    e.stopPropagation();
+    toggleClipboardPreview(toggle);
     return;
   }
   const row = e.target.closest(".result");

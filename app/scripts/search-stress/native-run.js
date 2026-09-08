@@ -63,6 +63,20 @@
       frameIntervals.push(performance.now()-t);
     }
     report.scroll={twoFrameWaitMs:frameIntervals,rows:resultsEl.querySelectorAll('.result').length};
+    report.foldChecks=[];
+    setScope('clipboard'); await settle();
+    resultsEl.scrollTop=800; await sleep(250);
+    const viewport=resultsEl.getBoundingClientRect();
+    const foldButton=[...resultsEl.querySelectorAll('[data-clipboard-toggle]')].find(button=>{
+      const bounds=button.closest('.result').getBoundingClientRect();return bounds.top>=viewport.top && bounds.top<viewport.bottom;
+    });
+    if (foldButton) {
+      const row=foldButton.closest('.result');
+      for (let step=0;step<2;step++) {
+        const before=resultsEl.scrollTop;foldButton.click();await sleep(100);
+        report.foldChecks.push({before,after:resultsEl.scrollTop,sameButton:foldButton.isConnected,sameRow:row.isConnected,expanded:foldButton.getAttribute('aria-expanded')});
+      }
+    }
     report.urlChecks=[];
     for (const query of ['https://example.com:9000/a?x=1&x=2','urlencode 中文 +','urldecode %E4%B8%AD']) {
       setScope('all'); q.value=query;q.dispatchEvent(new Event('input',{bubbles:true}));await settle();
