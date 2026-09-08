@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod storage_tests;
 mod web_open;
 mod search_diagnostic_run;
 #[cfg(target_os = "macos")]
@@ -1351,6 +1353,8 @@ fn current_proxy_node(adapter: &str) -> Option<Value> {
 }
 
 pub(crate) struct AppState {
+    storage_access: RwLock<()>,
+    config_save: Mutex<()>,
     root_dir: PathBuf,
     default_config_path: PathBuf,
     default_storage_dir: PathBuf,
@@ -1555,6 +1559,8 @@ fn initialize_state() -> Result<AppState, String> {
     }
 
     let state = AppState {
+        storage_access: RwLock::new(()),
+        config_save: Mutex::new(()),
         root_dir,
         default_config_path,
         default_storage_dir,
@@ -1575,12 +1581,46 @@ fn initialize_state() -> Result<AppState, String> {
     Ok(state)
 }
 
-pub(crate) fn database(state: &AppState) -> Result<Connection, String> {
-    Connection::open(state.paths().db_path).map_err(|error| error.to_string())
+// Drop the connection before releasing the lease. All database callers, including
+// usage/catalog writes, participate in migration without per-command locking.
+pub(crate) struct StorageConnection<'a> {
+    connection: Connection,
+    pub(crate) storage_dir: PathBuf,
+    _lease: std::sync::RwLockReadGuard<'a, ()>,
+}
+
+impl std::ops::Deref for StorageConnection<'_> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.connection
+    }
+}
+
+impl std::ops::DerefMut for StorageConnection<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+}
+
+pub(crate) fn database(state: &AppState) -> Result<StorageConnection<'_>, String> {
+    let lease = state
+        .storage_access
+        .read()
+        .map_err(|error| error.to_string())?;
+    let paths = state.paths();
+    Ok(StorageConnection {
+        connection: Connection::open(paths.db_path).map_err(|error| error.to_string())?,
+        storage_dir: paths.storage_dir,
+        _lease: lease,
+    })
 }
 
 fn initialize_database(state: &AppState) -> Result<(), String> {
     let connection = database(state)?;
+    initialize_schema(&connection)
+}
+
+fn initialize_schema(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
             "
@@ -1850,7 +1890,59 @@ fn apply_autostart(app: &tauri::AppHandle, config: &Value) -> Value {
     }
 }
 
+// Caller holds exclusive storage access. Stage the complete snapshot so a failed
+// copy cannot leave a partial database that a retry mistakes for an existing store.
+fn copy_storage_snapshot(source: &Path, target: &Path) -> Result<(), String> {
+    static SNAPSHOT_ID: AtomicU64 = AtomicU64::new(0);
+    let staging = target.with_file_name(format!(
+        ".flowhub-migration-{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed)
+    ));
+    fs::create_dir(&staging).map_err(|error| error.to_string())?;
+    let result = (|| {
+        for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let name = entry.file_name();
+            if matches!(
+                name.to_str(),
+                Some("weborg.db" | "weborg.db-wal" | "weborg.db-shm" | "weborg.db-journal")
+            ) {
+                continue;
+            }
+            let destination = staging.join(name);
+            if entry.path().is_dir() {
+                copy_directory_contents(&entry.path(), &destination)?;
+            } else {
+                fs::copy(entry.path(), destination).map_err(|error| error.to_string())?;
+            }
+        }
+        let connection =
+            Connection::open(source.join("weborg.db")).map_err(|error| error.to_string())?;
+        connection
+            .backup("main", staging.join("weborg.db"), None)
+            .map_err(|error| error.to_string())?;
+        initialize_schema(
+            &Connection::open(staging.join("weborg.db")).map_err(|error| error.to_string())?,
+        )?;
+        // On macOS rename atomically replaces an empty destination directory.
+        fs::rename(&staging, target).map_err(|error| error.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
+}
+
 fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
+    let _exclusive = state
+        .storage_access
+        .write()
+        .map_err(|error| error.to_string())?;
     let current = state.paths();
     if current.storage_dir == target {
         return Ok(json!({ "migrated": false, "activePath": target.to_string_lossy() }));
@@ -1859,6 +1951,15 @@ fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
         return Err("新的存放位置不能与当前数据目录互相嵌套".to_string());
     }
     fs::create_dir_all(target).map_err(|error| error.to_string())?;
+    // Resolve aliases before copying, including a target reached through a symlink.
+    let resolved_source = fs::canonicalize(&current.storage_dir).map_err(|error| error.to_string())?;
+    let resolved_target = fs::canonicalize(target).map_err(|error| error.to_string())?;
+    if resolved_source == resolved_target {
+        return Ok(json!({ "migrated": false, "activePath": current.storage_dir.to_string_lossy() }));
+    }
+    if resolved_target.starts_with(&resolved_source) || resolved_source.starts_with(&resolved_target) {
+        return Err("新的存放位置不能与当前数据目录互相嵌套".to_string());
+    }
     let entries = fs::read_dir(target)
         .map_err(|error| error.to_string())?
         .filter_map(Result::ok)
@@ -1869,13 +1970,16 @@ fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     }
     let migrated = entries == 0 && current.storage_dir.is_dir();
     if migrated {
-        copy_directory_contents(&current.storage_dir, target)?;
+        copy_storage_snapshot(&current.storage_dir, target)?;
     }
+    // Validate/initialize before publishing the new paths; failure keeps the old store active.
+    let connection = Connection::open(&target_db).map_err(|error| error.to_string())?;
+    initialize_schema(&connection)?;
+    drop(connection);
     let mut paths = state.paths.write().expect("FlowHub paths lock poisoned");
     paths.storage_dir = target.to_path_buf();
     paths.db_path = target_db;
     drop(paths);
-    initialize_database(state)?;
     Ok(json!({ "migrated": migrated, "activePath": target.to_string_lossy() }))
 }
 
@@ -1890,6 +1994,10 @@ fn save_config(
     state: State<'_, AppState>,
     mut config: Value,
 ) -> Result<Value, String> {
+    let _save = state
+        .config_save
+        .lock()
+        .map_err(|error| error.to_string())?;
     if !config.is_object() {
         return Ok(json!({ "ok": false, "reason": "配置必须是 JSON 对象" }));
     }
@@ -1913,7 +2021,12 @@ fn save_config(
         return Ok(json!({ "ok": false, "reason": "配置文件位置必须是绝对路径" }));
     }
     let previous_config = hydrated_config(&state)?;
-    clipboard::stop_monitor(&app);
+    if let Err(reason) = clipboard::stop_monitor(&app) {
+        if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
+            return Err(format!("{reason}; 恢复剪贴板监控失败：{resume_error}"));
+        }
+        return Err(reason);
+    }
     let persisted = (|| -> Result<(Value, usize), String> {
         let storage_state = switch_storage(&state, &target_storage)?;
         let mut connection = database(&state)?;
@@ -1941,11 +2054,15 @@ fn save_config(
     let (storage_state, count) = match persisted {
         Ok(state) => state,
         Err(reason) => {
-            let _ = clipboard::apply_config(&app, &previous_config);
+            if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
+                return Ok(json!({ "ok": false, "reason": format!("{reason}; 恢复剪贴板监控失败：{resume_error}") }));
+            }
             return Ok(json!({ "ok": false, "reason": reason }));
         }
     };
 
+    // Resume before unrelated UI integration can fail.
+    clipboard::apply_config(&app, &config)?;
     let hydrated = hydrated_config(&state)?;
     let hotkey = hydrated
         .pointer("/core/hotkey")
@@ -1955,7 +2072,6 @@ fn save_config(
     let autostart_state = apply_autostart(&app, &hydrated);
     let menu_bar_state = apply_menu_bar(&app, &hydrated)?;
     let organizer_state = apply_menu_bar_organizer(&app, &hydrated);
-    clipboard::apply_config(&app, &hydrated)?;
     let _ = app.emit("flowhub:config", json!({ "config": hydrated, "query": "" }));
     Ok(json!({
         "ok": true,

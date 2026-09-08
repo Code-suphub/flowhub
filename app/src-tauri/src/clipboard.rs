@@ -27,7 +27,7 @@ use std::{
 use tauri::{Emitter, Manager, State};
 
 pub struct ClipboardRuntime {
-    shutdown: Mutex<Option<WatcherShutdown>>,
+    shutdown: Mutex<Option<(WatcherShutdown, thread::JoinHandle<()>)>>,
     suppressed: Mutex<Option<(String, Instant)>>,
     writer: Mutex<Option<ClipboardWriter>>,
 }
@@ -148,14 +148,15 @@ fn add_text(
 }
 
 fn add_image(state: &AppState, bytes: &[u8], hash: &str, now: &str) -> Result<(), String> {
-    let image_dir = state.storage_dir().join("images");
+    let connection = database(state)?;
+    let image_dir = connection.storage_dir.join("images");
     fs::create_dir_all(&image_dir).map_err(|error| error.to_string())?;
     let file_name = format!("{hash}.png");
     let image_path = image_dir.join(&file_name);
     if !image_path.exists() {
         fs::write(&image_path, bytes).map_err(|error| error.to_string())?;
     }
-    database(state)?
+    connection
         .execute(
             "INSERT INTO clipboard_records(kind, hash, file_name, size, created_at, last_seen_at, copy_count)
              VALUES ('image', ?, ?, ?, ?, ?, 1)
@@ -248,11 +249,12 @@ impl Drop for QueueReservation {
 struct ClipboardWriter {
     sender: SyncSender<PendingClipboard>,
     budget: Arc<AtomicUsize>,
+    worker: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 impl ClipboardWriter {
     fn start(app: tauri::AppHandle) -> Result<Self, String> {
         let (sender, receiver) = mpsc::sync_channel::<PendingClipboard>(WRITE_QUEUE_CAPACITY);
-        thread::Builder::new()
+        let worker = thread::Builder::new()
             .name("clipboard-writer".into())
             .spawn(move || {
                 while let Ok(job) = receiver.recv() {
@@ -306,7 +308,19 @@ impl ClipboardWriter {
         Ok(Self {
             sender,
             budget: Arc::new(AtomicUsize::new(0)),
+            worker: Arc::new(Mutex::new(Some(worker))),
         })
+    }
+
+    // Only call after the watcher has joined, so no producer clone survives.
+    fn finish(self) -> Result<(), String> {
+        drop(self.sender);
+        if let Some(worker) = self.worker.lock().map_err(|e| e.to_string())?.take() {
+            worker
+                .join()
+                .map_err(|_| "clipboard writer panicked".to_string())?;
+        }
+        Ok(())
     }
     fn enqueue(
         &self,
@@ -522,7 +536,7 @@ pub fn start_monitor(app: &tauri::AppHandle) -> Result<(), String> {
     if shutdown.is_some() {
         return Ok(());
     }
-    // A single writer survives monitor toggles and drains already captured jobs.
+    // Stop joins the watcher before closing and draining this writer.
     let mut writer = runtime
         .writer
         .lock()
@@ -539,21 +553,35 @@ pub fn start_monitor(app: &tauri::AppHandle) -> Result<(), String> {
     let channel = watcher
         .add_handler(ClipboardChangeHandler { app: app.clone() })
         .get_shutdown_channel();
-    *shutdown = Some(channel);
-    thread::spawn(move || watcher.start_watch());
+    let worker = thread::spawn(move || watcher.start_watch());
+    *shutdown = Some((channel, worker));
     Ok(())
 }
 
-pub fn stop_monitor(app: &tauri::AppHandle) {
+pub fn stop_monitor(app: &tauri::AppHandle) -> Result<(), String> {
     let runtime = app.state::<ClipboardRuntime>();
-    let shutdown = runtime
+    let mut shutdown = runtime
         .shutdown
         .lock()
-        .expect("clipboard monitor lock poisoned")
+        .expect("clipboard monitor lock poisoned");
+    // Hold the lifecycle lock through both joins to exclude a concurrent restart.
+    let watcher_result = if let Some((channel, worker)) = shutdown.take() {
+        channel.stop();
+        worker
+            .join()
+            .map_err(|_| "clipboard watcher panicked".to_string())
+    } else {
+        Ok(())
+    };
+    let writer = runtime
+        .writer
+        .lock()
+        .expect("clipboard writer lock poisoned")
         .take();
-    if let Some(shutdown) = shutdown {
-        shutdown.stop();
+    if let Some(writer) = writer {
+        writer.finish()?;
     }
+    watcher_result
 }
 
 pub fn apply_config(app: &tauri::AppHandle, config: &Value) -> Result<(), String> {
@@ -564,7 +592,7 @@ pub fn apply_config(app: &tauri::AppHandle, config: &Value) -> Result<(), String
     if enabled {
         start_monitor(app)?;
     } else {
-        stop_monitor(app);
+        stop_monitor(app)?;
     }
     let retention_days = config
         .pointer("/plugins/clipboard/settings/retentionDays")
@@ -580,7 +608,7 @@ fn parse_string_array(value: Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn image_data_url(state: &AppState, file_name: &str) -> String {
+fn image_data_url(storage_dir: &Path, file_name: &str) -> String {
     if file_name.is_empty()
         || Path::new(file_name)
             .file_name()
@@ -589,7 +617,7 @@ fn image_data_url(state: &AppState, file_name: &str) -> String {
     {
         return String::new();
     }
-    fs::read(state.storage_dir().join("images").join(file_name))
+    fs::read(storage_dir.join("images").join(file_name))
         .map(|bytes| format!("data:image/png;base64,{}", BASE64.encode(bytes)))
         .unwrap_or_default()
 }
@@ -809,7 +837,7 @@ pub async fn load_clipboard_assets(
             .into_iter()
             .map(|(id, kind, file_name, path)| {
                 let image_url = if kind == "image" {
-                    image_data_url(&state, &file_name)
+                    image_data_url(&connection.storage_dir, &file_name)
                 } else {
                     String::new()
                 };
@@ -906,7 +934,7 @@ pub fn activate_clipboard(
         }
         "image" => {
             let file_name = file_name.unwrap_or_default();
-            let bytes = fs::read(state.storage_dir().join("images").join(file_name))
+            let bytes = fs::read(connection.storage_dir.join("images").join(file_name))
                 .map_err(|_| "图片文件不存在或已损坏".to_string())?;
             let image = RustImageData::from_bytes(&bytes).map_err(|error| error.to_string())?;
             context.set_image(image)
@@ -945,7 +973,7 @@ pub fn delete_clipboard(
         return Ok(json!({ "ok": false, "reason": "剪贴板记录不存在或已删除" }));
     }
     if let Some(file_name) = file_name {
-        let _ = fs::remove_file(state.storage_dir().join("images").join(file_name));
+        let _ = fs::remove_file(connection.storage_dir.join("images").join(file_name));
     }
     let _ = app.emit("flowhub:clipboard-updated", ());
     Ok(json!({ "ok": true }))
@@ -973,7 +1001,7 @@ pub fn cleanup(state: &AppState, retention_days: i64) -> Result<usize, String> {
         )
         .map_err(|error| error.to_string())?;
     for file_name in expired {
-        let _ = fs::remove_file(state.storage_dir().join("images").join(file_name));
+        let _ = fs::remove_file(connection.storage_dir.join("images").join(file_name));
     }
     Ok(removed)
 }
@@ -983,11 +1011,74 @@ mod writer_tests {
     use super::*;
 
     #[test]
+    fn finish_waits_for_in_flight_write_and_drains_queued_images_before_migration() {
+        let fixture = crate::storage_tests::Fixture::new();
+        let state = fixture.state.clone();
+        let (sender, receiver) = mpsc::sync_channel::<PendingClipboard>(2);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let first = receiver.recv().unwrap();
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            for job in std::iter::once(first).chain(receiver) {
+                if let ClipboardPayload::Image(bytes) = job.payload {
+                    add_image(&state, &bytes, &job.hash, &job.captured_at).unwrap();
+                }
+            }
+        });
+        let writer = ClipboardWriter {
+            sender,
+            budget: Arc::new(AtomicUsize::new(0)),
+            worker: Arc::new(Mutex::new(Some(worker))),
+        };
+        for hash in ["one", "two"] {
+            writer
+                .submit(
+                    ClipboardPayload::Image(vec![1, 2, 3]),
+                    hash.into(),
+                    "now",
+                    3,
+                    json!({}),
+                )
+                .unwrap();
+        }
+        entered_rx.recv().unwrap();
+        let budget = writer.budget.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let stopper = thread::spawn(move || {
+            done_tx.send(writer.finish()).unwrap();
+        });
+        assert!(done_rx.recv_timeout(Duration::from_millis(50)).is_err());
+        release_tx.send(()).unwrap();
+        done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        stopper.join().unwrap();
+        assert_eq!(budget.load(Ordering::Acquire), 0);
+        let target = fixture.root.join("target");
+        crate::switch_storage(&fixture.state, &target).unwrap();
+        let connection = database(&fixture.state).unwrap();
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM clipboard_records", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+        for hash in ["one", "two"] {
+            assert_eq!(
+                fs::read(target.join(format!("images/{hash}.png"))).unwrap(),
+                vec![1, 2, 3]
+            );
+        }
+    }
+
+    #[test]
     fn blocked_writer_keeps_fifo_and_releases_budget_on_full_and_disconnect() {
         let (sender, receiver) = mpsc::sync_channel(2);
         let writer = ClipboardWriter {
             sender,
             budget: Arc::new(AtomicUsize::new(0)),
+            worker: Arc::new(Mutex::new(None)),
         };
         let submit = |id: &str| {
             writer.submit(
