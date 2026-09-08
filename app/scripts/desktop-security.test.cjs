@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const security=JSON.parse(fs.readFileSync(path.join(__dirname,'../src-tauri/tauri.conf.json'))).app.security;
+const directives=Object.fromEntries(security.csp.split(';').map(x=>x.trim().split(/\s+/)).filter(x=>x[0]).map(([name,...sources])=>[name,sources]));
+assert.deepEqual(directives['script-src'],["'self'"]);
+assert.deepEqual(security.dangerousDisableAssetCspModification,['style-src']);
+assert(directives['style-src'].includes("'unsafe-inline'"));
+assert(directives['img-src'].includes('data:'));
+assert(!directives['connect-src'].includes('https:'));
+assert(!security.csp.includes('*'));
+assert(!security.csp.includes('ws:'));
+for(const host of ['ipc:','http://ipc.localhost','https://dns.google','https://api4.ipify.org','https://6.ident.me']) assert(directives['connect-src'].includes(host));
+const source=fs.readFileSync(path.join(__dirname,'../ui/tauri-adapter.js'),'utf8');
+let call;
+const context=vm.createContext({invoke:async(name,args)=>{call={name,args};return {status:200}},fetch(){throw Error('must use IPC')}});
+vm.runInContext(source.slice(source.indexOf('  async function inspectCloudflare('),source.indexOf('  async function lookupProxy(')),context);
+(async()=>{
+  assert.equal((await context.inspectCloudflare(' example.com ')).status,200);
+  assert.equal(call.name,'inspect_cloudflare');assert.equal(call.args.hostname,'example.com');
+  console.log('PASS: bounded desktop CSP, style compatibility, IPC and Cloudflare native forwarding');
+})().catch(error=>{console.error(error);process.exitCode=1});

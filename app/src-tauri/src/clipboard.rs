@@ -28,6 +28,7 @@ use std::{
 use tauri::{Emitter, Manager, State};
 
 pub struct ClipboardRuntime {
+    privacy: Arc<Mutex<crate::clipboard_privacy::Gate>>,
     shutdown: Mutex<Option<(WatcherShutdown, thread::JoinHandle<()>)>>,
     suppressed: Mutex<Option<(String, Instant)>>,
     writer: Mutex<Option<ClipboardWriter>>,
@@ -36,6 +37,7 @@ pub struct ClipboardRuntime {
 impl ClipboardRuntime {
     pub fn new() -> Self {
         Self {
+            privacy: Arc::new(Mutex::new(crate::clipboard_privacy::Gate::new())),
             shutdown: Mutex::new(None),
             suppressed: Mutex::new(None),
             writer: Mutex::new(None),
@@ -213,6 +215,7 @@ enum ClipboardPayload {
 }
 
 struct PendingClipboard {
+    generation: u64,
     payload: ClipboardPayload,
     hash: String,
     captured_at: String,
@@ -248,12 +251,15 @@ impl Drop for QueueReservation {
 
 #[derive(Clone)]
 struct ClipboardWriter {
+    generation: u64,
     sender: SyncSender<PendingClipboard>,
     budget: Arc<AtomicUsize>,
     worker: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 impl ClipboardWriter {
     fn start(app: tauri::AppHandle, policy: CleanupPolicy) -> Result<Self, String> {
+        let privacy = app.state::<ClipboardRuntime>().privacy.clone();
+        let generation = privacy.lock().map_err(|e| e.to_string())?.generation;
         let (sender, receiver) = mpsc::sync_channel::<PendingClipboard>(WRITE_QUEUE_CAPACITY);
         let worker = thread::Builder::new()
             .name("clipboard-writer".into())
@@ -292,23 +298,27 @@ impl ClipboardWriter {
                     timing.bytes = job.reservation.bytes;
                     timing.phases.push(("queueWait", queue_wait_ms));
                     let state = app.state::<AppState>();
-                    let result = match &job.payload {
-                        ClipboardPayload::Text(text) => {
-                            timing.kind = "text";
-                            add_text(&state, text, &job.hash, &mut timing, &job.captured_at)
-                        }
-                        ClipboardPayload::Image(bytes) => {
-                            timing.kind = "image";
-                            timing.measure("storeImage", || {
-                                add_image(&state, bytes, &job.hash, &job.captured_at)
-                            })
-                        }
-                        ClipboardPayload::Files(paths) => {
-                            timing.kind = "file";
-                            timing.measure("storeFiles", || {
-                                add_files(&state, paths, &job.hash, &job.captured_at)
-                            })
-                        }
+                    let Some(result) =
+                        with_authorized_job(&privacy, job.generation, || match &job.payload {
+                            ClipboardPayload::Text(text) => {
+                                timing.kind = "text";
+                                add_text(&state, text, &job.hash, &mut timing, &job.captured_at)
+                            }
+                            ClipboardPayload::Image(bytes) => {
+                                timing.kind = "image";
+                                timing.measure("storeImage", || {
+                                    add_image(&state, bytes, &job.hash, &job.captured_at)
+                                })
+                            }
+                            ClipboardPayload::Files(paths) => {
+                                timing.kind = "file";
+                                timing.measure("storeFiles", || {
+                                    add_files(&state, paths, &job.hash, &job.captured_at)
+                                })
+                            }
+                        })
+                    else {
+                        continue;
                     };
                     match result {
                         Ok(()) => {
@@ -329,6 +339,7 @@ impl ClipboardWriter {
             })
             .map_err(|error| error.to_string())?;
         Ok(Self {
+            generation,
             sender,
             budget: Arc::new(AtomicUsize::new(0)),
             worker: Arc::new(Mutex::new(Some(worker))),
@@ -352,6 +363,9 @@ impl ClipboardWriter {
         captured_at: &str,
         timing: &mut CaptureTiming,
     ) -> Result<(), String> {
+        if timing.revision != clipboard_revision() {
+            return Err("clipboard changed during capture".into());
+        }
         let bytes = match &payload {
             ClipboardPayload::Text(value) => value.len(),
             ClipboardPayload::Image(value) => value.len(),
@@ -379,6 +393,7 @@ impl ClipboardWriter {
     ) -> Result<(), String> {
         let reservation = QueueReservation::reserve(&self.budget, bytes)?;
         let job = PendingClipboard {
+            generation: self.generation,
             payload,
             hash,
             captured_at: captured_at.into(),
@@ -394,6 +409,7 @@ impl ClipboardWriter {
 
 // Opt-in diagnostic timings contain no clipboard content, paths or hashes.
 struct CaptureTiming<'a> {
+    revision: Option<isize>,
     app: &'a tauri::AppHandle,
     started: Instant,
     phases: Vec<(&'static str, f64)>,
@@ -407,6 +423,7 @@ struct CaptureTiming<'a> {
 impl<'a> CaptureTiming<'a> {
     fn new(app: &'a tauri::AppHandle) -> Self {
         Self {
+            revision: None,
             app,
             started: Instant::now(),
             phases: Vec::new(),
@@ -441,12 +458,27 @@ impl Drop for CaptureTiming<'_> {
 }
 
 fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
+    let runtime = app.state::<ClipboardRuntime>();
+    let authorization = runtime.privacy.lock().map_err(|e| e.to_string())?;
+    let revision = clipboard_revision();
+    if !authorization.permits_revision(revision) {
+        return Ok(());
+    }
     let mut timing = CaptureTiming::new(app);
+    timing.revision = revision;
     let context = timing
         .measure("context", ClipboardContext::new)
         .map_err(|error| error.to_string())?;
+    // Read advertised types before any payload. Failure is fail-closed.
+    if authorization.policy.protect_sensitive {
+        let formats = context
+            .available_formats()
+            .map_err(|_| "clipboard metadata unavailable")?;
+        if !authorization.policy.permits_formats(&formats) {
+            return Ok(());
+        }
+    }
     let captured_at = Utc::now().to_rfc3339();
-    let runtime = app.state::<ClipboardRuntime>();
     let writer = runtime
         .writer
         .lock()
@@ -608,6 +640,14 @@ pub fn stop_monitor(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 pub fn apply_config(app: &tauri::AppHandle, config: &Value) -> Result<(), String> {
+    {
+        let runtime = app.state::<ClipboardRuntime>();
+        let mut gate = runtime.privacy.lock().map_err(|e| e.to_string())?;
+        gate.replace(
+            crate::clipboard_privacy::Policy::from_config(config),
+            clipboard_revision(),
+        );
+    }
     let enabled = config
         .pointer("/plugins/clipboard/enabled")
         .and_then(Value::as_bool)
@@ -619,6 +659,17 @@ pub fn apply_config(app: &tauri::AppHandle, config: &Value) -> Result<(), String
         stop_monitor(app)?;
     }
     Ok(())
+}
+
+fn clipboard_revision() -> Option<isize> {
+    #[cfg(target_os = "macos")]
+    {
+        Some(objc2_app_kit::NSPasteboard::generalPasteboard().changeCount())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
 }
 
 fn parse_string_array(value: Option<String>) -> Vec<String> {
@@ -1038,6 +1089,20 @@ fn scheduled_receive<T>(
     }
 }
 
+// Lock order: privacy -> storage. Config application releases privacy before
+// joining the writer; migrations drain the writer before taking storage locks.
+fn with_authorized_job<T>(
+    privacy: &Mutex<crate::clipboard_privacy::Gate>,
+    generation: u64,
+    persist: impl FnOnce() -> T,
+) -> Option<T> {
+    let gate = privacy.lock().expect("clipboard privacy lock poisoned");
+    if !gate.permits_job(generation) {
+        return None;
+    }
+    Some(persist()) // Keep authorization until the write has completed.
+}
+
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 const CLEANUP_BATCH: usize = 256;
 
@@ -1165,6 +1230,81 @@ mod writer_tests {
     use super::*;
 
     #[test]
+    fn privacy_transition_waits_for_inflight_and_discards_queued_images_after_resume() {
+        let f = crate::storage_tests::Fixture::new();
+        let privacy = Arc::new(Mutex::new(crate::clipboard_privacy::Gate::new()));
+        let worker_gate = privacy.clone();
+        let state = f.state.clone();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            with_authorized_job(&worker_gate, 0, || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                add_image(&state, b"existing", "existing", "now").unwrap();
+            })
+        });
+        entered_rx.recv().unwrap();
+        let transition_gate = privacy.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+        let transition = thread::spawn(move || {
+            let mut gate = transition_gate.lock().unwrap();
+            let mut policy = gate.policy.clone();
+            policy.paused = true;
+            gate.replace(policy, Some(3));
+            done_tx.send(()).unwrap();
+        });
+        assert!(done_rx.recv_timeout(Duration::from_millis(30)).is_err());
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        transition.join().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let writer = ClipboardWriter {
+            generation: 0,
+            sender,
+            budget: Arc::new(AtomicUsize::new(0)),
+            worker: Arc::new(Mutex::new(None)),
+        };
+        writer
+            .submit(
+                ClipboardPayload::Image(vec![1, 2]),
+                "private".into(),
+                "now",
+                2,
+                json!({}),
+            )
+            .unwrap();
+        {
+            let mut gate = privacy.lock().unwrap();
+            let mut policy = gate.policy.clone();
+            policy.paused = false;
+            gate.replace(policy, Some(4));
+        }
+        let job = receiver.recv().unwrap();
+        assert!(with_authorized_job(&privacy, job.generation, || add_image(
+            &f.state, b"private", &job.hash, "now"
+        ))
+        .is_none());
+        drop(job);
+        assert_eq!(writer.budget.load(Ordering::Acquire), 0);
+        assert!(!f
+            .state
+            .paths()
+            .storage_dir
+            .join("images/private.png")
+            .exists());
+        assert_eq!(
+            database(&f.state)
+                .unwrap()
+                .query_row("SELECT count(*) FROM clipboard_records", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
     fn finish_waits_for_in_flight_write_and_drains_queued_images_before_migration() {
         let fixture = crate::storage_tests::Fixture::new();
         let state = fixture.state.clone();
@@ -1182,6 +1322,7 @@ mod writer_tests {
             }
         });
         let writer = ClipboardWriter {
+            generation: 0,
             sender,
             budget: Arc::new(AtomicUsize::new(0)),
             worker: Arc::new(Mutex::new(Some(worker))),
@@ -1230,6 +1371,7 @@ mod writer_tests {
     fn blocked_writer_keeps_fifo_and_releases_budget_on_full_and_disconnect() {
         let (sender, receiver) = mpsc::sync_channel(2);
         let writer = ClipboardWriter {
+            generation: 0,
             sender,
             budget: Arc::new(AtomicUsize::new(0)),
             worker: Arc::new(Mutex::new(None)),
@@ -1420,7 +1562,8 @@ mod cleanup_tests {
         let db = database(&f.state).unwrap();
         db.execute("INSERT INTO usage_records(target_type,target_key,title,first_used_at,last_used_at) VALUES ('web','keep','keep','now','now')", []).unwrap();
         drop(db);
-        crate::storage::replace_catalog(&mut database(&f.state).unwrap(), &[json!({"id":"keep"})]).unwrap();
+        crate::storage::replace_catalog(&mut database(&f.state).unwrap(), &[json!({"id":"keep"})])
+            .unwrap();
         let target = f.root.join("target");
         crate::storage::switch_storage(&f.state, &target).unwrap();
         let orphan = format!("{}.png", "b".repeat(64));

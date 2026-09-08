@@ -40,6 +40,10 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
+mod clipboard_privacy;
+mod cloudflare_probe;
+#[cfg(all(test, feature = "custom-protocol"))]
+mod desktop_security;
 mod diagnostics;
 mod port_inspector;
 mod network_diagnostics;
@@ -1414,6 +1418,7 @@ pub fn run() {
             clipboard::load_clipboard_assets,
             clipboard::activate_clipboard,
             clipboard::delete_clipboard,
+            cloudflare_probe::inspect_cloudflare,
             updater::log_update_event,
             updater::get_update_state,
             updater::check_for_updates,

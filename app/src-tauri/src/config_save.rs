@@ -392,6 +392,8 @@ impl IntegrationPlan {
         .any(|p| flag(before, p, false) != flag(after, p, false));
         Self {
             clipboard: storage_changed
+                || crate::clipboard_privacy::Policy::from_config(before)
+                    != crate::clipboard_privacy::Policy::from_config(after)
                 || cleanup(before) != cleanup(after)
                 || flag(before, "/plugins/clipboard/enabled", true)
                     != flag(after, "/plugins/clipboard/enabled", true),
@@ -676,6 +678,21 @@ mod tests {
             "broadcast",
         ];
         for (path, value, expected) in [
+            (
+                "/plugins/clipboard/settings/capturePaused",
+                json!(true),
+                vec!["clipboard", "broadcast"],
+            ),
+            (
+                "/plugins/clipboard/settings/protectSensitive",
+                json!(false),
+                vec!["clipboard", "broadcast"],
+            ),
+            (
+                "/plugins/clipboard/settings/excludedApps",
+                json!(["com.example.secret"]),
+                vec!["clipboard", "broadcast"],
+            ),
             (
                 "/core/hotkey",
                 json!("Ctrl+Space"),

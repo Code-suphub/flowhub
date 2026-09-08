@@ -35,6 +35,7 @@ function harness(mode = 'structure') {
   const edit=value=>input({dataset:{coreField:'name'},type:'text',value});
   const json=text=>{element('#jsonEditor').value=text; input({id:'jsonEditor'})};
   return {ctx,state,saving,metadata,loading,storage,edit,json,element,
+    configInput: input,
     change:target=>listeners.change.forEach(fn=>fn({target})),
     initialize:()=>vm.runInContext(source.slice(source.lastIndexOf('\nPromise.all([window.weborg.listPlugins()')),ctx), calls:()=>calls,submitted:()=>submitted,
     flush(){const pending=[...timers.values()];timers.clear();pending.forEach(fn=>fn())},
@@ -43,6 +44,23 @@ function harness(mode = 'structure') {
   };
 }
 (async()=>{
+  {
+    const h=harness(); h.state.config.plugins.clipboard={enabled:true,settings:{}};
+    h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'true'});
+    h.configInput({dataset:{configField:'clipboardProtectSensitive'},value:'false'});
+    h.configInput({dataset:{configField:'clipboardExcludedApps'},value:' com.example.secret\ncom.example.secret\n\n'});
+    assert.deepEqual(clone(h.state.config.plugins.clipboard),{enabled:true,settings:{capturePaused:true,protectSensitive:false,excludedApps:['com.example.secret']}});
+    assert(h.element('#clipboardStatusValue').textContent.includes('待保存：暂停采集'));
+    const p=h.ctx.save();
+    assert.equal(h.submitted().plugins.clipboard.settings.capturePaused,true);
+    h.commit(clone(h.submitted())); h.metadata.resolve([]); await p;
+    h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'false'});
+    assert(h.element('#clipboardStatusValue').textContent.includes('来源不明，阻止采集'));
+    h.configInput({dataset:{configField:'clipboardExcludedApps'},value:''});
+    assert(h.element('#clipboardStatusValue').textContent.includes('允许采集'));
+    assert.equal(h.state.config.plugins.clipboard.enabled,true,'pause never disables history search');
+    console.log('PASS: privacy controls persist through real save, normalize exclusions, mark drafts, preserve history module');
+  }
   for(const mode of ['structure','json']) {
     const h=harness(mode);const p=h.ctx.save();
     await h.ctx.save(); assert.equal(h.calls(),1);

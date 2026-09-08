@@ -716,6 +716,10 @@ function renderSettingsFields() {
     input.checked = pluginConfig("tools")?.settings?.[input.dataset.toolSetting] !== false;
   });
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
+  $("#clipboardCapturePaused").value = String(pluginConfig("clipboard")?.settings?.capturePaused === true);
+  $("#clipboardProtectSensitive").value = String(pluginConfig("clipboard")?.settings?.protectSensitive !== false);
+  const excludedApps = pluginConfig("clipboard")?.settings?.excludedApps;
+  $("#clipboardExcludedApps").value = Array.isArray(excludedApps) ? excludedApps.join("\n") : String(excludedApps || "");
   $("#clipboardMaxRecords").value = Number(pluginConfig("clipboard")?.settings?.maxRecords ?? 0);
   $("#clipboardMaxBytes").value = Number(pluginConfig("clipboard")?.settings?.maxBytes ?? 0);
   renderClipboardStorage();
@@ -1018,12 +1022,15 @@ function renderClipboardStorage() {
 function renderClipboardSummary() {
   const enabled = pluginConfig("clipboard")?.enabled !== false;
   const retentionDays = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
-  const statusText = enabled ? "正在记录" : "已暂停";
+  const settings = pluginConfig("clipboard")?.settings || {};
+  const paused = !enabled || settings.capturePaused === true;
+  const excluded = Array.isArray(settings.excludedApps) ? settings.excludedApps.some(value => String(value).trim()) : settings.excludedApps != null;
+  const statusText = (state.dirty ? "待保存：" : "已保存策略：") + (paused ? "暂停采集" : excluded ? "来源不明，阻止采集" : "允许采集");
   if ($("#clipboardStatusValue")) $("#clipboardStatusValue").textContent = statusText;
   if ($("#clipboardRetentionValue")) $("#clipboardRetentionValue").textContent = retentionDays === 0 ? "无期限（仍受容量设置约束）" : `${retentionDays} 天`;
   if ($("#clipboardModuleState")) {
     $("#clipboardModuleState").textContent = statusText;
-    $("#clipboardModuleState").classList.toggle("paused", !enabled);
+    $("#clipboardModuleState").classList.toggle("paused", paused || excluded);
   }
 }
 
@@ -1957,7 +1964,15 @@ document.addEventListener("input", (event) => {
   }
   const configField = event.target.dataset.configField;
   if (configField) {
-    if (configField === "clipboardRetentionDays") {
+    if (["clipboardCapturePaused", "clipboardProtectSensitive", "clipboardExcludedApps"].includes(configField)) {
+      const clipboard = pluginConfig("clipboard");
+      clipboard.settings ||= {};
+      if (configField === "clipboardExcludedApps") {
+        clipboard.settings.excludedApps = [...new Set(event.target.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean))].sort();
+      } else {
+        clipboard.settings[configField === "clipboardCapturePaused" ? "capturePaused" : "protectSensitive"] = event.target.value === "true";
+      }
+    } else if (configField === "clipboardRetentionDays") {
       const clipboard = pluginConfig("clipboard");
       clipboard.settings ||= {};
       const days = Number(event.target.value);

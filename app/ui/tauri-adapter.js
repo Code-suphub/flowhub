@@ -168,24 +168,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   }
 
   async function inspectCloudflare(hostname) {
-    const value = String(hostname || "").trim();
-    if (!value) throw new Error("域名为空");
-    const response = await fetch(`https://${value}/`, {
-      method: "GET",
-      redirect: "manual",
-      headers: { accept: "text/html,application/xhtml+xml" },
-      signal: AbortSignal.timeout(6000)
-    });
-    const headers = Object.fromEntries([...response.headers.entries()].map(([key, item]) => [key.toLowerCase(), item]));
-    const evidence = [];
-    if (headers.server?.toLowerCase().includes("cloudflare")) evidence.push("server: cloudflare");
-    if (headers["cf-ray"]) evidence.push("cf-ray");
-    if (headers["cf-cache-status"]) evidence.push("cf-cache-status");
-    if (headers["cf-mitigated"]) evidence.push(`cf-mitigated: ${headers["cf-mitigated"]}`);
-    const cloudflare = evidence.length > 0;
-    const challenge = Boolean(headers["cf-mitigated"]) || (cloudflare && [403, 429].includes(response.status));
-    response.body?.cancel?.();
-    return { status: response.status, cloudflare, challenge, evidence };
+    return invoke("inspect_cloudflare", { hostname: String(hostname || "").trim() });
   }
 
   async function lookupProxy() {

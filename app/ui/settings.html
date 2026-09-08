@@ -1025,6 +1025,12 @@
                 <div><strong>记录与粘贴</strong><small>这些设置只影响桌面 App 的剪切板模块。</small></div>
               </div>
               <div class="clipboard-settings-grid">
+                <div class="settings-block wide">
+                  <div class="settings-block-title">采集隐私（保存后生效）</div>
+                  <div class="field"><label for="clipboardCapturePaused">采集状态</label><select id="clipboardCapturePaused" data-config-field="clipboardCapturePaused"><option value="false">继续采集新内容</option><option value="true">暂停采集</option></select><div class="field-hint">暂停保留历史搜索和粘贴，留存清理继续运行。恢复不会补采暂停期间或当前剪贴板内容。请等待保存成功后再复制敏感内容。</div></div>
+                  <div class="field"><label for="clipboardProtectSensitive">敏感标记保护</label><select id="clipboardProtectSensitive" data-config-field="clipboardProtectSensitive"><option value="true">跳过隐藏、临时及自动生成标记（推荐）</option><option value="false">关闭标记保护</option></select><div class="field-hint">macOS 按应用写入的剪贴板类型标记跳过整条内容；未标记的密码、密钥仍可能被记录。这不是秘密检测，历史数据不会自动脱敏。</div></div>
+                  <div class="field"><label for="clipboardExcludedApps">排除应用 Bundle ID（每行一个）</label><textarea id="clipboardExcludedApps" data-config-field="clipboardExcludedApps" rows="3" placeholder="com.example.password-manager"></textarea><div class="field-hint">当前平台无法可靠识别剪贴板写入应用。此列表非空时，为避免漏过排除项，将阻止所有新采集；清空并保存后恢复。不会使用前台应用或自报来源猜测。其他平台目前也不启用采集。</div></div>
+                </div>
                 <div class="settings-block history-block">
                   <div class="settings-block-title">历史留存</div>
                   <div class="field"><label for="clipboardRetentionDays">记录留存时间（天）</label><input id="clipboardRetentionDays" type="number" min="0" max="3650" step="1" data-config-field="clipboardRetentionDays" /><div class="field-hint">按最近复制时间计算，超过指定天数后过期；0 表示无期限。插件开启时每分钟清理，积压分批处理，停用后暂停。</div></div>
