@@ -30,11 +30,12 @@
 - 06：完成并整合。任务 `01a0821c-f3f1-7502-9f89-f0b69e6564e1`，worktree `/Users/bilibili/.codex/worktrees/6152/web_organization`，源提交 `0f9b2c36cdb81e4b41b23b7952dc6dd5fccfb37a`。周期分批清理、搜索过期过滤、默认关闭的条数/逻辑字节上限、安全受管附件回收、退出排空。协调76项Rust/全部UI及diff检查通过，实现任务根目录8项安全测试通过。容量可暂时超限，超大库查询/目录扫描尚未基准，未做真实原生退出集成；未操作真实数据。
 - 07：完成并整合。任务 `01a08228-5933-78a3-b12e-69f358acb342`，worktree `/Users/bilibili/.codex/worktrees/fa5c/web_organization`，源提交 `0d25a8e5ee76e4d458c23974c856a6cd01f0f22b`。预览后端非GET立即405不读body，移除配置写入；前端禁配置/剪贴板写。协调4项预览测试/全部UI及diff检查通过；实现任务低调试编译76项Rust及根服务8项通过。首次编译磁盘不足已恢复；未操作真实数据。
 - 08：完成并整合。任务 `01a08234-312e-7d10-9c08-9b9e2ca4ae5d`，worktree `/Users/bilibili/.codex/worktrees/5549/web_organization`，源提交 `cd97884d7f73e04d883e2aa4d92f37e7b6078495`。后端按可信状态选择五类保存计划，普通设置不重写目录或备份数据库；系统能力按相关配置变化应用。协调复核81项Rust、全部UI、4项预览及diff检查通过。目录变更仍整库快照；无变化保存不重试此前失败的系统集成，未做真实原生集成。
-- 09–12：等待前置任务完成。
+- 09：已派发“优化 09：桌面与扩展数据契约”，任务 `01a08241-b93b-76c0-beef-d55fe878c82c`，worktree `/Users/bilibili/.codex/worktrees/6278/web_organization`，禁止重复派发。
+- 10–12：等待前置任务完成。
 - 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
 
 每项完成后记录提交和验证结果。上述各项按当时最新代码重新核对，已被前置任务完整解决的内容不重复修改。
 
 协调注意：list_threads 当前可能遗漏 worktree 任务，不能据此判定仍初始化。必要时用 git worktree list 找对应工作区，在 ~/.codex/sessions/当天目录中只按该 cwd 搜索 session_meta 解析真实任务 ID，然后用 wait_threads 核对完成状态。第 01 项此前因此误判为等待初始化，已纠正。
 
-构建资源：任务01–06完成worktree的app/src-tauri/target已清理，保留全部源码与git提交。后续Rust测试优先 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0，任务完成整合后及时清理其可重建target，防止磁盘再次耗尽。
+构建资源：任务01–08完成worktree的app/src-tauri/target已清理，保留全部源码与git提交。后续Rust测试优先 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0，任务完成整合后及时清理其可重建target，防止磁盘再次耗尽。
