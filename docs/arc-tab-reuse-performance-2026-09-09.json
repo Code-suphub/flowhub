@@ -1,0 +1,126 @@
+{
+  "beforeNative": [
+    {
+      "elapsedMs": 274,
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "elapsedMs": 168,
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "elapsedMs": 174,
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "elapsedMs": 164,
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    }
+  ],
+  "afterNative": [
+    {
+      "browserMs": 362,
+      "configMs": 0.613375,
+      "elapsedMs": 363,
+      "lookup": "scan",
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "browserMs": 305,
+      "configMs": 15.922125,
+      "elapsedMs": 321,
+      "lookup": "cache",
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "browserMs": 893,
+      "configMs": 0.5870409999999999,
+      "elapsedMs": 893,
+      "lookup": "cache",
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "browserMs": 491,
+      "configMs": 31.455790999999998,
+      "elapsedMs": 523,
+      "lookup": "cache",
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "browserMs": 613,
+      "configMs": 0.5238750000000001,
+      "elapsedMs": 614,
+      "lookup": "cache",
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    },
+    {
+      "browserMs": 170,
+      "configMs": 0.225583,
+      "elapsedMs": 171,
+      "lookup": "cache",
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    }
+  ],
+  "alternatingScriptMs": {
+    "old": [
+      392.04,
+      219.12,
+      439.52,
+      192.91
+    ],
+    "hint": [
+      206.95,
+      205.95,
+      229.76,
+      208.02
+    ],
+    "compiled": [
+      460.57,
+      220.0,
+      198.55,
+      199.74
+    ]
+  },
+  "invalidation": {
+    "navigated": {
+      "browserMs": 753,
+      "configMs": 20.256875,
+      "elapsedMs": 773,
+      "lookup": "created",
+      "ok": true,
+      "reason": "opened",
+      "reused": false
+    },
+    "navigatedSelected": true,
+    "closed": {
+      "browserMs": 942,
+      "configMs": 31.543750000000003,
+      "elapsedMs": 976,
+      "lookup": "created",
+      "ok": true,
+      "reason": "opened",
+      "reused": false
+    },
+    "closedSelected": true
+  }
+}
