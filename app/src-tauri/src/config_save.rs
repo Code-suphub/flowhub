@@ -150,7 +150,7 @@ pub(super) fn persist(
     items: &[Value],
     storage: &Path,
     target_config: &Path,
-) -> Result<(Value, usize), String> {
+) -> Result<(Value, usize, Vec<Value>), String> {
     persist_with_hook(state, config, items, storage, target_config, |_| Ok(()))
 }
 
@@ -161,7 +161,7 @@ fn persist_with_hook(
     storage: &Path,
     target_config: &Path,
     mut checkpoint: impl FnMut(&str) -> Result<(), String>,
-) -> Result<(Value, usize), String> {
+) -> Result<(Value, usize, Vec<Value>), String> {
     let _exclusive = state.storage_access.write().map_err(|e| e.to_string())?;
     recover(&state.root_dir)?;
     let directory = state.root_dir.join(JOURNAL);
@@ -193,8 +193,6 @@ fn persist_with_hook(
     let settings = ensure_object_path(config, &["plugins", "web", "settings"])?;
     settings.insert("items".into(), json!([]));
     settings.insert("catalogStorage".into(), json!("sqlite"));
-    let count = items.iter().map(count_catalog_nodes).sum::<usize>();
-    settings.insert("catalogCount".into(), json!(count));
     let files = vec![
         SavedFile::capture(target_config)?,
         SavedFile::capture(&locator)?,
@@ -206,6 +204,14 @@ fn persist_with_hook(
     connection
         .execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")
         .map_err(|e| e.to_string())?;
+    let saved_items = if storage_state["operation"] == "open" {
+        catalog_items(&connection)?
+    } else {
+        validate_catalog(items)?;
+        items.to_vec()
+    };
+    let count = saved_items.iter().map(count_catalog_nodes).sum::<usize>();
+    config["plugins"]["web"]["settings"]["catalogCount"] = json!(count);
     fs::create_dir(&directory).map_err(|e| e.to_string())?;
     let manifest = directory.join("journal.json");
     let mut journal = Journal {
@@ -223,7 +229,9 @@ fn persist_with_hook(
         journal_write(&manifest, &journal)?;
         sync_parent(&directory)?;
         checkpoint("prepared")?;
-        replace_catalog(&mut connection, items)?;
+        if storage_state["operation"] != "open" {
+            replace_catalog(&mut connection, &saved_items)?;
+        }
         config["plugins"]["web"]["settings"]["catalogUpdatedAt"] =
             json!(catalog_meta(&connection, "updated_at"));
         checkpoint("database")?;
@@ -267,7 +275,7 @@ fn persist_with_hook(
         db_path: database,
     };
     let _ = recover(&state.root_dir);
-    Ok((storage_state, count))
+    Ok((storage_state, count, saved_items))
 }
 
 // Durable success is independent of system integration. In particular, a
@@ -663,6 +671,233 @@ mod tests {
         assert_eq!(catalog_items(&db).unwrap()[0]["id"], "destination");
         assert_eq!(catalog_meta(&db, "updated_at"), timestamp);
         assert!(!target.exists());
+    }
+
+    fn seed_store(path: &Path, label: &str) {
+        fs::create_dir_all(path).unwrap();
+        let mut db = Connection::open(path.join("weborg.db")).unwrap();
+        initialize_schema(&db).unwrap();
+        replace_catalog(
+            &mut db,
+            &[json!({ "id": label, "children": [{ "id": format!("{label}-child") }] })],
+        )
+        .unwrap();
+        db.execute("INSERT INTO usage_records(target_type,target_key,title,first_used_at,last_used_at) VALUES ('web',?1,?1,'now','now')", [label]).unwrap();
+        db.execute("INSERT INTO clipboard_records(kind,hash,content,created_at,last_seen_at) VALUES ('text',?1,?1,'now','now')", [label]).unwrap();
+        fs::create_dir_all(path.join("images")).unwrap();
+        fs::write(path.join("images/test.png"), label).unwrap();
+    }
+
+    fn assert_store(path: &Path, label: &str) {
+        let db = Connection::open(path.join("weborg.db")).unwrap();
+        assert_eq!(catalog_items(&db).unwrap()[0]["id"], label);
+        assert_eq!(
+            db.query_row("SELECT target_key FROM usage_records", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            label
+        );
+        assert_eq!(
+            db.query_row("SELECT content FROM clipboard_records", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            label
+        );
+        assert_eq!(
+            fs::read(path.join("images/test.png")).unwrap(),
+            label.as_bytes()
+        );
+    }
+
+    #[test]
+    fn open_existing_and_return_to_default_keep_each_complete_store() {
+        let f = Fixture::new();
+        let a = f.state.default_storage_dir.clone();
+        let b = f.root.join("existing");
+        seed_store(&a, "A");
+        seed_store(&b, "B");
+        let target = f.state.default_config_path.clone();
+        for (destination, label, default) in [(&b, "B", false), (&a, "A", true)] {
+            let mut config = json!({"core": {"configPath": target}, "plugins": {"web": {"settings": {}}, "clipboard": {"settings": {"storagePath": destination}}}});
+            if default {
+                config["plugins"]["clipboard"]["settings"]["storagePath"] = json!("");
+            }
+            let resolved = configured_path(
+                &config,
+                &["plugins", "clipboard", "settings", "storagePath"],
+            )
+            .unwrap_or_else(|| f.state.default_storage_dir.clone());
+            let timestamp = catalog_meta(
+                &Connection::open(destination.join("weborg.db")).unwrap(),
+                "updated_at",
+            );
+            let (storage, count, items) = persist(
+                &f.state,
+                &mut config,
+                &[json!({ "id": "stale-draft" })],
+                &resolved,
+                &target,
+            )
+            .unwrap();
+            assert_eq!(storage["operation"], "open");
+            assert_eq!(count, 2);
+            assert_eq!(items[0]["id"], label);
+            assert_eq!(
+                config["plugins"]["web"]["settings"]["catalogUpdatedAt"],
+                timestamp
+            );
+            config["plugins"]["web"]["settings"]["items"] = json!(items);
+            let response = saved_response(&config, storage, count, |name| {
+                if name == "broadcast" {
+                    assert_eq!(
+                        config["plugins"]["web"]["settings"]["items"][0]["id"],
+                        label
+                    );
+                }
+                Ok(json!({ "applied": true }))
+            });
+            assert_eq!(response["config"], hydrated_config(&f.state).unwrap());
+            assert_store(&a, "A");
+            assert_store(&b, "B");
+        }
+    }
+
+    #[test]
+    fn opening_existing_store_failure_recovers_all_boundaries() {
+        for default in [false, true] {
+            for step in ["prepared", "database", "config", "locator"] {
+                let f = Fixture::new();
+                let a = f.state.paths().storage_dir;
+                let b = f.root.join("existing");
+                seed_store(&a, "A");
+                seed_store(&b, "B");
+                let (a, b) = if default {
+                    *f.state.paths.write().unwrap() = AppPaths {
+                        storage_dir: b.clone(),
+                        db_path: b.join("weborg.db"),
+                        config_path: f.state.default_config_path.clone(),
+                    };
+                    (b, a)
+                } else {
+                    (a, b)
+                };
+                let target = f.state.default_config_path.clone();
+                let original = json!({"version": "original"});
+                write_json_atomic(&target, &original).unwrap();
+                let mut config = json!({"plugins": {"web": {"settings": {}}}});
+                persist_with_hook(&f.state, &mut config, &[], &b, &target, |stage| {
+                    if stage == step {
+                        Err("injected".into())
+                    } else {
+                        Ok(())
+                    }
+                })
+                .unwrap_err();
+                assert_eq!(f.state.paths().storage_dir, a);
+                assert_eq!(read_json(&target).unwrap(), original);
+                assert_store(&a, if default { "B" } else { "A" });
+                assert_store(&b, if default { "A" } else { "B" });
+            }
+        }
+    }
+
+    #[test]
+    fn existing_empty_catalog_stays_empty_on_open_and_startup_with_json_mirror() {
+        let f = Fixture::new();
+        let b = f.root.join("existing-empty");
+        fs::create_dir(&b).unwrap();
+        initialize_schema(&Connection::open(b.join("weborg.db")).unwrap()).unwrap();
+        let mut config = json!({"plugins": {"web": {"settings": {"items": [{"id": "stale"}]}}}});
+        let (storage, count, items) = persist(
+            &f.state,
+            &mut config,
+            &[json!({"id": "stale"})],
+            &b,
+            &f.state.default_config_path,
+        )
+        .unwrap();
+        assert_eq!(storage["operation"], "open");
+        assert_eq!(count, 0);
+        assert!(items.is_empty());
+        // Simulate a directly edited JSON file with a stale embedded catalog.
+        config["plugins"]["web"]["settings"]["items"] = json!([{"id": "stale"}]);
+        write_json_atomic(&f.state.default_config_path, &config).unwrap();
+        validate_existing_storage(&b.join("weborg.db")).unwrap();
+        initialize_startup_catalog(&f.state, true).unwrap();
+        assert_eq!(
+            hydrated_config(&f.state).unwrap()["plugins"]["web"]["settings"]["items"],
+            json!([])
+        );
+    }
+
+    #[test]
+    fn empty_migration_copies_history_and_saves_current_draft() {
+        let f = Fixture::new();
+        let a = f.state.paths().storage_dir;
+        seed_store(&a, "A");
+        let b = f.root.join("empty");
+        let mut config = json!({"plugins": {"web": {"settings": {}}}});
+        let (storage, count, items) = persist(
+            &f.state,
+            &mut config,
+            &[json!({"id": "draft"})],
+            &b,
+            &f.state.default_config_path,
+        )
+        .unwrap();
+        assert_eq!(storage["operation"], "migrate");
+        assert_eq!(count, 1);
+        assert_eq!(items[0]["id"], "draft");
+        let db = database(&f.state).unwrap();
+        assert_eq!(catalog_items(&db).unwrap(), items);
+        assert_eq!(
+            db.query_row("SELECT content FROM clipboard_records", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "A"
+        );
+        assert_eq!(
+            db.query_row("SELECT target_key FROM usage_records", [], |r| r
+                .get::<_, String>(0))
+                .unwrap(),
+            "A"
+        );
+        assert_eq!(fs::read(b.join("images/test.png")).unwrap(), b"A");
+        assert_store(&a, "A");
+    }
+
+    #[test]
+    fn invalid_existing_stores_are_rejected_without_initializing_or_publishing() {
+        for kind in ["unknown", "corrupt", "orphan", "json", "schema"] {
+            let f = Fixture::new();
+            let target = f.root.join("invalid");
+            fs::create_dir(&target).unwrap();
+            let path = target.join("weborg.db");
+            if kind == "corrupt" {
+                fs::write(&path, b"not sqlite").unwrap();
+            } else {
+                let db = Connection::open(&path).unwrap();
+                if kind == "unknown" {
+                    db.execute_batch("CREATE TABLE unrelated(x)").unwrap();
+                } else {
+                    initialize_schema(&db).unwrap();
+                    match kind {
+                        "orphan" => db.execute_batch("INSERT INTO web_catalog_nodes VALUES ('orphan','missing',0,'','','','{}')").unwrap(),
+                        "json" => db.execute_batch("INSERT INTO web_catalog_nodes VALUES ('broken',NULL,0,'','','','invalid')").unwrap(),
+                        _ => db.execute_batch("DROP TABLE clipboard_records").unwrap(),
+                    }
+                }
+            }
+            let bytes = fs::read(&path).unwrap();
+            let before = f.state.paths();
+            let mut config = json!({"plugins": {"web": {"settings": {}}}});
+            let error =
+                persist(&f.state, &mut config, &[], &target, &before.config_path).unwrap_err();
+            assert!(error.contains("无法打开目标 FlowHub 数据库"), "{error}");
+            assert_eq!(fs::read(path).unwrap(), bytes);
+            assert_eq!(f.state.paths().storage_dir, before.storage_dir);
+            assert!(!f.root.join(JOURNAL).exists());
+        }
     }
 
     #[test]

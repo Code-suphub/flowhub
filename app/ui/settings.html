@@ -1035,7 +1035,7 @@
                     <label for="clipboardStoragePath">FlowHub 数据库与剪切板图片目录</label>
                     <div class="storage-path-row"><input id="clipboardStoragePath" readonly /><button class="button" type="button" data-action="choose-clipboard-storage">选择…</button></div>
                     <div class="storage-actions"><button class="button" type="button" data-action="open-clipboard-storage">在 Finder 中打开</button><button class="button" type="button" data-action="reset-clipboard-storage">恢复默认</button></div>
-                    <div class="field-hint" id="clipboardStorageHint">保存配置后切换位置；网页目录、使用记录和剪切板数据会安全复制到新的空目录。</div>
+                    <div class="field-hint" id="clipboardStorageHint">保存后：空目录接收当前全部数据；已有 FlowHub 数据库则加载其中的网页目录、使用记录和剪切板，不合并当前网页草稿。恢复默认位置也遵循此规则。</div>
                   </div>
                 </div>
                 <div class="settings-block wide">

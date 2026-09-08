@@ -1545,7 +1545,11 @@ fn initialize_state() -> Result<AppState, String> {
     .unwrap_or_else(|| default_storage_dir.clone());
     let db_path = storage_dir.join("weborg.db");
     fs::create_dir_all(&storage_dir).map_err(|error| error.to_string())?;
-    if !db_path.exists() {
+    let existing_store = db_path.exists();
+    if existing_store {
+        validate_existing_storage(&db_path)?;
+    }
+    if !existing_store {
         if let Some(source) = find_legacy_database(&legacy_config) {
             if let Some(source_dir) = source.parent() {
                 copy_directory_contents(source_dir, &storage_dir)
@@ -1554,7 +1558,7 @@ fn initialize_state() -> Result<AppState, String> {
         }
     }
     let image_dir = storage_dir.join("images");
-    for source_root in legacy_sources() {
+    for source_root in if existing_store { Vec::new() } else { legacy_sources() } {
         let source_images = source_root.join("clipboard").join("images");
         if source_images.is_dir() {
             copy_directory_contents(&source_images, &image_dir)
@@ -1580,9 +1584,16 @@ fn initialize_state() -> Result<AppState, String> {
         application_icon_cache: Mutex::new(HashMap::new()),
         application_icon_cache_dir,
     };
-    initialize_database(&state)?;
-    import_json_catalog_if_needed(&state)?;
+    initialize_startup_catalog(&state, existing_store)?;
     Ok(state)
+}
+
+fn initialize_startup_catalog(state: &AppState, existing_store: bool) -> Result<(), String> {
+    if !existing_store {
+        initialize_database(state)?;
+        import_json_catalog_if_needed(state)?;
+    }
+    Ok(())
 }
 
 // Drop the connection before releasing the lease. All database callers, including
@@ -1957,11 +1968,47 @@ fn switch_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     Ok(result)
 }
 
+// Read-only validation must precede schema initialization or recovery-journal
+// writes. Reject unsupported stores rather than guessing how to upgrade them.
+fn validate_existing_storage(path: &Path) -> Result<(), String> {
+    let validate = || -> Result<(), String> {
+        let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| e.to_string())?;
+        let integrity: String = db.query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        if integrity != "ok" { return Err(integrity); }
+        for (table, columns) in [
+            ("usage_records", "id,target_type,target_key,title,target_path,url,icon,use_count,first_used_at,last_used_at"),
+            ("clipboard_records", "id,kind,hash,content,file_name,source_name,file_paths,file_types,size,created_at,last_seen_at,copy_count"),
+            ("web_catalog_nodes", "id,parent_id,sort_order,title,url,note,data_json"),
+            ("web_catalog_meta", "key,value"),
+        ] {
+            let kind: String = db.query_row("SELECT type FROM sqlite_master WHERE name=?", [table], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            if kind != "table" { return Err(format!("{table} 必须是数据表")); }
+            db.prepare(&format!("SELECT {columns} FROM {table} LIMIT 0")).map_err(|e| e.to_string())?;
+        }
+        let mut query = db.prepare("SELECT data_json FROM web_catalog_nodes").map_err(|e| e.to_string())?;
+        let rows = query.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+        for row in rows {
+            let value: Value = serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            if !value.is_object() { return Err("网页目录节点必须是对象".into()); }
+        }
+        let items = catalog_items(&db)?;
+        validate_catalog(&items)?;
+        if items.iter().map(count_catalog_nodes).sum::<usize>() as i64 != catalog_count(&db)? {
+            return Err("网页目录含孤立节点或循环引用".into());
+        }
+        Ok(())
+    };
+    validate().map_err(|e| format!("无法打开目标 FlowHub 数据库（未知格式、版本不兼容或数据损坏）：{e}"))
+}
+
 // Caller holds exclusive storage access; preparing a destination never publishes it.
 fn prepare_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     let current = state.paths();
     if current.storage_dir == target {
-        return Ok(json!({ "migrated": false, "activePath": target.to_string_lossy() }));
+        return Ok(json!({ "operation": "save", "migrated": false, "activePath": target.to_string_lossy() }));
     }
     if target.starts_with(&current.storage_dir) || current.storage_dir.starts_with(target) {
         return Err("新的存放位置不能与当前数据目录互相嵌套".to_string());
@@ -1971,7 +2018,7 @@ fn prepare_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     let resolved_source = fs::canonicalize(&current.storage_dir).map_err(|error| error.to_string())?;
     let resolved_target = fs::canonicalize(target).map_err(|error| error.to_string())?;
     if resolved_source == resolved_target {
-        return Ok(json!({ "migrated": false, "activePath": current.storage_dir.to_string_lossy() }));
+        return Ok(json!({ "operation": "save", "migrated": false, "activePath": current.storage_dir.to_string_lossy() }));
     }
     if resolved_target.starts_with(&resolved_source) || resolved_source.starts_with(&resolved_target) {
         return Err("新的存放位置不能与当前数据目录互相嵌套".to_string());
@@ -1988,11 +2035,11 @@ fn prepare_storage(state: &AppState, target: &Path) -> Result<Value, String> {
     if migrated {
         copy_storage_snapshot(&current.storage_dir, target)?;
     }
-    // Validate/initialize before publishing the new paths; failure keeps the old store active.
-    let connection = Connection::open(&target_db).map_err(|error| error.to_string())?;
-    initialize_schema(&connection)?;
-    drop(connection);
-    Ok(json!({ "migrated": migrated, "activePath": target.to_string_lossy() }))
+    if !migrated {
+        validate_existing_storage(&target_db)?;
+    }
+    Ok(json!({ "operation": if migrated { "migrate" } else { "open" },
+        "migrated": migrated, "activePath": target.to_string_lossy() }))
 }
 
 #[tauri::command]
@@ -2018,7 +2065,6 @@ fn save_config(
         .and_then(Value::as_array)
         .cloned()
         .ok_or_else(|| "网页插件配置缺少 items 数组".to_string())?;
-    validate_catalog(&items)?;
     let target_storage = configured_path(
         &config,
         &["plugins", "clipboard", "settings", "storagePath"],
@@ -2040,7 +2086,7 @@ fn save_config(
         return Err(reason);
     }
     let persisted = config_save::persist(&state, &mut config, &items, &target_storage, &target_config);
-    let (storage_state, count) = match persisted {
+    let (storage_state, count, saved_items) = match persisted {
         Ok(state) => state,
         Err(reason) => {
             if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
@@ -2053,7 +2099,7 @@ fn save_config(
     let mut hydrated = config.clone();
     ensure_object_path(&mut hydrated, &["plugins", "web", "settings"])
         .expect("validated persisted settings")
-        .insert("items".to_string(), Value::Array(items));
+        .insert("items".to_string(), Value::Array(saved_items));
     Ok(config_save::saved_response(
         &hydrated,
         storage_state,

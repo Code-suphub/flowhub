@@ -984,7 +984,7 @@ function renderClipboardStorage() {
   $("#clipboardStorageSummary").textContent = resolvedPath;
   $("#clipboardStorageHint").textContent = state.clipboardStorage?.available === false
     ? "浏览器仅用于预览，请在 FlowHub App 中选择或打开目录。"
-    : "保存配置后切换位置；网页目录、使用记录和剪切板数据会安全复制到新的空目录。";
+    : "保存后：空目录接收当前全部数据；已有 FlowHub 数据库则加载其中的网页目录、使用记录和剪切板，不合并当前网页草稿。恢复默认位置也遵循此规则。";
 }
 
 function renderClipboardSummary() {
@@ -1312,7 +1312,7 @@ async function save() {
     if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
       void refreshMenuBarItems();
     }
-    toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 项系统设置未能生效` : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
+    toast(result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 项系统设置未能生效` : result.storageState?.operation === "open" ? "已打开目标数据库，网页目录已加载；当前网页草稿未写入目标" : "配置已保存，插件状态已生效", Boolean(result.pluginFailures?.length));
   } catch (error) {
     toast(error.message, true);
   }
