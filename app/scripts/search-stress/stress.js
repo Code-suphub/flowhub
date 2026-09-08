@@ -27,3 +27,16 @@ flowButton.onclick=async()=>{
  const all=matches();const report={atEnd,atStart,keyboardVisible,pages,loaded:all.length,unique:new Set(all.map(resultKey)).size,maxDOM,totalMs:performance.now()-t};
  document.querySelector('#stressReport').textContent=JSON.stringify(report,null,2);
 };
+const timingButton=document.createElement('button');timingButton.textContent='Run stage timing';timingButton.style='position:fixed;left:4px;top:72px;z-index:9999';document.body.append(timingButton);
+timingButton.onclick=async()=>{
+ const original=window.weborg.pluginSearch;
+ timingButton.disabled=true;
+ try {
+  seed(0);state.scope='all';
+  window.weborg.pluginSearch=async(id)=>{await new Promise(r=>setTimeout(r,id==='app'?900:20));return id==='clipboard'?[{...makeRows(1)[0],content:'TIMING_RESULT'}]:[];};
+  window.flowhubSearchTiming.enable(true);window.flowhubSearchTiming.reset();
+  q.value='TIMING_RESULT';q.dispatchEvent(new Event('input',{bubbles:true}));
+  await new Promise(r=>setTimeout(r,1300));
+  document.querySelector('#stressReport').textContent=JSON.stringify(window.flowhubSearchTiming.report(),null,2);
+ } finally {window.weborg.pluginSearch=original;timingButton.disabled=false;}
+};

@@ -1,3 +1,4 @@
+mod search_diagnostic_run;
 #[cfg(target_os = "macos")]
 mod macos_launcher_position;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -3011,6 +3012,10 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| arg == "--search-diagnostics") {
+                search_diagnostic_run::start(app);
+                return;
+            }
             #[cfg(target_os = "macos")]
             if args.iter().any(|arg| arg == "--menu-bar-menu") {
                 // Diagnostic entry to the real status-item menu, not the
@@ -3300,6 +3305,7 @@ pub fn run() {
             set_menu_bar_item_hidden,
             get_config_path_info,
             get_storage_info,
+            search_diagnostic_run::save_search_diagnostic_run,
             diagnostics::get_diagnostics_state,
             diagnostics::set_diagnostics_enabled,
             diagnostics::sample_diagnostics,

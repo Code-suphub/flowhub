@@ -939,7 +939,11 @@ function renderResultBody(item, index, items) {
 const resultWindow = new window.FlowHubResultWindow();
 let windowedResults = false;
 let windowRenderFrame = 0;
-function render({ preserveScroll = false, targetIndex = null } = {}) {
+function render(options = {}) {
+  return window.flowhubSearchTiming ? window.flowhubSearchTiming.render(() => renderMeasured(options)) : renderMeasured(options);
+}
+
+function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
   const previousScrollTop = preserveScroll ? resultsEl.scrollTop : 0;
   if (!state.config) {
     const html = `<div class="empty">配置加载中…</div>`;
@@ -1223,6 +1227,7 @@ function invalidatePluginPaging({ resetPaging = true } = {}) {
 }
 
 function setScope(scope) {
+  window.flowhubSearchTiming?.begin("scope");
   allResultKeys = null;
   allScopeRefreshToken += 1;
   invalidateClipboardPaging({ resetPaging: false });
@@ -1414,8 +1419,9 @@ async function refreshClipboard({ append = false, deferRender = false } = {}) {
   if (!append) state.clipboardHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
-    const records = await window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset });
+    const records = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("clipboard", () => window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset })) : window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset }));
     if (token !== clipboardSearchToken) return;
+    window.flowhubSearchTiming?.applied();
     const nextRecords = records || [];
     state.clipboardResults = append
       ? [...state.clipboardResults, ...nextRecords.filter((record) => !state.clipboardResults.some((current) => current.id === record.id))]
@@ -1471,8 +1477,9 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
   if (!append) state.appHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
-    const applications = await window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons });
+    const applications = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("app", () => window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons })) : window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons }));
     if (token !== appSearchToken) return;
+    window.flowhubSearchTiming?.applied();
     const next = applications || [];
     const existing = new Set(state.appResults.map((item) => item.path || item.id));
     state.appResults = append ? [...state.appResults, ...next.filter((item) => !existing.has(item.path || item.id))] : next;
@@ -1520,8 +1527,9 @@ async function refreshWeb({ append = false, deferRender = false } = {}) {
   if (!append) state.webHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
-    const pages = await window.weborg?.pluginSearch("web", { query: state.query, limit, offset });
+    const pages = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("web", () => window.weborg?.pluginSearch("web", { query: state.query, limit, offset })) : window.weborg?.pluginSearch("web", { query: state.query, limit, offset }));
     if (token !== webSearchToken) return;
+    window.flowhubSearchTiming?.applied();
     const next = pages || [];
     const existing = new Set(state.webResults.map((item) => item.id || item.url));
     state.webResults = append ? [...state.webResults, ...next.filter((item) => !existing.has(item.id || item.url))] : next;
@@ -1548,8 +1556,9 @@ async function refreshMemos({ append = false, deferRender = false } = {}) {
   if (!append) state.memoHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
-    const memos = await window.weborg?.pluginSearch("memo", { query: state.query, limit, offset });
+    const memos = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("memo", () => window.weborg?.pluginSearch("memo", { query: state.query, limit, offset })) : window.weborg?.pluginSearch("memo", { query: state.query, limit, offset }));
     if (token !== memoSearchToken) return;
+    window.flowhubSearchTiming?.applied();
     const next = memos || [];
     const existing = new Set(state.memoResults.map((item) => item.id));
     state.memoResults = append ? [...state.memoResults, ...next.filter((item) => !existing.has(item.id))] : next;
@@ -1605,7 +1614,9 @@ async function refreshAllScopes() {
 
 function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
   clearTimeout(clipboardSearchTimer);
+  const timingRun = window.flowhubSearchTiming?.capture();
   clipboardSearchTimer = setTimeout(() => {
+    window.flowhubSearchTiming?.dispatch(timingRun);
     if (!state.query.trim() && !refreshEmpty) {
       void refreshUsage();
       return;
@@ -1630,6 +1641,7 @@ function queueWebInputSearch() {
   if (webInputSearchFrame) return;
   webInputSearchFrame = requestAnimationFrame(() => {
     webInputSearchFrame = null;
+    window.flowhubSearchTiming?.dispatch(window.flowhubSearchTiming.capture());
     void refreshWeb();
   });
 }
@@ -1642,6 +1654,7 @@ q.addEventListener("compositionend", () => {
   searchCompositionEndedAt = performance.now();
 });
 q.addEventListener("input", () => {
+  window.flowhubSearchTiming?.begin("input");
   allResultKeys = null;
   allScopeRefreshToken += 1;
   invalidateClipboardPaging();
@@ -1751,6 +1764,8 @@ resultsEl.addEventListener("mousemove", (e) => {
 
 function focusSearch() { q?.focus(); q?.select(); }
 function prepareForShow() {
+  void window.refreshSearchTiming?.();
+  window.flowhubSearchTiming?.reset();
   allResultKeys = null;
   allInitialResults = [];
   allScopeRefreshToken += 1;
