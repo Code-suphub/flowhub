@@ -38,6 +38,7 @@ const TOOL_SETTINGS = {
   calculator: "计算表达式",
   timestamp: "时间戳转换",
   jwt: "JWT 解析",
+  json: "JSON 格式化",
   dns: "DNS 解析",
   dnsIpGeo: "DNS 自动查询 IP 归属地",
   cloudflare: "Cloudflare 检测",

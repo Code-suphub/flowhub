@@ -1,0 +1,20 @@
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const window={FlowHubTools:{register(t){window.tool=t;}}};
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../ui/json-tool.js'),'utf8'),{window});
+const format=window.FlowHubJson.format;
+assert.equal(format('{"a":[1,{},[]],"b":true}').pretty,'{\n  "a": [\n    1,\n    {},\n    []\n  ],\n  "b": true\n}');
+const raw='{"n":9007199254740993,"e":1e400,"z":-0,"n":2,"s":"a  b, {} \\" \\n <script>"}';
+assert.equal(format(raw).compact,raw);
+for(const bad of ['123','null','"abc"','{"x":}','[1,]','{unquoted:1}','{"x":NaN}']) assert.equal(format(bad),null);
+assert.equal(format('['.repeat(65)+'0'+']'.repeat(65)),null);
+assert.equal(format('["'+'x'.repeat(65536)+'"]'),null);
+(async()=>{
+ let copied;const ctx={query:'{"html":"<script>"}',queryNow(){return this.query},copy:async v=>copied=v,status(){}};
+ assert.equal(window.tool.suggestions(ctx).length,1);
+ const html=window.tool.render({}, {esc:s=>s.replaceAll('<','&lt;'),index:0,active:true});
+ assert(!html.includes('<script>'));
+ await window.tool.choose({},ctx);assert.equal(copied,format(ctx.query).pretty);
+ await window.tool.action('compact',null,ctx);assert.equal(copied,ctx.query);
+ ctx.query='invalid';await window.tool.choose({},ctx);assert.equal(copied,'{"html":"<script>"}');
+ console.log('PASS: JSON formatting, precise numbers, duplicate keys, escapes, invalid/deep/large input, safe preview and copy');
+})().catch(e=>{console.error(e);process.exitCode=1});
