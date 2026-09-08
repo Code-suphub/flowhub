@@ -16,7 +16,11 @@ use std::{
     io::Cursor,
     path::Path,
     process::Command,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{self, SyncSender},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -25,6 +29,7 @@ use tauri::{Emitter, Manager, State};
 pub struct ClipboardRuntime {
     shutdown: Mutex<Option<WatcherShutdown>>,
     suppressed: Mutex<Option<(String, Instant)>>,
+    writer: Mutex<Option<ClipboardWriter>>,
 }
 
 impl ClipboardRuntime {
@@ -32,6 +37,7 @@ impl ClipboardRuntime {
         Self {
             shutdown: Mutex::new(None),
             suppressed: Mutex::new(None),
+            writer: Mutex::new(None),
         }
     }
 
@@ -128,8 +134,8 @@ fn add_text(
     text: &str,
     hash: &str,
     timing: &mut CaptureTiming,
+    now: &str,
 ) -> Result<(), String> {
-    let now = Utc::now().to_rfc3339();
     let connection = timing.measure("dbOpen", || database(state))?;
     timing.measure("dbExecute", || connection.execute(
             "INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at, copy_count)
@@ -141,7 +147,7 @@ fn add_text(
     Ok(())
 }
 
-fn add_image(state: &AppState, bytes: &[u8], hash: &str) -> Result<(), String> {
+fn add_image(state: &AppState, bytes: &[u8], hash: &str, now: &str) -> Result<(), String> {
     let image_dir = state.storage_dir().join("images");
     fs::create_dir_all(&image_dir).map_err(|error| error.to_string())?;
     let file_name = format!("{hash}.png");
@@ -149,7 +155,6 @@ fn add_image(state: &AppState, bytes: &[u8], hash: &str) -> Result<(), String> {
     if !image_path.exists() {
         fs::write(&image_path, bytes).map_err(|error| error.to_string())?;
     }
-    let now = Utc::now().to_rfc3339();
     database(state)?
         .execute(
             "INSERT INTO clipboard_records(kind, hash, file_name, size, created_at, last_seen_at, copy_count)
@@ -161,7 +166,7 @@ fn add_image(state: &AppState, bytes: &[u8], hash: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn add_files(state: &AppState, paths: &[String], hash: &str) -> Result<(), String> {
+fn add_files(state: &AppState, paths: &[String], hash: &str, now: &str) -> Result<(), String> {
     let types: Vec<&str> = paths
         .iter()
         .map(|path| {
@@ -177,7 +182,6 @@ fn add_files(state: &AppState, paths: &[String], hash: &str) -> Result<(), Strin
         .filter_map(|path| fs::metadata(path).ok())
         .map(|metadata| metadata.len())
         .sum::<u64>();
-    let now = Utc::now().to_rfc3339();
     database(state)?
         .execute(
             "INSERT INTO clipboard_records(kind, hash, file_paths, file_types, size, created_at, last_seen_at, copy_count)
@@ -197,6 +201,160 @@ fn add_files(state: &AppState, paths: &[String], hash: &str) -> Result<(), Strin
     Ok(())
 }
 
+const WRITE_QUEUE_CAPACITY: usize = 64;
+const WRITE_QUEUE_BYTES: usize = 64 * 1024 * 1024;
+
+enum ClipboardPayload {
+    Text(String),
+    Image(Vec<u8>),
+    Files(Vec<String>),
+}
+
+struct PendingClipboard {
+    payload: ClipboardPayload,
+    hash: String,
+    captured_at: String,
+    queued_at: Instant,
+    capture_report: Value,
+    reservation: QueueReservation,
+}
+
+// Reservation survives dequeue so the byte budget includes the in-flight write.
+struct QueueReservation {
+    bytes: usize,
+    budget: Arc<AtomicUsize>,
+}
+impl QueueReservation {
+    fn reserve(budget: &Arc<AtomicUsize>, bytes: usize) -> Result<Self, String> {
+        budget
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(bytes)
+                    .filter(|next| *next <= WRITE_QUEUE_BYTES)
+            })
+            .map_err(|_| "clipboard write queue memory limit reached".to_string())?;
+        Ok(Self {
+            bytes,
+            budget: budget.clone(),
+        })
+    }
+}
+impl Drop for QueueReservation {
+    fn drop(&mut self) {
+        self.budget.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
+
+#[derive(Clone)]
+struct ClipboardWriter {
+    sender: SyncSender<PendingClipboard>,
+    budget: Arc<AtomicUsize>,
+}
+impl ClipboardWriter {
+    fn start(app: tauri::AppHandle) -> Result<Self, String> {
+        let (sender, receiver) = mpsc::sync_channel::<PendingClipboard>(WRITE_QUEUE_CAPACITY);
+        thread::Builder::new()
+            .name("clipboard-writer".into())
+            .spawn(move || {
+                while let Ok(job) = receiver.recv() {
+                    let queue_wait_ms = job.queued_at.elapsed().as_secs_f64() * 1000.0;
+                    crate::diagnostics::record_event(
+                        &app,
+                        "clipboard_capture_timing",
+                        job.capture_report.clone(),
+                    );
+                    let mut timing = CaptureTiming::new(&app);
+                    timing.event = "clipboard_persistence_timing";
+                    timing.bytes = job.reservation.bytes;
+                    timing.phases.push(("queueWait", queue_wait_ms));
+                    let state = app.state::<AppState>();
+                    let result = match &job.payload {
+                        ClipboardPayload::Text(text) => {
+                            timing.kind = "text";
+                            add_text(&state, text, &job.hash, &mut timing, &job.captured_at)
+                        }
+                        ClipboardPayload::Image(bytes) => {
+                            timing.kind = "image";
+                            timing.measure("storeImage", || {
+                                add_image(&state, bytes, &job.hash, &job.captured_at)
+                            })
+                        }
+                        ClipboardPayload::Files(paths) => {
+                            timing.kind = "file";
+                            timing.measure("storeFiles", || {
+                                add_files(&state, paths, &job.hash, &job.captured_at)
+                            })
+                        }
+                    };
+                    match result {
+                        Ok(()) => {
+                            timing.outcome = "stored";
+                            let _ = timing
+                                .measure("emit", || app.emit("flowhub:clipboard-updated", ()));
+                        }
+                        Err(_) => {
+                            crate::diagnostics::record_event(
+                                &app,
+                                "clipboard_persistence_failed",
+                                json!({"kind": timing.kind}),
+                            );
+                            eprintln!("[flowhub][clipboard] queued clipboard persistence failed");
+                        }
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            sender,
+            budget: Arc::new(AtomicUsize::new(0)),
+        })
+    }
+    fn enqueue(
+        &self,
+        payload: ClipboardPayload,
+        hash: String,
+        captured_at: &str,
+        timing: &mut CaptureTiming,
+    ) -> Result<(), String> {
+        let bytes = match &payload {
+            ClipboardPayload::Text(value) => value.len(),
+            ClipboardPayload::Image(value) => value.len(),
+            ClipboardPayload::Files(paths) => paths.iter().map(String::len).sum(),
+        };
+        timing.bytes = bytes;
+        timing.outcome = "queued";
+        let report = timing.report();
+        timing.outcome = "error";
+        self.submit(payload, hash, captured_at, bytes, report)?;
+        timing.outcome = "queued";
+        timing.emit_on_drop = false;
+        Ok(())
+    }
+}
+
+impl ClipboardWriter {
+    fn submit(
+        &self,
+        payload: ClipboardPayload,
+        hash: String,
+        captured_at: &str,
+        bytes: usize,
+        capture_report: Value,
+    ) -> Result<(), String> {
+        let reservation = QueueReservation::reserve(&self.budget, bytes)?;
+        let job = PendingClipboard {
+            payload,
+            hash,
+            captured_at: captured_at.into(),
+            queued_at: Instant::now(),
+            capture_report,
+            reservation,
+        };
+        self.sender
+            .try_send(job)
+            .map_err(|_| "clipboard write queue full or unavailable".to_string())
+    }
+}
+
 // Opt-in diagnostic timings contain no clipboard content, paths or hashes.
 struct CaptureTiming<'a> {
     app: &'a tauri::AppHandle,
@@ -205,6 +363,8 @@ struct CaptureTiming<'a> {
     kind: &'static str,
     bytes: usize,
     outcome: &'static str,
+    event: &'static str,
+    emit_on_drop: bool,
 }
 
 impl<'a> CaptureTiming<'a> {
@@ -216,6 +376,8 @@ impl<'a> CaptureTiming<'a> {
             kind: "unknown",
             bytes: 0,
             outcome: "error",
+            event: "clipboard_capture_timing",
+            emit_on_drop: true,
         }
     }
     fn measure<T>(&mut self, phase: &'static str, work: impl FnOnce() -> T) -> T {
@@ -227,17 +389,17 @@ impl<'a> CaptureTiming<'a> {
     }
 }
 
+impl CaptureTiming<'_> {
+    fn report(&self) -> Value {
+        json!({ "totalMs": self.started.elapsed().as_secs_f64() * 1000.0,
+            "phases": self.phases, "kind": self.kind, "bytes": self.bytes, "outcome": self.outcome })
+    }
+}
 impl Drop for CaptureTiming<'_> {
     fn drop(&mut self) {
-        let total_ms = self.started.elapsed().as_secs_f64() * 1000.0;
-        crate::diagnostics::record_event(
-            self.app,
-            "clipboard_capture_timing",
-            json!({
-                "totalMs": total_ms, "phases": self.phases, "kind": self.kind,
-                "bytes": self.bytes, "outcome": self.outcome
-            }),
-        );
+        if self.emit_on_drop {
+            crate::diagnostics::record_event(self.app, self.event, self.report());
+        }
     }
 }
 
@@ -246,8 +408,14 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
     let context = timing
         .measure("context", ClipboardContext::new)
         .map_err(|error| error.to_string())?;
-    let state = app.state::<AppState>();
+    let captured_at = Utc::now().to_rfc3339();
     let runtime = app.state::<ClipboardRuntime>();
+    let writer = runtime
+        .writer
+        .lock()
+        .expect("clipboard writer lock poisoned")
+        .clone()
+        .ok_or("clipboard writer unavailable")?;
     let mut changed = false;
     let mut captured = false;
     let mut failed_formats = Vec::new();
@@ -267,7 +435,12 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
                     timing.kind = "file";
                     let hash = timing.measure("hash", || sha256(files.join("\0").as_bytes()));
                     if !runtime.should_suppress(&signature("file", &hash)) {
-                        timing.measure("storeFiles", || add_files(&state, &files, &hash))?;
+                        writer.enqueue(
+                            ClipboardPayload::Files(files),
+                            hash,
+                            &captured_at,
+                            &mut timing,
+                        )?;
                         changed = true;
                     }
                 } else {
@@ -289,7 +462,12 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
                 timing.bytes = bytes.len();
                 let hash = timing.measure("hash", || sha256(bytes));
                 if !runtime.should_suppress(&signature("image", &hash)) {
-                    timing.measure("storeImage", || add_image(&state, bytes, &hash))?;
+                    writer.enqueue(
+                        ClipboardPayload::Image(bytes.to_vec()),
+                        hash,
+                        &captured_at,
+                        &mut timing,
+                    )?;
                     changed = true;
                 }
             }
@@ -304,7 +482,12 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
                 timing.bytes = text.len();
                 let hash = timing.measure("hash", || sha256(text.as_bytes()));
                 if !runtime.should_suppress(&signature("text", &hash)) {
-                    add_text(&state, &text, &hash, &mut timing)?;
+                    writer.enqueue(
+                        ClipboardPayload::Text(text),
+                        hash,
+                        &captured_at,
+                        &mut timing,
+                    )?;
                     changed = true;
                 }
             }
@@ -320,11 +503,8 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
         );
     }
 
-    if changed {
-        let _ = timing.measure("emit", || app.emit("flowhub:clipboard-updated", ()));
-    }
     timing.outcome = if changed {
-        "stored"
+        "queued"
     } else if captured {
         "suppressed"
     } else {
@@ -342,6 +522,15 @@ pub fn start_monitor(app: &tauri::AppHandle) -> Result<(), String> {
     if shutdown.is_some() {
         return Ok(());
     }
+    // A single writer survives monitor toggles and drains already captured jobs.
+    let mut writer = runtime
+        .writer
+        .lock()
+        .expect("clipboard writer lock poisoned");
+    if writer.is_none() {
+        *writer = Some(ClipboardWriter::start(app.clone())?);
+    }
+    drop(writer);
     #[cfg(target_os = "macos")]
     let mut watcher = ClipboardWatcherContext::new_with_interval(Duration::from_millis(100))
         .map_err(|error| error.to_string())?;
@@ -787,4 +976,58 @@ pub fn cleanup(state: &AppState, retention_days: i64) -> Result<usize, String> {
         let _ = fs::remove_file(state.storage_dir().join("images").join(file_name));
     }
     Ok(removed)
+}
+
+#[cfg(test)]
+mod writer_tests {
+    use super::*;
+
+    #[test]
+    fn blocked_writer_keeps_fifo_and_releases_budget_on_full_and_disconnect() {
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let writer = ClipboardWriter {
+            sender,
+            budget: Arc::new(AtomicUsize::new(0)),
+        };
+        let submit = |id: &str| {
+            writer.submit(
+                ClipboardPayload::Text(id.into()),
+                id.into(),
+                "capture-time",
+                id.len(),
+                json!({}),
+            )
+        };
+        // No consumer runs: submitting must return while persistence is stalled.
+        submit("one").unwrap();
+        submit("two").unwrap();
+        assert!(submit("three").is_err());
+        assert_eq!(writer.budget.load(Ordering::Acquire), 6);
+        let first = receiver.recv().unwrap();
+        assert_eq!(first.hash, "one");
+        assert_eq!(first.captured_at, "capture-time");
+        assert_eq!(writer.budget.load(Ordering::Acquire), 6); // in-flight is charged
+        drop(first);
+        submit("four").unwrap();
+        assert_eq!(receiver.recv().unwrap().hash, "two");
+        assert_eq!(receiver.recv().unwrap().hash, "four");
+        assert_eq!(writer.budget.load(Ordering::Acquire), 0);
+        drop(receiver);
+        assert!(submit("five").is_err());
+        assert_eq!(writer.budget.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn queue_memory_limit_rejects_overflow_and_recovers_after_release() {
+        let budget = Arc::new(AtomicUsize::new(0));
+        let full = QueueReservation::reserve(&budget, WRITE_QUEUE_BYTES).unwrap();
+        assert!(QueueReservation::reserve(&budget, 1).is_err());
+        assert!(QueueReservation::reserve(&budget, usize::MAX).is_err());
+        assert_eq!(budget.load(Ordering::Acquire), WRITE_QUEUE_BYTES);
+        drop(full);
+        let small = QueueReservation::reserve(&budget, 42).unwrap();
+        assert_eq!(budget.load(Ordering::Acquire), 42);
+        drop(small);
+        assert_eq!(budget.load(Ordering::Acquire), 0);
+    }
 }
