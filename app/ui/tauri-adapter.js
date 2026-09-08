@@ -30,7 +30,11 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   }
 
   async function ensureConfig() {
-    if (!configCache) configCache = await invoke("get_config");
+    if (!configCache) {
+      const loaded = await invoke("get_config");
+      // A save/config-location event may publish a newer snapshot in flight.
+      if (!configCache) configCache = loaded;
+    }
     return configCache;
   }
 
@@ -40,8 +44,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
 
   async function indexedWebPages() {
     if (!webPageIndex) {
-      const config = await ensureConfig();
-      webPageIndex = flattenPages(config.plugins?.web?.settings?.items || []);
+      await ensureConfig();
+      if (!webPageIndex) webPageIndex = window.FlowHubWebSearch.createWebPageIndex(flattenPages(configCache.plugins?.web?.settings?.items || []));
     }
     return webPageIndex;
   }
@@ -71,7 +75,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     }
     if (id === "web") {
       const pages = await indexedWebPages();
-      return window.FlowHubWebSearch.rankWebPages(pages, query, limit, offset)
+      return pages.search(query, limit, offset)
         .map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "memo") {

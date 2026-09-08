@@ -25,16 +25,16 @@
     return normalize(parts.join(" "));
   }
 
-  function rankPage(page, query, index) {
-    const normalizedQuery = normalize(query);
-    const tokens = tokensFor(normalizedQuery);
-    if (!tokens.length) return { page, index, tier: 0, detail: 0 };
-
-    const fields = {
+  function pageFields(page) {
+    return {
       title: normalize(page?.title),
       context: normalize(`${directoryText(page)} ${page?.note || ""}`),
       url: normalize(page?.url)
     };
+  }
+
+  function rankPage(page, normalizedQuery, tokens, index, fields) {
+    if (!tokens.length) return { page, index, tier: 0, detail: 0 };
     const tokenFields = tokens.map((token) => {
       if (fields.title.includes(token)) return "title";
       if (fields.context.includes(token)) return "context";
@@ -57,17 +57,37 @@
   }
 
   function rankWebPages(pages, query, limit = 12, offset = 0) {
-    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
-    const safeOffset = Math.max(0, Number(offset) || 0);
-    const normalizedQuery = normalize(query);
-    if (!normalizedQuery) return (pages || []).slice(safeOffset, safeOffset + safeLimit);
-    return (pages || [])
-      .map((page, index) => rankPage(page, normalizedQuery, index))
-      .filter(Boolean)
-      .sort((left, right) => left.tier - right.tier || left.detail - right.detail || left.index - right.index)
-      .slice(safeOffset, safeOffset + safeLimit)
-      .map((entry) => entry.page);
+    return createWebPageIndex(pages).search(query, limit, offset);
   }
 
-  return { normalize, tokensFor, rankWebPages };
+  // The owner must replace this index when its directory snapshot changes.
+  // Only one sorted query is retained: typing cannot accumulate result arrays.
+  // Scope and usage frequency do not affect web relevance; usage cards are
+  // loaded separately by the adapters. Limit/offset only slice this ordering.
+  function createWebPageIndex(pages) {
+    const source = (pages || []).slice();
+    let fields;
+    let lastQuery;
+    let lastResults;
+    function search(query, limit = 12, offset = 0) {
+      const safeLimit = Math.max(1, Math.min(100, Number(limit) || 12));
+      const safeOffset = Math.max(0, Number(offset) || 0);
+      const normalizedQuery = normalize(query);
+      if (normalizedQuery !== lastQuery) {
+        const tokens = tokensFor(normalizedQuery);
+        // Empty home views need neither searchable fields nor sorting.
+        if (tokens.length && !fields) fields = source.map(pageFields);
+        lastResults = !normalizedQuery ? source : source
+          .map((page, index) => rankPage(page, normalizedQuery, tokens, index, fields?.[index]))
+          .filter(Boolean)
+          .sort((left, right) => left.tier - right.tier || left.detail - right.detail || left.index - right.index)
+          .map((entry) => entry.page);
+        lastQuery = normalizedQuery;
+      }
+      return lastResults.slice(safeOffset, safeOffset + safeLimit);
+    }
+    return { search };
+  }
+
+  return { normalize, tokensFor, rankWebPages, createWebPageIndex };
 }));

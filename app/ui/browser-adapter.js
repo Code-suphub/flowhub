@@ -114,11 +114,11 @@ if (!window.weborg) {
   async function indexedWebPages() {
     if (!webPageIndex) {
       const config = configCache || await ensureConfig();
-      webPageIndex = flattenPages(config.plugins?.web?.settings?.items || []).map((page) => ({
+      if (!webPageIndex) webPageIndex = window.FlowHubWebSearch.createWebPageIndex(flattenPages(config.plugins?.web?.settings?.items || []).map((page) => ({
         ...page,
         type: "page",
         breadcrumb: (page.path || []).map((entry) => entry.title).join(" / ")
-      }));
+      })));
     }
     return webPageIndex;
   }
@@ -154,7 +154,7 @@ if (!window.weborg) {
     if (!pluginsPromise) {
       pluginsPromise = fetch("/plugins.json", { cache: "no-store" }).then((response) => response.json());
     }
-    const [plugins, config] = await Promise.all([pluginsPromise, getConfig()]);
+    const [plugins, config] = await Promise.all([pluginsPromise, ensureConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
       available: ["web", "clipboard", "app", "memo", "tools"].includes(plugin.id),
@@ -179,7 +179,7 @@ if (!window.weborg) {
     }
     if (id === "web") {
       const pages = await indexedWebPages();
-      return window.FlowHubWebSearch.rankWebPages(pages, query, limit, Number(request.offset) || 0)
+      return pages.search(query, limit, Number(request.offset) || 0)
         .map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "memo") {
