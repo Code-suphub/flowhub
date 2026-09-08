@@ -63,7 +63,8 @@ function setPath(object, path, value) {
 
 async function readConfig() { return request("/api/config"); }
 async function writeConfig(config) {
-  return request("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(config) });
+  const { token } = await request("/api/session");
+  return request("/api/config", { method: "POST", headers: { "content-type": "application/json", "x-flowhub-token": token }, body: JSON.stringify(config) });
 }
 
 async function main() {

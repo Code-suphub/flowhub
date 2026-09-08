@@ -1461,7 +1461,7 @@
               <div class="config-overview">
                 <div class="config-card"><span>一级分类</span><b id="rootCount">0</b></div>
                 <div class="config-card"><span>页面数量</span><b id="pageTotal">0</b></div>
-                <div class="config-card"><span>链接探测</span><b id="probeState">开启</b></div>
+                <div class="config-card"><span>链接嵌入检查</span><b id="probeState">由浏览器判定</b></div>
               </div>
               <div class="module-grid">
                 <aside class="module-list">
@@ -1933,7 +1933,7 @@
             <div class="field-grid">
               <div class="field"><label>标题<input data-app-field="title" value="${escapeHtml(draftConfig.app?.title || "")}" /></label></div>
               <div class="field"><label>副标题<input data-app-field="subtitle" value="${escapeHtml(draftConfig.app?.subtitle || "")}" /></label></div>
-              <label class="switch-field"><input type="checkbox" data-app-field="probeEnabled" ${draftConfig.probe?.enabled !== false ? "checked" : ""} /> 启用链接 iframe 探测</label>
+              <p>旧 Web 服务已停用网络探测，链接能否嵌入由浏览器判定；原探测配置会保留。</p>
             </div>
           </section>`;
       }
@@ -1985,7 +1985,7 @@
         ensureConfigSelection();
         document.querySelector("#rootCount").textContent = draftItems().length;
         document.querySelector("#pageTotal").textContent = countDraftPages();
-        document.querySelector("#probeState").textContent = draftConfig.probe?.enabled === false ? "关闭" : "开启";
+        document.querySelector("#probeState").textContent = "由浏览器判定";
         if (configUi.mode === "app") {
           renderAppSettingsNavigator();
           renderAppSettingsForm();
@@ -2089,9 +2089,12 @@
       async function saveConfigFromEditor() {
         try {
           const nextConfig = configUi.mode === "json" ? readEditorConfig() : cloneConfig(draftConfig || appConfig);
+          const session = await fetch("/api/session", { cache: "no-store" });
+          if (!session.ok) throw new Error("无法获取保存权限，请刷新页面重试");
+          const { token } = await session.json();
           const response = await fetch("/api/config", {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", "x-flowhub-token": token },
             body: JSON.stringify(nextConfig)
           });
           const result = await response.json();

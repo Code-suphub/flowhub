@@ -1,224 +1,164 @@
 import { createServer } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { open, rename, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 4173);
-const serverOrigin = process.env.APP_ORIGIN || `http://localhost:${port}`;
-const configPath = join(rootDir, "config.json");
+if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid PORT");
+const token = randomBytes(32).toString("hex");
+const BODY_LIMIT = 1024 * 1024;
+const DEADLINE_MS = 5000;
+const MAX_ACTIVE = 16;
+let active = 0;
+let writing = false;
+let authorities;
 
-const mimeTypes = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".ico": "image/x-icon"
-};
+function fail(status, message) {
+  return Object.assign(new Error(message), { status });
+}
 
-function sendJson(res, statusCode, body) {
-  res.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
-  });
+function sendJson(res, status, body) {
+  if (res.destroyed || res.writableEnded) return;
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
 }
 
-async function readRequestBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-function validateConfig(config) {
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    throw new Error("配置必须是 JSON 对象");
-  }
-  if (!Array.isArray(config.items)) {
-    throw new Error("配置缺少 items 数组");
-  }
-  return config;
-}
-
-function normalizeExternalUrl(value) {
-  const url = String(value || "").trim();
-  if (/^https?:\/\//i.test(url)) return url;
-  if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(url)) return `https://${url}`;
-  return "";
-}
-
-function frameAncestorsAllows(value, pageUrl) {
-  const directives = value
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const directive = directives.find((part) => part.toLowerCase().startsWith("frame-ancestors"));
-  if (!directive) return { allowed: true };
-
-  const sources = directive.split(/\s+/).slice(1);
-  if (sources.includes("'none'")) return { allowed: false, reason: "CSP frame-ancestors 设置为 'none'" };
-  if (sources.includes("*")) return { allowed: true };
-
-  const embedder = new URL(serverOrigin);
-  const target = new URL(pageUrl);
-  for (const source of sources) {
-    if (source === "'self'") {
-      if (embedder.origin === target.origin) return { allowed: true };
-      continue;
-    }
-    if (source === embedder.origin) return { allowed: true };
-    if (source.endsWith(":") && `${embedder.protocol}` === source) return { allowed: true };
-    if (source.startsWith("https://*.") || source.startsWith("http://*.")) {
-      const sourceUrl = new URL(source.replace("*.", ""));
-      if (embedder.protocol === sourceUrl.protocol && embedder.hostname.endsWith(`.${sourceUrl.hostname}`)) {
-        return { allowed: true };
-      }
-    }
-  }
-
-  return { allowed: false, reason: "CSP frame-ancestors 未允许当前工作台嵌入" };
-}
-
-function inspectFramePolicy(headers, pageUrl) {
-  const xFrameOptions = headers.get("x-frame-options");
-  if (xFrameOptions) {
-    const normalized = xFrameOptions.toLowerCase();
-    if (normalized.includes("deny")) {
-      return { embeddable: false, reason: "响应头 X-Frame-Options 为 DENY" };
-    }
-    if (normalized.includes("sameorigin") && new URL(pageUrl).origin !== serverOrigin) {
-      return { embeddable: false, reason: "响应头 X-Frame-Options 为 SAMEORIGIN" };
-    }
-  }
-
-  const csp = headers.get("content-security-policy");
-  if (csp) {
-    const result = frameAncestorsAllows(csp, pageUrl);
-    if (!result.allowed) return { embeddable: false, reason: result.reason };
-  }
-
-  return { embeddable: true, reason: "未发现阻止 iframe 嵌入的响应头" };
-}
-
-async function probeUrl(url) {
-  const normalizedUrl = normalizeExternalUrl(url);
-  if (!normalizedUrl) {
-    return { url, embeddable: true, status: "mock", reason: "非 HTTP 链接按内部模拟页面处理" };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+// Only fixed, top-level public files are readable. Never follow a config/index symlink.
+async function readPublicFile(name) {
+  const file = await open(join(rootDir, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    let response = await fetch(normalizedUrl, {
-      method: "HEAD",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "user-agent": "iframe-workspace-probe/1.0"
-      }
-    });
-
-    if (response.status === 405 || response.status === 403) {
-      response = await fetch(normalizedUrl, {
-        method: "GET",
-        redirect: "follow",
-        signal: controller.signal,
-        headers: {
-          "range": "bytes=0-0",
-          "user-agent": "iframe-workspace-probe/1.0"
-        }
-      });
-    }
-
-    const policy = inspectFramePolicy(response.headers, response.url || normalizedUrl);
-    return {
-      url,
-      finalUrl: response.url || normalizedUrl,
-      statusCode: response.status,
-      status: policy.embeddable ? "embeddable" : "blocked",
-      ...policy
-    };
-  } catch (error) {
-    return {
-      url,
-      embeddable: false,
-      status: "probe-error",
-      reason: error.name === "AbortError" ? "链接探测超时" : `链接探测失败：${error.message}`
-    };
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > BODY_LIMIT) throw fail(500, "文件不可用或过大");
+    return await file.readFile();
   } finally {
-    clearTimeout(timeout);
+    await file.close();
   }
 }
 
-async function serveStatic(req, res, pathname) {
-  const safePath = normalize(pathname === "/" ? "/index.html" : pathname).replace(/^(\.\.[/\\])+/, "");
-  const filePath = join(rootDir, safePath);
-  if (!filePath.startsWith(rootDir)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
+async function readBody(req) {
+  const length = req.headers["content-length"];
+  if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > BODY_LIMIT)) {
+    throw fail(413, "配置不能超过 1 MiB");
   }
+  const chunks = [];
+  let size = 0;
+  // Event listeners allow an early response without async-iterator destruction of the socket.
+  return await new Promise((resolve, reject) => {
+    const cleanup = () => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("aborted", onAbort);
+      req.off("error", onError);
+    };
+    const onError = () => { cleanup(); reject(fail(400, "请求中断")); };
+    const onAbort = onError;
+    const onData = (chunk) => {
+      size += chunk.length;
+      if (size > BODY_LIMIT) { cleanup(); req.pause(); reject(fail(413, "配置不能超过 1 MiB")); }
+      else chunks.push(chunk);
+    };
+    const onEnd = () => { cleanup(); resolve(Buffer.concat(chunks).toString("utf8")); };
+    req.on("data", onData);
+    req.once("end", onEnd);
+    req.once("aborted", onAbort);
+    req.once("error", onError);
+  });
+}
 
+async function saveConfig(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config) || !Array.isArray(config.items)) {
+    throw fail(400, "配置必须是包含 items 数组的 JSON 对象");
+  }
+  // Bound the serialized representation too, so every saved config can be read back.
+  const content = `${JSON.stringify(config, null, 2)}\n`;
+  if (Buffer.byteLength(content) > BODY_LIMIT) throw fail(413, "配置不能超过 1 MiB");
+  const path = join(rootDir, `.config-${randomBytes(16).toString("hex")}.tmp`);
   try {
-    const content = await readFile(filePath);
-    const ext = extname(filePath);
-    res.writeHead(200, {
-      "content-type": mimeTypes[ext] || "application/octet-stream",
-      "cache-control": ext === ".html" ? "no-store" : "no-cache"
-    });
-    res.end(content);
-  } catch {
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Not found");
+    const file = await open(path, "wx", 0o600);
+    try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
+    // rename replaces a symlink itself; it never writes through its target.
+    await rename(path, join(rootDir, "config.json"));
+  } finally {
+    await unlink(path).catch((error) => { if (error.code !== "ENOENT") throw error; });
   }
 }
 
-const server = createServer(async (req, res) => {
-  const requestUrl = new URL(req.url || "/", serverOrigin);
-  if (requestUrl.pathname === "/api/config") {
-    if (req.method === "GET") {
-      try {
-        sendJson(res, 200, JSON.parse(await readFile(configPath, "utf8")));
-      } catch (error) {
-        sendJson(res, 500, { ok: false, reason: `读取配置失败：${error.message}` });
-      }
-      return;
-    }
+function checkBoundary(req, pathname) {
+  if (!authorities.has(req.headers.host)) throw fail(403, "Host 不受信任");
+  const origin = req.headers.origin;
+  const sameOrigin = origin === `http://${req.headers.host}`;
+  const extensionRead = pathname === "/api/config" && req.method === "GET"
+    && /^chrome-extension:\/\/[a-p]{32}$/.test(origin || "");
+  if (origin !== undefined && !sameOrigin && !extensionRead) throw fail(403, "Origin 不受信任");
+  if (req.headers["sec-fetch-site"] === "cross-site" && !extensionRead) throw fail(403, "禁止跨站访问");
+}
 
-    if (req.method === "POST") {
-      try {
-        const body = await readRequestBody(req);
-        const config = validateConfig(JSON.parse(body));
-        await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-        sendJson(res, 200, { ok: true });
-      } catch (error) {
-        sendJson(res, 400, { ok: false, reason: error.message });
-      }
-      return;
-    }
-
-    res.writeHead(405, { allow: "GET, POST" });
-    res.end("Method not allowed");
-    return;
+async function route(req, res) {
+  if (!req.url?.startsWith("/") || req.url.startsWith("//") || req.url.includes("\\")) throw fail(400, "无效 URL");
+  let pathname;
+  try { pathname = decodeURIComponent(req.url.split("?")[0]); } catch { throw fail(400, "无效 URL 编码"); }
+  checkBoundary(req, pathname);
+  if (pathname === "/api/session" && req.method === "GET") {
+    sendJson(res, 200, { token });
+  } else if (pathname === "/api/config" && req.method === "GET") {
+    sendJson(res, 200, JSON.parse(await readPublicFile("config.json")));
+  } else if (pathname === "/api/config" && req.method === "POST") {
+    const supplied = Buffer.from(req.headers["x-flowhub-token"] || "");
+    if (supplied.length !== token.length || !timingSafeEqual(supplied, Buffer.from(token))) throw fail(403, "缺少有效写入令牌");
+    if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers["content-type"] || "")) throw fail(415, "需要 application/json");
+    if (req.headers["content-encoding"]) throw fail(415, "不支持压缩请求体");
+    if (writing) throw fail(429, "已有配置写入进行中，请稍后重试");
+    writing = true;
+    try {
+      const body = await readBody(req);
+      let config;
+      try { config = JSON.parse(body); } catch { throw fail(400, "无效 JSON"); }
+      if (req.aborted || res.destroyed) throw fail(400, "请求中断");
+      await saveConfig(config);
+      sendJson(res, 200, { ok: true });
+    } finally { writing = false; }
+  } else if (pathname === "/api/probe" && req.method === "GET") {
+    sendJson(res, 200, { status: "disabled", embeddable: true, reason: "旧 Web 服务已停用网络探测；是否允许嵌入由浏览器判定" });
+  } else if ((pathname === "/" || pathname === "/index.html") && ["GET", "HEAD"].includes(req.method)) {
+    const content = await readPublicFile("index.html");
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(req.method === "HEAD" ? undefined : content);
+  } else if (["/api/session", "/api/config", "/api/probe", "/", "/index.html"].includes(pathname)) {
+    res.setHeader("allow", pathname === "/api/config" ? "GET, POST" : pathname.startsWith("/api/") ? "GET" : "GET, HEAD");
+    throw fail(405, "不支持该请求方法");
+  } else {
+    throw fail(404, "Not found");
   }
+}
 
-  if (requestUrl.pathname === "/api/probe") {
-    const url = requestUrl.searchParams.get("url");
-    if (!url) {
-      sendJson(res, 400, { embeddable: false, status: "bad-request", reason: "缺少 url 参数" });
-      return;
-    }
-    sendJson(res, 200, await probeUrl(url));
-    return;
-  }
-
-  await serveStatic(req, res, decodeURIComponent(requestUrl.pathname));
+const server = createServer({ maxHeaderSize: 8192, headersTimeout: 5000, requestTimeout: 5000, connectionsCheckingInterval: 1000 }, (req, res) => {
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("content-security-policy", "frame-ancestors 'none'");
+  res.setHeader("referrer-policy", "no-referrer");
+  // Close rejected/unfinished bodies too; no unbounded drain or pipelined work.
+  res.setHeader("connection", "close");
+  if (active >= MAX_ACTIVE) { sendJson(res, 503, { ok: false, reason: "服务繁忙" }); return; }
+  active += 1;
+  const deadline = setTimeout(() => {
+    sendJson(res, 408, { ok: false, reason: "请求超时" });
+    req.destroy();
+  }, DEADLINE_MS);
+  route(req, res).catch((error) => {
+    sendJson(res, error.status || 500, { ok: false, reason: error.status ? error.message : "服务暂时不可用" });
+  }).finally(() => { clearTimeout(deadline); active -= 1; });
 });
-
-server.listen(port, () => {
-  console.log(`FlowHub web workspace running at ${serverOrigin}`);
+server.maxConnections = 32;
+server.setTimeout(DEADLINE_MS, (socket) => socket.destroy());
+server.on("clientError", (_error, socket) => {
+  socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+});
+server.listen(port, "127.0.0.1", () => {
+  const actualPort = server.address().port;
+  authorities = new Set([`localhost:${actualPort}`, `127.0.0.1:${actualPort}`]);
+  console.log(`FlowHub web workspace running at http://127.0.0.1:${actualPort}`);
 });
