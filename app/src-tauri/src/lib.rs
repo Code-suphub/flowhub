@@ -2079,18 +2079,27 @@ fn save_config(
         return Ok(json!({ "ok": false, "reason": "配置文件位置必须是绝对路径" }));
     }
     let previous_config = hydrated_config(&state)?;
-    if let Err(reason) = clipboard::stop_monitor(&app) {
-        if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
-            return Err(format!("{reason}; 恢复剪贴板监控失败：{resume_error}"));
+    let storage_changed = config_save::resolved_path(&target_storage)?
+        != config_save::resolved_path(&state.paths().storage_dir)?;
+    if storage_changed {
+        if let Err(reason) = clipboard::stop_monitor(&app) {
+            if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
+                return Err(format!("{reason}; 恢复剪贴板监控失败：{resume_error}"));
+            }
+            return Err(reason);
         }
-        return Err(reason);
     }
-    let persisted = config_save::persist(&state, &mut config, &items, &target_storage, &target_config);
+    let persisted =
+        config_save::persist(&state, &mut config, &items, &target_storage, &target_config);
     let (storage_state, count, saved_items) = match persisted {
         Ok(state) => state,
         Err(reason) => {
-            if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
-                return Ok(json!({ "ok": false, "reason": format!("{reason}; 恢复剪贴板监控失败：{resume_error}") }));
+            if storage_changed {
+                if let Err(resume_error) = clipboard::apply_config(&app, &previous_config) {
+                    return Ok(
+                        json!({ "ok": false, "reason": format!("{reason}; 恢复剪贴板监控失败：{resume_error}") }),
+                    );
+                }
             }
             return Ok(json!({ "ok": false, "reason": reason }));
         }
@@ -2100,22 +2109,29 @@ fn save_config(
     ensure_object_path(&mut hydrated, &["plugins", "web", "settings"])
         .expect("validated persisted settings")
         .insert("items".to_string(), Value::Array(saved_items));
+    let integrations =
+        config_save::IntegrationPlan::between(&previous_config, &hydrated, storage_changed);
     Ok(config_save::saved_response(
         &hydrated,
         storage_state,
         count,
+        &integrations,
         |name| match name {
-            "clipboard" => clipboard::apply_config(&app, &config)
-                .map(|_| json!({ "applied": true })),
+            "clipboard" => {
+                clipboard::apply_config(&app, &config).map(|_| json!({ "applied": true }))
+            }
             "hotkey" => Ok(register_hotkey(
                 &app,
-                hydrated.pointer("/core/hotkey")
-                    .and_then(Value::as_str).unwrap_or("Alt+Space"),
+                hydrated
+                    .pointer("/core/hotkey")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Alt+Space"),
             )),
             "autostart" => Ok(apply_autostart(&app, &hydrated)),
             "menuBar" => apply_menu_bar(&app, &hydrated),
             "organizer" => Ok(apply_menu_bar_organizer(&app, &hydrated)),
-            "broadcast" => app.emit("flowhub:config", json!({ "config": hydrated, "query": "" }))
+            "broadcast" => app
+                .emit("flowhub:config", json!({ "config": hydrated, "query": "" }))
                 .map(|_| json!({ "applied": true }))
                 .map_err(|error| error.to_string()),
             _ => unreachable!("unknown settings integration"),
