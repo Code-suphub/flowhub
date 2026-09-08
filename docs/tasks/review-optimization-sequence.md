@@ -25,7 +25,7 @@
 - 01：完成并快进整合到 main。任务 `01a081d3-b7c2-7bb2-a208-b160b1ca7890`，worktree `/Users/bilibili/.codex/worktrees/e3e0/web_organization`，提交 `7cb574714101109ec38c47d1e01760e585638bf4`。54 项 Rust 测试与全部 UI 测试通过，diff 检查通过。复核首次遇到旧端口测试随机 TCP/UDP 同端口占用失败，重跑通过；任务 11 补测试稳定性。暂停期间剪贴板不采集，未操作真实剪贴板集成验证。
 - 02：完成并整合。任务 `01a081e3-7e71-76f3-9cc7-bed4f61f5d4d`，worktree `/Users/bilibili/.codex/worktrees/b9cd/web_organization`，源提交 `2efcd658e09d495a0b91040ee375fd4e52f1568c`。恢复日志、配置和数据库回滚、重启恢复、提交后发布路径、系统集成失败仍广播。协调复核 npm test：64 项 Rust 测试及全部 UI 测试通过，diff 检查通过。未操作真实用户数据。快照有磁盘开销，硬件断电及真实系统集成未验证。
 - 03：完成并整合。“优化 03：保护已有数据库切换”，任务 `01a081f5-146e-78f3-9f0f-2cbb6a0c5e52`，worktree `/Users/bilibili/.codex/worktrees/c388/web_organization`，源提交 `6467408bfbee2fd485574f8bdcef0fbed3ad9b30`。已有库保留目标内容、空目录迁移、启动及JSON路径保护、未知损坏库拒绝。协调复核69项Rust及全部UI测试通过，diff检查通过。未自动升级不兼容旧库，未操作真实用户数据。
-- 04：复核退回修正。“优化 04：保存期间编辑与草稿保护”，任务 `01a08200-a424-7f62-93b3-1821396e5850`，worktree `/Users/bilibili/.codex/worktrees/245d/web_organization`。初始提交 `b6a5ebbd99da37537844e56c79987df09ca9ec6e` 的69项Rust/全部UI测试通过，但草稿只按配置文件分区且冲突状态未持久化：同一config.json切换A→B后重开恢复源草稿可覆盖B。已要求补实际存储身份分区/持久化与重开回归；等待追加提交，禁止启动05。
+- 04：完成并整合。任务 `01a08200-a424-7f62-93b3-1821396e5850`，worktree `/Users/bilibili/.codex/worktrees/245d/web_organization`，源提交 `b6a5ebbd99da37537844e56c79987df09ca9ec6e` + `8b8951938003d35efb25898d27b88a8d439835b9`。保存快照、编辑版本、防重、JSON与草稿保护；复核退回后补同一config.json跨库重开保护，草稿按实际数据库来源分区并持久化冲突。协调最终69项Rust/全部UI测试及diff检查通过。旧草稿来源未知时可恢复查看但禁止直接保存，跨库不自动合并；未操作真实用户数据。
 - 05–12：等待前置任务完成。
 - 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
 
