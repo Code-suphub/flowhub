@@ -792,6 +792,11 @@
                   <div class="plugin-control-groups" id="corePluginControls"></div>
                   <div class="field-hint">每一行同时管理是否参与搜索和范围快捷键；留空可停用快捷键，关闭模块不会删除已有数据。</div>
                 </div>
+                <div class="settings-block wide hidden" data-core-section-panel="search">
+                  <div class="settings-block-title">网页打开方式</div>
+                  <label class="switch-field"><input id="coreReuseBrowserTabs" type="checkbox" data-core-field="reuseBrowserTabs" />优先复用已有标签页（Arc）</label>
+                  <div class="field-hint">默认浏览器为 Arc 时，切换到完整链接相同的普通标签页；未找到则新建标签页，无法访问时按系统默认方式打开。首次使用可能需要允许 FlowHub 控制 Arc。保存后生效。</div>
+                </div>
                 <div class="settings-block wide hidden" data-core-section-panel="network">
                   <div class="settings-block-title">代理客户端适配</div>
                   <div class="field">

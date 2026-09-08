@@ -639,6 +639,7 @@ function renderSettingsFields() {
   const coreHotkeyValue = state.config?.core?.hotkey || "Alt+Space";
   if (coreHotkey.matches("button")) coreHotkey.textContent = coreHotkeyValue;
   else coreHotkey.value = coreHotkeyValue;
+  $("#coreReuseBrowserTabs").checked = state.config?.core?.reuseBrowserTabs === true;
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
   if ($("#autoUpdateCheck")) $("#autoUpdateCheck").checked = state.config?.core?.autoUpdateCheck !== false;
   if ($("#autoUpdateInstall")) $("#autoUpdateInstall").checked = state.config?.core?.autoUpdateInstall === true;

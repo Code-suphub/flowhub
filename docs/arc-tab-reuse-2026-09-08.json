@@ -1,0 +1,54 @@
+[
+  {
+    "case": "existing",
+    "beforeCount": 1,
+    "afterCount": 1,
+    "sameIds": true,
+    "selected": true,
+    "result": {
+      "elapsedMs": 260,
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    }
+  },
+  {
+    "case": "different-query",
+    "beforeCount": 0,
+    "afterCount": 1,
+    "sameIds": false,
+    "selected": true,
+    "result": {
+      "elapsedMs": 1564,
+      "ok": true,
+      "reason": "opened",
+      "reused": false
+    }
+  },
+  {
+    "case": "repeat-query",
+    "beforeCount": 1,
+    "afterCount": 1,
+    "sameIds": true,
+    "selected": true,
+    "result": {
+      "elapsedMs": 566,
+      "ok": true,
+      "reason": "reused",
+      "reused": true
+    }
+  },
+  {
+    "case": "disabled",
+    "beforeCount": 1,
+    "afterCount": 1,
+    "sameIds": true,
+    "selected": false,
+    "result": {
+      "elapsedMs": 68,
+      "ok": true,
+      "reason": "disabled",
+      "reused": false
+    }
+  }
+]

@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>FlowHub 需要查找并切换 Arc 已有标签页，避免重复打开相同网页。</string>
   <key>LSUIElement</key>
   <true/>
 </dict>

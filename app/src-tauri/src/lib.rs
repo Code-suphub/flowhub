@@ -1,3 +1,4 @@
+mod web_open;
 mod search_diagnostic_run;
 #[cfg(target_os = "macos")]
 mod macos_launcher_position;
@@ -2502,21 +2503,23 @@ fn get_proxy_info_blocking(adapter: Option<String>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn activate_target(
+async fn activate_target(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     plugin_id: String,
     payload: Value,
 ) -> Result<Value, String> {
+    let mut response = json!({ "ok": true });
     match plugin_id.as_str() {
         "web" => {
             let url = payload.get("url").and_then(Value::as_str).unwrap_or("");
             if !(url.starts_with("http://") || url.starts_with("https://")) {
                 return Ok(json!({ "ok": false, "reason": "非 http(s) 链接" }));
             }
-            app.opener()
-                .open_url(url, None::<&str>)
-                .map_err(|error| error.to_string())?;
+            let target = url.to_string();
+            let handle = app.clone();
+            response = tauri::async_runtime::spawn_blocking(move || web_open::open(&handle, &target))
+                .await.map_err(|e| e.to_string())??;
             if let Some(usage) = payload.get("usage") {
                 record_usage(&state, usage, url)?;
             }
@@ -2543,7 +2546,7 @@ fn activate_target(
     }
     let _ = app.emit("flowhub:usage-updated", ());
     hide_main(&app);
-    Ok(json!({ "ok": true }))
+    Ok(response)
 }
 
 #[tauri::command]
@@ -3012,6 +3015,13 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(index) = args.iter().position(|arg| arg == "--open-web") {
+                if let Some(url) = args.get(index + 1).cloned() {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn_blocking(move || { let _ = web_open::open(&handle, &url); });
+                }
+                return;
+            }
             if args.iter().any(|arg| arg == "--search-diagnostics") {
                 search_diagnostic_run::start(app);
                 return;

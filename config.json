@@ -2,6 +2,7 @@
   "core": {
     "hotkey": "Alt+Space",
     "launchAtLogin": false,
+    "reuseBrowserTabs": false,
     "configPath": "",
     "autoUpdateCheck": true,
     "autoUpdateInstall": false,

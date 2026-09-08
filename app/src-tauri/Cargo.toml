@@ -44,6 +44,6 @@ core-foundation = "0.10.1"
 core-graphics = { version = "0.25.0", features = ["elcapitan"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSApplication", "NSButton", "NSColor", "NSControl", "NSEvent", "NSFont", "NSImage", "NSImageView", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSScreen", "NSScrollView", "NSClipView", "NSVisualEffectView", "NSResponder", "NSRunningApplication", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSSwitch", "NSText", "NSTextField", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["block2", "NSNotification", "NSOperation", "NSArray", "NSDate", "NSObjCRuntime", "NSRunLoop", "NSObject", "NSString", "NSUserDefaults"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["block2", "NSBundle", "NSURL", "NSNotification", "NSOperation", "NSArray", "NSDate", "NSObjCRuntime", "NSRunLoop", "NSObject", "NSString", "NSUserDefaults"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "c9ec2130422200f0863b23dfdad02b133a529b07" }
 tray-icon = "0.24.2"
