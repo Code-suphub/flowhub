@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/floating.js"],
+      "js": ["src/config-contract.js", "src/floating.js"],
       "run_at": "document_idle"
     }
   ],

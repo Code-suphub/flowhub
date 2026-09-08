@@ -21,6 +21,8 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
     await rm(dir, { recursive: true, force: true });
   });
   for (const name of ["server.mjs", "index.html"]) await copyFile(new URL(name, source), join(dir, name));
+  await mkdir(join(dir, "extension/src"), { recursive: true });
+  await copyFile(new URL("extension/src/config-contract.js", source), join(dir, "extension/src/config-contract.js"));
   const original = '{"items":[],"app":{"title":"Fixture"}}\n';
   await writeFile(join(dir, "config.json"), original);
   await mkdir(join(dir, ".git"));
@@ -50,6 +52,41 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
   }
   const token = JSON.parse((await call("/api/session")).text).token;
   const headers = { "content-type": "application/json", "x-flowhub-token": token, origin: base };
+
+  await t.test("legacy-only GET/POST and CLI reject desktop snapshots and malformed catalogs", async () => {
+    const runCli = async (...args) => {
+      const proc = spawn(process.execPath, [new URL("app/scripts/flowhub-cli.mjs", source).pathname, ...args], { env: { ...process.env, FLOWHUB_URL: base }, stdio: "pipe" });
+      let stdout = "", stderr = "";
+      proc.stdout.on("data", (chunk) => { stdout += chunk; });
+      proc.stderr.on("data", (chunk) => { stderr += chunk; });
+      return { code: (await once(proc, "exit"))[0], stdout, stderr };
+    };
+    for (const items of [[], [{ id: "desktop-page", url: "https://example.test" }]]) {
+      const config = JSON.stringify({ plugins: { web: { settings: { items, catalogStorage: "sqlite" } } } });
+      await writeFile(join(dir, "config.json"), config);
+      const result = await call("/api/config");
+      assert.equal(result.status, 400);
+      assert.match(JSON.parse(result.text).reason, /SQLite.*水合/);
+      const cli = await runCli("web", "list");
+      assert.equal(cli.code, 1);
+      assert.equal(cli.stdout, "");
+      assert.match(cli.stderr, /SQLite/);
+      assert.equal((await call("/api/config", { method: "POST", headers, body: config })).status, 400);
+      assert.equal(await readFile(join(dir, "config.json"), "utf8"), config);
+    }
+    for (const invalid of ["{", "{}", "null", '{"items":[null]}', '{"items":{}}']) {
+      await writeFile(join(dir, "config.json"), invalid);
+      assert.equal((await call("/api/config")).status, 400);
+    }
+    for (const items of [[], [{ id: "legacy-page", url: "https://example.test" }]]) {
+      await writeFile(join(dir, "config.json"), JSON.stringify({ items }));
+      const cli = await runCli("web", "list");
+      assert.equal(cli.code, 0, cli.stderr);
+      assert.deepEqual(JSON.parse(cli.stdout), items);
+    }
+    assert.equal((await runCli("memo", "list")).code, 1);
+    await writeFile(join(dir, "config.json"), original);
+  });
 
   await t.test("listener is loopback-only; sockets and incomplete headers are bounded", async () => {
     const localAddresses = Object.values(networkInterfaces()).flat().filter((entry) => entry.family === "IPv4" && !entry.internal).map((entry) => entry.address);

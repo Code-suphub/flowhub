@@ -1,3 +1,4 @@
+importScripts("config-contract.js");
 const ACTIVE_TABS_KEY = "weborg.active-tabs";
 const PAGE_HISTORY_KEY = "weborg.page-history";
 const FLOATING_STATE_KEY = "weborg.floating-state";
@@ -9,19 +10,7 @@ async function readConfig() {
     "http://127.0.0.1:4173/api/config",
     chrome.runtime.getURL("config.json")
   ];
-  let lastError = null;
-
-  for (const source of sources) {
-    try {
-      const response = await fetch(source, { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.json();
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw new Error(`读取配置失败：${lastError?.message || "未知错误"}`);
+  return FlowHubLegacyCatalog.readSources(sources);
 }
 
 function httpOrigin(url) {
@@ -186,7 +175,7 @@ async function injectFloating(tabId, url) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["src/floating.js"]
+      files: ["src/config-contract.js", "src/floating.js"]
     });
   } catch {
     // Chrome does not allow injection on restricted pages or pages without host permission.

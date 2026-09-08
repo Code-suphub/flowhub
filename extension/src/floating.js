@@ -984,8 +984,8 @@
         }
         const configChange = changes[CONFIG_CACHE_KEY];
         if (configChange && configChange.newValue?.config) {
-          const incoming = configChange.newValue.config;
           try {
+            const incoming = FlowHubLegacyCatalog.validate(configChange.newValue.config);
             if (!state.config || JSON.stringify(state.config) !== JSON.stringify(incoming)) {
               state.config = incoming;
               state.status = "悬浮导航 · 当前页打开";
@@ -994,7 +994,11 @@
               restoreNav();
               restoreFloatingUI();
             }
-          } catch {}
+          } catch (error) {
+            state.status = error.message;
+            logDebug("error", "配置同步失败，保留当前目录", { reason: error.message });
+            render();
+          }
         }
       } catch (error) {
         logDebug("error", "storage 同步处理出错", { reason: String(error) });
@@ -1133,7 +1137,7 @@
   chrome.runtime.sendMessage({ type: "weborg:get-config" })
     .then((response) => {
       if (!response?.ok) throw new Error(response?.reason || "配置加载失败");
-      state.config = response.config;
+      state.config = FlowHubLegacyCatalog.validate(response.config);
       state.status = "悬浮导航 · 当前页打开";
       logDebug("info", "配置加载成功", { items: state.config.items?.length ?? 0, sources: "background->localhost:4173" });
       render();
@@ -1142,7 +1146,6 @@
     })
     .catch((error) => {
       state.status = error.message;
-      state.config = { app: { title: "FlowHub" }, items: [] };
       logDebug("error", "配置加载失败", { reason: error.message });
       render();
     });

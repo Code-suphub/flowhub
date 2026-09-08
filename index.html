@@ -1396,7 +1396,7 @@
           <button class="tool-btn" data-action="refresh" title="刷新当前 iframe">↻</button>
           <button class="tool-btn" data-action="open" title="新窗口打开">↗</button>
           <button class="tool-btn" data-action="immersive" title="沉浸式查看">⛶</button>
-          <button class="tool-btn" data-action="config" title="配置管理">⚙</button>
+          <button class="tool-btn" data-action="config" title="配置管理" disabled>⚙</button>
         </div>
       </header>
 
@@ -2015,9 +2015,7 @@
       function readEditorConfig() {
         const text = document.querySelector("#configEditor").value;
         const parsed = JSON.parse(text);
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("配置必须是 JSON 对象");
-        if (!Array.isArray(parsed.items)) throw new Error("配置缺少 items 数组");
-        return parsed;
+        return validateLegacyConfig(parsed);
       }
 
       function uniqueNodeId(prefix = "node") {
@@ -2074,6 +2072,8 @@
       }
 
       function applyConfig(nextConfig, preferredPageId = state.page) {
+        validateLegacyConfig(nextConfig);
+        document.querySelector('[data-action="config"]').disabled = false;
         appConfig = nextConfig;
         workspaceConfig = appConfig.items || [];
         pages = flatten(workspaceConfig);
@@ -2510,10 +2510,29 @@
         }
       });
 
+      function validateLegacyConfig(config) {
+        if (config && typeof config === "object" && ("plugins" in config || "core" in config)) {
+          throw new Error("旧版 Web 仅支持顶层 items；桌面目录请使用桌面应用。SQLite 配置可能尚未水合，不能视为空目录。");
+        }
+        if (!config || Array.isArray(config) || config.ok === false || !Array.isArray(config.items)) {
+          throw new Error("无效旧版目录：需要包含顶层 items 数组的 JSON 对象");
+        }
+        const pending = [...config.items];
+        while (pending.length) {
+          const node = pending.pop();
+          if (!node || typeof node !== "object" || Array.isArray(node) || (node.children !== undefined && !Array.isArray(node.children))) {
+            throw new Error("无效旧版目录：items/children 必须是节点对象数组");
+          }
+          if (node.children) for (const child of node.children) pending.push(child);
+        }
+        return config;
+      }
+
       async function loadConfig() {
         const response = await fetch("/api/config", { cache: "no-store" });
-        if (!response.ok) throw new Error(`读取 config.json 失败：${response.status}`);
-        return response.json();
+        const config = await response.json();
+        if (!response.ok) throw new Error(config?.reason || `读取 config.json 失败：${response.status}`);
+        return validateLegacyConfig(config);
       }
 
       async function init() {

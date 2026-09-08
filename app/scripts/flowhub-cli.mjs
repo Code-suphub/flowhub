@@ -5,6 +5,7 @@ import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import "../../extension/src/config-contract.js";
 
 const baseUrl = String(process.env.FLOWHUB_URL || "http://127.0.0.1:4173").replace(/\/$/, "");
 const args = process.argv.slice(2);
@@ -14,7 +15,7 @@ const diagnosticsPath = join(diagnosticsDir, "diagnostics.jsonl");
 const monitorConfigPath = join(diagnosticsDir, "monitoring.json");
 
 function usage() {
-  console.log(`FlowHub CLI\n\n用法:\n  npm run cli -- config get\n  npm run cli -- config set <路径> <JSON值>\n  npm run cli -- config replace <JSON文件>\n  npm run cli -- web list\n  npm run cli -- memo list\n  npm run cli -- diagnose\n  npm run cli -- monitor status|enable|disable|sample|clear|export <文件>\n\n环境变量:\n  FLOWHUB_URL  服务地址，默认 http://127.0.0.1:4173\n\n路径使用点号分隔，例如 plugins.web.enabled；值必须是合法 JSON。`);
+  console.log(`FlowHub CLI\n\n用法:\n  npm run cli -- config get\n  npm run cli -- config set <路径> <JSON值>\n  npm run cli -- config replace <JSON文件>\n  npm run cli -- web list\n  npm run cli -- diagnose\n  npm run cli -- monitor status|enable|disable|sample|clear|export <文件>\n\n环境变量:\n  FLOWHUB_URL  服务地址，默认 http://127.0.0.1:4173\n\nHTTP 配置命令仅支持顶层 items 的旧版目录，不支持桌面 SQLite 配置或 memo list。\n路径使用点号分隔，例如 app.title；值必须是合法 JSON。`);
 }
 
 async function ensureDiagnosticsDir() { await mkdir(diagnosticsDir, { recursive: true }); }
@@ -61,8 +62,9 @@ function setPath(object, path, value) {
   cursor[parts.at(-1)] = value;
 }
 
-async function readConfig() { return request("/api/config"); }
+async function readConfig() { return FlowHubLegacyCatalog.validate(await request("/api/config")); }
 async function writeConfig(config) {
+  FlowHubLegacyCatalog.validate(config);
   const { token } = await request("/api/session");
   return request("/api/config", { method: "POST", headers: { "content-type": "application/json", "x-flowhub-token": token }, body: JSON.stringify(config) });
 }
@@ -73,7 +75,7 @@ async function main() {
   if (resource === "config") {
     if (action === "get") return console.log(JSON.stringify(await readConfig(), null, 2));
     if (action === "set") {
-      if (!rest[0] || rest[1] === undefined) throw new Error("需要路径和值，例如 config set core.hotkey 'Alt+Space'");
+      if (!rest[0] || rest[1] === undefined) throw new Error('需要路径和值，例如 config set app.title \'"FlowHub"\'');
       const config = await readConfig();
       setPath(config, rest[0], JSON.parse(rest[1]));
       await writeConfig(config);
@@ -87,9 +89,9 @@ async function main() {
     }
   }
   if ((resource === "web" || resource === "memo") && action === "list") {
+    if (resource === "memo") throw new Error("旧版 HTTP 服务不支持桌面 memo 目录；请使用桌面应用");
     const config = await readConfig();
-    const items = resource === "web" ? config.plugins?.web?.settings?.items : config.plugins?.memo?.settings?.items;
-    return console.log(JSON.stringify(Array.isArray(items) ? items : [], null, 2));
+    return console.log(JSON.stringify(config.items, null, 2));
   }
   if (resource === "diagnose") return console.log(JSON.stringify(await sampleDiagnostics(), null, 2));
   if (resource === "monitor") {

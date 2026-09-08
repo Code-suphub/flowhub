@@ -1,3 +1,5 @@
+import "./config-contract.js";
+
 const app = document.querySelector("#app");
 const surface = document.body.dataset.surface || "newtab";
 
@@ -287,18 +289,7 @@ async function loadConfig() {
     ? [`${location.origin}/api/config`]
     : ["http://localhost:4173/api/config", "http://127.0.0.1:4173/api/config"];
   const sources = [...liveSources, "config.json"];
-  let lastError = null;
-  for (const source of sources) {
-    try {
-      const response = await fetch(source, { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      state.config = await response.json();
-      break;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  if (!state.config) throw new Error(`读取插件配置失败：${lastError?.message || "未知错误"}`);
+  state.config = await FlowHubLegacyCatalog.readSources(sources);
   state.root = state.config.items?.[0]?.id || "";
   syncDefaults();
 }

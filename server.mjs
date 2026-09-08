@@ -4,6 +4,12 @@ import { constants } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import "./extension/src/config-contract.js";
+
+function validateConfig(config) {
+  try { return globalThis.FlowHubLegacyCatalog.validate(config); }
+  catch (error) { throw fail(400, error.message); }
+}
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 4173);
@@ -69,12 +75,10 @@ async function readBody(req) {
 }
 
 async function saveConfig(config) {
-  if (!config || typeof config !== "object" || Array.isArray(config) || !Array.isArray(config.items)) {
-    throw fail(400, "配置必须是包含 items 数组的 JSON 对象");
-  }
   // Bound the serialized representation too, so every saved config can be read back.
   const content = `${JSON.stringify(config, null, 2)}\n`;
   if (Buffer.byteLength(content) > BODY_LIMIT) throw fail(413, "配置不能超过 1 MiB");
+  validateConfig(config);
   const path = join(rootDir, `.config-${randomBytes(16).toString("hex")}.tmp`);
   try {
     const file = await open(path, "wx", 0o600);
@@ -104,7 +108,13 @@ async function route(req, res) {
   if (pathname === "/api/session" && req.method === "GET") {
     sendJson(res, 200, { token });
   } else if (pathname === "/api/config" && req.method === "GET") {
-    sendJson(res, 200, JSON.parse(await readPublicFile("config.json")));
+    let config;
+    try { config = JSON.parse(await readPublicFile("config.json")); }
+    catch (error) {
+      if (error instanceof SyntaxError) throw fail(400, "无效 JSON 目录");
+      throw error;
+    }
+    sendJson(res, 200, validateConfig(config));
   } else if (pathname === "/api/config" && req.method === "POST") {
     const supplied = Buffer.from(req.headers["x-flowhub-token"] || "");
     if (supplied.length !== token.length || !timingSafeEqual(supplied, Buffer.from(token))) throw fail(403, "缺少有效写入令牌");
