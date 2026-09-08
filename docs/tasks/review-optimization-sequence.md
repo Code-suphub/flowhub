@@ -40,7 +40,7 @@
 
 协调注意：list_threads 当前可能遗漏 worktree 任务，不能据此判定仍初始化。必要时用 git worktree list 找对应工作区，在 ~/.codex/sessions/当天目录中只按该 cwd 搜索 session_meta 解析真实任务 ID，然后用 wait_threads 核对完成状态。第 01 项此前因此误判为等待初始化，已纠正。
 
-构建资源：任务01–11完成worktree的app/src-tauri/target已清理，保留全部源码与git提交。后续Rust测试优先 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0，任务完成整合后及时清理其可重建target，防止磁盘再次耗尽。
+构建资源：任务01–12完成worktree的app/src-tauri/target已清理，保留全部源码与git提交。后续Rust测试优先 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0，任务完成整合后及时清理其可重建target，防止磁盘再次耗尽。
 
 ## 最终验证
 
