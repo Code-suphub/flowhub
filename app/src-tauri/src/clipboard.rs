@@ -71,6 +71,11 @@ impl ClipboardHandler for ClipboardChangeHandler {
     fn on_clipboard_change(&mut self) {
         if let Err(error) = capture_clipboard(&self.app) {
             eprintln!("[flowhub][clipboard] 读取剪贴板失败：{error}");
+            crate::diagnostics::record_event(
+                &self.app,
+                "clipboard_capture_failed",
+                json!({"stage": "read_or_store"}),
+            );
         }
     }
 }
@@ -118,15 +123,20 @@ fn image_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn add_text(state: &AppState, text: &str, hash: &str) -> Result<(), String> {
+fn add_text(
+    state: &AppState,
+    text: &str,
+    hash: &str,
+    timing: &mut CaptureTiming,
+) -> Result<(), String> {
     let now = Utc::now().to_rfc3339();
-    database(state)?
-        .execute(
+    let connection = timing.measure("dbOpen", || database(state))?;
+    timing.measure("dbExecute", || connection.execute(
             "INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at, copy_count)
              VALUES ('text', ?, ?, ?, ?, ?, 1)
              ON CONFLICT(kind, hash) DO UPDATE SET last_seen_at = excluded.last_seen_at, copy_count = clipboard_records.copy_count + 1",
             params![hash, text, text.len() as i64, now, now],
-        )
+        ))
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -187,53 +197,139 @@ fn add_files(state: &AppState, paths: &[String], hash: &str) -> Result<(), Strin
     Ok(())
 }
 
+// Opt-in diagnostic timings contain no clipboard content, paths or hashes.
+struct CaptureTiming<'a> {
+    app: &'a tauri::AppHandle,
+    started: Instant,
+    phases: Vec<(&'static str, f64)>,
+    kind: &'static str,
+    bytes: usize,
+    outcome: &'static str,
+}
+
+impl<'a> CaptureTiming<'a> {
+    fn new(app: &'a tauri::AppHandle) -> Self {
+        Self {
+            app,
+            started: Instant::now(),
+            phases: Vec::new(),
+            kind: "unknown",
+            bytes: 0,
+            outcome: "error",
+        }
+    }
+    fn measure<T>(&mut self, phase: &'static str, work: impl FnOnce() -> T) -> T {
+        let started = Instant::now();
+        let result = work();
+        self.phases
+            .push((phase, started.elapsed().as_secs_f64() * 1000.0));
+        result
+    }
+}
+
+impl Drop for CaptureTiming<'_> {
+    fn drop(&mut self) {
+        let total_ms = self.started.elapsed().as_secs_f64() * 1000.0;
+        crate::diagnostics::record_event(
+            self.app,
+            "clipboard_capture_timing",
+            json!({
+                "totalMs": total_ms, "phases": self.phases, "kind": self.kind,
+                "bytes": self.bytes, "outcome": self.outcome
+            }),
+        );
+    }
+}
+
 fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
-    let context = ClipboardContext::new().map_err(|error| error.to_string())?;
+    let mut timing = CaptureTiming::new(app);
+    let context = timing
+        .measure("context", ClipboardContext::new)
+        .map_err(|error| error.to_string())?;
     let state = app.state::<AppState>();
     let runtime = app.state::<ClipboardRuntime>();
     let mut changed = false;
+    let mut captured = false;
+    let mut failed_formats = Vec::new();
 
-    if context.has(ContentFormat::Files) {
-        let files: Vec<String> = context
-            .get_files()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|path| normalize_file_path(&path))
-            .filter(|path| !path.is_empty())
-            .collect();
-        if !files.is_empty() {
-            let hash = sha256(files.join("\0").as_bytes());
-            if !runtime.should_suppress(&signature("file", &hash)) {
-                add_files(&state, &files, &hash)?;
-                changed = true;
+    // An advertised format may be empty or unreadable. Only stop after actually
+    // reading a payload; an intentional self-copy suppression still counts.
+    if timing.measure("hasFiles", || context.has(ContentFormat::Files)) {
+        match timing.measure("readFiles", || context.get_files()) {
+            Ok(paths) => {
+                let files: Vec<String> = paths
+                    .into_iter()
+                    .map(|path| normalize_file_path(&path))
+                    .filter(|path| !path.is_empty())
+                    .collect();
+                if !files.is_empty() {
+                    captured = true;
+                    timing.kind = "file";
+                    let hash = timing.measure("hash", || sha256(files.join("\0").as_bytes()));
+                    if !runtime.should_suppress(&signature("file", &hash)) {
+                        timing.measure("storeFiles", || add_files(&state, &files, &hash))?;
+                        changed = true;
+                    }
+                } else {
+                    failed_formats.push("files_empty");
+                }
             }
+            Err(_) => failed_formats.push("files_read"),
         }
-    } else if context.has(ContentFormat::Image) {
-        if let Ok(image) = context.get_image() {
-            let png = image.to_png().map_err(|error| error.to_string())?;
-            let bytes = png.get_bytes();
-            if !bytes.is_empty() {
-                let hash = sha256(bytes);
+    }
+    if !captured && timing.measure("hasImage", || context.has(ContentFormat::Image)) {
+        match timing
+            .measure("readImage", || context.get_image())
+            .and_then(|image| timing.measure("encodePng", || image.to_png()))
+        {
+            Ok(png) if !png.get_bytes().is_empty() => {
+                captured = true;
+                let bytes = png.get_bytes();
+                timing.kind = "image";
+                timing.bytes = bytes.len();
+                let hash = timing.measure("hash", || sha256(bytes));
                 if !runtime.should_suppress(&signature("image", &hash)) {
-                    add_image(&state, bytes, &hash)?;
+                    timing.measure("storeImage", || add_image(&state, bytes, &hash))?;
                     changed = true;
                 }
             }
+            _ => failed_formats.push("image_read"),
         }
-    } else if context.has(ContentFormat::Text) {
-        let text = context.get_text().unwrap_or_default();
-        if !text.trim().is_empty() {
-            let hash = sha256(text.as_bytes());
-            if !runtime.should_suppress(&signature("text", &hash)) {
-                add_text(&state, &text, &hash)?;
-                changed = true;
+    }
+    if !captured && timing.measure("hasText", || context.has(ContentFormat::Text)) {
+        match timing.measure("readText", || context.get_text()) {
+            Ok(text) if !text.trim().is_empty() => {
+                captured = true;
+                timing.kind = "text";
+                timing.bytes = text.len();
+                let hash = timing.measure("hash", || sha256(text.as_bytes()));
+                if !runtime.should_suppress(&signature("text", &hash)) {
+                    add_text(&state, &text, &hash, &mut timing)?;
+                    changed = true;
+                }
             }
+            Ok(_) => {}
+            Err(_) => failed_formats.push("text_read"),
         }
+    }
+    if !failed_formats.is_empty() {
+        crate::diagnostics::record_event(
+            app,
+            "clipboard_capture_fallback",
+            json!({"failedFormats": failed_formats, "recovered": captured}),
+        );
     }
 
     if changed {
-        let _ = app.emit("flowhub:clipboard-updated", ());
+        let _ = timing.measure("emit", || app.emit("flowhub:clipboard-updated", ()));
     }
+    timing.outcome = if changed {
+        "stored"
+    } else if captured {
+        "suppressed"
+    } else {
+        "empty_or_unsupported"
+    };
     Ok(())
 }
 
@@ -246,6 +342,10 @@ pub fn start_monitor(app: &tauri::AppHandle) -> Result<(), String> {
     if shutdown.is_some() {
         return Ok(());
     }
+    #[cfg(target_os = "macos")]
+    let mut watcher = ClipboardWatcherContext::new_with_interval(Duration::from_millis(100))
+        .map_err(|error| error.to_string())?;
+    #[cfg(not(target_os = "macos"))]
     let mut watcher = ClipboardWatcherContext::new().map_err(|error| error.to_string())?;
     let channel = watcher
         .add_handler(ClipboardChangeHandler { app: app.clone() })

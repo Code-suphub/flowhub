@@ -1471,7 +1471,7 @@ async function refreshClipboard({ append = false, deferRender = false } = {}) {
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
     void hydrateClipboardAssets(nextRecords, token, append);
   } catch {
-    if (!append) state.clipboardResults = [];
+    if (token === clipboardSearchToken && !append) state.clipboardResults = [];
   } finally {
     if (token === clipboardSearchToken) {
       state.clipboardLoading = false;
@@ -1753,7 +1753,14 @@ scopeRow?.addEventListener("click", (event) => {
   if (button) setScope(button.dataset.scope);
 });
 document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
-window.weborg.onClipboardUpdated(() => { invalidateClipboardPaging(); queueClipboardRefresh(80, true); });
+window.weborg.onClipboardUpdated(() => {
+  invalidateClipboardPaging();
+  state.clipboardLoadedQuery = null;
+  allResultKeys = null;
+  allInitialResults = [];
+  allScopeRefreshToken += 1;
+  queueClipboardRefresh(80, true);
+});
 window.weborg.onUsageUpdated(() => { void refreshUsage(); });
 resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
@@ -1836,6 +1843,10 @@ function prepareForShow() {
   resultsEl.scrollTop = 0;
   render();
   focusSearch();
+  // Events can arrive while another scope is active, or just before this show
+  // cancels its debounce. Paint the cache first, then reconcile with storage.
+  state.clipboardLoadedQuery = null;
+  void refreshClipboard();
 }
 window.focusSearch = focusSearch;
 window.prepareForShow = prepareForShow;

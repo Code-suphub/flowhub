@@ -21,3 +21,17 @@ ctx.toggleClipboardPreview(button);assert.equal(top,800);assert.deepEqual(events
 ctx.toggleClipboardPreview(button);assert.equal(top,800);assert.equal(aria,'false');assert(!expandedClass);assert(title.innerHTML.length<content.length);assert.equal(ctx.resultWindow.heights.get('clipboard:7'),104);assert(buttonText.includes('展开'));
 assert(s.includes('toggleClipboardPreview(toggle);'));
 console.log('PASS: expand/collapse patches current row, keeps outer scroll, updates ARIA and virtual height, escapes full text');
+// Reopening must reconcile cached clipboard rows, even if the pending event's
+// debounce was cancelled. Updates in other scopes must remain marked stale.
+let updateHandler, refreshed=0;
+const showState={emptyResults:{clipboard:[],app:[],web:[],memo:[]},scope:'app'};
+const show=vm.createContext({window:{weborg:{onClipboardUpdated:fn=>updateHandler=fn},FlowHubTools:{queryChanged(){}}},state:showState,
+  q:{value:'old'},resultsEl:{scrollTop:99},allResultKeys:['old'],allInitialResults:['old'],allScopeRefreshToken:0,
+  clipboardSearchTimer:null,dnsSearchTimer:null,proxySearchTimer:null,dnsSearchToken:0,proxySearchToken:0,
+  CLIPBOARD_PAGE_SIZE:30,clearTimeout(){},toolContext(){},render(){},focusSearch(){},
+  invalidateClipboardPaging(){},invalidatePluginPaging(){},queueClipboardRefresh(){},refreshClipboard(){refreshed++}});
+vm.runInContext(s.slice(s.indexOf('window.weborg.onClipboardUpdated('),s.indexOf('});',s.indexOf('window.weborg.onClipboardUpdated('))+3),show);
+updateHandler();assert.equal(showState.clipboardLoadedQuery,null);assert.equal(show.allResultKeys,null);
+vm.runInContext(s.slice(s.indexOf('function prepareForShow()'),s.indexOf('window.focusSearch =')),show);
+show.prepareForShow();assert.equal(refreshed,1);assert.equal(showState.clipboardLoadedQuery,null);assert.equal(showState.query,'');
+console.log('PASS: clipboard events invalidate inactive scopes and paged keys; show reconciles storage after cached paint');
