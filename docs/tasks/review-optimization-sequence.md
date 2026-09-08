@@ -33,11 +33,15 @@
 - 09：完成并整合。任务 `01a08241-b93b-76c0-beef-d55fe878c82c`，worktree `/Users/bilibili/.codex/worktrees/6278/web_organization`，源提交 `3d3cc751ae3b9a203c8fe02175af875cad0fecc0`。明确旧版顶层items边界，桌面格式显式拒绝；扩展无效配置不覆盖缓存，网页加载失败禁编辑，CLI对齐旧版。协调13项根测试、4项预览和diff通过；预览用已有依赖临时链接补测后移除。实现任务Rust/UI/隔离浏览器验证通过。不提供桌面到扩展实时同步，未操作真实数据。
 - 10：完成并整合。任务 `01a0824c-f589-7972-a741-4efacd430967`，worktree `/Users/bilibili/.codex/worktrees/7305/web_organization`，源提交 `57c0a4fba1a61646443f7389b5a0ca2f04385e84`。字段惰性预计算、查询分词复用、单查询排序缓存与目录事件失效，旧get_config响应不覆盖新快照。协调全部UI（含5项新增搜索行为）及diff检查通过；实现任务81项Rust、4项预览、合成基准/浏览器通过。万条首查中位23.85→10.08ms，连续查询192.66→6.16ms（合成环境）；新查询仍全量扫描排序，未验证真实Tauri。
 - 11：完成并整合。任务 `01a08258-2873-7733-a7a0-55d1b99059f2`，worktree `/Users/bilibili/.codex/worktrees/4f59/web_organization`，源提交 `3bb4cff4c0e4aa93120f270242f23845b005c2e2`。storage/usage及menu_bar职责提取，lib.rs 3566→1481行；恢复就绪检查与保存锁异常重试覆盖，端口fixture有界重试和强制冲突测试。协调85项Rust及diff通过；实现任务全UI、4项预览及端口200次重复执行通过。原生菜单栏人工交互未实测，未操作真实数据。
-- 12：已派发“优化 12：剪贴板隐私控制与 CSP”，任务 `01a08265-c1a8-7802-b030-d27d27e44a3a`，worktree `/Users/bilibili/.codex/worktrees/97f9/web_organization`，禁止重复派发。首提交 `9550b67d78f49d0d8f48535009421e07d618521e` 复核暂未合入：可编辑应用排除列表实为停止全部采集，已退回同任务修正为明确不支持选择性排除、禁新增编辑、保留导入非空策略保护并提供清空恢复。等待补丁与回归。
-- 自动跟进：`flowhub`，每 5 分钟检查在途任务；验证并整合前置项后才创建下一项。全部完成后停用。
+- 12：完成复核并整合（选择性应用排除未实现，明确标注限制）。任务 `01a08265-c1a8-7802-b030-d27d27e44a3a`，worktree `/Users/bilibili/.codex/worktrees/97f9/web_organization`，源提交 `9550b67d78f49d0d8f48535009421e07d618521e` + `4a34910503d38a3f52b0605a65e0213cc1ec6571`。暂停/恢复、标记保护、队列代际授权、IntegrationPlan、生产/开发CSP与原生域名探测。复核退回移除无效应用排除编辑入口，旧配置提供清空恢复。最终main验证91项Rust、全部UI、4项预览、生产CSP资源测试和根服务13项通过；实现任务隔离浏览器及无打包生产构建通过。未验证真实剪贴板/WKWebView；未标记秘密仍可能采集，非macOS采集未实现；允许内联样式/HTTPS图标。
+- 自动跟进：`flowhub`，顺序执行及最终验证已完成，停用跟进。
 
 每项完成后记录提交和验证结果。上述各项按当时最新代码重新核对，已被前置任务完整解决的内容不重复修改。
 
 协调注意：list_threads 当前可能遗漏 worktree 任务，不能据此判定仍初始化。必要时用 git worktree list 找对应工作区，在 ~/.codex/sessions/当天目录中只按该 cwd 搜索 session_meta 解析真实任务 ID，然后用 wait_threads 核对完成状态。第 01 项此前因此误判为等待初始化，已纠正。
 
 构建资源：任务01–11完成worktree的app/src-tauri/target已清理，保留全部源码与git提交。后续Rust测试优先 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0，任务完成整合后及时清理其可重建target，防止磁盘再次耗尽。
+
+## 最终验证
+
+2026-09-09：12项顺序处理并整合main，保留上文明确未实现能力及验证边界。最终代码提交 `aab4f91`；根目录 npm test 13项通过，app npm test（低调试Rust构建）91项Rust、全部UI、4项预览及生产CSP嵌入资源检查通过，diff检查通过。未安装、发布或操作真实用户配置/剪贴板。应用选择性排除未实现；真实原生交互、超大数据库基准等限制见各项。
