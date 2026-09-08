@@ -5,16 +5,18 @@ document.querySelector('#privacyChecks').addEventListener('click',async()=>{
   const change=(id,value)=>{const node=document.getElementById(id);node.value=value;node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}));};
   try {
     if(location.pathname.includes('settings')) {
+      check(!document.querySelector('#clipboardExcludedApps'),'selective exclusions have no editor');
+      check(!document.querySelector('#clipboardLegacyExclusions').hidden,'imported exclusion shows recovery notice');
       change('clipboardCapturePaused','true');
       check(document.querySelector('#clipboardStatusValue').textContent.includes('待保存：暂停采集'),'pause shows draft state');
       document.querySelector('#saveBtn').click();await wait(400);
       check(fixtureConfig.plugins.clipboard.settings.capturePaused===true,'pause saved through native adapter stub');
       check(fixtureConfig.plugins.clipboard.enabled===true,'history remains enabled');
-      change('clipboardCapturePaused','false');change('clipboardExcludedApps','com.example.secret\ncom.example.secret');
-      document.querySelector('#saveBtn').click();await wait(400);
-      check(document.querySelector('#clipboardStatusValue').textContent.includes('来源不明，阻止采集'),'unsupported exclusion is explicit');
-      check(fixtureConfig.plugins.clipboard.settings.excludedApps.length===1,'exclusions deduplicated');
-      change('clipboardExcludedApps','');change('clipboardProtectSensitive','true');
+      document.querySelector('[data-action="clear-clipboard-exclusions"]').click();await wait(400);
+      check(fixtureConfig.plugins.clipboard.settings.excludedApps.length===0,'legacy list cleared and saved');
+      check(fixtureConfig.plugins.clipboard.settings.capturePaused===true,'recovery preserves explicit pause');
+      check(document.querySelector('#clipboardLegacyExclusions').hidden,'successful recovery hides notice');
+      change('clipboardCapturePaused','false');change('clipboardProtectSensitive','true');
       document.querySelector('#saveBtn').click();await wait(400);
       check(fixtureConfig.plugins.clipboard.settings.capturePaused===false,'resume saved');
     } else {

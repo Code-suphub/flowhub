@@ -718,8 +718,6 @@ function renderSettingsFields() {
   $("#clipboardRetentionDays").value = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   $("#clipboardCapturePaused").value = String(pluginConfig("clipboard")?.settings?.capturePaused === true);
   $("#clipboardProtectSensitive").value = String(pluginConfig("clipboard")?.settings?.protectSensitive !== false);
-  const excludedApps = pluginConfig("clipboard")?.settings?.excludedApps;
-  $("#clipboardExcludedApps").value = Array.isArray(excludedApps) ? excludedApps.join("\n") : String(excludedApps || "");
   $("#clipboardMaxRecords").value = Number(pluginConfig("clipboard")?.settings?.maxRecords ?? 0);
   $("#clipboardMaxBytes").value = Number(pluginConfig("clipboard")?.settings?.maxBytes ?? 0);
   renderClipboardStorage();
@@ -1019,12 +1017,35 @@ function renderClipboardStorage() {
     : "保存后：空目录接收当前全部数据；已有 FlowHub 数据库则加载其中的网页目录、使用记录和剪切板，不合并当前网页草稿。恢复默认位置也遵循此规则。";
 }
 
+function hasLegacyClipboardExclusions(config) {
+  const value = config?.plugins?.clipboard?.settings?.excludedApps;
+  return Array.isArray(value) ? value.some(entry => typeof entry !== "string" || entry.trim()) : value != null;
+}
+
+async function clearClipboardExclusions() {
+  if (state.saving || state.reloading || state.saveConflict) return;
+  try {
+    if (state.mode === "json") state.config = readJsonEditor();
+    state.config.plugins ||= {};
+    state.config.plugins.clipboard ||= {};
+    const clipboard = pluginConfig("clipboard");
+    clipboard.settings ||= {};
+    clipboard.settings.excludedApps = [];
+    state.jsonDirty = false;
+    syncJson({ force: true });
+    markDirty();
+    renderClipboardSummary();
+    await save();
+  } catch (error) { toast(error.message, true); }
+}
+
 function renderClipboardSummary() {
   const enabled = pluginConfig("clipboard")?.enabled !== false;
   const retentionDays = Number(pluginConfig("clipboard")?.settings?.retentionDays ?? 30);
   const settings = pluginConfig("clipboard")?.settings || {};
   const paused = !enabled || settings.capturePaused === true;
-  const excluded = Array.isArray(settings.excludedApps) ? settings.excludedApps.some(value => String(value).trim()) : settings.excludedApps != null;
+  const excluded = hasLegacyClipboardExclusions(state.config);
+  if ($("#clipboardLegacyExclusions")) $("#clipboardLegacyExclusions").hidden = !excluded && !hasLegacyClipboardExclusions(state.savedConfig);
   const statusText = (state.dirty ? "待保存：" : "已保存策略：") + (paused ? "暂停采集" : excluded ? "来源不明，阻止采集" : "允许采集");
   if ($("#clipboardStatusValue")) $("#clipboardStatusValue").textContent = statusText;
   if ($("#clipboardRetentionValue")) $("#clipboardRetentionValue").textContent = retentionDays === 0 ? "无期限（仍受容量设置约束）" : `${retentionDays} 天`;
@@ -1721,6 +1742,7 @@ function handleAction(action, actionTarget) {
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();
+  if (action === "clear-clipboard-exclusions") return clearClipboardExclusions();
   if (action === "add-memo") return addMemo();
   if (action === "delete-memo") return deleteMemo();
   if (action === "reset-memos") return resetMemos();
@@ -1964,14 +1986,10 @@ document.addEventListener("input", (event) => {
   }
   const configField = event.target.dataset.configField;
   if (configField) {
-    if (["clipboardCapturePaused", "clipboardProtectSensitive", "clipboardExcludedApps"].includes(configField)) {
+    if (["clipboardCapturePaused", "clipboardProtectSensitive"].includes(configField)) {
       const clipboard = pluginConfig("clipboard");
       clipboard.settings ||= {};
-      if (configField === "clipboardExcludedApps") {
-        clipboard.settings.excludedApps = [...new Set(event.target.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean))].sort();
-      } else {
-        clipboard.settings[configField === "clipboardCapturePaused" ? "capturePaused" : "protectSensitive"] = event.target.value === "true";
-      }
+      clipboard.settings[configField === "clipboardCapturePaused" ? "capturePaused" : "protectSensitive"] = event.target.value === "true";
     } else if (configField === "clipboardRetentionDays") {
       const clipboard = pluginConfig("clipboard");
       clipboard.settings ||= {};

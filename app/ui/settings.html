@@ -1029,7 +1029,7 @@
                   <div class="settings-block-title">采集隐私（保存后生效）</div>
                   <div class="field"><label for="clipboardCapturePaused">采集状态</label><select id="clipboardCapturePaused" data-config-field="clipboardCapturePaused"><option value="false">继续采集新内容</option><option value="true">暂停采集</option></select><div class="field-hint">暂停保留历史搜索和粘贴，留存清理继续运行。恢复不会补采暂停期间或当前剪贴板内容。请等待保存成功后再复制敏感内容。</div></div>
                   <div class="field"><label for="clipboardProtectSensitive">敏感标记保护</label><select id="clipboardProtectSensitive" data-config-field="clipboardProtectSensitive"><option value="true">跳过隐藏、临时及自动生成标记（推荐）</option><option value="false">关闭标记保护</option></select><div class="field-hint">macOS 按应用写入的剪贴板类型标记跳过整条内容；未标记的密码、密钥仍可能被记录。这不是秘密检测，历史数据不会自动脱敏。</div></div>
-                  <div class="field"><label for="clipboardExcludedApps">排除应用 Bundle ID（每行一个）</label><textarea id="clipboardExcludedApps" data-config-field="clipboardExcludedApps" rows="3" placeholder="com.example.password-manager"></textarea><div class="field-hint">当前平台无法可靠识别剪贴板写入应用。此列表非空时，为避免漏过排除项，将阻止所有新采集；清空并保存后恢复。不会使用前台应用或自报来源猜测。其他平台目前也不启用采集。</div></div>
+                  <div class="field"><span>按来源应用排除：暂不支持</span><div class="field-hint">当前平台无法可靠识别剪贴板写入应用，尚未实现按应用选择性排除。复制敏感内容前，请使用上方的暂停采集并保存。不会使用前台应用或自报来源猜测。</div><div id="clipboardLegacyExclusions" hidden><p class="field-hint">配置中存在旧的应用排除设置。由于无法识别来源，后端保守阻止所有新采集。清空旧列表并保存后解除此限制；若仍设置了暂停，采集会继续暂停。此操作会连同当前其他修改一起保存。</p><button class="button" type="button" data-action="clear-clipboard-exclusions">清空旧列表并保存</button></div></div>
                 </div>
                 <div class="settings-block history-block">
                   <div class="settings-block-title">历史留存</div>

@@ -48,18 +48,46 @@ function harness(mode = 'structure') {
     const h=harness(); h.state.config.plugins.clipboard={enabled:true,settings:{}};
     h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'true'});
     h.configInput({dataset:{configField:'clipboardProtectSensitive'},value:'false'});
-    h.configInput({dataset:{configField:'clipboardExcludedApps'},value:' com.example.secret\ncom.example.secret\n\n'});
-    assert.deepEqual(clone(h.state.config.plugins.clipboard),{enabled:true,settings:{capturePaused:true,protectSensitive:false,excludedApps:['com.example.secret']}});
+    h.configInput({dataset:{configField:'clipboardExcludedApps'},value:'com.example.secret'});
+    assert.deepEqual(clone(h.state.config.plugins.clipboard),{enabled:true,settings:{capturePaused:true,protectSensitive:false}},'removed editor cannot create an exclusion');
     assert(h.element('#clipboardStatusValue').textContent.includes('待保存：暂停采集'));
     const p=h.ctx.save();
     assert.equal(h.submitted().plugins.clipboard.settings.capturePaused,true);
     h.commit(clone(h.submitted())); h.metadata.resolve([]); await p;
     h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'false'});
-    assert(h.element('#clipboardStatusValue').textContent.includes('来源不明，阻止采集'));
-    h.configInput({dataset:{configField:'clipboardExcludedApps'},value:''});
     assert(h.element('#clipboardStatusValue').textContent.includes('允许采集'));
     assert.equal(h.state.config.plugins.clipboard.enabled,true,'pause never disables history search');
-    console.log('PASS: privacy controls persist through real save, normalize exclusions, mark drafts, preserve history module');
+    assert.equal(h.element('#clipboardLegacyExclusions').hidden,true);
+    console.log('PASS: pause/resume preserves history, unsupported exclusion has no editor');
+  }
+  for (const mode of ['structure','json']) {
+    const h=harness(mode);
+    h.state.config.plugins.clipboard={enabled:true,settings:{capturePaused:true,excludedApps:['legacy.app']}};
+    h.state.savedConfig=clone(h.state.config);
+    h.element('#jsonEditor').value=JSON.stringify(h.state.config);
+    h.ctx.renderClipboardSummary();
+    assert.equal(h.element('#clipboardLegacyExclusions').hidden,false);
+    const p=h.ctx.clearClipboardExclusions();
+    assert.deepEqual(clone(h.submitted().plugins.clipboard.settings),{capturePaused:true,excludedApps:[]});
+    await h.ctx.clearClipboardExclusions();assert.equal(h.calls(),1);
+    h.commit(clone(h.submitted()));h.metadata.resolve([]);await p;
+    h.ctx.renderClipboardSummary();
+    assert.equal(h.element('#clipboardLegacyExclusions').hidden,true);
+    assert.equal(h.state.config.plugins.clipboard.settings.capturePaused,true,'recovery never resumes an explicit pause');
+  }
+  {
+    const h=harness();h.state.config.plugins.clipboard={settings:{excludedApps:['legacy.app']}};
+    h.state.savedConfig=clone(h.state.config);
+    const p=h.ctx.clearClipboardExclusions();h.saving.reject(Error('save failed'));await p;
+    h.ctx.renderClipboardSummary();
+    assert.equal(h.element('#clipboardLegacyExclusions').hidden,false,'failed save retains recovery notice');
+    assert.deepEqual(h.state.savedConfig.plugins.clipboard.settings.excludedApps,['legacy.app']);
+    h.state.saveConflict={draftKey:'source'};await h.ctx.clearClipboardExclusions();assert.equal(h.calls(),1);
+    for(const value of [[null],123,['legacy.app']]) {
+      h.state.config.plugins.clipboard.settings.excludedApps=value;
+      assert(h.ctx.hasLegacyClipboardExclusions(h.state.config));
+    }
+    console.log('PASS: legacy exclusion recovery saves in structure/JSON mode, preserves pause, guards concurrent/conflicting saves and keeps failure notice');
   }
   for(const mode of ['structure','json']) {
     const h=harness(mode);const p=h.ctx.save();

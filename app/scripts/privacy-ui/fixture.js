@@ -2,7 +2,7 @@ window.fixtureCalls=[];
 window.fixtureErrors=[];
 addEventListener('error',event=>fixtureErrors.push(event.message));
 addEventListener('unhandledrejection',event=>fixtureErrors.push(String(event.reason)));
-window.fixtureConfig={core:{},plugins:{clipboard:{enabled:true,settings:{}},web:{enabled:true,settings:{items:[]}},memo:{enabled:true,settings:{items:[]}},app:{enabled:true},tools:{enabled:true}}};
+window.fixtureConfig={core:{},plugins:{clipboard:{enabled:true,settings:{excludedApps:['legacy.example']}},web:{enabled:true,settings:{items:[]}},memo:{enabled:true,settings:{items:[]}},app:{enabled:true},tools:{enabled:true}}};
 const copy=value=>JSON.parse(JSON.stringify(value));
 window.__TAURI__={event:{listen:async()=>()=>{}},core:{invoke:async(name,args)=>{
   fixtureCalls.push({name,args:copy(args||{})});
