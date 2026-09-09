@@ -1234,12 +1234,29 @@ function queueProxyLookup() {
 
 function renderPluginScopes(plugins) {
   state.plugins = (plugins || []).filter((plugin) => plugin.enabled && plugin.available).sort((a, b) => a.order - b.order);
-  scopeOrder = ["all", ...state.plugins.filter((plugin) => plugin.searchable).map((plugin) => plugin.id)];
-  scopeRow.querySelectorAll("[data-scope]").forEach((button) => button.remove());
-  scopeRow.insertAdjacentHTML("beforeend", [
-    `<button class="scope-button active" data-scope="all">全部</button>`,
-    ...state.plugins.filter((plugin) => plugin.searchable).map((plugin) => `<button class="scope-button" data-scope="${esc(plugin.id)}">${esc(plugin.name)}</button>`)
-  ].join(""));
+  const scopes = [{ id: "all", name: "全部" }, ...state.plugins.filter((plugin) => plugin.searchable)];
+  scopeOrder = scopes.map(plugin => plugin.id);
+  if (!scopeOrder.includes(state.scope)) state.scope = "all";
+  // Preserve pressed/focused nodes across config refreshes. Replacing a button
+  // between mousedown and mouseup prevents the browser from delivering click.
+  const existing = new Map(Array.from(scopeRow.querySelectorAll("[data-scope]"), button => [button.dataset.scope, button]));
+  let previous = null;
+  for (const scope of scopes) {
+    let button = existing.get(scope.id);
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "scope-button";
+      button.dataset.scope = scope.id;
+    }
+    if (button.textContent !== scope.name) button.textContent = scope.name;
+    button.classList.toggle("active", state.scope === scope.id);
+    const anchor = previous ? previous.nextElementSibling : scopeRow.querySelector("[data-scope]");
+    if (anchor !== button) scopeRow.insertBefore(button, anchor);
+    existing.delete(scope.id);
+    previous = button;
+  }
+  for (const button of existing.values()) button.remove();
 }
 
 function pluginEnabled(id) {
@@ -1751,6 +1768,14 @@ resultsEl.addEventListener("scroll", () => {
   else if (state.scope === "memo") void refreshMemos({ append: true });
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
+// Scope controls refine the current input; mouse presses must not move the
+// native/WebKit first responder away and then attempt to recover it on click.
+function preserveSearchFocus(event) {
+  if (event.button !== 0 || !event.target.closest("[data-scope], [data-clipboard-kind]")) return;
+  event.preventDefault();
+}
+scopeRow?.addEventListener("mousedown", preserveSearchFocus);
+clipboardKindRow?.addEventListener("mousedown", preserveSearchFocus);
 scopeRow?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-scope]");
   if (button) setScope(button.dataset.scope);
