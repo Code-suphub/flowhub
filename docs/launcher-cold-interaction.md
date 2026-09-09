@@ -47,3 +47,7 @@
 序号由前端同步生成，首次up/down间隔约1ms；两次点击时documentFocused、nativeFocused均true，activeElement为q。首次没有click；第二次正常产生click并切换。因此此轮并非输入框缺焦点，而是原生WebKit传递的首次事件顺序使click未合成。更底层事件为何反序尚未确定，不能声称已经修复WebKit本身。
 
 改动：范围/类型导航在主鼠标mousedown时激活，保持输入焦点；click保留键盘/辅助操作入口，对已选范围去重。此为可逆导航控件，按下即可切换；没有对粘贴、删除等操作采用该语义。使用实际up→down无click序列回放，并检查正常down/click只切换一次、键盘click、右键不切换。全UI测试通过，重新构建安装，保留显式诊断模式供原生回验。
+
+## 用户回验通过
+
+用户反馈“现在好像正常了”。诊断进程73171记录首次仍为mouseup→mousedown且无click，但下一次点击应用前scope已经为clipboard；之后正常切换app/all，输入焦点始终为q，documentFocused/nativeFocused为true。确认按下切换已覆盖捕获到的首次事件异常，而非底层事件反序消失。关闭临时诊断参数，以正常方式重新启动已安装版本0.1.8-local.20260909015424；保留显式诊断入口，默认不写日志。
