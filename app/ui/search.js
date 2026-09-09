@@ -1149,12 +1149,21 @@ function choose(page) {
   const usage = pluginId === "app"
     ? { type: "app", title: page.title, path: page.path }
     : { type: "page", id: page.id || page.usageKey, title: page.title, breadcrumb: pathText(page), icon: page.icon || "" };
-  void window.weborg?.pluginAction(pluginId, "activate", {
+  const payload = {
     id: page.id,
     path: page.path,
     url: normalizeUrl(page.url),
     content: page.content,
     usage
+  };
+  return Promise.resolve().then(() => {
+    if (typeof window.weborg?.pluginAction !== "function") throw new Error("当前环境无法执行打开操作");
+    return window.weborg.pluginAction(pluginId, "activate", payload);
+  }).then(result => {
+    if (result?.ok === false && !result.cancelled) showActionStatus(result.reason || "操作失败");
+    return result;
+  }).catch(error => {
+    showActionStatus(error?.message || String(error || "操作失败"));
   });
 }
 
@@ -1330,7 +1339,7 @@ function renderKeyboardHint() {
   if (!keyboardHint) return;
   if (state.scope === "clipboard") {
     keyboardHint.innerHTML = `↑↓ 记录 · 点击切换类型 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴`;
-  } else if (state.scope === "all") {
+  } else if (["all", "app", "web"].includes(state.scope)) {
     keyboardHint.innerHTML = `←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
   } else if (state.scope === "memo") {
     keyboardHint.innerHTML = `↑↓ 选择 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴命令`;
@@ -1446,7 +1455,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowUp") { moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
     const offset = e.key === "ArrowRight" ? 1 : -1;
-    if (state.scope === "all" && moveUsageHorizontal(m, offset)) {
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && moveUsageHorizontal(m, offset)) {
       revealActiveResult();
       e.preventDefault();
     }
@@ -1802,6 +1811,33 @@ window.weborg.onClipboardUpdated(() => {
   queueClipboardRefresh(80, true);
 });
 window.weborg.onUsageUpdated(() => { void refreshUsage(); });
+// Keep keyboard navigation available after an application click, including a
+// WebKit release-before-press sequence. Launch only after a matching release;
+// ordinary presses still wait for click. Never apply this to paste/delete.
+let releasedAppPress = null;
+let recoveredAppClick = null;
+resultsEl.addEventListener("mouseup", (e) => {
+  const row = e.target.closest(".result");
+  const item = row && matches()[Number(row.dataset.i)];
+  releasedAppPress = e.button === 0 && item?.type === "app"
+    ? { row, path:item.path, stamp:e.timeStamp, received:performance.now() } : null;
+});
+resultsEl.addEventListener("mousedown", (e) => {
+  const released = releasedAppPress;
+  releasedAppPress = null;
+  recoveredAppClick = null;
+  const row = e.target.closest(".result");
+  const item = row && matches()[Number(row.dataset.i)];
+  if (e.button !== 0 || item?.type !== "app") return;
+  e.preventDefault();
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+  if (released?.row === row && released.path === item.path
+    && e.timeStamp < released.stamp && released.stamp-e.timeStamp < 1000
+    && performance.now()-released.received < 100) {
+    recoveredAppClick = {row,down:e.timeStamp,up:released.stamp};
+    choose(item);
+  }
+});
 resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
   if (!row) return;
@@ -1834,6 +1870,11 @@ resultsEl.addEventListener("click", (e) => {
     return;
   }
   const row = e.target.closest(".result");
+  if (recoveredAppClick?.row === row && e.detail !== 0
+    && e.timeStamp >= recoveredAppClick.down && e.timeStamp <= recoveredAppClick.up) {
+    recoveredAppClick = null;
+    return;
+  }
   if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
 });
 resultsEl.addEventListener("mousemove", (e) => {

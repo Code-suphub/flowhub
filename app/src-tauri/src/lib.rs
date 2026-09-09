@@ -12,6 +12,8 @@ mod web_open;
 mod search_diagnostic_run;
 mod focus_diagnostics;
 #[cfg(target_os = "macos")]
+mod app_launch;
+#[cfg(target_os = "macos")]
 mod macos_launcher_position;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
@@ -826,6 +828,13 @@ async fn activate_target(
             if path.is_empty() {
                 return Ok(json!({ "ok": false, "reason": "应用路径为空" }));
             }
+            #[cfg(target_os = "macos")]
+            {
+                let target = path.to_string();
+                tauri::async_runtime::spawn_blocking(move || app_launch::launch(&target))
+                    .await.map_err(|error|error.to_string())??;
+            }
+            #[cfg(not(target_os = "macos"))]
             app.opener()
                 .open_path(path, None::<&str>)
                 .map_err(|error| error.to_string())?;

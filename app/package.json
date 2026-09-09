@@ -8,7 +8,7 @@
     "dev": "tauri dev",
     "dev:web": "vite --config vite.config.mjs",
     "cli": "node scripts/flowhub-cli.mjs",
-    "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --check ui/tauri-adapter.js && node --check ui/browser-adapter.js && node --check ui/search.js && node --check ui/settings.js && node --check scripts/local-build.mjs && node --check scripts/flowhub-cli.mjs && node --check scripts/fix-updater-metadata.mjs && npm run test:ui && npm run test:preview && npm run test:security && node scripts/focus-diagnostics.test.cjs",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --check ui/tauri-adapter.js && node --check ui/browser-adapter.js && node --check ui/search.js && node --check ui/settings.js && node --check scripts/local-build.mjs && node --check scripts/flowhub-cli.mjs && node --check scripts/fix-updater-metadata.mjs && npm run test:ui && npm run test:preview && npm run test:security && node scripts/focus-diagnostics.test.cjs && node scripts/app-navigation.test.cjs",
     "build": "node scripts/tauri-build.mjs",
     "build:local": "node scripts/local-build.mjs",
     "build:local:install": "node scripts/local-build.mjs --install",
