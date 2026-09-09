@@ -57,3 +57,14 @@
 按下激活修复后用户反馈首次仍稍慢。原日志缺少处理/渲染耗时，不能直接归因于数据库或首次渲染。显式焦点诊断补充event.timeStamp至JS处理的间隔（仅同时间基准0至60秒）、同步render累计、matches/markup/DOM/layout分段、查询耗时及两次requestAnimationFrame回调等待。后者不是实际屏幕呈现时间；累计render可能含资源补全。只输出白名单数字指标，不输出查询或内容。
 
 重新安装0.1.8-local.20260909015855并以诊断参数启动。等待首次剪贴板→全部→再次剪贴板的手动对照。
+
+## 首次卡顿计时结果（进程81887，用户实体鼠标）
+
+| 剪贴板切换 | 事件时间戳至页面处理 | 同步render | matches段 | markup | DOM | 两次rAF等待 | 查询 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 首次 | 256ms | 15ms | 12ms | 2ms | 1ms | 37ms | 0ms |
+| 第二次 | 44ms | 3ms | 0ms | 2ms | 1ms | 22ms | 0ms |
+
+首次仍出现mouseup→mousedown；焦点正常。计时表明主要延迟在JS事件监听器开始之前，非数据库等待。matches段包含render入口的scrollTop等DOM读取，不可把12ms全算作匹配算法。event.timeStamp至JS差值是传递/排队合计，尚不能区分AppKit主线程与WebKit内部。
+
+新增仅诊断模式下的AppKit本地鼠标观察器：返回原事件、不截断、不修改、不合成；记录原生事件timestamp至NSProcessInfo.systemUptime的差值和接收时刻，用于和页面序列对照。默认正常启动不注册观察器。首次编译发现objc2 window接口需要主线程标记，已按实际依赖API修正后重建。

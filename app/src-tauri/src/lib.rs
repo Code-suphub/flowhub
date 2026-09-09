@@ -1324,6 +1324,8 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
                 configure_macos_panel(&window).map_err(std::io::Error::other)?;
+                #[cfg(target_os = "macos")]
+                focus_diagnostics::install_native_monitor();
                 #[cfg(not(target_os = "macos"))]
                 let _ = window.set_visible_on_all_workspaces(true);
                 let main_window = window.clone();

@@ -49,3 +49,33 @@ pub fn record_focus_sample(app: tauri::AppHandle, sample: Sample) {
         "nativeVisible":window.as_ref().and_then(|w|w.is_visible().ok())
     }));
 }
+
+// Observe AppKit delivery without swallowing, modifying or generating events.
+#[cfg(target_os = "macos")]
+pub fn install_native_monitor() {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
+    use objc2_foundation::NSProcessInfo;
+    use std::ptr::NonNull;
+    thread_local! {
+        static MONITOR: std::cell::RefCell<Option<objc2::rc::Retained<objc2::runtime::AnyObject>>> = const { std::cell::RefCell::new(None) };
+    }
+    if !ENABLED.load(Ordering::Acquire) { return; }
+    MONITOR.with(|stored| {
+        if stored.borrow().is_some() { return; }
+        let callback = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
+            let value = unsafe { event.as_ref() };
+            let received = chrono::Utc::now().to_rfc3339();
+            let delay = (NSProcessInfo::processInfo().systemUptime() - value.timestamp()) * 1000.0;
+            record("appkit-mouse", json!({
+                "kind": if value.r#type() == NSEventType::LeftMouseDown {"down"} else {"up"},
+                "receivedAt":received,"deliveryMs":delay.max(0.0),
+                "keyWindow":objc2::MainThreadMarker::new().and_then(|mtm|value.window(mtm)).map(|window|window.isKeyWindow())
+            }));
+            event.as_ptr()
+        });
+        *stored.borrow_mut() = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(
+            NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp, &callback
+        ) };
+    });
+}
