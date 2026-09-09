@@ -13,7 +13,7 @@ fn paths(state: &AppState) -> (std::path::PathBuf, std::path::PathBuf) {
     (dir.join("diagnostics.jsonl"), dir.join("monitoring.json"))
 }
 
-fn enabled(state: &AppState) -> bool {
+pub(crate) fn enabled(state: &AppState) -> bool {
     let (_, config) = paths(state);
     fs::read_to_string(config)
         .ok()

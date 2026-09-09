@@ -5,17 +5,13 @@ use crate::{diagnostics, open_settings, toggle_main, AppState};
 #[cfg(target_os = "macos")]
 use crate::{macos_accessibility, macos_item_submenu, menu_bar_icon, menu_bar_section_memory};
 #[cfg(target_os = "macos")]
-use objc2::Message;
-#[cfg(target_os = "macos")]
-use objc2_app_kit::{
-    NSLayoutAttribute, NSLayoutConstraint, NSLayoutConstraintOrientation,
-    NSVariableStatusItemLength,
-};
+use objc2_app_kit::{NSAutoresizingMaskOptions, NSTextAlignment, NSVariableStatusItemLength,
+    NSUserInterfaceItemIdentification};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSString, NSUserDefaults};
 use serde_json::{json, Value};
 use std::{
-    sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering as AtomicOrdering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
     time::Duration,
 };
 #[cfg(target_os = "macos")]
@@ -40,38 +36,28 @@ const FLOWHUB_ORGANIZER_ITEM_PREFIX: &str = "flowhub-organizer-item:";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_ID: &str = "flowhub-organizer-control";
 #[cfg(target_os = "macos")]
-const ORGANIZER_BOUNDARY_ID: &str = "flowhub-organizer-boundary";
+const ORGANIZER_GLYPH_ID: &str = "flowhub-organizer-glyph";
+#[cfg(target_os = "macos")]
+const ORGANIZER_COLLAPSE_AUTOSAVE: &str = "FlowHub.Organizer.V19.CollapseBoundary";
+#[cfg(target_os = "macos")]
+static ORGANIZER_COLLAPSE_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 const ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_ID: &str = "flowhub-organizer-always-hidden-boundary";
 #[cfg(target_os = "macos")]
 const ORGANIZER_CONTROL_AUTOSAVE: &str = "FlowHub.Organizer.V17.Control";
-#[cfg(target_os = "macos")]
-const ORGANIZER_BOUNDARY_AUTOSAVE: &str = "FlowHub.Organizer.V17.Boundary";
 #[cfg(target_os = "macos")]
 const ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE: &str =
     "FlowHub.Organizer.V18.AlwaysHiddenBoundary";
 #[cfg(target_os = "macos")]
 static ORGANIZER_CONTROL_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
-static ORGANIZER_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
-#[cfg(target_os = "macos")]
 static ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR: AtomicUsize = AtomicUsize::new(0);
-#[cfg(target_os = "macos")]
-static ORGANIZER_BOUNDARY_CONSTRAINT_PTR: AtomicUsize = AtomicUsize::new(0);
-#[cfg(target_os = "macos")]
-static ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR: AtomicUsize = AtomicUsize::new(0);
 #[cfg(target_os = "macos")]
 static ORGANIZER_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
 static ORGANIZER_COLLAPSED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "macos")]
-static ORGANIZER_POSITION_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "macos")]
 static ORGANIZER_ITEM_MOVE_ACTIVE: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "macos")]
-static ORGANIZER_LAST_CONTROL_POSITION: AtomicU64 = AtomicU64::new(u64::MAX);
-#[cfg(target_os = "macos")]
-static ORGANIZER_LAST_BOUNDARY_POSITION: AtomicU64 = AtomicU64::new(u64::MAX);
 
 #[cfg(target_os = "macos")]
 struct OrganizerItemMoveGuard;
@@ -130,200 +116,6 @@ fn set_organizer_position(name: &str, position: f64) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_organizer_item_length(tray: &tray_icon::TrayIcon, length: f64) {
-    if let Some(status_item) = tray.ns_status_item() {
-        status_item.setLength(length);
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn capture_organizer_minimum_width_constraint(
-    tray: &tray_icon::TrayIcon,
-    constraint_pointer: &AtomicUsize,
-) {
-    if constraint_pointer.load(AtomicOrdering::Acquire) != 0 {
-        return;
-    }
-    let Some(status_item) = tray.ns_status_item() else {
-        return;
-    };
-    let Some(main_thread) = objc2::MainThreadMarker::new() else {
-        return;
-    };
-    let Some(button) = status_item.button(main_thread) else {
-        return;
-    };
-    let Some(window) = button.window() else {
-        return;
-    };
-    let Some(content_view) = window.contentView() else {
-        return;
-    };
-    let constraints = content_view
-        .constraintsAffectingLayoutForOrientation(NSLayoutConstraintOrientation::Horizontal);
-    let Some(button_superview) = (unsafe { button.superview() }) else {
-        return;
-    };
-    let superview_ptr = objc2::rc::Retained::as_ptr(&button_superview) as *const ();
-    for constraint in constraints.iter() {
-        let second_item = unsafe { constraint.secondItem() };
-        let is_status_item_width_constraint = second_item
-            .as_ref()
-            .is_some_and(|item| objc2::rc::Retained::as_ptr(item) as *const () == superview_ptr);
-        if is_status_item_width_constraint {
-            let retained = constraint.retain();
-            let original_constant = retained.constant();
-            let pointer = Box::into_raw(Box::new((retained, original_constant)));
-            constraint_pointer.store(pointer as usize, AtomicOrdering::Release);
-            break;
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn organizer_boundary_constraint(
-    constraint_pointer: &AtomicUsize,
-) -> Option<&'static (objc2::rc::Retained<NSLayoutConstraint>, f64)> {
-    let address = constraint_pointer.load(AtomicOrdering::Acquire);
-    (address != 0)
-        .then(|| unsafe { &*(address as *const (objc2::rc::Retained<NSLayoutConstraint>, f64)) })
-}
-
-#[cfg(target_os = "macos")]
-fn set_organizer_boundary_collapsed(
-    tray: &tray_icon::TrayIcon,
-    constraint_pointer: &AtomicUsize,
-    collapsed: bool,
-) {
-    let Some(status_item) = tray.ns_status_item() else {
-        return;
-    };
-    capture_organizer_minimum_width_constraint(tray, constraint_pointer);
-    status_item.setLength(if collapsed { 10_000.0 } else { 1.0 });
-    // Remove the separator's native width padding through its layout constraint,
-    // rather than resizing only the active display's NSWindow. Apply this after
-    // setLength, which restores AppKit's padding. Leave collapsed layout native.
-    if let Some((constraint, original_constant)) =
-        unsafe { organizer_boundary_constraint(constraint_pointer) }
-    {
-        let is_width_padding = constraint.firstAttribute() == NSLayoutAttribute::Width
-            && constraint.secondAttribute() == NSLayoutAttribute::Width
-            && (0.0..=32.0).contains(original_constant);
-        if is_width_padding && !collapsed {
-            constraint.setConstant(0.0);
-        }
-        constraint.setActive(true);
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn recreate_collapsed_organizer_boundary(
-    app: &tauri::AppHandle,
-    control_position: f64,
-) -> Result<(), String> {
-    let constraint_pointer = ORGANIZER_BOUNDARY_CONSTRAINT_PTR.swap(0, AtomicOrdering::AcqRel);
-    if constraint_pointer != 0 {
-        unsafe {
-            drop(Box::from_raw(
-                constraint_pointer as *mut (objc2::rc::Retained<NSLayoutConstraint>, f64),
-            ));
-        }
-    }
-    let boundary_pointer = ORGANIZER_BOUNDARY_PTR.swap(0, AtomicOrdering::AcqRel);
-    if boundary_pointer != 0 {
-        unsafe {
-            drop(Box::from_raw(boundary_pointer as *mut tray_icon::TrayIcon));
-        }
-    }
-    let repaired_position = control_position + 1.0;
-    set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, repaired_position);
-
-    let boundary = tray_icon::TrayIconBuilder::new()
-        .with_id(ORGANIZER_BOUNDARY_ID)
-        .with_title("")
-        .build()
-        .map_err(|error| error.to_string())?;
-    set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-    capture_organizer_minimum_width_constraint(&boundary, &ORGANIZER_BOUNDARY_CONSTRAINT_PTR);
-    boundary
-        .set_icon_with_as_template(None, true)
-        .map_err(|error| error.to_string())?;
-    boundary.set_title(Some(""));
-    set_organizer_boundary_collapsed(&boundary, &ORGANIZER_BOUNDARY_CONSTRAINT_PTR, true);
-    let boundary = Box::into_raw(Box::new(boundary));
-    ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
-    ORGANIZER_LAST_BOUNDARY_POSITION.store(repaired_position.to_bits(), AtomicOrdering::Release);
-    schedule_organizer_observation(app, "position_repair");
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn start_organizer_position_watcher(app: &tauri::AppHandle) {
-    if ORGANIZER_POSITION_WATCHER_STARTED.swap(true, AtomicOrdering::AcqRel) {
-        return;
-    }
-    if let Some(position) = organizer_position(ORGANIZER_CONTROL_AUTOSAVE) {
-        ORGANIZER_LAST_CONTROL_POSITION.store(position.to_bits(), AtomicOrdering::Release);
-    }
-    if let Some(position) = organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE) {
-        ORGANIZER_LAST_BOUNDARY_POSITION.store(position.to_bits(), AtomicOrdering::Release);
-    }
-    let handle = app.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(250));
-        if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
-            continue;
-        }
-        if ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire) {
-            continue;
-        }
-        let callback_handle = handle.clone();
-        let _ = handle.run_on_main_thread(move || {
-            // The worker's check can be stale by the time this queued callback
-            // runs. Never repair/recreate a divider during an item drag.
-            if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire)
-                || ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire)
-            {
-                return;
-            }
-            let Some(control_position) = organizer_position(ORGANIZER_CONTROL_AUTOSAVE) else {
-                return;
-            };
-            let Some(boundary_position) = organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE) else {
-                return;
-            };
-            let previous_control = ORGANIZER_LAST_CONTROL_POSITION
-                .swap(control_position.to_bits(), AtomicOrdering::AcqRel);
-            let previous_boundary = ORGANIZER_LAST_BOUNDARY_POSITION
-                .swap(boundary_position.to_bits(), AtomicOrdering::AcqRel);
-            let position_changed = previous_control != u64::MAX
-                && previous_boundary != u64::MAX
-                && (previous_control != control_position.to_bits()
-                    || previous_boundary != boundary_position.to_bits());
-            if position_changed && ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire) {
-                diagnostics::record_event(
-                    &callback_handle,
-                    "menu_bar_organizer_position_repair",
-                    json!({
-                        "controlPosition": control_position,
-                        "boundaryPosition": boundary_position,
-                    }),
-                );
-                if let Err(error) =
-                    recreate_collapsed_organizer_boundary(&callback_handle, control_position)
-                {
-                    diagnostics::record_event(
-                        &callback_handle,
-                        "menu_bar_organizer_position_repair_failed",
-                        json!({ "error": error }),
-                    );
-                }
-            }
-        });
-    });
-}
-
-#[cfg(target_os = "macos")]
 fn organizer_item_snapshot(item: Option<&tray_icon::TrayIcon>) -> Value {
     let mut detail = json!({ "available": item.is_some() });
     if let Some(item) = item {
@@ -344,8 +136,9 @@ fn organizer_item_snapshot(item: Option<&tray_icon::TrayIcon>) -> Value {
                         "height": button_frame.size.height
                     });
                     let subviews = button.subviews();
-                    if subviews.count() > 0 {
-                        let event_target_frame = subviews.objectAtIndex(0).frame();
+                    detail["glyph"] = organizer_glyph_snapshot(&button);
+                    if let Some(target) = subviews.iter().find(|view| view.identifier().is_none()) {
+                        let event_target_frame = target.frame();
                         detail["eventTargetFrame"] = json!({
                             "x": event_target_frame.origin.x,
                             "y": event_target_frame.origin.y,
@@ -381,6 +174,117 @@ fn organizer_item_snapshot(item: Option<&tray_icon::TrayIcon>) -> Value {
 }
 
 #[cfg(target_os = "macos")]
+fn rect_json(rect: objc2_foundation::NSRect) -> Value {
+    json!({"x":rect.origin.x,"y":rect.origin.y,"width":rect.size.width,"height":rect.size.height})
+}
+
+#[cfg(target_os = "macos")]
+fn organizer_glyph_snapshot(button: &objc2_app_kit::NSStatusBarButton) -> Value {
+    let views = button.subviews();
+    let glyph: &objc2_app_kit::NSView = button;
+    let title = button.title().to_string();
+    let bounds = button.cell().map(|cell| cell.titleRectForBounds(button.bounds())).unwrap_or(button.bounds());
+    let visible = glyph.visibleRect();
+    let mut result = json!({
+        "present":!title.is_empty(),"nativeTitle":title,"renderKind":"native-status-button-title",
+        "frame":rect_json(bounds),"bounds":rect_json(bounds),
+        "visibleRect":rect_json(visible),"hidden":glyph.isHidden(),
+        "hiddenBySelfOrAncestor":glyph.isHiddenOrHasHiddenAncestor(),"alpha":glyph.alphaValue(),
+        "clipped": visible.size.width + 0.5 < bounds.size.width || visible.size.height + 0.5 < bounds.size.height,
+        "screenVisibilityConfirmed":false,
+        "evidence":"view-geometry-only; window visibility does not prove screen pixels"
+    });
+    if let Some(window) = glyph.window() {
+        let screen_rect = window.convertRectToScreen(glyph.convertRect_toView(bounds, None));
+        result["screenRect"] = rect_json(screen_rect);
+        result["windowId"] = json!(window.windowNumber());
+        result["windowVisible"] = json!(window.isVisible());
+        result["windowOcclusionState"] = json!(window.occlusionState().bits());
+        result["windowAlpha"] = json!(window.alphaValue());
+        let point = objc2_foundation::NSPoint::new(bounds.origin.x + bounds.size.width / 2.0, bounds.origin.y + bounds.size.height / 2.0);
+        let in_button = glyph.convertPoint_toView(point, Some(button));
+        // NSView hitTest takes coordinates in its superview.
+        let in_parent = button.convertPoint_toView(in_button, unsafe { button.superview() }.as_deref());
+        result["hitMouseResponder"] = json!(button.hitTest(in_parent).is_some_and(|hit|
+            views.iter().any(|v| v.identifier().is_none() && std::ptr::eq(&*hit, &*v))));
+        if let Some(screen) = window.screen() {
+            let frame = screen.frame();
+            let width = (screen_rect.origin.x + screen_rect.size.width).min(frame.origin.x + frame.size.width)
+                - screen_rect.origin.x.max(frame.origin.x);
+            let height = (screen_rect.origin.y + screen_rect.size.height).min(frame.origin.y + frame.size.height)
+                - screen_rect.origin.y.max(frame.origin.y);
+            result["screenFrame"] = rect_json(frame);
+            result["screenScale"] = json!(screen.backingScaleFactor());
+            result["intersectsAssignedScreen"] = json!(width > 0.0 && height > 0.0);
+            result["fullyInsideAssignedScreen"] = json!(width + 0.5 >= screen_rect.size.width && height + 0.5 >= screen_rect.size.height);
+        }
+    }
+    result
+}
+
+#[cfg(target_os = "macos")]
+fn record_glyph_render(app: &tauri::AppHandle, phase: &str) {
+    let result = (|| -> Result<(Value, Vec<u8>), String> {
+        let mtm = objc2::MainThreadMarker::new().ok_or("需要主线程")?;
+        let tray = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) }.ok_or("箭头状态项不存在")?;
+        let button = tray.ns_status_item().and_then(|item| item.button(mtm)).ok_or("箭头按钮不存在")?;
+        let geometry = organizer_glyph_snapshot(&button);
+        let glyph = &*button;
+        // Bound both work and capture scope to this tiny label; never capture
+        // the oversized status item, desktop, other icons or clipboard content.
+        let bounds = glyph.bounds();
+        if bounds.size.width <= 0.0 || bounds.size.height <= 0.0
+            || bounds.size.width > 64.0 || bounds.size.height > 64.0 { return Err("箭头绘制范围异常".into()); }
+        let bitmap = glyph.bitmapImageRepForCachingDisplayInRect(bounds).ok_or("无法创建绘制快照")?;
+        glyph.cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
+        let png = unsafe { bitmap.representationUsingType_properties(
+            objc2_app_kit::NSBitmapImageFileType::PNG, &objc2_foundation::NSDictionary::new(),
+        ) }.ok_or("无法编码绘制快照")?;
+        Ok((geometry, png.to_vec()))
+    })();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let mut detail = json!({"phase":phase,"capturedAt":timestamp,"pid":std::process::id(),
+        "version":app.package_info().version.to_string(),"collapsed":organizer_collapsed(),
+        "captureKind":"offscreen-AppKit-arrow-button-render","screenVisibilityConfirmed":false});
+    let (geometry, bytes) = match result {
+        Ok(value) => value,
+        Err(error) => {
+            detail["error"] = json!(error);
+            diagnostics::record_event(app, "menu_bar_organizer_glyph_render", detail);
+            return;
+        }
+    };
+    detail["geometry"] = geometry;
+    let directory = app.state::<AppState>().storage_dir().join("diagnostics/glyph-snapshots");
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Fixed-size ring and matching metadata; older log paths may have been
+        // overwritten, so compare capturedAt with the sidecar before using one.
+        static WRITER: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+        let mut sequence = WRITER.lock().unwrap();
+        let slot = *sequence % 16;
+        *sequence += 1;
+        let path = directory.join(format!("glyph-{slot}.png"));
+        let saved = (|| -> Result<(), String> {
+            let image = image::load_from_memory(&bytes).map_err(|e| e.to_string())?.to_rgba8();
+            let pixels = image.pixels().filter(|pixel| pixel.0[3] > 0).count();
+            detail["nonTransparentPixels"] = json!(pixels);
+            detail["renderHasNonTransparentPixels"] = json!(pixels > 0);
+            detail["pixelWidth"] = json!(image.width());
+            detail["pixelHeight"] = json!(image.height());
+            std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+            std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+            detail["snapshotPath"] = json!(path);
+            std::fs::write(path.with_extension("json"), serde_json::to_vec_pretty(&detail).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })();
+        if let Err(error) = saved { detail["snapshotError"] = json!(error); }
+        diagnostics::record_event(&handle, "menu_bar_organizer_glyph_render", detail);
+    });
+}
+
+#[cfg(target_os = "macos")]
 fn organizer_window_id(pointer: &AtomicUsize) -> Option<u32> {
     let tray = unsafe { organizer_tray(pointer) }?;
     let status_item = tray.ns_status_item()?;
@@ -394,8 +298,9 @@ fn organizer_window_id(pointer: &AtomicUsize) -> Option<u32> {
 pub(crate) fn organizer_window_ids() -> Result<(u32, u32, u32), String> {
     let control = organizer_window_id(&ORGANIZER_CONTROL_PTR)
         .ok_or_else(|| "菜单栏控制箭头尚未就绪".to_string())?;
-    let boundary = organizer_window_id(&ORGANIZER_BOUNDARY_PTR)
-        .ok_or_else(|| "普通隐藏分界尚未就绪".to_string())?;
+    // Expanded: the arrow is the boundary, with no adjacent invisible item.
+    // Collapsed: a separate temporary spacer keeps the arrow's view small.
+    let boundary = organizer_window_id(&ORGANIZER_COLLAPSE_PTR).unwrap_or(control);
     let always_hidden_boundary = organizer_window_id(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR)
         .ok_or_else(|| "始终隐藏分界尚未就绪".to_string())?;
     Ok((control, boundary, always_hidden_boundary))
@@ -403,34 +308,30 @@ pub(crate) fn organizer_window_ids() -> Result<(u32, u32, u32), String> {
 
 #[cfg(target_os = "macos")]
 fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
+    if !diagnostics::enabled(&app.state::<AppState>()) { return; }
     let control = organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) });
-    let boundary = organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) });
+    let boundary = if ORGANIZER_COLLAPSE_PTR.load(AtomicOrdering::Acquire) == 0 {
+        control.clone()
+    } else { organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_COLLAPSE_PTR) }) };
     let always_hidden_boundary =
         organizer_item_snapshot(unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) });
-    let boundary_padding =
-        unsafe { organizer_boundary_constraint(&ORGANIZER_BOUNDARY_CONSTRAINT_PTR) }.map(
-            |(constraint, original)| {
-                json!({
-                    "original": original, "current": constraint.constant(),
-                    "firstAttribute": constraint.firstAttribute().0,
-                    "secondAttribute": constraint.secondAttribute().0
-                })
-            },
-        );
     let detail = json!({
-        "boundaryPadding": boundary_padding,
         "phase": phase,
+        "pid": std::process::id(),
+        "version": app.package_info().version.to_string(),
         "enabled": ORGANIZER_ENABLED.load(AtomicOrdering::Acquire),
         "collapsed": ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire),
         "controlSymbol": if ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire) { "‹" } else { "›" },
         "mainThread": objc2::MainThreadMarker::new().is_some(),
-        "layoutMode": "fixed-control-dual-boundary",
+        "layoutMode": "fixed-arrow-collapse-only-spacer",
         "control": control,
         "boundary": boundary,
-        "alwaysHiddenBoundary": always_hidden_boundary,
-        "boundaryConstraintCaptured": ORGANIZER_BOUNDARY_CONSTRAINT_PTR.load(AtomicOrdering::Acquire) != 0
+        "alwaysHiddenBoundary": always_hidden_boundary
     });
     diagnostics::record_event(app, "menu_bar_organizer", detail);
+    if phase.ends_with(":after_800ms") || phase.ends_with(":after_3000ms") {
+        record_glyph_render(app, phase);
+    }
     if phase.ends_with(":after_800ms") {
         let inventory = organizer_window_ids().and_then(|ids| {
             let items = macos_accessibility::menu_bar_items()?;
@@ -456,8 +357,9 @@ fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
 
 #[cfg(target_os = "macos")]
 fn schedule_organizer_observation(app: &tauri::AppHandle, phase: &str) {
+    if !diagnostics::enabled(&app.state::<AppState>()) { return; }
     record_organizer_state(app, &format!("{phase}:immediate"));
-    for delay_ms in [150_u64, 800_u64] {
+    for delay_ms in [150_u64, 800_u64, 3000_u64] {
         let handle = app.clone();
         let phase = format!("{phase}:after_{delay_ms}ms");
         std::thread::spawn(move || {
@@ -476,126 +378,71 @@ fn configure_organizer_items(
     enabled: bool,
     collapsed: bool,
 ) -> Result<(), String> {
-    // While expanded, Cmd-drag can insert an icon between the one-point
-    // divider and the separate arrow. Growing that displaced divider leaves
-    // the inserted icon visible. Restore adjacency BEFORE taking tray
-    // references: repair replaces (and drops) the old divider.
-    if enabled && collapsed && !ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire)
-        && ORGANIZER_BOUNDARY_PTR.load(AtomicOrdering::Acquire) != 0
-    {
-        if ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire) {
-            return Err("正在移动菜单栏图标，请稍后收起".into());
-        }
-        let position = organizer_position(ORGANIZER_CONTROL_AUTOSAVE)
-            .ok_or_else(|| "菜单栏箭头位置尚未就绪".to_string())?;
-        recreate_collapsed_organizer_boundary(app, position)?;
+    if ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire) {
+        return Err("正在移动菜单栏图标，请稍后切换".into());
     }
-    let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
-    let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
-    let always_hidden_boundary = unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) };
-    let (control, boundary, always_hidden_boundary) =
-        match (control, boundary, always_hidden_boundary) {
-            (Some(control), Some(boundary), Some(always_hidden_boundary)) => {
-                (control, boundary, always_hidden_boundary)
-            }
-            _ => {
-                seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 1.0);
-                let control = tray_icon::TrayIconBuilder::new()
-                    .with_id(ORGANIZER_CONTROL_ID)
-                    .with_title(if collapsed { "‹" } else { "›" })
-                    .with_tooltip("展开或收起菜单栏隐藏区")
-                    .build()
-                    .map_err(|error| error.to_string())?;
-                set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
-                let control_position =
-                    organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(1.0);
-                set_organizer_position(ORGANIZER_BOUNDARY_AUTOSAVE, control_position + 1.0);
-                seed_organizer_position(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE, 10_000.0);
-                let boundary = tray_icon::TrayIconBuilder::new()
-                    .with_id(ORGANIZER_BOUNDARY_ID)
-                    .with_title("")
-                    .build()
-                    .map_err(|error| error.to_string())?;
-                set_organizer_autosave_name(&boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-                capture_organizer_minimum_width_constraint(
-                    &boundary,
-                    &ORGANIZER_BOUNDARY_CONSTRAINT_PTR,
-                );
-                let always_hidden_boundary = tray_icon::TrayIconBuilder::new()
-                    .with_id(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_ID)
-                    .with_title("")
-                    .build()
-                    .map_err(|error| error.to_string())?;
-                set_organizer_autosave_name(
-                    &always_hidden_boundary,
-                    ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE,
-                );
-                capture_organizer_minimum_width_constraint(
-                    &always_hidden_boundary,
-                    &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-                );
-                let control = Box::into_raw(Box::new(control));
-                let boundary = Box::into_raw(Box::new(boundary));
-                let always_hidden_boundary = Box::into_raw(Box::new(always_hidden_boundary));
-                ORGANIZER_CONTROL_PTR.store(control as usize, AtomicOrdering::Release);
-                ORGANIZER_BOUNDARY_PTR.store(boundary as usize, AtomicOrdering::Release);
-                ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR
-                    .store(always_hidden_boundary as usize, AtomicOrdering::Release);
-                (unsafe { &*control }, unsafe { &*boundary }, unsafe {
-                    &*always_hidden_boundary
-                })
-            }
-        };
-
-    if !enabled {
-        control
-            .set_visible(false)
-            .map_err(|error| error.to_string())?;
-        boundary
-            .set_visible(false)
-            .map_err(|error| error.to_string())?;
-        always_hidden_boundary
-            .set_visible(false)
-            .map_err(|error| error.to_string())?;
-    } else {
-        control
-            .set_visible(true)
-            .map_err(|error| error.to_string())?;
-        boundary
-            .set_visible(true)
-            .map_err(|error| error.to_string())?;
-        always_hidden_boundary
-            .set_visible(true)
-            .map_err(|error| error.to_string())?;
+    // Drop the temporary spacer before expanding. There is no one-point
+    // divider at all while users arrange the visible icons.
+    if !enabled || !collapsed {
+        let pointer = ORGANIZER_COLLAPSE_PTR.swap(0, AtomicOrdering::AcqRel);
+        if pointer != 0 { unsafe { drop(Box::from_raw(pointer as *mut tray_icon::TrayIcon)); } }
+    }
+    // Keep the old arrow's autosave identity, preserving its position.
+    // No separate ordinary divider remains for icons to get trapped behind.
+    if ORGANIZER_CONTROL_PTR.load(AtomicOrdering::Acquire) == 0 {
+        seed_organizer_position(ORGANIZER_CONTROL_AUTOSAVE, 1.0);
+        let control = tray_icon::TrayIconBuilder::new()
+            .with_id(ORGANIZER_CONTROL_ID).with_title("›")
+            .with_tooltip("展开或收起菜单栏隐藏区")
+            .build().map_err(|error| error.to_string())?;
+        set_organizer_autosave_name(&control, ORGANIZER_CONTROL_AUTOSAVE);
+        ORGANIZER_CONTROL_PTR.store(Box::into_raw(Box::new(control)) as usize, AtomicOrdering::Release);
+    }
+    if ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR.load(AtomicOrdering::Acquire) == 0 {
+        seed_organizer_position(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE, 10_000.0);
+        let boundary = tray_icon::TrayIconBuilder::new()
+            .with_id(ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_ID).with_title("")
+            .build().map_err(|error| error.to_string())?;
+        set_organizer_autosave_name(&boundary, ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE);
+        ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR.store(Box::into_raw(Box::new(boundary)) as usize, AtomicOrdering::Release);
+    }
+    let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) }.unwrap();
+    let always = unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) }.unwrap();
+    control.set_visible(enabled).map_err(|error| error.to_string())?;
+    always.set_visible(enabled).map_err(|error| error.to_string())?;
+    if enabled {
         set_organizer_autosave_name(control, ORGANIZER_CONTROL_AUTOSAVE);
-        set_organizer_autosave_name(boundary, ORGANIZER_BOUNDARY_AUTOSAVE);
-        set_organizer_autosave_name(
-            always_hidden_boundary,
-            ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE,
-        );
-        set_organizer_item_length(control, NSVariableStatusItemLength);
-        control
-            .set_icon_with_as_template(None, true)
-            .map_err(|error| error.to_string())?;
+        set_organizer_autosave_name(always, ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_AUTOSAVE);
+        let mtm = objc2::MainThreadMarker::new().ok_or("菜单栏布局需要主线程")?;
+        let item = control.ns_status_item().ok_or("菜单栏箭头尚未就绪")?;
+        let button = item.button(mtm).ok_or("菜单栏按钮尚未就绪")?;
+        // Use ordinary native title rendering on a permanently small button.
+        // The temporary spacer is the only item that changes to a huge width.
+        for view in button.subviews().iter() {
+            if view.identifier().is_some_and(|id| id.to_string() == ORGANIZER_GLYPH_ID) {
+                view.removeFromSuperview();
+            } else {
+                view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable
+                    | NSAutoresizingMaskOptions::ViewHeightSizable);
+            }
+        }
+        button.setAlignment(NSTextAlignment::Center);
+        item.setLength(NSVariableStatusItemLength);
         control.set_title(Some(if collapsed { "‹" } else { "›" }));
-        boundary
-            .set_icon_with_as_template(None, true)
-            .map_err(|error| error.to_string())?;
-        boundary.set_title(Some(""));
-        set_organizer_boundary_collapsed(boundary, &ORGANIZER_BOUNDARY_CONSTRAINT_PTR, collapsed);
-        always_hidden_boundary
-            .set_icon_with_as_template(None, true)
-            .map_err(|error| error.to_string())?;
-        always_hidden_boundary.set_title(Some(""));
-        set_organizer_boundary_collapsed(
-            always_hidden_boundary,
-            &ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_CONSTRAINT_PTR,
-            true,
-        );
+        if let Some(item) = always.ns_status_item() { item.setLength(10_000.0); }
+        if collapsed && ORGANIZER_COLLAPSE_PTR.load(AtomicOrdering::Acquire) == 0 {
+            let position = organizer_position(ORGANIZER_CONTROL_AUTOSAVE).unwrap_or(1.0);
+            set_organizer_position(ORGANIZER_COLLAPSE_AUTOSAVE, position + 1.0);
+            let spacer = tray_icon::TrayIconBuilder::new()
+                .with_id("flowhub-collapse-spacer").with_title("")
+                .build().map_err(|error| error.to_string())?;
+            set_organizer_autosave_name(&spacer, ORGANIZER_COLLAPSE_AUTOSAVE);
+            if let Some(item) = spacer.ns_status_item() { item.setLength(10_000.0); }
+            ORGANIZER_COLLAPSE_PTR.store(Box::into_raw(Box::new(spacer)) as usize, AtomicOrdering::Release);
+        }
     }
     ORGANIZER_ENABLED.store(enabled, AtomicOrdering::Release);
     ORGANIZER_COLLAPSED.store(collapsed, AtomicOrdering::Release);
-    start_organizer_position_watcher(app);
     schedule_organizer_observation(app, if collapsed { "collapse" } else { "expand" });
     Ok(())
 }
@@ -1383,6 +1230,9 @@ pub(crate) fn on_tray_event(app: &tauri::AppHandle, event: TrayIconEvent) {
 #[cfg(target_os = "macos")]
 pub(crate) fn run_smoke_test(app: &tauri::AppHandle) -> Result<(), String> {
     if let Ok(smoke_test) = std::env::var("FLOWHUB_TAURI_ORGANIZER_SMOKE_TEST") {
+        if smoke_test == "single-control" {
+            return run_single_control_smoke(app);
+        }
         configure_organizer_items(app, true, false)?;
         let menu_bar_items = macos_accessibility::menu_bar_items()?;
         let organizer_ids = organizer_window_ids()?;
@@ -1399,6 +1249,99 @@ pub(crate) fn run_smoke_test(app: &tauri::AppHandle) -> Result<(), String> {
             configure_organizer_items(app, false, false)?;
         }
     }
+    Ok(())
+}
+
+// Explicit native QA: exercise the real tray-icon mouse-up handler and wait for
+// AppKit layout between transitions. Never posts input to other applications.
+#[cfg(target_os = "macos")]
+fn run_single_control_smoke(app: &tauri::AppHandle) -> Result<(), String> {
+    let enabled = ORGANIZER_ENABLED.load(AtomicOrdering::Acquire);
+    let collapsed = ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire);
+    configure_organizer_items(app, true, false)?;
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let mut passed = true;
+        for phase in 0..5 {
+            std::thread::sleep(Duration::from_millis(900));
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let _ = handle.run_on_main_thread(move || {
+                let result = (|| -> Result<Value, String> {
+                    let ids = organizer_window_ids()?;
+                    if (ids.0 == ids.1) == organizer_collapsed() || ids.0 == ids.2 {
+                        return Err("展开时存在额外分界，或收起时缺少临时占位".into());
+                    }
+                    if organizer_collapsed() != (phase % 2 == 1) {
+                        return Err("原生鼠标事件未切换收起状态".into());
+                    }
+                    let tray = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) }.unwrap();
+                    let snapshot = organizer_item_snapshot(Some(tray));
+                    let mtm = objc2::MainThreadMarker::new().unwrap();
+                    let button = tray.ns_status_item().unwrap().button(mtm).unwrap();
+                    let width = button.bounds().size.width;
+                    if width <= 0.0 || width > 100.0 {
+                        return Err("箭头绘制宽度不是固定的小尺寸".into());
+                    }
+                    let window = button.window().ok_or("箭头窗口缺失")?;
+                    let screen = window.screen().ok_or("箭头不在显示器上")?;
+                    let glyph_x = window.frame().origin.x + button.frame().origin.x + width - 4.0;
+                    let screen_frame = screen.frame();
+                    if glyph_x < screen_frame.origin.x || glyph_x > screen_frame.origin.x + screen_frame.size.width {
+                        return Err("箭头右侧点击位置落在屏幕外".into());
+                    }
+                    let targets = button.subviews();
+                    if targets.count() == 0 { return Err("鼠标响应层缺失".into()); }
+                    let target = targets.iter().find(|view| view.identifier().is_none())
+                        .ok_or("鼠标响应层缺失")?;
+                    let glyph = &*button;
+                    if button.title().to_string() != if organizer_collapsed() { "‹" } else { "›" } {
+                        return Err("原生箭头文字错误".into());
+                    }
+                    let hit_point = objc2_foundation::NSPoint::new(width - 9.0, 10.0);
+                    let hit = button.hitTest(hit_point).ok_or("箭头位置没有命中响应层")?;
+                    if !std::ptr::eq(&*hit, &*target) {
+                        return Err("箭头标签遮挡了鼠标响应层".into());
+                    }
+                    // Capture actual AppKit drawing, not just a guessed title
+                    // rectangle. Files contain only the small arrow label.
+                    let bitmap = glyph.bitmapImageRepForCachingDisplayInRect(glyph.bounds())
+                        .ok_or("无法创建箭头绘制快照")?;
+                    glyph.cacheDisplayInRect_toBitmapImageRep(glyph.bounds(), &bitmap);
+                    let png = unsafe { bitmap.representationUsingType_properties(
+                        objc2_app_kit::NSBitmapImageFileType::PNG,
+                        &objc2_foundation::NSDictionary::new(),
+                    ) }.ok_or("无法编码箭头快照")?;
+                    let image_path = std::env::temp_dir().join(format!("flowhub-glyph-phase-{phase}.png"));
+                    if !png.writeToFile_atomically(&NSString::from_str(&image_path.to_string_lossy()), true) {
+                        return Err("无法写入箭头快照".into());
+                    }
+                    if (target.frame().size.width - button.bounds().size.width).abs() > 1.0 {
+                        return Err("鼠标响应层没有跟随宽度变化".into());
+                    }
+                    if phase < 4 {
+                        use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+                        let point = objc2_foundation::NSPoint::new(button.bounds().size.width - 4.0, 10.0);
+                        let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                            NSEventType::LeftMouseUp, point, NSEventModifierFlags::empty(),
+                            0.0, button.window().unwrap().windowNumber(), None, 1, 1, 0.0,
+                        ).ok_or("无法构造原生测试事件")?;
+                        target.mouseUp(&event);
+                    }
+                    Ok(json!({"phase":phase,"control":snapshot,"ids":ids}))
+                })();
+                let _ = tx.send(result);
+            });
+            match rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(Ok(snapshot)) => println!("single-control-qa {snapshot}"),
+                error => { eprintln!("single-control-qa FAILED {error:?}"); passed = false; break; }
+            }
+        }
+        let restore = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            let result = configure_organizer_items(&restore, enabled, collapsed);
+            println!("single-control-qa complete passed={} restored={}", passed, result.is_ok());
+        });
+    });
     Ok(())
 }
 
