@@ -476,6 +476,20 @@ fn configure_organizer_items(
     enabled: bool,
     collapsed: bool,
 ) -> Result<(), String> {
+    // While expanded, Cmd-drag can insert an icon between the one-point
+    // divider and the separate arrow. Growing that displaced divider leaves
+    // the inserted icon visible. Restore adjacency BEFORE taking tray
+    // references: repair replaces (and drops) the old divider.
+    if enabled && collapsed && !ORGANIZER_COLLAPSED.load(AtomicOrdering::Acquire)
+        && ORGANIZER_BOUNDARY_PTR.load(AtomicOrdering::Acquire) != 0
+    {
+        if ORGANIZER_ITEM_MOVE_ACTIVE.load(AtomicOrdering::Acquire) {
+            return Err("正在移动菜单栏图标，请稍后收起".into());
+        }
+        let position = organizer_position(ORGANIZER_CONTROL_AUTOSAVE)
+            .ok_or_else(|| "菜单栏箭头位置尚未就绪".to_string())?;
+        recreate_collapsed_organizer_boundary(app, position)?;
+    }
     let control = unsafe { organizer_tray(&ORGANIZER_CONTROL_PTR) };
     let boundary = unsafe { organizer_tray(&ORGANIZER_BOUNDARY_PTR) };
     let always_hidden_boundary = unsafe { organizer_tray(&ORGANIZER_ALWAYS_HIDDEN_BOUNDARY_PTR) };
