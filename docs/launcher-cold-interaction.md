@@ -10,3 +10,9 @@
 - app npm test：91项Rust、全部UI、4项预览与生产CSP测试通过。另执行新增延迟查询/延迟图标/过期响应回归：滚动位置不被覆盖，过期图标不污染新结果。
 - Chrome隔离页面使用生产search.js和30条合成记录，首次图片异步完成前后scrollTop均为250，30行正常渲染，无JS异常；未访问真实剪贴板/数据库。Chrome trace用于辅助检查，不能作为macOS原生首次交互性能结论。
 - 未安装更新，当前已安装应用不会因源代码修改自动生效。未重启实际用户应用采集冷启动WKWebView/原生线程跟踪，不能断言已排除全部卡顿来源。
+
+## 首次点击仍无效的后续修正
+
+重装后用户反馈首次点击剪贴板仍无效，第二次生效。进一步核对本地依赖：主窗口为nonactivating NSPanel，但Tauri窗口acceptFirstMouse未设置，默认false；wry的WKWebView子类直接在acceptsFirstMouse:返回这个值。这是首次点击可能只获取焦点而未传递至页面的原生配置缺口，不等同于查询缓慢。
+
+仅为main窗口设置acceptFirstMouse=true，保持原有全屏Space与不激活Panel行为。重新构建安装验证配置可通过Tauri编译；该配置对主弹窗所有网页控件生效。需要用户在原有首次唤出场景确认实体鼠标单击，不以DOM模拟点击冒充原生事件验收。
