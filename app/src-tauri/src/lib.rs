@@ -1416,6 +1416,7 @@ pub fn run() {
             get_storage_info,
             search_diagnostic_run::save_search_diagnostic_run,
             focus_diagnostics::focus_diagnostics_enabled,
+            focus_diagnostics::focus_diagnostics_loop_enabled,
             focus_diagnostics::record_focus_sample,
             diagnostics::get_diagnostics_state,
             diagnostics::set_diagnostics_enabled,

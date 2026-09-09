@@ -21,6 +21,10 @@ pub fn record(event: &'static str, detail: Value) {
 }
 #[tauri::command]
 pub fn focus_diagnostics_enabled() -> bool { ENABLED.load(Ordering::Acquire) }
+#[tauri::command]
+pub fn focus_diagnostics_loop_enabled() -> bool {
+    ENABLED.load(Ordering::Acquire) && !std::env::args().any(|arg|arg=="--focus-diagnostics-no-loop")
+}
 #[derive(serde::Deserialize)]
 #[serde(rename_all="camelCase")]
 pub struct Sample {
@@ -37,7 +41,7 @@ pub fn record_focus_sample(app: tauri::AppHandle, sample: Sample) {
     if !ENABLED.load(Ordering::Acquire) { return; }
     let window = app.get_webview_window("main");
     let metrics: serde_json::Map<String, Value> = sample.metrics.iter()
-        .filter(|(key, value)| value.is_finite() && **value >= 0.0 && ["eventDelayMs", "renderMs", "matchesMs", "markupMs", "domMs", "layoutMs", "frameWaitMs", "queryMs"].contains(&key.as_str()))
+        .filter(|(key, value)| value.is_finite() && **value >= 0.0 && ["eventDelayMs", "eventLoopGapMs", "renderMs", "matchesMs", "markupMs", "domMs", "layoutMs", "frameWaitMs", "queryMs"].contains(&key.as_str()))
         .map(|(key, value)| (key.clone(), json!(value))).collect();
     record("web-input", json!({
         "event":known(&sample.event,&["ready","mousedown","mouseup","click","focusin","focusout","focus","blur","after-click","after-press","error"]),
