@@ -1393,7 +1393,7 @@ pub fn run() {
                     handle.exit(0);
                 });
             }
-            updater::schedule_initial_check(app.handle());
+            updater::schedule_update_checks(app.handle());
             if std::env::args().any(|arg| arg == "--menu-bar-panel") {
                 menu_bar::toggle_menu_bar_panel(app.handle().clone()).map_err(std::io::Error::other)?;
             }

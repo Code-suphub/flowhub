@@ -480,11 +480,72 @@ fn restore_cache(app: &AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
-pub(crate) fn schedule_initial_check(app: &AppHandle) {
+const INITIAL_CHECK_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+const AUTO_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+async fn run_check_schedule<F, Fut>(mut check: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    tokio::time::sleep(INITIAL_CHECK_DELAY).await;
+    loop {
+        check().await;
+        // Sleep after completion: slow requests and waking from sleep cannot
+        // accumulate missed ticks or cause a burst of catch-up requests.
+        tokio::time::sleep(AUTO_CHECK_INTERVAL).await;
+    }
+}
+
+fn auto_update_options(config: &Value) -> (bool, bool) {
+    (config.pointer("/core/autoUpdateCheck").and_then(Value::as_bool) != Some(false),
+     config.pointer("/core/autoUpdateInstall").and_then(Value::as_bool) == Some(true))
+}
+
+async fn run_auto_check(handle: &AppHandle) {
+    // Reload saved settings every cycle, including after storage relocation.
+    // Turning checks off skips this cycle; the scheduler stays alive so turning
+    // them back on takes effect without restarting the app.
+    let app = handle.clone();
+    let options = tauri::async_runtime::spawn_blocking(move || {
+        let path = app.state::<crate::AppState>().paths().config_path;
+        let text = std::fs::read_to_string(path).map_err(public_error)?;
+        let config: Value = serde_json::from_str(&text).map_err(public_error)?;
+        Ok::<_, String>(auto_update_options(&config))
+    }).await;
+    let (enabled, auto_install) = match options {
+        Ok(Ok(options)) => options,
+        error => {
+            update_log(handle, "auto-check.config-error", json!({"error":format!("{error:?}")}));
+            return;
+        }
+    };
+    if !enabled { return; }
+    // Each command uses the same try_lock, so a manual check, download or
+    // install already in progress skips this cycle rather than overlapping.
+    let Ok(result) = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>()).await else { return; };
+    if !auto_install || result.get("ok").and_then(Value::as_bool) != Some(true) { return; }
+    match result.pointer("/state/status").and_then(Value::as_str) {
+        Some("downloaded") => {
+            let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
+        }
+        Some("available") => {
+            let downloaded = download_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
+            if downloaded.as_ref().ok().and_then(|result|result.get("ok")).and_then(Value::as_bool) == Some(true) {
+                let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn schedule_update_checks(app: &AppHandle) {
     update_log(
         app,
         "startup",
-        json!({"executable": std::env::current_exe().ok()}),
+        json!({"executable": std::env::current_exe().ok(),
+            "initialCheckDelaySeconds": INITIAL_CHECK_DELAY.as_secs(),
+            "autoCheckIntervalSeconds": AUTO_CHECK_INTERVAL.as_secs()}),
     );
     if cfg!(debug_assertions) {
         return;
@@ -494,53 +555,102 @@ pub(crate) fn schedule_initial_check(app: &AppHandle) {
         let runtime = handle.state::<UpdateRuntime>();
         let operation = runtime.operation.lock().await;
         let restored = restore_cache(&handle);
-        let restored = match restored {
-            Ok(value) => value,
-            Err(error) => {
-                update_log(&handle, "cache.invalid", json!({"error":error}));
-                if let Ok(dir) = cache_dir(&handle) {
-                    let _ = update_cache::clear(&dir);
-                }
-                false
+        if let Err(error) = restored {
+            update_log(&handle, "cache.invalid", json!({"error":error}));
+            if let Ok(dir) = cache_dir(&handle) {
+                let _ = update_cache::clear(&dir);
             }
-        };
+        }
         drop(operation);
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        let config_path = handle.state::<crate::AppState>().paths().config_path;
-        let config = std::fs::read_to_string(config_path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .unwrap_or_default();
-        if config
-            .pointer("/core/autoUpdateCheck")
-            .and_then(Value::as_bool)
-            == Some(false)
-        {
-            return;
-        }
-        let auto_install = config
-            .pointer("/core/autoUpdateInstall")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if restored {
-            if auto_install {
-                let _ =
-                    quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-            }
-            return;
-        }
-        let result = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>())
-            .await
-            .ok();
-        if auto_install
-            && result
-                .as_ref()
-                .and_then(|value| value.get("ok"))
-                .and_then(Value::as_bool)
-                == Some(true)
-        {
-            let _ = download_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-            let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-        }
+        run_check_schedule(|| run_auto_check(&handle)).await;
     });
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use super::*;
+    use std::sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}};
+    use tokio::time::{advance, Duration};
+
+    #[tokio::test(start_paused = true)]
+    async fn first_check_is_delayed_then_repeats_without_catch_up_bursts() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let calls = count.clone();
+        let task = tokio::spawn(run_check_schedule(move || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(())
+        }));
+        tokio::task::yield_now().await;
+        advance(Duration::from_secs(4)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        advance(Duration::from_secs(599)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        advance(Duration::from_secs(3600)).await;
+        for _ in 0..5 { tokio::task::yield_now().await; }
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_cycle_finishes_before_the_next_delay_starts() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let calls = count.clone();
+        let task = tokio::spawn(run_check_schedule(move || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { tokio::time::sleep(Duration::from_secs(900)).await; }
+        }));
+        tokio::task::yield_now().await;
+        advance(Duration::from_secs(5)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        advance(Duration::from_secs(900)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        advance(Duration::from_secs(599)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn skipping_a_cycle_does_not_stop_future_checks() {
+        let enabled = Arc::new(AtomicBool::new(false));
+        let count = Arc::new(AtomicUsize::new(0));
+        let (setting,calls) = (enabled.clone(),count.clone());
+        let task = tokio::spawn(run_check_schedule(move || {
+            if setting.load(Ordering::SeqCst) { calls.fetch_add(1,Ordering::SeqCst); }
+            std::future::ready(())
+        }));
+        tokio::task::yield_now().await;
+        advance(Duration::from_secs(5)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst),0);
+        enabled.store(true,Ordering::SeqCst);
+        advance(Duration::from_secs(600)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst),1);
+        enabled.store(false,Ordering::SeqCst);
+        advance(Duration::from_secs(600)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(count.load(Ordering::SeqCst),1);
+        task.abort();
+    }
+
+    #[test]
+    fn settings_default_to_checking_without_installing() {
+        assert_eq!(auto_update_options(&json!({})),(true,false));
+        assert_eq!(auto_update_options(&json!({"core":{"autoUpdateCheck":false,"autoUpdateInstall":true}})),(false,true));
+        assert_eq!(auto_update_options(&json!({"core":{"autoUpdateCheck":true,"autoUpdateInstall":false}})),(true,false));
+    }
 }
