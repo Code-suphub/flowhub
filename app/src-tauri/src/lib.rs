@@ -10,6 +10,7 @@ mod config_save;
 mod storage_tests;
 mod web_open;
 mod search_diagnostic_run;
+mod focus_diagnostics;
 #[cfg(target_os = "macos")]
 mod macos_launcher_position;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -1103,6 +1104,7 @@ fn show_macos_window(window: &tauri::WebviewWindow) {
                 json!({"status": "panel-error", "error": format!("{error:?}")})
             }
         };
+        focus_diagnostics::record("native-show", detail.clone());
         detail["mainThreadQueueMs"] = json!(queue_ms);
         detail["nativeShowMs"] = json!(queued_at.elapsed().as_secs_f64() * 1000.0);
         // Disk access must not delay the panel's first frame. Diagnostics retain
@@ -1176,6 +1178,7 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 }
 
 pub fn run() {
+    focus_diagnostics::initialize();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(index) = args.iter().position(|arg| arg == "--open-web") {
@@ -1331,9 +1334,11 @@ pub fn run() {
                         api.prevent_close();
                         let _ = main_window.hide();
                     } else if let WindowEvent::Focused(true) = event {
+                        focus_diagnostics::record("native-focus", json!({"focused": true}));
                         eprintln!("[flowhub-tauri] 主窗口获得焦点");
                         focus_state.store(true, AtomicOrdering::Release);
                     } else if let WindowEvent::Focused(false) = event {
+                        focus_diagnostics::record("native-focus", json!({"focused": false}));
                         eprintln!("[flowhub-tauri] 主窗口失去焦点");
                         // Ignore the initial/stale blur generated while the
                         // launcher's hidden window is being created.
@@ -1408,6 +1413,8 @@ pub fn run() {
             get_config_path_info,
             get_storage_info,
             search_diagnostic_run::save_search_diagnostic_run,
+            focus_diagnostics::focus_diagnostics_enabled,
+            focus_diagnostics::record_focus_sample,
             diagnostics::get_diagnostics_state,
             diagnostics::set_diagnostics_enabled,
             diagnostics::sample_diagnostics,
