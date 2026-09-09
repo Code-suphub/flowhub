@@ -26,6 +26,8 @@ pub fn focus_diagnostics_enabled() -> bool { ENABLED.load(Ordering::Acquire) }
 pub struct Sample {
     event: String, target: String, active: String, scope: String,
     focused: bool, sequence: u64, elapsed: f64,
+    #[serde(default)]
+    metrics: std::collections::HashMap<String, f64>,
 }
 fn known<'a>(value: &'a str, allowed: &[&str]) -> &'a str {
     if allowed.contains(&value) { value } else { "other" }
@@ -34,12 +36,15 @@ fn known<'a>(value: &'a str, allowed: &[&str]) -> &'a str {
 pub fn record_focus_sample(app: tauri::AppHandle, sample: Sample) {
     if !ENABLED.load(Ordering::Acquire) { return; }
     let window = app.get_webview_window("main");
+    let metrics: serde_json::Map<String, Value> = sample.metrics.iter()
+        .filter(|(key, value)| value.is_finite() && **value >= 0.0 && ["eventDelayMs", "renderMs", "matchesMs", "markupMs", "domMs", "layoutMs", "frameWaitMs", "queryMs"].contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), json!(value))).collect();
     record("web-input", json!({
-        "event":known(&sample.event,&["ready","mousedown","mouseup","click","focusin","focusout","focus","blur","after-click","error"]),
+        "event":known(&sample.event,&["ready","mousedown","mouseup","click","focusin","focusout","focus","blur","after-click","after-press","error"]),
         "target":known(&sample.target,&["q","scope:all","scope:clipboard","scope:app","scope:web","scope:memo","scope:tools","kind","window","body"]),
         "active":known(&sample.active,&["q","scope:all","scope:clipboard","scope:app","scope:web","scope:memo","scope:tools","kind","body"]),
         "scope":known(&sample.scope,&["all","clipboard","app","web","memo","tools"]),
-        "documentFocused":sample.focused,"sequence":sample.sequence,"elapsed":sample.elapsed,
+        "metrics":metrics, "documentFocused":sample.focused,"sequence":sample.sequence,"elapsed":sample.elapsed,
         "nativeFocused":window.as_ref().and_then(|w|w.is_focused().ok()),
         "nativeVisible":window.as_ref().and_then(|w|w.is_visible().ok())
     }));
