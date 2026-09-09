@@ -875,6 +875,10 @@ fn close_settings(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<Value, String> {
+    open_settings_window(app, initial_url, false)
+}
+
+pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<String>, update: bool) -> Result<Value, String> {
     let initial_url = initial_url.and_then(|value| {
         let value = value.trim().to_string();
         match url::Url::parse(&value) {
@@ -885,6 +889,10 @@ fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<V
     if let Some(window) = app.get_webview_window("settings") {
         window.show().map_err(|error| error.to_string())?;
         window.set_focus().map_err(|error| error.to_string())?;
+        if update {
+            window.eval("(() => { let attempts = 0; const run = () => { if (window.runMenuUpdate) { window.runMenuUpdate(); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
+                .map_err(|error| error.to_string())?;
+        }
         if let Some(url) = initial_url {
             let argument = serde_json::to_string(&url).map_err(|error| error.to_string())?;
             window
@@ -902,7 +910,7 @@ fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<V
             query.append_pair("addUrl", url);
             format!("settings.html?{}", query.finish())
         })
-        .unwrap_or_else(|| "settings.html".to_string());
+        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else { "settings.html".to_string() });
     WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
         .inner_size(980.0, 720.0)
@@ -1444,6 +1452,7 @@ pub fn run() {
             updater::get_update_state,
             updater::check_for_updates,
             updater::download_update,
+            updater::download_and_install_update,
             updater::quit_and_install_update,
             send_test_notification,
             menu_bar::toggle_menu_bar_items

@@ -248,6 +248,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     toggleMenuBarItems: () => invoke("toggle_menu_bar_items"),
     checkForUpdates: () => invoke("check_for_updates"),
     downloadUpdate: () => invoke("download_update"),
+    downloadAndInstallUpdate: () => invoke("download_and_install_update"),
     quitAndInstallUpdate: () => invoke("quit_and_install_update"),
     onConfig(listener) { configListeners.add(listener); return () => configListeners.delete(listener); },
     onClipboardUpdated(listener) { clipboardListeners.add(listener); return () => clipboardListeners.delete(listener); },

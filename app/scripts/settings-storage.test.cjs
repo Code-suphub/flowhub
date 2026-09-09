@@ -44,6 +44,39 @@ function harness(mode = 'structure') {
   };
 }
 (async()=>{
+  for (const status of ['available', 'downloaded']) {
+    const h = harness();
+    h.state.appUpdate = {status};
+    let installs = 0;
+    h.ctx.window.confirm = () => { throw new Error('installation must not ask twice'); };
+    h.ctx.window.weborg.downloadAndInstallUpdate = async () => { installs++; return {ok:true,state:{status:'installing'}}; };
+    vm.runInContext('renderAppUpdate = () => {};', h.ctx);
+    await h.ctx.performPrimaryUpdateAction();
+    assert.equal(installs, 0, 'unsaved settings block installation before download');
+    h.state.dirty = false;
+    await h.ctx.performPrimaryUpdateAction();
+    assert.equal(installs, 1, 'one click invokes the complete update operation');
+    assert.equal(h.state.appUpdate.status, 'installing');
+  }
+  console.log('PASS: one-click update and unsaved configuration guard');
+  {
+    const h = harness();
+    h.state.appUpdate = {status:'available'};
+    h.state.dirty = false;
+    const pending = deferred();
+    let installs = 0;
+    h.ctx.window.weborg.downloadAndInstallUpdate = () => { installs++; return pending.promise; };
+    vm.runInContext('renderAppUpdate = () => {};', h.ctx);
+    const operation = h.ctx.performPrimaryUpdateAction();
+    await h.tick();
+    await h.ctx.performPrimaryUpdateAction();
+    assert.equal(installs, 1, 'repeated clicks cannot start another operation');
+    assert.equal(h.element('main').inert, true, 'configuration editing is locked until completion');
+    pending.reject(new Error('network unavailable'));
+    await assert.rejects(operation, /network unavailable/);
+    assert.equal(h.element('main').inert, false, 'failure restores editing and retry');
+    assert.equal(h.state.updateInstalling, false);
+  }
   {
     const h=harness(); h.state.config.plugins.clipboard={enabled:true,settings:{}};
     h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'true'});

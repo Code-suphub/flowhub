@@ -1139,9 +1139,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
     }
     let organizer_menu = build_organizer_menu(app)?;
     menu = menu.item(&organizer_menu);
-    if show_version || show_quit {
-        menu = menu.separator();
-    }
+    menu = menu.separator();
     if show_version {
         let version = MenuItem::with_id(
             app,
@@ -1153,6 +1151,12 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
         .map_err(|error| error.to_string())?;
         menu = menu.item(&version);
     }
+    let runtime = app.state::<crate::updater::UpdateRuntime>();
+    let (label, enabled) = crate::updater::menu_label(&runtime.snapshot());
+    let update = MenuItem::with_id(app, "flowhub-update", label, enabled, None::<&str>)
+        .map_err(|error| error.to_string())?;
+    menu = menu.item(&update);
+    *runtime.menu_item.lock().unwrap() = Some(update);
     if show_quit {
         menu = menu.text("flowhub-quit", "退出 FlowHub");
     }
@@ -1199,6 +1203,11 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
             "flowhub-open" => toggle_main(app),
             "flowhub-settings" => {
                 let _ = open_settings(app.clone(), None);
+            }
+            "flowhub-update" => {
+                // Use the settings controller for progress, errors and its unsaved
+                // configuration guard. A newly created webview must finish loading.
+                let _ = crate::open_settings_window(app.clone(), None, true);
             }
             FLOWHUB_ORGANIZER_TOGGLE_MENU_ID => {
                 let result = if ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {

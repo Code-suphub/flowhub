@@ -294,6 +294,9 @@ if (!window.weborg) {
     async downloadUpdate() {
       return { ok: false, preview: true, reason: "浏览器预览不能下载应用更新" };
     },
+    async downloadAndInstallUpdate() {
+      return { ok: false, preview: true, reason: "浏览器预览不能安装应用更新" };
+    },
     async quitAndInstallUpdate() {
       return { ok: false, preview: true, reason: "浏览器预览不能安装应用更新" };
     },

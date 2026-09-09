@@ -568,7 +568,7 @@ $("#toastClose").addEventListener("click", () => {
 function renderUpdateNotice() {
   const notice = $("#updateNotice");
   if (!notice) return;
-  const blocked = state.appUpdate?.status === "downloaded" && state.dirty;
+  const blocked = ["available", "downloaded"].includes(state.appUpdate?.status) && state.dirty;
   notice.classList.toggle("hidden", !blocked);
   notice.textContent = blocked
     ? "有未保存的配置。请先点击底部「保存」，或用「重置未保存」放弃修改，再安装更新。草稿自动保存不代表配置已生效。"
@@ -933,15 +933,15 @@ function renderAppUpdate() {
     downloading: "下载中",
     downloaded: "等待安装",
     installing: "准备安装",
-    error: "检查失败"
+    error: "更新失败"
   };
   const descriptions = {
     unsupported: "浏览器预览和开发模式不会连接更新服务；安装后的正式版本才会启用。",
     idle: "启动后会自动检查 GitHub Release，也可以立即手动检查。",
     checking: "正在连接 GitHub Release 检查最新稳定版本…",
-    available: `发现 FlowHub v${availableVersion || "—"}，确认后开始下载，完成前不会退出当前应用。`,
+    available: `发现 FlowHub v${availableVersion || "—"}，点击后将自动下载、安装并重启。`,
     "not-available": `当前 v${currentVersion} 已是最新稳定版本。`,
-    downloading: availableVersion ? `正在下载 FlowHub v${availableVersion}，可以继续使用其他设置。` : "正在下载新版本，可以继续使用其他设置。",
+    downloading: availableVersion ? `正在下载 FlowHub v${availableVersion}，完成后将自动安装并重启。` : "正在下载新版本，完成后将自动安装并重启。",
     downloaded: update.error ? `更新包已保留，可重试安装。${update.error}` : `FlowHub v${availableVersion || "新版本"} 已保存到本机，关闭应用后仍可继续安装，无需重新下载。`,
     installing: "正在核对版本信息并安装本地更新包，完成后自动重启…",
     error: update.error || "无法连接更新服务，请稍后重试。"
@@ -983,16 +983,16 @@ function renderAppUpdate() {
   const quickButton = $("#updateQuickBtn");
   const showPrimary = ["available", "downloading", "downloaded", "installing"].includes(update.status);
   const primaryLabel = update.status === "available"
-    ? `下载 v${availableVersion || "新版本"}`
+    ? `下载并安装重启 · v${availableVersion || "新版本"}`
     : update.status === "downloading"
     ? `下载中 ${Math.round(percent)}%`
     : update.status === "downloaded"
-    ? "重启并安装"
+    ? "安装并重启"
     : "正在重启…";
   for (const button of [primaryButton, quickButton]) {
     button.classList.toggle("hidden", !showPrimary);
     button.hidden = !showPrimary;
-    button.disabled = ["downloading", "installing"].includes(update.status);
+    button.disabled = state.updateInstalling || ["downloading", "installing"].includes(update.status);
     button.textContent = showPrimary ? primaryLabel : "检查更新";
   }
 }
@@ -1561,30 +1561,29 @@ async function runPrimaryUpdateAction() {
 }
 
 async function performPrimaryUpdateAction() {
+  if (state.updateInstalling) return;
   const status = state.appUpdate?.status;
-  if (status === "available") {
-    const result = await window.weborg.downloadUpdate();
-    if (result?.state) state.appUpdate = result.state;
-    renderAppUpdate();
-    if (!result?.ok) toast(result?.reason || "下载更新失败", true);
-    return;
-  }
-  if (status === "downloaded") {
+  if (["available", "downloaded"].includes(status)) {
     if (state.dirty) {
       await logUpdateEvent("install.blocked.unsaved");
       toast("请先保存或放弃当前配置修改，再重启安装更新", true);
       return;
     }
-    await logUpdateEvent("confirm.start");
-    const confirmed = window.confirm("更新已准备完成。现在重启 FlowHub 并安装吗？");
-    await logUpdateEvent("confirm.result", { confirmed });
-    if (!confirmed) return;
-    await logUpdateEvent("install.invoke");
-    const result = await window.weborg.quitAndInstallUpdate();
-    await logUpdateEvent("install.response", { ok: result?.ok, reason: result?.reason });
-    if (result?.state) state.appUpdate = result.state;
+    state.updateInstalling = true;
+    // Do not allow new unsaved edits between download and automatic restart.
+    document.querySelector("main").inert = true;
     renderAppUpdate();
-    if (!result?.ok) toast(result?.reason || "无法启动更新安装", true);
+    try {
+      await logUpdateEvent("install.invoke");
+      const result = await window.weborg.downloadAndInstallUpdate();
+      await logUpdateEvent("install.response", { ok: result?.ok, reason: result?.reason });
+      if (result?.state) state.appUpdate = result.state;
+      if (!result?.ok) toast(result?.reason || "无法启动更新安装", true);
+    } finally {
+      state.updateInstalling = false;
+      document.querySelector("main").inert = false;
+      renderAppUpdate();
+    }
   }
 }
 
@@ -2158,4 +2157,25 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
     void refreshMenuBarItems();
   }
   applyInitialWebUrl();
+}).then(() => {
+  let running = false;
+  window.runMenuUpdate = async () => {
+    if (running) return;
+    running = true;
+    try {
+      state.module = "core";
+      state.mode = "structure";
+      state.coreSection = "updates";
+      state.appUpdate = await window.weborg.getUpdateState();
+      render();
+      if (["available", "downloaded"].includes(state.appUpdate?.status)) {
+        await runPrimaryUpdateAction();
+      } else if (!["checking", "downloading", "installing"].includes(state.appUpdate?.status)) {
+        await checkAppUpdate();
+      }
+    } catch (error) {
+      toast(`更新操作失败：${String(error)}`, true);
+    } finally { running = false; }
+  };
+  if (new URLSearchParams(window.location.search).get("update") === "1") void window.runMenuUpdate();
 }).catch((error) => toast(`配置加载失败：${error.message}`, true));

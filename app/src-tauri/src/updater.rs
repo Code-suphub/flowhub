@@ -51,6 +51,8 @@ pub(crate) struct UpdateRuntime {
     available: Mutex<Option<Update>>,
     cached: Mutex<Option<CachedUpdate>>,
     operation: tokio::sync::Mutex<()>,
+    #[cfg(target_os = "macos")]
+    pub(crate) menu_item: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
 }
 
 impl UpdateRuntime {
@@ -74,10 +76,12 @@ impl UpdateRuntime {
             available: Mutex::new(None),
             cached: Mutex::new(None),
             operation: tokio::sync::Mutex::new(()),
+            #[cfg(target_os = "macos")]
+            menu_item: Mutex::new(None),
         }
     }
 
-    fn snapshot(&self) -> Value {
+    pub(crate) fn snapshot(&self) -> Value {
         self.state
             .read()
             .expect("FlowHub updater state lock poisoned")
@@ -85,11 +89,25 @@ impl UpdateRuntime {
     }
 
     fn replace(&self, app: &AppHandle, state: Value) -> Value {
+        #[cfg(target_os = "macos")]
+        let menu_changed = menu_label(&self.snapshot()) != menu_label(&state);
         *self
             .state
             .write()
             .expect("FlowHub updater state lock poisoned") = state.clone();
         let _ = app.emit("flowhub:update-state", state.clone());
+        #[cfg(target_os = "macos")]
+        if menu_changed {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let runtime = handle.state::<UpdateRuntime>();
+                let (text, enabled) = menu_label(&runtime.snapshot());
+                if let Some(item) = runtime.menu_item.lock().unwrap().as_ref() {
+                    let _ = item.set_text(text);
+                    let _ = item.set_enabled(enabled);
+                };
+            });
+        }
         state
     }
 
@@ -107,6 +125,22 @@ impl UpdateRuntime {
         }
         self.replace(app, state)
     }
+}
+
+pub(crate) fn menu_label(state: &Value) -> (String, bool) {
+    let version = state["availableVersion"].as_str().unwrap_or("");
+    let (label, enabled) = match state["status"].as_str().unwrap_or("idle") {
+        "unsupported" => ("当前构建不支持更新".into(), false),
+        "checking" => ("正在检查更新…".into(), false),
+        "available" => (format!("下载并安装重启 · v{version}"), true),
+        "downloaded" => (format!("安装并重启 · v{version}"), true),
+        "downloading" => (format!("正在下载更新 · {:.0}%", state["percent"].as_f64().unwrap_or(0.0)), false),
+        "installing" => ("正在安装并重启…".into(), false),
+        "error" => ("更新失败 · 点击重试".into(), true),
+        "not-available" => ("已是最新版本 · 检查更新".into(), true),
+        _ => ("检查更新…".into(), true),
+    };
+    (label, enabled)
 }
 
 fn checked_at() -> String {
@@ -238,6 +272,10 @@ pub(crate) async fn download_update(
         .operation
         .try_lock()
         .map_err(|_| "更新操作正在进行中".to_string())?;
+    download_inner(&app, &runtime).await
+}
+
+async fn download_inner(app: &AppHandle, runtime: &UpdateRuntime) -> Result<Value, String> {
     if runtime.cached.lock().unwrap().is_some() {
         return Ok(json!({"ok":true,"state":runtime.snapshot()}));
     }
@@ -346,6 +384,23 @@ pub(crate) async fn quit_and_install_update(
         .operation
         .try_lock()
         .map_err(|_| "更新操作正在进行中".to_string())?;
+    install_inner(&app, &runtime).await
+}
+
+/// Hold the operation lock across download, verification and installation.
+#[tauri::command]
+pub(crate) async fn download_and_install_update(
+    app: AppHandle,
+    runtime: State<'_, UpdateRuntime>,
+) -> Result<Value, String> {
+    let _operation = runtime.operation.try_lock()
+        .map_err(|_| "更新操作正在进行中".to_string())?;
+    let result = download_inner(&app, &runtime).await?;
+    if result["ok"] != true { return Ok(result); }
+    install_inner(&app, &runtime).await
+}
+
+async fn install_inner(app: &AppHandle, runtime: &UpdateRuntime) -> Result<Value, String> {
     let cached = runtime.cached.lock().unwrap().clone();
     let Some(cached) = cached else {
         return Ok(json!({"ok":false,"reason":"更新尚未下载完成","state":runtime.snapshot()}));
@@ -526,14 +581,8 @@ async fn run_auto_check(handle: &AppHandle) {
     let Ok(result) = check_for_updates(handle.clone(), handle.state::<UpdateRuntime>()).await else { return; };
     if !auto_install || result.get("ok").and_then(Value::as_bool) != Some(true) { return; }
     match result.pointer("/state/status").and_then(Value::as_str) {
-        Some("downloaded") => {
-            let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-        }
-        Some("available") => {
-            let downloaded = download_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-            if downloaded.as_ref().ok().and_then(|result|result.get("ok")).and_then(Value::as_bool) == Some(true) {
-                let _ = quit_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
-            }
+        Some("downloaded" | "available") => {
+            let _ = download_and_install_update(handle.clone(), handle.state::<UpdateRuntime>()).await;
         }
         _ => {}
     }
@@ -568,6 +617,17 @@ pub(crate) fn schedule_update_checks(app: &AppHandle) {
 
 #[cfg(test)]
 mod schedule_tests {
+    #[test]
+    fn menu_exposes_install_and_retry_but_disables_busy_actions() {
+        for status in ["available", "downloaded"] {
+            let (label, enabled) = super::menu_label(&serde_json::json!({"status":status,"availableVersion":"1.2.3"}));
+            assert!(enabled && label.contains("1.2.3") && label.contains("重启"));
+        }
+        for status in ["checking", "downloading", "installing", "unsupported"] {
+            assert!(!super::menu_label(&serde_json::json!({"status":status})).1);
+        }
+        assert!(super::menu_label(&serde_json::json!({"status":"error"})).1);
+    }
     use super::*;
     use std::sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}};
     use tokio::time::{advance, Duration};
