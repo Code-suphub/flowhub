@@ -248,8 +248,10 @@ fn apply_autostart(app: &tauri::AppHandle, config: &Value) -> Value {
 }
 
 #[tauri::command]
-fn get_config(state: State<'_, AppState>) -> Result<Value, String> {
-    hydrated_config(&state)
+async fn get_config(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || hydrated_config(&app.state::<AppState>()))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

@@ -738,14 +738,28 @@ fn optimize_icon_data_url(base64: &str) -> String {
 }
 
 #[tauri::command]
-pub fn search_clipboard(
-    state: State<'_, AppState>,
+pub async fn search_clipboard(
+    app: tauri::AppHandle,
     query: String,
     kind: String,
     limit: usize,
     offset: usize,
 ) -> Result<Vec<Value>, String> {
-    let connection = database(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        search_clipboard_records(&app.state::<AppState>(), &query, &kind, limit, offset)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn search_clipboard_records(
+    state: &AppState,
+    query: &str,
+    kind: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<Value>, String> {
+    let connection = database(state)?;
     let policy = CleanupPolicy::from_config(
         &crate::storage::read_json(&state.paths().config_path).unwrap_or_default(),
     );
@@ -780,8 +794,8 @@ pub fn search_clipboard(
         )
         .map_err(|error| error.to_string())?;
     let keyword = query.trim().to_lowercase();
-    let normalized_kind = match kind.as_str() {
-        "text" | "image" | "file" => kind.as_str(),
+    let normalized_kind = match kind {
+        "text" | "image" | "file" => kind,
         _ => "all",
     };
     let page_limit = limit.clamp(1, 100);

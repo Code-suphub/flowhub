@@ -35,3 +35,35 @@ updateHandler();assert.equal(showState.clipboardLoadedQuery,null);assert.equal(s
 vm.runInContext(s.slice(s.indexOf('function prepareForShow()'),s.indexOf('window.focusSearch =')),show);
 show.prepareForShow();assert.equal(refreshed,1);assert.equal(showState.clipboardLoadedQuery,null);assert.equal(showState.query,'');
 console.log('PASS: clipboard events invalidate inactive scopes and paged keys; show reconciles storage after cached paint');
+// Cold native replies must not undo a scroll made while metadata/assets load.
+(async () => {
+  let resolveQuery, resolveAssets, scroll = 0;
+  const coldState = { scope: 'clipboard', query: '', clipboardKind: 'all', clipboardResults: [], emptyResults: {} };
+  const cold = vm.createContext({ state: coldState, clipboardSearchToken: 0, CLIPBOARD_PAGE_SIZE: 30,
+    pluginEnabled: () => true,
+    window: { weborg: {
+      pluginSearch: () => new Promise(resolve => { resolveQuery = resolve; }),
+      loadClipboardAssets: () => new Promise(resolve => { resolveAssets = resolve; })
+    } },
+    render(options) { if (!options?.preserveScroll) scroll = 0; }
+  });
+  vm.runInContext(s.slice(s.indexOf('async function refreshClipboard('), s.indexOf('async function refreshApps(')), cold);
+  const query = cold.refreshClipboard();
+  scroll = 180;
+  resolveQuery([{ id: 1, kind: 'image' }]);
+  await query;
+  assert.equal(scroll, 180, 'late first-page query must preserve scrolling');
+  scroll = 360;
+  resolveAssets({ '1': { imageUrl: 'data:image/png;base64,fixture' } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(scroll, 360, 'cold asset completion must preserve scrolling');
+  assert(coldState.clipboardResults[0].imageUrl);
+  const stale = cold.hydrateClipboardAssets([{ id: 1, kind: 'image' }], cold.clipboardSearchToken);
+  cold.clipboardSearchToken++;
+  coldState.clipboardResults = [{ id: 2, kind: 'text' }];
+  resolveAssets({ '1': { imageUrl: 'stale' } });
+  await stale;
+  assert.equal(coldState.clipboardResults[0].id, 2);
+  assert.equal(scroll, 360);
+  console.log('PASS: cold clipboard query/assets preserve user scroll; stale assets cannot publish');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1470,18 +1470,18 @@ async function refreshClipboard({ append = false, deferRender = false } = {}) {
     if (!state.query.trim() && !append) state.emptyResults.clipboard = nextRecords.slice();
     state.clipboardLoadedQuery = state.query;
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
-    void hydrateClipboardAssets(nextRecords, token, append);
+    void hydrateClipboardAssets(nextRecords, token);
   } catch {
     if (token === clipboardSearchToken && !append) state.clipboardResults = [];
   } finally {
     if (token === clipboardSearchToken) {
       state.clipboardLoading = false;
-      if (!deferRender) render({ preserveScroll: append });
+      if (!deferRender) render({ preserveScroll: true });
     }
   }
 }
 
-async function hydrateClipboardAssets(records, token, preserveScroll) {
+async function hydrateClipboardAssets(records, token) {
   if (!window.weborg?.loadClipboardAssets) return;
   const imageRecords = (records || []).filter((record) => record.kind === "image").slice(0, 6);
   const fileRecords = (records || []).filter((record) => record.kind === "file");
@@ -1498,7 +1498,9 @@ async function hydrateClipboardAssets(records, token, preserveScroll) {
     changed = true;
     return { ...record, ...asset };
   });
-  if (changed) render({ preserveScroll });
+  // Assets can arrive after the user scrolls or switches scopes. Never reset
+  // their position for a background thumbnail/icon update.
+  if (changed) render({ preserveScroll: true });
 }
 
 async function refreshApps({ append = false, deferRender = false } = {}) {
