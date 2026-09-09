@@ -30,3 +30,20 @@
 增加显式`--focus-diagnostics`运行参数，仅在当前进程启用。每次最多保存300条结构事件至系统临时目录`flowhub-focus-<pid>.json`；前端最多250条。采集mousedown/mouseup/click、焦点进出、当前scope、activeElement类别与原生窗口焦点/可见性。原生show记录Panel的keyWindow状态。后端对前端字符串采用白名单，不保存输入值、剪贴板正文、URL或错误消息。写盘在线程池完成，不在窗口事件中同步写磁盘。正常无参数启动不保存日志。
 
 已安装0.1.8-local.20260909015007，并显式重启诊断进程。等待用户按原场景首次唤出、点击剪贴板两次后读取事件链；不预先认定故障已修复。诊断启动时已观察到隐藏页面DOM activeElement=q、document.hasFocus=false，这是启动状态记录，并非点击故障结论。
+
+## 已捕获的真实首次点击事件
+
+诊断进程65892，用户手动首次唤出后的记录：
+
+| 前端序号 | 事件 | 目标 | 当前范围 |
+| --- | --- | --- | --- |
+| 8 | mouseup | scope:clipboard | all |
+| 9 | mousedown | scope:clipboard | all |
+| 10（第二次点击） | mousedown | scope:clipboard | all |
+| 11 | mouseup | scope:clipboard | all |
+| 12 | click | scope:clipboard | all |
+| 13 | after-click | scope:clipboard | clipboard |
+
+序号由前端同步生成，首次up/down间隔约1ms；两次点击时documentFocused、nativeFocused均true，activeElement为q。首次没有click；第二次正常产生click并切换。因此此轮并非输入框缺焦点，而是原生WebKit传递的首次事件顺序使click未合成。更底层事件为何反序尚未确定，不能声称已经修复WebKit本身。
+
+改动：范围/类型导航在主鼠标mousedown时激活，保持输入焦点；click保留键盘/辅助操作入口，对已选范围去重。此为可逆导航控件，按下即可切换；没有对粘贴、删除等操作采用该语义。使用实际up→down无click序列回放，并检查正常down/click只切换一次、键盘click、右键不切换。全UI测试通过，重新构建安装，保留显式诊断模式供原生回验。

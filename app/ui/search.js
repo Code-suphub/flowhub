@@ -1768,19 +1768,31 @@ resultsEl.addEventListener("scroll", () => {
   else if (state.scope === "memo") void refreshMemos({ append: true });
 });
 settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
-// Scope controls refine the current input; mouse presses must not move the
-// native/WebKit first responder away and then attempt to recover it on click.
+// A captured cold WKWebView sequence was mouseup -> mousedown, with no click.
+// Navigation is reversible: activate on primary press instead of waiting for
+// synthesized click. Keep click for keyboard/assistive activation; dedupe it.
+function activateScopeControl(button) {
+  if (button.dataset.scope) {
+    if (state.scope !== button.dataset.scope) setScope(button.dataset.scope);
+    else q?.focus({ preventScroll: true });
+  } else if (button.dataset.clipboardKind) {
+    if (state.clipboardKind !== button.dataset.clipboardKind) setClipboardKind(button.dataset.clipboardKind);
+    else q?.focus({ preventScroll: true });
+  }
+}
 function preserveSearchFocus(event) {
-  if (event.button !== 0 || !event.target.closest("[data-scope], [data-clipboard-kind]")) return;
+  const button = event.target.closest("[data-scope], [data-clipboard-kind]");
+  if (event.button !== 0 || !button) return;
   event.preventDefault();
+  activateScopeControl(button);
 }
 scopeRow?.addEventListener("mousedown", preserveSearchFocus);
 clipboardKindRow?.addEventListener("mousedown", preserveSearchFocus);
 scopeRow?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-scope]");
-  if (button) setScope(button.dataset.scope);
+  if (button) activateScopeControl(button);
 });
-document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => setClipboardKind(button.dataset.clipboardKind)));
+document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => activateScopeControl(button)));
 window.weborg.onClipboardUpdated(() => {
   invalidateClipboardPaging();
   state.clipboardLoadedQuery = null;

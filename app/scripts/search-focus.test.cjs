@@ -18,7 +18,7 @@ context.searchInputComposing = true; handler(event()); assert.equal(focusCount, 
 context.searchInputComposing = false; q.value = ''; handler(event()); assert.equal(focusCount, 2); assert.equal(q.value, '');
 console.log('PASS: Command+K returns focus, selects without clearing query, resets held scope key, ignores unrelated modifiers and IME composition');
 // Native focus must stay with the input throughout a primary mouse press.
-const mouse = vm.createContext({});
+const mouse = vm.createContext({activateScopeControl(){}});
 vm.runInContext(source.slice(source.indexOf('function preserveSearchFocus('), source.indexOf('scopeRow?.addEventListener("mousedown"')), mouse);
 let cancelled = 0;
 const press = (button, control) => mouse.preserveSearchFocus({button, target: {closest: () => control}, preventDefault(){cancelled++;}});
@@ -46,3 +46,23 @@ assert.equal(children[1], pressed); assert.equal(pressed.textContent,'剪贴板'
 scopes.renderPluginScopes(plugins.filter(p=>p.id==='app'));
 assert.equal(scopes.state.scope,'all'); assert(children[0].active); assert.equal(children.length,2);
 console.log('PASS: scope mouse press preserves input focus; refresh retains pressed nodes and active scope');
+
+// Replay the actual cold trace: release, press, no synthesized click.
+let switches = 0, restored = 0;
+const clickState = {scope:'all',clipboardKind:'all'};
+const events = {};
+const navigation = vm.createContext({state:clickState,q:{focus(){restored++;}},
+  setScope(scope){switches++;clickState.scope=scope;},setClipboardKind(kind){switches++;clickState.clipboardKind=kind;},
+  scopeRow:{addEventListener(name,fn){events[name]=fn;}},clipboardKindRow:{addEventListener(){}},
+  document:{querySelectorAll:()=>[]}});
+vm.runInContext(source.slice(source.indexOf('function activateScopeControl('),source.indexOf('window.weborg.onClipboardUpdated(')),navigation);
+const control={dataset:{scope:'clipboard'}};
+const input={button:0,target:{closest:()=>control},preventDefault(){}};
+// The release has no handler: the following press must complete navigation.
+events.mouseup?.(input);events.mousedown(input);
+assert.equal(clickState.scope,'clipboard');assert.equal(switches,1);
+events.click(input);assert.equal(switches,1);assert.equal(restored,1);
+control.dataset.scope='app';events.click({...input,detail:0});
+assert.equal(clickState.scope,'app');assert.equal(switches,2);
+control.dataset.scope='web';events.mousedown({...input,button:2});assert.equal(switches,2);
+console.log('PASS: captured release-before-press trace switches once without click; normal click deduplicates and keyboard activation works');
