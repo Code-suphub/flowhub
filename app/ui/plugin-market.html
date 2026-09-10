@@ -1,5 +1,5 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="plugin-market.css"><title>插件市场</title></head><body>
-<header><h1>插件市场</h1><button id="choose">安装开发目录</button></header>
+<header><h1>插件市场</h1><div class="actions"><button id="openCanvas">桌面组件</button><button id="choose">安装开发目录</button></div></header>
 <nav role="tablist" aria-label="插件市场"><button role="tab" data-tab="discover" aria-selected="true">发现</button><button role="tab" data-tab="installed" aria-selected="false" tabindex="-1">已安装</button><button role="tab" data-tab="sources" aria-selected="false" tabindex="-1">来源</button></nav>
 <p id="notice" role="status" aria-live="polite"></p>
 <section id="discover" role="tabpanel"><div class="toolbar"><input id="search" type="search" aria-label="搜索插件" placeholder="搜索插件名称或描述"><button id="scan">刷新来源</button><button id="goSources">配置来源</button></div><div id="discoverRows"></div></section>

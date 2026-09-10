@@ -52,6 +52,7 @@ mod port_inspector;
 mod network_diagnostics;
 mod plugin_runtime;
 mod plugin_status;
+mod plugin_canvas;
 #[cfg(target_os = "macos")]
 mod macos_accessibility;
 #[cfg(target_os = "macos")]
@@ -1313,6 +1314,8 @@ pub fn run() {
             app.manage(state);
             app.manage(plugin_runtime::Runtime::new(app.state::<AppState>().root_dir.clone()).map_err(std::io::Error::other)?);
             app.manage(plugin_status::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
+            app.manage(plugin_canvas::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
+            plugin_canvas::restore(app.handle());
             plugin_status::start(app.handle().clone());
             if app
                 .state::<AppState>()
@@ -1439,6 +1442,8 @@ pub fn run() {
             plugin_runtime::plugin_api,
             plugin_runtime::plugin_rpc,
             plugin_status::plugin_status_api,
+            plugin_canvas::plugin_canvas_api,
+            plugin_canvas::plugin_metric_history,
             close_settings,
             network_diagnostics::run_network_diagnostic,
             port_inspector::inspect_port,

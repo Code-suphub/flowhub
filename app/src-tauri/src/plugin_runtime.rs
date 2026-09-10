@@ -29,6 +29,10 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     Ok(Installed{manifest,directory,enabled:true})
 }
 impl Runtime {
+    pub(crate) async fn status_history(&self,id:&str,payload:Value)->Result<Value,String>{
+        if !self.get(id)?.manifest.status_surface{return Err("插件未提供状态详情".into());}
+        self.session(id).await?.call("status_history".into(),payload).await
+    }
     pub(crate) fn status_plugins(&self)->Vec<(String,String)> { self.installed.lock().unwrap().iter().filter(|p|p.enabled && p.manifest.status_surface).map(|p|(p.manifest.id.clone(),p.manifest.name.clone())).collect() }
     pub(crate) async fn status_snapshot(&self,id:&str)->Result<Value,String> {
         if !self.get(id)?.manifest.status_surface {return Err("插件未提供状态组件".into());}

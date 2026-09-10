@@ -1,0 +1,19 @@
+(() => {
+const $=s=>document.querySelector(s),q=new URLSearchParams(location.search),invoke=window.__TAURI__?.core?.invoke;
+const plugin=q.get('plugin')||'',row=q.get('row')||'',names={load:'负载',cpu:'CPU',memory:'内存',disk:'磁盘',rx:'下载速度',tx:'上传速度'};
+let metric='load',request=0,mode=localStorage.getItem('monitor-detail-mode')||'all';
+$('#title').textContent=q.get('title')||'机器详情';$('#identity').textContent=invoke?row:'浏览器预览 · 模拟数据';
+for(const [key,name]of Object.entries(names)){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{metric=key;load();};b.dataset.metric=key;$('#metrics').append(b);}
+function draw(result,metric,section){const $=s=>section.querySelector(s);const rows=result.data||[],valid=rows.filter(r=>Number.isFinite(r[1])),unit=result.unit||'';$('[data-chart]').replaceChildren();if(!valid.length){$('[data-summary]').textContent='暂无数据';$('[data-status]').textContent='这个时间范围没有已保存的采样。';return;}
+const max=Math.max(1,...valid.map(r=>r[1])),ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 760 310');svg.setAttribute('role','img');svg.setAttribute('aria-label',names[metric]+'历史曲线');
+function node(tag,attrs,text){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!=null)n.textContent=text;svg.append(n);return n;}
+for(let i=0;i<=4;i++){const y=20+i*60;node('line',{x1:60,x2:740,y1:y,y2:y,stroke:'#ffffff0e'});node('text',{x:5,y:y+4,fill:'#aaa3aa','font-size':11},(max*(1-i/4)).toFixed(1));}
+let d='',pen=false;rows.forEach((r,i)=>{if(!Number.isFinite(r[1])){pen=false;return;}const x=60+i/(rows.length-1||1)*680,y=260-r[1]/max*240;d+=(pen?'L':'M')+x+','+y+' ';pen=true;const dot=node('circle',{cx:x,cy:y,r:3,fill:'#f7a454'}),t=document.createElementNS(ns,'title');t.textContent=new Date(r[0]*1000).toLocaleString()+' · '+r[1].toFixed(2)+' '+unit;dot.append(t);});node('path',{d,stroke:'#f7a454','stroke-width':2,fill:'none'});node('text',{x:60,y:292,fill:'#aaa3aa','font-size':11},new Date(rows[0][0]*1000).toLocaleString());node('text',{x:740,y:292,fill:'#aaa3aa','font-size':11,'text-anchor':'end'},new Date(rows.at(-1)[0]*1000).toLocaleString());$('[data-chart]').append(svg);$('[data-summary]').textContent='最近采样 '+valid.at(-1)[1].toFixed(2)+' '+unit;$('[data-status]').textContent='鼠标悬停在采样点可查看时间和数值。';}
+async function load(){
+ const token=++request;$('#metrics').hidden=mode==='all';$('#charts').classList.toggle('overview',mode==='all');$('#allMode').setAttribute('aria-pressed',String(mode==='all'));$('#singleMode').setAttribute('aria-pressed',String(mode==='single'));document.querySelectorAll('[data-metric]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.metric===metric)));
+ const seconds=Number($('#range').value),keys=mode==='all'?Object.keys(names):[metric];$('#charts').replaceChildren();
+ await Promise.all(keys.map(async key=>{const section=document.createElement('section');section.innerHTML='<div class="chart-head"><h2></h2><span data-summary></span></div><div data-chart></div><p data-status role="status">正在读取历史…</p>';section.querySelector('h2').textContent=names[key];$('#charts').append(section);try{const result=invoke?await invoke('plugin_metric_history',{plugin,row,metric:key,seconds}):{unit:key==='load'?'':key==='rx'||key==='tx'?'KB/s':'%',data:Array.from({length:90},(_,i)=>[Date.now()/1000-seconds+i*seconds/89,i>35&&i<43?null:Math.max(0,key==='load'?1+Math.sin(i/8):40+20*Math.sin(i/8))])};if(token===request)draw(result,key,section);}catch(e){if(token===request)section.querySelector('[data-status]').textContent='历史读取失败：'+String(e);}}));
+}
+for(const [id,value]of [['allMode','all'],['singleMode','single']])$('#'+id).onclick=()=>{mode=value;localStorage.setItem('monitor-detail-mode',mode);load();};
+$('#range').onchange=load;$('#refresh').onclick=load;load();
+})();

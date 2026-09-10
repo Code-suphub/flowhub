@@ -20,6 +20,7 @@ pub(crate) struct State {
     menus: Mutex<HashMap<String, String>>,
 }
 impl State {
+    pub(crate) fn snapshot(&self,id:&str)->Option<Value>{self.cache.lock().unwrap().get(id).cloned()}
     pub(crate) fn new(root:&std::path::Path)->Result<Self,String> {
         let path=root.join("plugin-status.json");
         let preferences=match std::fs::read(&path) {
@@ -39,6 +40,11 @@ fn available(app:&tauri::AppHandle,id:&str)->bool {
     app.state::<crate::plugin_runtime::Runtime>().status_plugins().iter().any(|(key,_)|key==id)
 }
 pub(crate) fn open(app:&tauri::AppHandle,id:&str)->Result<(),String> {
+    if !available(app,id){return Err("插件状态组件不可用".into());}
+    crate::plugin_canvas::open(app,id)
+}
+#[allow(dead_code)]
+fn open_legacy(app:&tauri::AppHandle,id:&str)->Result<(),String> {
     if !available(app,id){return Err("插件状态组件不可用，请重新加载插件".into());}
     let state=app.state::<State>();let mut prefs=state.prefs(id);prefs.desktop=true;state.save(id,prefs.clone())?;
     let name=label(id);
@@ -68,7 +74,7 @@ pub(crate) fn open(app:&tauri::AppHandle,id:&str)->Result<(),String> {
     });
     Ok(())
 }
-fn open_plugin(app:&tauri::AppHandle,id:&str) {
+pub(crate) fn open_plugin(app:&tauri::AppHandle,id:&str) {
     if crate::open_settings_window(app.clone(),None,false).is_ok() {
         if let Some(w)=app.get_webview_window("settings") {
             let module=json!(format!("plugin:{id}"));
@@ -78,7 +84,7 @@ fn open_plugin(app:&tauri::AppHandle,id:&str) {
 }
 #[tauri::command]
 pub(crate) fn plugin_status_api(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,action:String,payload:Value)->Result<Value,String> {
-    if window.label()!="settings" && window.label()!=label(&id) {return Err("状态组件来源无效".into());}
+    if window.label()!="settings" && window.label()!="plugin-canvas" && window.label()!=label(&id) {return Err("状态组件来源无效".into());}
     if !available(&app,&id){return Err("插件状态组件不可用，请在市场重新加载插件".into());}
     let state=app.state::<State>();
     match action.as_str() {
@@ -148,11 +154,16 @@ fn update_tray(app:&tauri::AppHandle,id:&str,title:&str,snapshot:&Value)->Result
 pub(crate) fn start(app:tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut initialized=std::collections::HashSet::new();
+        let mut menu_plugins=app.state::<crate::plugin_runtime::Runtime>().status_plugins();
         loop {
             let plugins=app.state::<crate::plugin_runtime::Runtime>().status_plugins();
+            if plugins!=menu_plugins {
+                menu_plugins=plugins.clone();
+                #[cfg(target_os="macos")]
+                crate::menu_bar::schedule_flowhub_menu_refresh(&app);
+            }
             for (id,title) in &plugins {
                 let prefs=app.state::<State>().prefs(id);
-                if !prefs.tray && !prefs.desktop {continue;}
                 let result=app.state::<crate::plugin_runtime::Runtime>().status_snapshot(id).await;
                 let snapshot=result.unwrap_or_else(|e|json!({"rows":[],"error":e}));
                 app.state::<State>().cache.lock().unwrap().insert(id.clone(),snapshot.clone());

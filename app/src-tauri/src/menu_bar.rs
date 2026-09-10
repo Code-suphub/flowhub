@@ -998,6 +998,20 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
     if show_launcher || show_settings {
         menu = menu.separator();
     }
+    menu = menu.text("flowhub-desktop-widgets", "打开桌面组件…");
+    let plugins = app.state::<crate::plugin_runtime::Runtime>().status_plugins();
+    if !plugins.is_empty() {
+        let mut monitors = SubmenuBuilder::new(app, "插件监控");
+        for (id, title) in plugins {
+            let plugin_menu = SubmenuBuilder::new(app, title)
+                .text(format!("flowhub-widget:{id}"), "打开桌面监控")
+                .text(format!("flowhub-plugin:{id}"), "打开插件")
+                .build().map_err(|error| error.to_string())?;
+            monitors = monitors.item(&plugin_menu);
+        }
+        menu = menu.item(&monitors.build().map_err(|error| error.to_string())?);
+    }
+    menu = menu.separator();
     let organizer_menu = build_organizer_menu(app)?;
     menu = menu.item(&organizer_menu);
     menu = menu.separator();
@@ -1064,6 +1078,19 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
             "flowhub-open" => toggle_main(app),
             "flowhub-settings" => {
                 let _ = open_settings(app.clone(), None);
+            }
+            "flowhub-desktop-widgets" => {
+                if let Err(error) = crate::plugin_canvas::open(app, "") {
+                    eprintln!("[flowhub-tauri] 无法打开桌面组件：{error}");
+                }
+            }
+            id if id.starts_with("flowhub-widget:") => {
+                if let Err(error) = crate::plugin_canvas::open(app, &id["flowhub-widget:".len()..]) {
+                    eprintln!("[flowhub-tauri] 无法打开插件监控：{error}");
+                }
+            }
+            id if id.starts_with("flowhub-plugin:") => {
+                crate::plugin_status::open_plugin(app, &id["flowhub-plugin:".len()..]);
             }
             "flowhub-update" => {
                 // Use the settings controller for progress, errors and its unsaved

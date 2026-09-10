@@ -1,6 +1,7 @@
 (() => {
 const $=s=>document.querySelector(s),invoke=window.parent.__TAURI__?.core?.invoke,api=(action,payload={})=>invoke('plugin_api',{action,payload});
 let installed=[],sources=[],found=[],busy=false;
+$('#openCanvas').onclick=()=>{if(invoke)invoke('plugin_canvas_api',{action:'open',payload:{}}).catch(e=>$('#notice').textContent=String(e));else $('#notice').textContent='请在 FlowHub 中打开桌面组件';};
 const tabs=[...document.querySelectorAll('[data-tab]')];
 function tab(name){tabs.forEach(b=>{const active=b.dataset.tab===name;b.setAttribute('aria-selected',active);b.tabIndex=active?0:-1;$('#'+b.dataset.tab).hidden=!active;});}
 tabs.forEach((b,i)=>{b.onclick=()=>tab(b.dataset.tab);b.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const next=tabs[(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];next.click();next.focus();}};});
