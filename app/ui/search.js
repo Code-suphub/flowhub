@@ -384,6 +384,11 @@ function deferUncachedWebIcons(delay = 260) {
   }, delay);
 }
 function setConfig(config) {
+  if (configuredSearchOrder(state.config).join() !== configuredSearchOrder(config).join()) {
+    allResultKeys = null;
+    allInitialResults = [];
+    state.index = 0;
+  }
   state.config = config;
 }
 
@@ -465,7 +470,12 @@ function usageMatches() {
   if (state.query.trim() || state.scope === "clipboard") return [];
   const entries = [];
   for (const section of ["frequent", "recent"]) {
-    for (const item of state.usageSections?.[section] || []) {
+    const sectionItems = [...(state.usageSections?.[section] || [])];
+    if (state.scope === "all") {
+      const order = configuredSearchOrder(state.config);
+      sectionItems.sort((a, b) => order.indexOf(a.type === "page" ? "web" : a.type) - order.indexOf(b.type === "page" ? "web" : b.type));
+    }
+    for (const item of sectionItems) {
       if (item.type === "app" && !pluginEnabled("app")) continue;
       if (item.type === "page" && !pluginEnabled("web")) continue;
       if (state.scope === "app" && item.type !== "app") continue;
@@ -485,13 +495,23 @@ let allResultKeys = null;
 let allInitialResults = [];
 let allPaging = false;
 const resultKey = (item) => `${item.type || item.kind}:${item.id || item.path || item.url || item.title}`;
+function configuredSearchOrder(config) {
+  const defaults = config?.core?.webBeforeClipboard === false
+    ? ["app", "clipboard", "web", "memo"] : ["app", "web", "clipboard", "memo"];
+  const saved = config?.core?.searchResultOrder;
+  return [...new Set([...(Array.isArray(saved) ? saved : []), ...defaults])]
+    .filter(id => defaults.includes(id));
+}
+function orderedSources(groups) {
+  return configuredSearchOrder(state.config).flatMap(id => groups[id] || []);
+}
 function allCandidates() {
-  return [
-    ...(pluginEnabled("clipboard") ? clipboardMatches() : []),
-    ...(pluginEnabled("app") ? appMatches() : []),
-    ...(pluginEnabled("web") ? pageMatches().map(page => ({ ...page, type: "page" })) : []),
-    ...(pluginEnabled("memo") ? memoMatches() : [])
-  ];
+  return orderedSources({
+    app: pluginEnabled("app") ? appMatches() : [],
+    web: pluginEnabled("web") ? pageMatches().map(page => ({ ...page, type: "page" })) : [],
+    clipboard: pluginEnabled("clipboard") ? clipboardMatches() : [],
+    memo: pluginEnabled("memo") ? memoMatches() : []
+  });
 }
 function allHasMore() {
   const shown = new Set(allResultKeys || matches().map(resultKey));
@@ -560,12 +580,19 @@ function matches() {
   if (state.scope === "memo") return memos;
   if (!state.query.trim()) {
     const regularLimit = usages.length ? 4 : 6;
-    return [...usages.slice(0, usages.length ? 8 : 0), ...clips.slice(0, regularLimit), ...withoutUsageDuplicates(pages, usages).slice(0, regularLimit)].slice(0, 12);
+    const visibleUsages = usages.slice(0, 8);
+    return [...visibleUsages, ...orderedSources({
+      app: withoutUsageDuplicates(apps, visibleUsages).slice(0, 3),
+      web: withoutUsageDuplicates(pages, visibleUsages).slice(0, regularLimit),
+      clipboard: clips.slice(0, regularLimit), memo: memos.slice(0, 4)
+    })].slice(0, 12);
   }
   const appResults = state.query.trim() ? apps.slice(0, 3) : [];
   const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
   const regularLimit = appResults.length || memoResults.length ? 3 : 6;
-  return [...tools, ...(addWeb ? [addWeb] : []), ...memoResults, ...clips.slice(0, regularLimit), ...appResults, ...pages.slice(0, regularLimit)].slice(0, 12);
+  return [...tools, ...(addWeb ? [addWeb] : []), ...orderedSources({
+    app: appResults, web: pages.slice(0, regularLimit), clipboard: clips.slice(0, regularLimit), memo: memoResults
+  })].slice(0, 12);
 }
 
 function usageIndices(items, section) {

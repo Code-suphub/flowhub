@@ -592,6 +592,8 @@
       .plugin-shortcut input { width: 72px; min-height: 28px; padding: 4px 7px; font-size: 10px; }
       .scope-master-row { min-height: 48px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 94px; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid rgba(143, 213, 183, .1); border-radius: 10px; background: rgba(143, 213, 183, .035); }
       .scope-master-row .plugin-shortcut input { width: 94px; }
+      #coreSearchResultOrder { display: grid; gap: 8px; }
+      #coreSearchResultOrder .scope-master-row { grid-template-columns: minmax(0, 1fr) auto auto; }
       .core-settings-card {
         display: grid;
         grid-template-columns: 120px minmax(0, 1fr);
@@ -764,6 +766,7 @@
 
         <div id="webPaneDivider" class="collection-divider" role="separator" tabindex="0" aria-label="调整网页目录宽度" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="380" aria-valuenow="260" title="拖动调整目录宽度；方向键微调，双击恢复"></div>
         <main class="editor">
+          <section class="module-panel hidden integrated-plugin" data-module-panel="extensions" aria-label="插件工作区"><iframe id="pluginFrame" title="插件工作区" referrerpolicy="no-referrer"></iframe></section>
           <div class="editor-inner module-panel" data-module-panel="core">
             <div class="editor-head core-editor-head">
               <div class="core-editor-title"><div class="editor-kicker">FlowHub Core</div><div class="core-editor-title-row"><h2>通用设置</h2><span class="module-state">运行中</span></div><p>这些配置属于 App 本身，不依赖任何插件。</p></div>
@@ -791,6 +794,11 @@
                   </div>
                   <div class="plugin-control-groups" id="corePluginControls"></div>
                   <div class="field-hint">每一行同时管理是否参与搜索和范围快捷键；留空可停用快捷键，关闭模块不会删除已有数据。</div>
+                </div>
+                <div class="settings-block wide hidden" data-core-section-panel="search">
+                  <div class="settings-block-title">全部结果排序</div>
+                  <ol id="coreSearchResultOrder" aria-label="全部结果优先级" style="list-style:none;padding:0"></ol>
+                  <div class="field-hint">越靠上越优先，默认应用 → 网页 → 剪贴板 → 备忘录。仅影响“全部”范围，各来源内部保留原有匹配排序；常用与最近使用、明确触发的快捷操作保持优先。停用的来源会自动跳过，保存后生效。</div>
                 </div>
                 <div class="settings-block wide hidden" data-core-section-panel="search">
                   <div class="settings-block-title">网页打开方式</div>
@@ -1072,5 +1080,7 @@
     <script src="ui-performance.js"></script>
     <script src="collection-layout.js"></script>
     <script src="settings.js"></script>
+    <script src="plugin-entry.js"></script>
+    <link rel="stylesheet" href="plugin-integration.css">
   </body>
 </html>

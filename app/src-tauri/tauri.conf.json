@@ -30,8 +30,8 @@
     ],
     "security": {
       "dangerousDisableAssetCspModification": ["style-src"],
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://dns.google https://ipwho.is https://ipapi.co https://api4.ipify.org https://api6.ipify.org https://4.ident.me https://6.ident.me; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
-      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost ws://127.0.0.1:5174 https://dns.google https://ipwho.is https://ipapi.co https://api4.ipify.org https://api6.ipify.org https://4.ident.me https://6.ident.me; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://dns.google https://ipwho.is https://ipapi.co https://api4.ipify.org https://api6.ipify.org https://4.ident.me https://6.ident.me; object-src 'none'; frame-src 'self' flowhub-plugin:; base-uri 'none'; form-action 'none'",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost ws://127.0.0.1:5174 https://dns.google https://ipwho.is https://ipapi.co https://api4.ipify.org https://api6.ipify.org https://4.ident.me https://6.ident.me; object-src 'none'; frame-src 'self'; base-uri 'none'; form-action 'none'"
     }
   },
   "bundle": {

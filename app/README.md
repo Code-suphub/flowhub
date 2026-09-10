@@ -93,6 +93,12 @@ npm run build:local
 npm run build:local:install
 ```
 
+## 机器管理插件
+
+机器管理已迁至同级独立 Git 仓库 `flowhub-machines-plugin`，页面、SSH 后端和测试都在插件仓库中维护。FlowHub 只保留通用插件加载器。首次迁移需要更新宿主，然后在「插件市场」选择已构建的插件仓库目录安装。
+
+在插件仓库运行 `npm run dev` 使用模拟数据调试，运行 `npm run build` 构建独立后端；之后在插件市场重新加载，无需重编译 FlowHub。宿主的 `npm run dev:machines` 是同级仓库开发命令的快捷入口。原机器配置和历史数据沿用，详见[独立插件协议](../docs/plugin-runtime.md)。市场支持先配置本地目录或 HTTPS 仓库，再扫描安装。线上独立插件包需要签名、公钥和平台信息，旧声明式线上包需要升级为 schema 2。
+
 ## 核心能力
 
 - 网页目录：分类、搜索、编辑并持久化到 SQLite。
@@ -101,3 +107,10 @@ npm run build:local:install
 - 备忘命令：统一搜索 MySQL、Docker、Bash、Git 和 Kubernetes 等内容。
 - 常用/最近：打开应用或网页后写入 SQLite，并按时间衰减计算热度。
 - 系统集成：全局快捷键、失焦隐藏、单实例、登录时启动和应用内更新。
+# 控制本地构建磁盘占用
+
+开发与测试默认关闭 Rust 调试符号和增量编译，测试仍保留断言。需要调试符号时可临时设置 `CARGO_PROFILE_DEV_DEBUG=1`。Release 配置不受影响。
+
+本地安装 `npm run build:local:install` 默认只生成 app 和更新归档，不生成 DMG；正式分发构建保持原流程。不要同时运行完整测试与 Release 构建，避免链接临时文件叠加。
+
+需要回收缓存时，在 app 目录运行 `cargo clean --manifest-path src-tauri/Cargo.toml --profile dev`。它只删除开发/测试构建产物，保留 Release 产物、已安装应用和用户数据；下一次测试会重新编译依赖。

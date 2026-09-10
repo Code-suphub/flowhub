@@ -1,0 +1,4 @@
+/dist/
+*.minisig
+*.key
+*.pem

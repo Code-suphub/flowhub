@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "machines",
+  "name": "机器管理",
+  "version": "0.1.0",
+  "hostVersion": ">=0.1.9, <0.2.0",
+  "capabilities": ["ssh:collect", "ssh:execute", "ssh:terminal", "ssh:configure"],
+  "templates": [
+    { "name": "系统概况", "command": "uname -a; uptime; df -h /" },
+    { "name": "Docker 容器", "command": "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" },
+    { "name": "最近系统日志", "command": "journalctl -n 80 --no-pager" }
+  ]
+}

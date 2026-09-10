@@ -50,6 +50,8 @@ mod desktop_security;
 mod diagnostics;
 mod port_inspector;
 mod network_diagnostics;
+mod plugin_runtime;
+mod plugin_status;
 #[cfg(target_os = "macos")]
 mod macos_accessibility;
 #[cfg(target_os = "macos")]
@@ -1197,6 +1199,18 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 pub fn run() {
     focus_diagnostics::initialize();
     let builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("flowhub-plugin", |context, request| {
+            let uri=request.uri();
+            let id=uri.host().unwrap_or("");
+            let path=uri.path().trim_start_matches('/');
+            let result=context.app_handle().state::<plugin_runtime::Runtime>().asset(id,path);
+            let (status,body,mime)=match result {Ok((data,mime))=>(200,data,mime),Err(error)=>(404,error.into_bytes(),"text/plain")};
+            tauri::http::Response::builder().status(status).header("Content-Type",mime).header("Cache-Control","no-store")
+                // The sandbox gives the document an opaque origin. WebKit cannot
+                // match its custom-protocol subresources against 'self'.
+                .header("Content-Security-Policy",plugin_runtime::asset_csp(id))
+                .body(body).unwrap()
+        })
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(index) = args.iter().position(|arg| arg == "--open-web") {
                 if let Some(url) = args.get(index + 1).cloned() {
@@ -1297,6 +1311,9 @@ pub fn run() {
             let state = initialize_state().map_err(std::io::Error::other)?;
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
+            app.manage(plugin_runtime::Runtime::new(app.state::<AppState>().root_dir.clone()).map_err(std::io::Error::other)?);
+            app.manage(plugin_status::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
+            plugin_status::start(app.handle().clone());
             if app
                 .state::<AppState>()
                 .application_index_needs_refresh
@@ -1419,6 +1436,9 @@ pub fn run() {
             get_proxy_info,
             search_usage,
             open_settings,
+            plugin_runtime::plugin_api,
+            plugin_runtime::plugin_rpc,
+            plugin_status::plugin_status_api,
             close_settings,
             network_diagnostics::run_network_diagnostic,
             port_inspector::inspect_port,

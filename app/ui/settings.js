@@ -660,12 +660,30 @@ function renderSelected() {
   bindIconFallbacks();
 }
 
+function configuredSearchOrder(config) {
+  const defaults = config?.core?.webBeforeClipboard === false
+    ? ["app", "clipboard", "web", "memo"] : ["app", "web", "clipboard", "memo"];
+  const saved = config?.core?.searchResultOrder;
+  return [...new Set([...(Array.isArray(saved) ? saved : []), ...defaults])]
+    .filter(id => defaults.includes(id));
+}
+function renderSearchResultOrder() {
+  const names = { app: "应用", web: "网页", clipboard: "剪贴板", memo: "备忘录" };
+  const order = configuredSearchOrder(state.config);
+  $("#coreSearchResultOrder").innerHTML = order.map((id, index) => `
+    <li class="scope-master-row">
+      <span class="plugin-control-copy"><strong>${index + 1}. ${names[id]}</strong></span>
+      <button class="button" type="button" data-search-order="${id}" data-direction="-1" aria-label="上移${names[id]}" ${index === 0 ? "disabled" : ""}>上移</button>
+      <button class="button" type="button" data-search-order="${id}" data-direction="1" aria-label="下移${names[id]}" ${index === order.length - 1 ? "disabled" : ""}>下移</button>
+    </li>`).join("");
+}
 function renderSettingsFields() {
   const coreHotkey = $("#coreHotkey");
   const coreHotkeyValue = state.config?.core?.hotkey || "Alt+Space";
   if (coreHotkey.matches("button")) coreHotkey.textContent = coreHotkeyValue;
   else coreHotkey.value = coreHotkeyValue;
   $("#coreReuseBrowserTabs").checked = state.config?.core?.reuseBrowserTabs === true;
+  renderSearchResultOrder();
   $("#coreLaunchAtLogin").checked = state.config?.core?.launchAtLogin === true;
   if ($("#autoUpdateCheck")) $("#autoUpdateCheck").checked = state.config?.core?.autoUpdateCheck !== false;
   if ($("#autoUpdateInstall")) $("#autoUpdateInstall").checked = state.config?.core?.autoUpdateInstall === true;
@@ -1110,7 +1128,7 @@ function renderModule() {
   const workspace = document.querySelector(".workspace");
   workspace?.classList.toggle("single-pane", state.module !== "web");
   document.querySelectorAll("[data-module-panel]").forEach((panel) => {
-    panel.classList.toggle("hidden", panel.dataset.modulePanel !== state.module);
+    panel.classList.toggle("hidden", panel.dataset.modulePanel !== state.module && !(panel.dataset.modulePanel === "extensions" && state.module.startsWith("plugin:")));
   });
   document.querySelectorAll("[data-module]").forEach((item) => {
     const active = item.dataset.module === state.module;
@@ -1164,6 +1182,7 @@ function renderPluginModules() {
   };
   $("#moduleSwitcher").innerHTML = [
     coreButton,
+    window.FlowHubPluginIntegration?.navigation() || `<button class="module-button" type="button" data-module="extensions" aria-label="插件市场" title="插件市场">＋</button>`,
     categoryMenu("入口", ["web", "app"]),
     categoryMenu("文本", ["clipboard", "memo"]),
     categoryMenu("工具", ["tools"])
@@ -1770,9 +1789,10 @@ function handleAction(action, actionTarget) {
 }
 
 function switchModule(module) {
-  if (!["core", "web", "clipboard", "app", "memo", "tools"].includes(module)) return;
+  if (!["core", "web", "clipboard", "app", "memo", "tools", "extensions"].includes(module) && !window.FlowHubPluginIntegration?.has(module)) return;
   if (state.module === module) return;
   state.module = module;
+  window.FlowHubPluginIntegration?.show(module);
   window.flowhubCollectionLayout?.reset();
   renderModule();
   document.querySelector(".editor")?.scrollTo({ top: 0 });
@@ -1789,6 +1809,21 @@ document.addEventListener("toggle", (event) => {
 }, true);
 
 document.addEventListener("click", (event) => {
+  const orderButton = event.target.closest("[data-search-order]");
+  if (orderButton) {
+    const order = configuredSearchOrder(state.config);
+    const index = order.indexOf(orderButton.dataset.searchOrder);
+    const next = index + Number(orderButton.dataset.direction);
+    if (orderButton.disabled || index < 0 || next < 0 || next >= order.length) return;
+    [order[index], order[next]] = [order[next], order[index]];
+    state.config.core ||= {};
+    state.config.core.searchResultOrder = order;
+    markDirty();
+    renderSearchResultOrder();
+    const movedButton = document.querySelector(`[data-search-order="${orderButton.dataset.searchOrder}"][data-direction="${orderButton.dataset.direction}"]`);
+    (movedButton?.disabled ? document.querySelector(`[data-search-order="${orderButton.dataset.searchOrder}"]:not(:disabled)`) : movedButton)?.focus();
+    return;
+  }
   const shortcutButton = event.target.closest(".shortcut-capture");
   if (shortcutButton) {
     event.preventDefault();

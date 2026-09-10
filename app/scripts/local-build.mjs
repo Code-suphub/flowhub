@@ -7,6 +7,10 @@ const appDirectory = resolve(new URL("..", import.meta.url).pathname);
 const packageJson = JSON.parse(readFileSync(join(appDirectory, "package.json"), "utf8"));
 const installRequested = process.argv.includes("--install");
 const buildArguments = process.argv.slice(2).filter((argument) => argument !== "--install");
+// A local install needs the signed app/updater archive, not a distribution DMG.
+if (installRequested && !buildArguments.some(argument => argument === '--bundles' || argument.startsWith('--bundles='))) {
+  buildArguments.push('--bundles', 'app');
+}
 const baseVersion = String(packageJson.version || "0.1.0").replace(/[^0-9.].*$/, "");
 const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
 const localVersion = `${baseVersion}-local.${stamp}`;

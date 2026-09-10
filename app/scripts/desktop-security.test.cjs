@@ -7,6 +7,7 @@ assert(settingsHtml.includes('data-action="clear-clipboard-exclusions"'));
 const security=JSON.parse(fs.readFileSync(path.join(__dirname,'../src-tauri/tauri.conf.json'))).app.security;
 const directives=Object.fromEntries(security.csp.split(';').map(x=>x.trim().split(/\s+/)).filter(x=>x[0]).map(([name,...sources])=>[name,sources]));
 assert.deepEqual(directives['script-src'],["'self'"]);
+assert.deepEqual(directives['frame-src'],["'self'", 'flowhub-plugin:']);
 assert.deepEqual(security.dangerousDisableAssetCspModification,['style-src']);
 assert(directives['style-src'].includes("'unsafe-inline'"));
 assert(directives['img-src'].includes('data:'));

@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlowHub 状态</title><link rel="stylesheet" href="plugin-status.css"></head>
+<body><header><div><small>FLOWHUB / LIVE STATUS</small><h1 id="title">机器状态</h1></div><button id="openPlugin">打开插件 ↗</button></header>
+<p id="message" role="status">正在读取缓存…</p><div id="summary"></div><main id="rows"></main>
+<details><summary>显示设置</summary><label><input id="tray" type="checkbox">显示菜单栏状态</label><button id="showMenu">打开菜单栏下拉</button><label><input id="pinned" type="checkbox">窗口始终置顶</label><h2>关注机器</h2><p>未勾选时显示全部机器。</p><div id="favorites"></div><button id="save">保存设置</button></details>
+<footer>每 15 秒读取采集缓存 · 关闭窗口可从菜单栏重开</footer><script src="plugin-status.js"></script></body></html>

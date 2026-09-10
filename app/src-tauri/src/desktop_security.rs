@@ -6,6 +6,7 @@ fn bundled_desktop_security() {
     let csp = security["csp"].as_str().unwrap();
     assert!(csp.contains("script-src 'self';"));
     assert!(csp.contains("object-src 'none'"));
+    assert!(csp.contains("frame-src 'self'"));
     assert!(csp.contains("ipc: http://ipc.localhost https://ipc.localhost"));
     assert!(!csp.contains("ws:"));
     assert!(!csp.contains("unsafe-eval"));
