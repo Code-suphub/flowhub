@@ -132,9 +132,8 @@ fn update_tray(app:&tauri::AppHandle,id:&str,title:&str,snapshot:&Value)->Result
     if let Some(error)=snapshot["error"].as_str(){menu=menu.text(format!("{prefix}error"),error.chars().take(100).collect::<String>());}
     for (i,row) in rows.iter().take(12).enumerate() {
         let name:String=row["name"].as_str().unwrap_or("未命名").chars().take(35).collect();
-        let text=if row["status"]=="healthy" {
-            format!("{name} · CPU {:.0}% / 内存 {:.0}% / 磁盘 {:.0}%",row["values"]["cpu"].as_f64().unwrap_or(0.),row["values"]["memory"].as_f64().unwrap_or(0.),row["values"]["disk"].as_f64().unwrap_or(0.))
-        }else {format!("{name} · {}",status_label(row["status"].as_str().unwrap_or("unknown")))};
+        let summary:String=row["summary"].as_str().unwrap_or_else(||status_label(row["status"].as_str().unwrap_or("unknown"))).chars().take(160).collect();
+        let text=format!("{name} · {summary}");
         menu=menu.text(format!("{prefix}row-{i}"),text);
     }
     menu=menu.separator().text(format!("{prefix}desktop"),"打开桌面监控 / 配置").text(format!("{prefix}plugin"),"打开插件");

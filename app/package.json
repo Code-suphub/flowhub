@@ -16,7 +16,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "node scripts/tauri-build.mjs",
-    "test:preview": "node --test scripts/preview-readonly.test.mjs scripts/plugin-runtime.test.cjs scripts/plugin-status.test.cjs",
+    "test:preview": "node --test scripts/preview-readonly.test.mjs scripts/plugin-runtime.test.cjs scripts/plugin-status.test.cjs scripts/widget-frame.test.cjs scripts/widget-menu.test.cjs",
     "test:security": "node scripts/desktop-security.test.cjs && cargo test --manifest-path src-tauri/Cargo.toml --features custom-protocol bundled_desktop_security",
     "test:ui": "node --test scripts/web-search.test.cjs && node scripts/port-tool.test.cjs && node scripts/local-ip-tool.test.cjs && node scripts/search-window.test.cjs && node scripts/search-progressive.test.cjs && node scripts/all-pagination.test.cjs && node scripts/settings-performance.test.cjs && node scripts/settings-storage.test.cjs && node scripts/network-tools.test.cjs && node scripts/search-focus.test.cjs && node scripts/search-timing.test.cjs && node scripts/json-tool.test.cjs && node scripts/all-native-pagination.test.cjs && node scripts/url-tool.test.cjs && node scripts/search-render.test.cjs && node scripts/search-order.test.cjs"
   },

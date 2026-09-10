@@ -8,7 +8,9 @@ use tauri_plugin_dialog::DialogExt;
 mod sources;
 
 #[derive(Clone,Serialize,Deserialize)]
-pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default,rename="statusSurface")] status_surface:bool }
+pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
+#[derive(Clone,Serialize,Deserialize)]
+pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String }
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool }
 pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>> }
@@ -26,13 +28,12 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     if manifest.schema!=2 || !safe_id(&manifest.id) || manifest.permissions!=["native-process"] { return Err("不支持的插件协议或权限".into()); }
     semver::Version::parse(&manifest.version).map_err(|e|e.to_string())?;
     inside(&directory,&manifest.ui)?; inside(&directory,&manifest.executable)?;
+    if let Some(widget)=&manifest.widget {let ui=inside(&directory,&manifest.ui)?;let root=ui.parent().ok_or("缺少插件页面目录")?;for page in [&widget.card,&widget.editor,&widget.detail]{if !page.ends_with(".html"){return Err("组件入口必须为 HTML 页面".into());}inside(root,page)?;}}
     Ok(Installed{manifest,directory,enabled:true})
 }
 impl Runtime {
-    pub(crate) async fn status_history(&self,id:&str,payload:Value)->Result<Value,String>{
-        if !self.get(id)?.manifest.status_surface{return Err("插件未提供状态详情".into());}
-        self.session(id).await?.call("status_history".into(),payload).await
-    }
+    pub(crate) fn widget(&self,id:&str)->Result<WidgetDefinition,String>{let p=self.get(id)?;package(p.directory)?.manifest.widget.ok_or_else(||"请升级插件以支持独立桌面组件".to_string())}
+    pub(crate) async fn widget_call(&self,id:&str,params:Value)->Result<Value,String>{self.widget(id)?;if params.to_string().len()>65536{return Err("组件请求过大".into());}self.session(id).await?.call("widget_api".into(),params).await}
     pub(crate) fn status_plugins(&self)->Vec<(String,String)> { self.installed.lock().unwrap().iter().filter(|p|p.enabled && p.manifest.status_surface).map(|p|(p.manifest.id.clone(),p.manifest.name.clone())).collect() }
     pub(crate) async fn status_snapshot(&self,id:&str)->Result<Value,String> {
         if !self.get(id)?.manifest.status_surface {return Err("插件未提供状态组件".into());}
@@ -129,6 +130,17 @@ mod tests {
         std::fs::set_permissions(package_root.join("service"),std::fs::Permissions::from_mode(0o700)).unwrap();
         std::fs::write(package_root.join("flowhub-plugin.json"),json!({"schema":2,"id":"test-plugin","name":"Test","version":"1.0.0","ui":"ui/index.html","executable":"service","permissions":["native-process"]}).to_string()).unwrap();
         let p=package(package_root.clone()).unwrap();let rt=Runtime::new(root.clone()).unwrap();rt.update(|list|list.push(p)).unwrap();
+        let manifest_path=package_root.join("flowhub-plugin.json");
+        let mut manifest:Value=serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["widget"]=json!({"card":"index.html","editor":"index.html","detail":"index.html"});
+        std::fs::write(&manifest_path,manifest.to_string()).unwrap();
+        assert_eq!(rt.widget("test-plugin").unwrap().detail,"index.html");
+        manifest["widget"]["detail"]=json!("../outside.html");
+        std::fs::write(package_root.join("outside.html"),"outside").unwrap();
+        std::fs::write(&manifest_path,manifest.to_string()).unwrap();
+        assert!(rt.widget("test-plugin").is_err());
+        manifest["widget"]["detail"]=json!("index.html");
+        std::fs::write(&manifest_path,manifest.to_string()).unwrap();
         assert!(rt.asset("test-plugin","../service").is_err());
         symlink(package_root.join("service"),package_root.join("ui/escape.js")).unwrap();
         assert!(rt.asset("test-plugin","escape.js").is_err());

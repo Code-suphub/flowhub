@@ -1443,7 +1443,7 @@ pub fn run() {
             plugin_runtime::plugin_rpc,
             plugin_status::plugin_status_api,
             plugin_canvas::plugin_canvas_api,
-            plugin_canvas::plugin_metric_history,
+            plugin_canvas::plugin_widget_rpc,
             close_settings,
             network_diagnostics::run_network_diagnostic,
             port_inspector::inspect_port,
