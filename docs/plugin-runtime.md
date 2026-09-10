@@ -1,6 +1,6 @@
 # 独立插件运行协议
 
-FlowHub 宿主使用 schema 2 原生进程插件。机器业务已迁至同级独立仓库 flowhub-machines-plugin，宿主不再编译机器页面、SSH、堡垒机或机器历史数据库模块。
+FlowHub 宿主使用 schema 2 原生进程插件。官方插件集中在同级仓库 flowhub-plugins 维护，机器插件位于 plugins/machines，安装时选择该子目录。各插件独立构建和发布，宿主不再编译机器页面、SSH、堡垒机或机器历史数据库模块。
 
 宿主注册表为数据根目录下的 plugins.json；每个插件的数据位于 数据根目录/插件ID。停用和卸载只移除加载关系，保留数据。
 
