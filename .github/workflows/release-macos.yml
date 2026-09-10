@@ -20,7 +20,7 @@ jobs:
       matrix:
         target:
           - aarch64-apple-darwin
-          - x86_64-apple-darwin
+          # Intel builds are paused; restore x86_64-apple-darwin here when needed.
     defaults:
       run:
         working-directory: app
@@ -39,7 +39,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: ${{ matrix.target }}
 
       - name: Install dependencies
         run: npm ci
