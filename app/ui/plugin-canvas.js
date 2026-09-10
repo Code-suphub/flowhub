@@ -22,6 +22,24 @@
   window.addEventListener('pagehide',closeMenu);
   document.documentElement.addEventListener('pointerleave',closeMenu);
   window.addEventListener('blur',closeMenu);
+  // Hover, not key-window focus: transparent WKWebViews can miss pointerleave.
+  let surfaceTimer=null,surfaceRevision=0,surfaceStopped=false;
+  function trackSurface(x,y){
+    const inside=x>=0&&y>=0&&x<innerWidth&&y<innerHeight;
+    document.body.classList.toggle('surface-inactive',!inside);
+    document.querySelector('header').inert=!inside;
+    if(!inside)closeMenu();
+  }
+  document.addEventListener('pointermove',e=>{surfaceRevision++;trackSurface(e.clientX,e.clientY);},true);
+  document.documentElement.addEventListener('pointerleave',()=>{surfaceRevision++;trackSurface(-1,-1);});
+  async function watchSurface(){
+    const revision=surfaceRevision;
+    try{const p=await invoke('plugin_canvas_api',{action:'cursor',payload:{}});if(!surfaceStopped&&revision===surfaceRevision){trackSurface(p.x,p.y);trackMenuPosition(p.x,p.y);}}catch{}
+    if(!surfaceStopped)surfaceTimer=setTimeout(watchSurface,150);
+  }
+  if(invoke)watchSurface();
+  window.addEventListener('pagehide',()=>{surfaceStopped=true;clearTimeout(surfaceTimer);});
+  window.addEventListener('pageshow',()=>{if(surfaceStopped&&invoke){surfaceStopped=false;watchSurface();}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)closeMenu();});
   document.addEventListener('focusin',e=>{if(!menu.hidden&&!menu.contains(e.target)&&!menuCard?.contains(e.target))closeMenu();});
   document.addEventListener('scroll',e=>{if(!menu.contains(e.target))closeMenu();},true);
@@ -47,8 +65,8 @@
     for(const card of board().cards){const source=sources.find(s=>s.id===card.plugin),frame=document.querySelector(`[data-id="${CSS.escape(card.id)}"] iframe`);if(frame&&source?.widget)cardFrames.push(mountSurface(frame,source,'card',card));}
     positionCards();fitSurface();
   }
-  function updateEditor(card=null){editorFrame?.dispose();editorFrame=null;const source=sources.find(s=>s.id===$('#source').value);if(source?.widget)editorFrame=mountSurface($('#widgetEditor'),source,'editor',card);$('#pickerError').textContent='';}
-  function add(card=null){editingCard=card?.id||null;const available=sources.filter(s=>s.widget);$('#source').innerHTML=available.map(s=>`<option value="${esc(s.id)}">${esc(s.title)}</option>`).join('');if(!available.length){$('#notice').textContent='请先安装或升级提供组件页面的插件';return;}if(card)$('#source').value=card.plugin;$('#cardTitle').value=card?.title||'';$('#picker h2').textContent=card?'编辑组件':'添加组件';$('#widgetForm button[type=submit]').textContent=card?'保存修改':'添加到画布';updateEditor(card);window.FlowHubSelects?.sync();$('#picker').showModal();if(invoke)invoke('plugin_canvas_api',{action:'fit',payload:{width:Math.max(innerWidth,360),height:Math.max(innerHeight,560)}}).catch(()=>{});}
+  function updateEditor(card=null){editorFrame?.dispose();editorFrame=null;const source=sources.find(s=>s.id===$('#source').value);$('#widgetEditor').hidden=!source?.widget;$('#cardTitle').closest('label').hidden=!source?.widget;$('#widgetForm button[type=submit]').disabled=!source?.widget;if(source?.widget)editorFrame=mountSurface($('#widgetEditor'),source,'editor',card);else $('#widgetEditor').src='about:blank';$('#pickerError').textContent='';}
+  function add(card=null){editingCard=card?.id||null;const available=sources.filter(s=>s.widget);$('#source').innerHTML='<option value="" disabled>请选择插件</option>'+available.map(s=>`<option value="${esc(s.id)}">${esc(s.title)}</option>`).join('');if(!available.length){$('#notice').textContent='请先安装或升级提供组件页面的插件';return;}$('#source').value=card?.plugin||'';$('#cardTitle').value=card?.title||'';$('#picker h2').textContent=card?'编辑组件':'添加组件';$('#widgetForm button[type=submit]').textContent=card?'保存修改':'添加到画布';updateEditor(card);window.FlowHubSelects?.sync();$('#picker').showModal();if(invoke)invoke('plugin_canvas_api',{action:'fit',payload:{width:Math.max(innerWidth,360),height:Math.max(innerHeight,560)}}).catch(()=>{});}
   $('#picker').addEventListener('close',()=>{editorFrame?.dispose();editorFrame=null;fitted='';fitSurface();});
   const commit=()=>{render();save().catch(()=>{});};
   $('#source').onchange=()=>updateEditor();

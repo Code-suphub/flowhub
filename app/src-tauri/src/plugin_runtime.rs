@@ -35,6 +35,14 @@ impl Runtime {
     pub(crate) fn widget(&self,id:&str)->Result<WidgetDefinition,String>{let p=self.get(id)?;package(p.directory)?.manifest.widget.ok_or_else(||"请升级插件以支持独立桌面组件".to_string())}
     pub(crate) async fn widget_call(&self,id:&str,params:Value)->Result<Value,String>{self.widget(id)?;if params.to_string().len()>65536{return Err("组件请求过大".into());}self.session(id).await?.call("widget_api".into(),params).await}
     pub(crate) fn status_plugins(&self)->Vec<(String,String)> { self.installed.lock().unwrap().iter().filter(|p|p.enabled && p.manifest.status_surface).map(|p|(p.manifest.id.clone(),p.manifest.name.clone())).collect() }
+    pub(crate) fn widget_plugins(&self)->Vec<(String,String)> {
+        let installed=self.installed.lock().unwrap().clone();
+        installed.into_iter().filter(|p|p.enabled).filter_map(|p|{
+            let manifest=package(p.directory).ok()?.manifest;
+            manifest.widget.as_ref()?;
+            Some((manifest.id,manifest.name))
+        }).collect()
+    }
     pub(crate) async fn status_snapshot(&self,id:&str)->Result<Value,String> {
         if !self.get(id)?.manifest.status_surface {return Err("插件未提供状态组件".into());}
         self.session(id).await?.call("status_snapshot".into(),json!({})).await
@@ -135,6 +143,11 @@ mod tests {
         manifest["widget"]=json!({"card":"index.html","editor":"index.html","detail":"index.html"});
         std::fs::write(&manifest_path,manifest.to_string()).unwrap();
         assert_eq!(rt.widget("test-plugin").unwrap().detail,"index.html");
+        assert!(rt.status_plugins().is_empty());
+        assert_eq!(rt.widget_plugins(),vec![("test-plugin".to_string(),"Test".to_string())]);
+        rt.update(|list|list[0].enabled=false).unwrap();
+        assert!(rt.widget_plugins().is_empty());
+        rt.update(|list|list[0].enabled=true).unwrap();
         manifest["widget"]["detail"]=json!("../outside.html");
         std::fs::write(package_root.join("outside.html"),"outside").unwrap();
         std::fs::write(&manifest_path,manifest.to_string()).unwrap();

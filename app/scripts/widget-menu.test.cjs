@@ -17,3 +17,15 @@ test('native cursor closes menu after crossing another card without DOM leave ev
 test('moving into menu cancels dismissal and switching menus clears old timers',async()=>{
   const s=setup();s.api.open();s.api.move(240,20);s.api.move(20,20);await s.advance(200);assert.equal(s.api.hidden(),false);s.api.move(240,20);s.api.open();await s.advance(200);assert.equal(s.api.hidden(),false);s.api.close();assert.equal(s.timers.size,0);
 });
+test('toolbar follows native pointer without clicks or DOM leave events, including re-entry',async()=>{
+  const source=fs.readFileSync(require('node:path').join(__dirname,'../ui/plugin-canvas.js'),'utf8');
+  const block=source.slice(source.indexOf('  // Hover, not key-window focus:'),source.indexOf("  document.addEventListener('visibilitychange'"));
+  let position={x:20,y:20},hidden=false,tick;const header={inert:false};
+  const context=vm.createContext({invoke:async()=>position,innerWidth:600,innerHeight:400,closeMenu(){},trackMenuPosition(){},window:{addEventListener(){}},document:{addEventListener(){},documentElement:{addEventListener(){}},body:{classList:{toggle(name,value){hidden=value;}}},querySelector(){return header;}},setTimeout(fn){tick=fn;return 1;},clearTimeout(){}});
+  vm.runInContext(block,context);await new Promise(setImmediate);
+  assert.equal(hidden,false);
+  for(let i=0;i<5;i++){
+    position={x:610,y:100};await tick();assert.equal(hidden,true);assert.equal(header.inert,true);
+    position={x:100,y:100};await tick();assert.equal(hidden,false);assert.equal(header.inert,false);
+  }
+});
