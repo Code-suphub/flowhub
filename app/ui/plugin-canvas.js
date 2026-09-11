@@ -24,11 +24,11 @@
   window.addEventListener('blur',closeMenu);
   // Hover, not key-window focus: transparent WKWebViews can miss pointerleave.
   let surfaceTimer=null,surfaceRevision=0,surfaceStopped=false;
-  function trackSurface(x,y){
-    const inside=x>=0&&y>=0&&x<innerWidth&&y<innerHeight;
+  function trackSurface(x,y,frontmost=true){
+    const inside=frontmost&&x>=0&&y>=0&&x<innerWidth&&y<innerHeight;
     document.body.classList.toggle('surface-inactive',!inside);
     document.querySelector('header').inert=!inside;
-    if(!inside)closeMenu();
+    if(!inside){closeMenu();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());}
   }
   document.addEventListener('pointermove',e=>{surfaceRevision++;trackSurface(e.clientX,e.clientY);},true);
   // Crossing a child iframe can emit leave without leaving the native window.
@@ -36,7 +36,7 @@
   document.documentElement.addEventListener('pointerleave',()=>{if(!invoke){surfaceRevision++;trackSurface(-1,-1);}});
   async function watchSurface(){
     const revision=surfaceRevision;
-    try{const p=await invoke('plugin_canvas_api',{action:'cursor',payload:{}});if(!surfaceStopped&&revision===surfaceRevision){trackSurface(p.x,p.y);trackMenuPosition(p.x,p.y);}}catch{}
+    try{const p=await invoke('plugin_canvas_api',{action:'cursor',payload:{}});if(!surfaceStopped&&revision===surfaceRevision){trackSurface(p.x,p.y,p.frontmost!==false);trackMenuPosition(p.x,p.y);}}catch{}
     if(!surfaceStopped)surfaceTimer=setTimeout(watchSurface,150);
   }
   if(invoke)watchSurface();

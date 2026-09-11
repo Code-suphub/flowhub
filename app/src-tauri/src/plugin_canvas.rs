@@ -31,7 +31,9 @@ async fn canvas_cursor(window:&tauri::WebviewWindow)->Result<Value,String>{
             let point=view.convertPoint_fromView(native.mouseLocationOutsideOfEventStream(),None);
             let bounds=view.bounds();
             let (x,y)=viewport_point(point.x,point.y,bounds.origin.x,bounds.origin.y,bounds.size.height,view.isFlipped());
-            json!({"x":x,"y":y})
+            let frontmost=objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()
+                .is_some_and(|application| application.processIdentifier()==std::process::id() as i32);
+            json!({"x":x,"y":y,"frontmost":frontmost})
         };
         let _=tx.send(result);
     }).map_err(|e|e.to_string())?;
@@ -42,7 +44,7 @@ async fn canvas_cursor(window:&tauri::WebviewWindow)->Result<Value,String>{
     let cursor=window.cursor_position().map_err(|e|e.to_string())?;
     let origin=window.inner_position().map_err(|e|e.to_string())?;
     let scale=window.scale_factor().map_err(|e|e.to_string())?;
-    Ok(json!({"x":(cursor.x-origin.x as f64)/scale,"y":(cursor.y-origin.y as f64)/scale}))
+    Ok(json!({"x":(cursor.x-origin.x as f64)/scale,"y":(cursor.y-origin.y as f64)/scale,"frontmost":true}))
 }
 #[tauri::command]
 pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,params:Value)->Result<Value,String>{
