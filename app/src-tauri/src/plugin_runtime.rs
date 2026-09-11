@@ -13,7 +13,7 @@ pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String,
 pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String, #[serde(default,skip_serializing_if="is_false")] pub interactive:bool }
 fn is_false(value:&bool)->bool{!*value}
 #[derive(Clone,Serialize,Deserialize)]
-pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool }
+pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool, #[serde(default,rename="lastLoadedAt",skip_serializing_if="Option::is_none")] last_loaded_at:Option<i64> }
 pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>> }
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
@@ -30,7 +30,7 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     semver::Version::parse(&manifest.version).map_err(|e|e.to_string())?;
     inside(&directory,&manifest.ui)?; inside(&directory,&manifest.executable)?;
     if let Some(widget)=&manifest.widget {let ui=inside(&directory,&manifest.ui)?;let root=ui.parent().ok_or("缺少插件页面目录")?;for page in [&widget.card,&widget.editor,&widget.detail]{if !page.ends_with(".html"){return Err("组件入口必须为 HTML 页面".into());}inside(root,page)?;}}
-    Ok(Installed{manifest,directory,enabled:true})
+    Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None})
 }
 impl Runtime {
     pub(crate) fn widget(&self,id:&str)->Result<WidgetDefinition,String>{let p=self.get(id)?;package(p.directory)?.manifest.widget.ok_or_else(||"请升级插件以支持独立桌面组件".to_string())}
@@ -183,7 +183,7 @@ pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
             match rx.await.map_err(|e|e.to_string())?{Some(p)=>Ok(json!(package(p.into_path().map_err(|e|e.to_string())?)?)),None=>Ok(Value::Null)}},
         "inspect"=>Ok(json!(package(PathBuf::from(payload["directory"].as_str().ok_or("缺少插件目录")?))?)),
         "install"=>{let p=package(PathBuf::from(payload["directory"].as_str().ok_or("缺少插件目录")?))?;rt.stop(&p.manifest.id).await;rt.update(|items|{items.retain(|old|old.manifest.id!=p.manifest.id);items.push(p);})},
-        "reload"=>{let old=rt.get(id)?;let p=package(old.directory)?;if p.manifest.id!=id{return Err("插件 ID 已变化，请重新安装".into());}rt.stop(id).await;rt.update(|items|{items.retain(|old|old.manifest.id!=id);items.push(p);})?;rt.session(id).await?.call("health".into(),json!({})).await?;Ok(rt.list())},
+        "reload"=>{let old=rt.get(id)?;let mut p=package(old.directory)?;if p.manifest.id!=id{return Err("插件 ID 已变化，请重新安装".into());}p.last_loaded_at=Some(chrono::Utc::now().timestamp_millis());rt.stop(id).await;rt.update(|items|{items.retain(|old|old.manifest.id!=id);items.push(p);})?;rt.session(id).await?.call("health".into(),json!({})).await?;Ok(rt.list())},
         "enable"=>{let enabled=payload["enabled"].as_bool().ok_or("缺少 enabled")?;if !enabled{rt.stop(id).await;}rt.update(|items|{for p in items {if p.manifest.id==id{p.enabled=enabled;}}})},
         "uninstall"=>{rt.stop(id).await;rt.update(|items|items.retain(|p|p.manifest.id!=id))},
         _=>Err("未知插件管理操作".into())

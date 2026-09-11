@@ -7,9 +7,10 @@ function tab(name){tabs.forEach(b=>{const active=b.dataset.tab===name;b.setAttri
 tabs.forEach((b,i)=>{b.onclick=()=>tab(b.dataset.tab);b.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const next=tabs[(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];next.click();next.focus();}};});
 function button(label,fn){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>operate(fn);return b;}
 function row(title,description,actions){const r=document.createElement('article'),info=document.createElement('div'),h=document.createElement('h2'),p=document.createElement('p'),a=document.createElement('div');h.textContent=title;p.textContent=description;info.append(h,p);a.className='actions';actions.forEach(b=>a.append(b));r.append(info,a);return r;}
+function loadedAt(value){return value?`最近加载：${new Date(value).toLocaleString()}`:'最近加载：暂无记录';}
 async function refresh(){[installed,sources]=await Promise.all([api('list'),api('sources')]);render();await window.parent.FlowHubPluginIntegration?.refresh();}
 function render(){
-$('#plugins').replaceChildren(...installed.map(p=>row(p.manifest.name+' · '+p.manifest.version+(p.enabled?'':' · 已停用'),p.directory,[button('重新加载',async()=>{await api('reload',{id:p.manifest.id});$('#notice').textContent='重新加载完成';}),button(p.enabled?'停用':'启用',()=>api('enable',{id:p.manifest.id,enabled:!p.enabled})),button('卸载',()=>api('uninstall',{id:p.manifest.id}))])));
+$('#plugins').replaceChildren(...installed.map(p=>row(p.manifest.name+' · '+p.manifest.version+(p.enabled?'':' · 已停用'),p.directory+'\n'+loadedAt(p.lastLoadedAt),[button('重新加载',async()=>{await api('reload',{id:p.manifest.id});$('#notice').textContent='重新加载完成';}),button(p.enabled?'停用':'启用',()=>api('enable',{id:p.manifest.id,enabled:!p.enabled})),button('卸载',()=>api('uninstall',{id:p.manifest.id}))])));
 if(!installed.length)$('#plugins').textContent='尚未安装插件，请到“发现”中选择安装。';
 $('#sourceRows').replaceChildren(...sources.map(s=>row(s.name,(s.kind==='local'?'本地目录':'HTTPS 仓库')+' · '+s.location,[button('扫描',async()=>{await scan(s);tab('discover');}),button('编辑',()=>edit(s)),button('移除',async()=>{await api('removeSource',{id:s.id});found=found.filter(c=>c.source!==s.id);})])));
 if(!sources.length)$('#sourceRows').textContent='添加本地目录或 HTTPS 仓库，保存后即可扫描插件。';renderFound();
