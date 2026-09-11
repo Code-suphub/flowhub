@@ -2,6 +2,48 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{path::PathBuf, sync::Mutex};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+#[cfg(any(target_os="macos",test))]
+fn viewport_point(x:f64,y:f64,left:f64,bottom:f64,height:f64,flipped:bool)->(f64,f64){
+    (x-left,if flipped{y-bottom}else{height-(y-bottom)})
+}
+#[cfg(test)]
+mod cursor_tests {
+    use super::viewport_point;
+    #[test]
+    fn appkit_local_points_map_to_top_left_without_screen_scale(){
+        assert_eq!(viewport_point(30.,370.,0.,0.,400.,false),(30.,30.));
+        assert_eq!(viewport_point(30.,30.,0.,0.,400.,true),(30.,30.));
+        assert_eq!(viewport_point(40.,380.,10.,10.,400.,false),(30.,30.));
+        assert_eq!(viewport_point(-20.,450.,0.,0.,400.,false),(-20.,-50.));
+        assert_eq!(viewport_point(640.,-10.,0.,0.,400.,false),(640.,410.));
+    }
+}
+#[cfg(target_os="macos")]
+async fn canvas_cursor(window:&tauri::WebviewWindow)->Result<Value,String>{
+    let (tx,rx)=tokio::sync::oneshot::channel();
+    window.with_webview(move |webview|{
+        // AppKit provides window-local points, independent of screen origins and DPI.
+        // with_webview runs on the main thread; WKWebView inherits NSView.
+        let result=unsafe{
+            let native=&*webview.ns_window().cast::<objc2_app_kit::NSWindow>();
+            let view=&*webview.inner().cast::<objc2_app_kit::NSView>();
+            let point=view.convertPoint_fromView(native.mouseLocationOutsideOfEventStream(),None);
+            let bounds=view.bounds();
+            let (x,y)=viewport_point(point.x,point.y,bounds.origin.x,bounds.origin.y,bounds.size.height,view.isFlipped());
+            json!({"x":x,"y":y})
+        };
+        let _=tx.send(result);
+    }).map_err(|e|e.to_string())?;
+    rx.await.map_err(|_|"无法读取画布鼠标位置".into())
+}
+#[cfg(not(target_os="macos"))]
+async fn canvas_cursor(window:&tauri::WebviewWindow)->Result<Value,String>{
+    let cursor=window.cursor_position().map_err(|e|e.to_string())?;
+    let origin=window.inner_position().map_err(|e|e.to_string())?;
+    let scale=window.scale_factor().map_err(|e|e.to_string())?;
+    Ok(json!({"x":(cursor.x-origin.x as f64)/scale,"y":(cursor.y-origin.y as f64)/scale}))
+}
 #[tauri::command]
 pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,params:Value)->Result<Value,String>{
     if window.label()!="plugin-canvas" {
@@ -49,7 +91,7 @@ pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
 }
 pub fn restore(app:&tauri::AppHandle){let desktop=app.state::<State>().layout.lock().unwrap().desktop;if desktop{let handle=app.clone();let _=app.run_on_main_thread(move||{let _=open(&handle,"");});}}
 #[tauri::command]
-pub fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
+pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
     if action=="detailContext" {
         let state=app.state::<State>();
         let (id,context)=state.details.lock().unwrap().get(window.label()).cloned().ok_or("详情来源无效")?;
@@ -58,10 +100,7 @@ pub fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action
     }
     if !["settings","plugin-canvas"].contains(&window.label()){return Err("画布来源无效".into());}
     if action=="cursor" {
-        let cursor=window.cursor_position().map_err(|e|e.to_string())?;
-        let origin=window.inner_position().map_err(|e|e.to_string())?;
-        let scale=window.scale_factor().map_err(|e|e.to_string())?;
-        return Ok(json!({"x":(cursor.x-origin.x as f64)/scale,"y":(cursor.y-origin.y as f64)/scale}));
+        return canvas_cursor(&window).await;
     }
     let state=app.state::<State>();
     if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save(next)?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}

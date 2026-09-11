@@ -10,7 +10,8 @@ mod sources;
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
 #[derive(Clone,Serialize,Deserialize)]
-pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String }
+pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String, #[serde(default,skip_serializing_if="is_false")] pub interactive:bool }
+fn is_false(value:&bool)->bool{!*value}
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool }
 pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>> }

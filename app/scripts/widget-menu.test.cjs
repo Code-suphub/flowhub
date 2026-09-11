@@ -20,10 +20,11 @@ test('moving into menu cancels dismissal and switching menus clears old timers',
 test('toolbar follows native pointer without clicks or DOM leave events, including re-entry',async()=>{
   const source=fs.readFileSync(require('node:path').join(__dirname,'../ui/plugin-canvas.js'),'utf8');
   const block=source.slice(source.indexOf('  // Hover, not key-window focus:'),source.indexOf("  document.addEventListener('visibilitychange'"));
-  let position={x:20,y:20},hidden=false,tick;const header={inert:false};
-  const context=vm.createContext({invoke:async()=>position,innerWidth:600,innerHeight:400,closeMenu(){},trackMenuPosition(){},window:{addEventListener(){}},document:{addEventListener(){},documentElement:{addEventListener(){}},body:{classList:{toggle(name,value){hidden=value;}}},querySelector(){return header;}},setTimeout(fn){tick=fn;return 1;},clearTimeout(){}});
+  let position={x:20,y:20},hidden=false,tick,leave;const header={inert:false};
+  const context=vm.createContext({invoke:async()=>position,innerWidth:600,innerHeight:400,closeMenu(){},trackMenuPosition(){},window:{addEventListener(){}},document:{addEventListener(){},documentElement:{addEventListener(name,fn){if(name==='pointerleave')leave=fn;}},body:{classList:{toggle(name,value){hidden=value;}}},querySelector(){return header;}},setTimeout(fn){tick=fn;return 1;},clearTimeout(){}});
   vm.runInContext(block,context);await new Promise(setImmediate);
   assert.equal(hidden,false);
+  leave();assert.equal(hidden,false,'iframe transitions must not hide a native toolbar');
   for(let i=0;i<5;i++){
     position={x:610,y:100};await tick();assert.equal(hidden,true);assert.equal(header.inert,true);
     position={x:100,y:100};await tick();assert.equal(hidden,false);assert.equal(header.inert,false);

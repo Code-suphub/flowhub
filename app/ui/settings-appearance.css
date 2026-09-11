@@ -1,0 +1,88 @@
+/* Settings-only presentation. Keep the shared launcher theme independent.
+   !important is required to supersede the legacy theme's important rules. */
+:root {
+  --settings-nav-width: 184px;
+  --line: rgba(222, 234, 228, .09);
+  --surface-border: rgba(222, 234, 228, .09);
+  --muted: #a0aaa6;
+  --faint: #85918b;
+}
+body { background: #191d20 !important; font-family: "Avenir Next", "PingFang SC", sans-serif !important; }
+body > .app { display: grid; grid-template-columns: var(--settings-nav-width) minmax(0, 1fr); grid-template-rows: 70px minmax(0, 1fr) auto; }
+.topbar { grid-column: 1 / -1; min-height: 70px !important; padding: 15px 24px !important; background: #191d20 !important; box-shadow: none !important; }
+.brand-mark { width: 32px !important; height: 32px !important; border-radius: 10px !important; font-size: 17px; }
+.brand h1 { font-family: inherit; font-size: 15px !important; font-weight: 650; letter-spacing: -.025em; }
+.version-pill { color: var(--muted) !important; border: 0 !important; background: rgba(255,255,255,.035) !important; font-size: 11px; }
+.module-tabs-bar { position: static !important; grid-column: 1; grid-row: 2; width: auto !important; min-height: 0; padding: 22px 12px !important; overflow: auto !important; background: #15191c !important; box-shadow: none !important; }
+.module-tabs-title { display: block !important; margin: 0 12px 14px !important; font-family: inherit; font-size: 10px !important; letter-spacing: .06em !important; }
+.module-tabs-bar .module-switcher { gap: 4px !important; }
+.module-tabs-bar .module-button { min-height: 38px !important; padding: 0 10px !important; justify-content: flex-start !important; gap: 10px; border-radius: 7px !important; }
+.module-tabs-bar .module-button.active { color: #c5ebd9 !important; background: #263831 !important; box-shadow: none !important; }
+.module-tabs-bar .module-nav-copy { display: grid !important; text-align: left; }
+.module-tabs-bar .module-nav-copy strong { font-size: 12px !important; font-weight: 550; }
+.module-tabs-bar .module-nav-icon { width: 22px; height: 22px; background: transparent !important; color: inherit !important; }
+.module-nav-section { padding: 16px 0 0; margin-top: 5px; border-top: 1px solid var(--line); }
+.module-nav-section-title { display: block !important; padding: 0 10px; margin: 0 0 7px; color: var(--faint); font-size: 10px; font-weight: 500; }
+.module-button[data-tooltip]::after { display: none !important; }
+.workspace { grid-column: 2; grid-row: 2; margin-left: 0 !important; }
+.workspace.single-pane .editor { padding: 30px clamp(24px, 4vw, 56px) 48px !important; }
+.editor-inner { width: min(960px, 100%) !important; }
+.core-settings-card > .core-section-tabs { gap: 22px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; margin-bottom: 30px !important; padding: 0 !important; }
+.core-section-tab { position: relative; flex: 0 0 auto !important; min-height: 38px !important; padding: 0 0 13px !important; border: 0 !important; border-radius: 0 !important; font-size: 12px !important; font-weight: 500; }
+.core-section-tab.active { color: #c1e9d4 !important; background: transparent !important; box-shadow: inset 0 -2px #a0d9bc !important; }
+.core-section-tab:hover { background: transparent !important; color: var(--ink) !important; }
+.core-settings-card > .selected-banner { padding: 0 0 26px !important; }
+.core-settings-card > .selected-banner strong { font-size: 23px; font-weight: 600; letter-spacing: -.035em; }
+.core-settings-card > .selected-banner small { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.core-settings-card > .clipboard-settings-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; }
+.core-settings-card > .clipboard-settings-grid > .settings-block { min-height: 0; padding: 20px 22px !important; border-radius: 12px !important; background: #202629 !important; box-shadow: 0 2px 4px rgba(0,0,0,.04) !important; }
+.settings-block-title { font-size: 12px; font-weight: 600 !important; }
+.settings-block .field-hint { font-size: 11px; line-height: 1.7; color: var(--faint); }
+.core-settings-card > .clipboard-settings-grid > [data-core-section-panel="general"] { position: relative; padding: 22px 24px 22px 68px !important; gap: 6px; }
+.core-settings-card > .clipboard-settings-grid > [data-core-section-panel="general"]::before { content: "⌘"; display: grid !important; place-items: center; position: absolute; top: 22px; left: 22px; width: 30px; height: 30px; border: 1px solid rgba(183,234,212,.1); border-radius: 8px; background: rgba(183,234,212,.045); color: #acd5bf; font-size: 19px; }
+.core-settings-card > .clipboard-settings-grid > [data-core-section-panel="general"] + [data-core-section-panel="general"]::before { content: "↗"; font-size: 18px; }
+[data-core-section-panel="general"] .field { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 20px; }
+[data-core-section-panel="general"] .field label { font-size: 12px; }
+[data-core-section-panel="general"] .field .field-hint { grid-column: 1; }
+[data-core-section-panel="general"] .shortcut-capture { grid-column: 2; grid-row: 1 / span 2; width: auto; min-width: 158px; height: 36px; padding: 0 14px; border-radius: 7px; color: #d8e6df !important; background: #171c1e !important; border: 1px solid rgba(222,234,228,.16) !important; box-shadow: 0 2px 0 #111617; text-align: center; font-size: 12px; }
+[data-core-section-panel="general"] .shortcut-capture:focus-visible { outline: 2px solid var(--accent) !important; outline-offset: 3px; }
+[data-core-section-panel="general"] .shortcut-capture.is-capturing { border-color: var(--accent) !important; color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .1) !important; }
+[data-core-section-panel="general"] .shortcut-capture.has-conflict { border-color: var(--warning) !important; box-shadow: 0 0 0 3px rgba(241,209,115,.09) !important; }
+[data-core-section-panel="general"] .shortcut-conflict { grid-column: 1 / -1; }
+[data-core-section-panel="general"] .switch-field { min-height: 22px; font-size: 12px; }
+.switch-field input { flex-shrink: 0; }
+.settings-actionbar { grid-column: 1 / -1; padding: 13px 24px !important; background: #191d20 !important; box-shadow: none; }
+.actionbar-copy { font-size: 11px; }
+.actionbar-actions { gap: 10px; }
+.actionbar-actions .button { min-width: 88px; min-height: 32px; font-size: 12px; }
+.actionbar-actions .status { font-size: 11px; margin-right: 10px; }
+.status::before { width: 5px; height: 5px; box-shadow: none !important; }
+.status.dirty::before { background: #f3b84b !important; }
+@media (max-width: 900px) {
+  :root { --settings-nav-width: 160px; }
+  .core-settings-card > .core-section-tabs { gap: 18px; }
+  .workspace.single-pane .editor { padding: 24px !important; }
+}
+@media (max-width: 760px) {
+  body > .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px auto minmax(0, 1fr) auto; }
+  .topbar { grid-row: 1; min-height: 64px !important; }
+  .module-tabs-bar { grid-row: 2; grid-column: 1; padding: 8px 12px !important; max-height: 58px; overflow: hidden !important; }
+  .module-tabs-title, .module-nav-section-title { display: none !important; }
+  .module-tabs-bar .module-switcher { flex-direction: row !important; overflow-x: auto !important; gap: 8px !important; scrollbar-width: thin; }
+  .module-tabs-bar .module-button { width: auto !important; flex-shrink: 0; }
+  .module-nav-section { display: flex; margin: 0; padding: 0; border: 0; }
+  .module-nav-section-items { display: flex; gap: 4px; }
+  .workspace { grid-column: 1; grid-row: 3; }
+  .settings-actionbar { grid-row: 4; padding: 12px 16px !important; }
+  .actionbar-copy { display: none; }
+  .actionbar-actions { width: 100%; justify-content: flex-end; }
+  .actionbar-actions .status { display: inline-flex; margin-right: auto; }
+}
+@media (max-width: 520px) {
+  .workspace.single-pane .editor { padding: 20px 16px !important; }
+  .core-settings-card > .selected-banner strong { font-size: 21px; }
+  .core-settings-card > .clipboard-settings-grid > [data-core-section-panel="general"] { padding: 18px !important; }
+  .core-settings-card > .clipboard-settings-grid > [data-core-section-panel="general"]::before { display: none !important; }
+  [data-core-section-panel="general"] .field { grid-template-columns: minmax(0, 1fr); }
+  [data-core-section-panel="general"] .shortcut-capture { grid-column: 1; grid-row: auto; justify-self: start; margin: 6px 0; }
+}

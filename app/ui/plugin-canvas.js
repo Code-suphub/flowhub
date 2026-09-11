@@ -12,7 +12,7 @@
   // Only watch while a pointer-opened menu is visible; ignore stale IPC replies.
   function watchMenu(){clearTimeout(menuWatchTimer);const generation=++menuGeneration;if(!invoke)return;const check=async()=>{try{const p=await invoke('plugin_canvas_api',{action:'cursor',payload:{}});if(generation!==menuGeneration||menu.hidden)return;trackMenuPosition(p.x,p.y);}catch{}if(generation===menuGeneration&&!menu.hidden)menuWatchTimer=setTimeout(check,120);};menuWatchTimer=setTimeout(check,120);}
   const menu=document.createElement('div');menu.className='card-menu';menu.hidden=true;menu.setAttribute('role','menu');document.body.append(menu);
-  function openCard(c){const title=c.title||sources.find(s=>s.id===c.plugin)?.title||'插件详情';const config=cardConfig(c);if(invoke)invoke('plugin_canvas_api',{action:'detail',payload:{plugin:c.plugin,config,title}}).catch(e=>$('#notice').textContent=String(e));else location.href='plugin-detail.html?'+new URLSearchParams({preview:previewBase,config:JSON.stringify(config),title});}
+  function openCard(c,selection){const title=c.title||sources.find(s=>s.id===c.plugin)?.title||'插件详情';const config={...cardConfig(c),...(selection?{selection}:{})};if(invoke)invoke('plugin_canvas_api',{action:'detail',payload:{plugin:c.plugin,config,title}}).catch(e=>$('#notice').textContent=String(e));else location.href='plugin-detail.html?'+new URLSearchParams({preview:previewBase,config:JSON.stringify(config),title});}
   function context(c,x,y){menu.innerHTML='<button role="menuitem" data-action="open">打开详情</button><button role="menuitem" data-action="edit">编辑组件</button><button role="menuitem" data-action="remove">移除组件</button>';cancelMenuLeave();menuCard=document.querySelector(`[data-id="${CSS.escape(c.id)}"]`);menu.hidden=false;menu.style.left=Math.max(8,Math.min(x,innerWidth-176))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-180))+'px';menu.onclick=e=>{const a=e.target.dataset.action;closeMenu();if(a==='open')openCard(c);if(a==='edit')add(c);if(a==='remove'){board().cards=board().cards.filter(i=>i.id!==c.id);commit();}};menu.querySelector('button').focus();}
   document.addEventListener('pointerdown',e=>{if(!menu.contains(e.target))closeMenu();},true);
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu();});
@@ -31,7 +31,9 @@
     if(!inside)closeMenu();
   }
   document.addEventListener('pointermove',e=>{surfaceRevision++;trackSurface(e.clientX,e.clientY);},true);
-  document.documentElement.addEventListener('pointerleave',()=>{surfaceRevision++;trackSurface(-1,-1);});
+  // Crossing a child iframe can emit leave without leaving the native window.
+  // The native poll owns exit detection; the browser preview has no native cursor.
+  document.documentElement.addEventListener('pointerleave',()=>{if(!invoke){surfaceRevision++;trackSurface(-1,-1);}});
   async function watchSurface(){
     const revision=surfaceRevision;
     try{const p=await invoke('plugin_canvas_api',{action:'cursor',payload:{}});if(!surfaceStopped&&revision===surfaceRevision){trackSurface(p.x,p.y);trackMenuPosition(p.x,p.y);}}catch{}
@@ -47,22 +49,27 @@
   $('#canvas').addEventListener('keydown',e=>{const c=board().cards.find(c=>c.id===e.target.dataset.id);if(!c)return;if(e.key==='Enter'){e.preventDefault();openCard(c);}if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const r=e.target.getBoundingClientRect();context(c,r.left+20,r.top+20);}});
   const board=()=>layout.boards.find(b=>b.id===layout.active),uid=()=>crypto.randomUUID();
   const previewBase=new URLSearchParams(location.search).get('preview');
-  let editorFrame=null,cardFrames=[];
+  let editorFrame=null,cardFrames=[],renderedStructure='';
   const cardConfig=c=>c?.config||{view:c?.view,row:c?.row,metrics:c?.metrics};
   const surfaceUrl=(source,kind)=>invoke?'flowhub-plugin://'+source.id+'/'+source.widget[kind]+'?v='+Date.now():new URL(source.widget[kind],previewBase).href;
-  function mountSurface(frame,source,kind,card){return FlowHubWidgetFrame.mount(frame,{url:surfaceUrl(source,kind),context:{config:cardConfig(card),title:card?.title||'',snapshot:source.snapshot,preview:!invoke},rpc:invoke?params=>invoke('plugin_widget_rpc',{id:source.id,params}):null});}
+  function mountSurface(frame,source,kind,card){return FlowHubWidgetFrame.mount(frame,{url:surfaceUrl(source,kind),context:{config:cardConfig(card),title:card?.title||'',snapshot:source.snapshot,preview:!invoke},navigate:kind==='card'?(action,selection)=>{const current=board().cards.find(c=>c.id===card.id);if(current){if(action==='detail')openCard(current,selection);else if(action==='editor')add(current);}}:null,rpc:invoke?params=>invoke('plugin_widget_rpc',{id:source.id,params}):null});}
   document.body.classList.toggle('preview',!invoke);
   let saveTail=Promise.resolve();
   function save(){const snapshot=structuredClone(layout);const persist=async()=>{if(!invoke){localStorage.setItem('flowhub-canvas-preview',JSON.stringify(snapshot));return;}saving=true;try{await invoke('plugin_canvas_api',{action:'save',payload:snapshot});$('#notice').textContent='';fitSurface();}catch(e){$('#notice').textContent='保存失败：'+e;throw e;}finally{saving=false;}};saveTail=saveTail.catch(()=>{}).then(persist);return saveTail;}
   function positionCards(moving=null,wanted=null){const positions=WidgetLayout.arrange(board().cards,moving,wanted);for(const p of positions){const c=board().cards.find(c=>c.id===p.id);c.x=p.x;c.y=p.y;c.break_before=false;const n=document.querySelector(`[data-id="${CSS.escape(p.id)}"]`);if(n){n.style.left=p.x+'px';n.style.top=p.y+'px';}}const width=Math.max(320,...positions.map(p=>p.x+p.w)),height=Math.max(120,...positions.map(p=>p.y+p.h));$('#canvas').style.width=width+'px';$('#canvas').style.height=height+'px';return {width,height};}
   let fitted='';function fitSurface(){if(!invoke||gesture||document.querySelector('dialog[open]'))return;const width=Math.max(360,$('#canvas').offsetWidth+32,document.querySelector('header').scrollWidth+32),height=$('#canvas').offsetTop+$('#canvas').offsetHeight+16,key=width+':'+height;if(key===fitted)return;fitted=key;invoke('plugin_canvas_api',{action:'fit',payload:{width,height}}).catch(()=>{fitted='';});}
   function render(){
+    // Cache refreshes must not tear down a card while its controls or confirmation are active.
+    for(const c of board().cards){const source=sources.find(s=>s.id===c.plugin);if(source?.widget?.interactive){c.width=Math.max(320,c.width||384);c.height=Math.max(280,c.height||360);}}
+    const structure=JSON.stringify([layout,sources.map(s=>({id:s.id,title:s.title,widget:s.widget}))]);
+    if(structure===renderedStructure&&cardFrames.length===board().cards.length){for(const f of cardFrames){const c=board().cards.find(c=>c.id===f.cardId),s=sources.find(s=>s.id===c?.plugin);if(c&&s)f.updateContext({config:cardConfig(c),title:c.title||'',snapshot:s.snapshot,preview:!invoke});}return;}
+    renderedStructure=structure;
     closeMenu();
     if(layout.boards.length>1){document.querySelector('header .tools').prepend($('#boards'));$('#boards').setAttribute('aria-label','切换组件布局');}
     $('#boards').innerHTML=layout.boards.map(b=>`<option value="${esc(b.id)}">${esc(b.title)}</option>`).join('');$('#boards').value=layout.active;$('#pin').checked=layout.pinned;$('#removeBoard').disabled=layout.boards.length===1;
     for(const f of cardFrames)f.dispose();cardFrames=[];
-    $('#canvas').innerHTML=board().cards.map(c=>{const source=sources.find(s=>s.id===c.plugin),title=c.title||source?.title||c.plugin;return `<article tabindex="0" aria-label="${esc(title)}，点击打开详情，右键编辑" class="card" data-id="${esc(c.id)}" style="width:${Number(c.width)||({small:184,medium:384,large:384}[c.size])}px;height:${Number(c.height)||({small:184,medium:184,large:384}[c.size])}px">${source?.widget?'<iframe class="widget-content" tabindex="-1" title="'+esc(title)+'" sandbox="allow-scripts"></iframe>':'<p class="empty">插件未启用或尚未提供组件页面 · 布局已保留</p>'}<div class="widget-hit" aria-hidden="true"></div><button class="resize-handle" aria-label="调整组件大小" title="拖动缩放；方向键微调" data-resize>⌟</button></article>`;}).join('')||'<div class="blank"><h2>把常看的信息，放在一起。</h2><p>从已安装的插件中添加组件。</p><button class="primary" data-add>＋ 添加第一个组件</button></div>';
-    for(const card of board().cards){const source=sources.find(s=>s.id===card.plugin),frame=document.querySelector(`[data-id="${CSS.escape(card.id)}"] iframe`);if(frame&&source?.widget)cardFrames.push(mountSurface(frame,source,'card',card));}
+    $('#canvas').innerHTML=board().cards.map(c=>{const source=sources.find(s=>s.id===c.plugin),title=c.title||source?.title||c.plugin,interactive=source?.widget?.interactive===true;return `<article tabindex="0" aria-label="${esc(title)}，${interactive?'顶部拖动或右键编辑，列表可操作':'点击打开详情，右键编辑'}" class="card${interactive?' interactive':''}" data-id="${esc(c.id)}" style="width:${Number(c.width)||({small:184,medium:384,large:384}[c.size])}px;height:${Number(c.height)||({small:184,medium:184,large:384}[c.size])}px">${source?.widget?'<iframe class="widget-content" tabindex="'+(interactive?'0':'-1')+'" title="'+esc(title)+'" sandbox="allow-scripts"></iframe>':'<p class="empty">插件未启用或尚未提供组件页面 · 布局已保留</p>'}<div class="widget-hit" aria-hidden="true">${interactive?'⠿':''}</div><button class="resize-handle" aria-label="调整组件大小" title="拖动缩放；方向键微调" data-resize>⌟</button></article>`;}).join('')||'<div class="blank"><h2>把常看的信息，放在一起。</h2><p>从已安装的插件中添加组件。</p><button class="primary" data-add>＋ 添加第一个组件</button></div>';
+    for(const card of board().cards){const source=sources.find(s=>s.id===card.plugin),frame=document.querySelector(`[data-id="${CSS.escape(card.id)}"] iframe`);if(frame&&source?.widget)cardFrames.push(Object.assign(mountSurface(frame,source,'card',card),{cardId:card.id}));}
     positionCards();fitSurface();
   }
   function updateEditor(card=null){editorFrame?.dispose();editorFrame=null;const source=sources.find(s=>s.id===$('#source').value);$('#widgetEditor').hidden=!source?.widget;$('#cardTitle').closest('label').hidden=!source?.widget;$('#widgetForm button[type=submit]').disabled=!source?.widget;if(source?.widget)editorFrame=mountSurface($('#widgetEditor'),source,'editor',card);else $('#widgetEditor').src='about:blank';$('#pickerError').textContent='';}
@@ -96,7 +103,7 @@
   $('#canvas').addEventListener('pointermove',e=>{
     if(!gesture)return;const g=gesture,dx=e.clientX-g.x,dy=e.clientY-g.y;
     if(Math.abs(dx)+Math.abs(dy)<4&&!g.moved)return;g.moved=true;
-    if(g.resize){g.node.style.width=Math.round(Math.max(160,Math.min(1600,dx+g.width)))+'px';g.node.style.height=Math.round(Math.max(120,Math.min(1200,dy+g.height)))+'px';}
+    if(g.resize){const interactive=g.node.classList.contains('interactive');g.node.style.width=Math.round(Math.max(interactive?320:160,Math.min(1600,dx+g.width)))+'px';g.node.style.height=Math.round(Math.max(interactive?280:120,Math.min(1200,dy+g.height)))+'px';}
     else {g.node.classList.add('moving');g.wanted={x:Math.max(0,g.left+dx),y:Math.max(0,g.top+dy)};g.node.style.left=g.wanted.x+'px';g.node.style.top=g.wanted.y+'px';if(invoke&&Date.now()-(g.grown||0)>150&&(e.clientX>innerWidth-40||e.clientY>innerHeight-40)){g.grown=Date.now();fitted='';invoke('plugin_canvas_api',{action:'fit',payload:{width:innerWidth+(e.clientX>innerWidth-40?160:0),height:innerHeight+(e.clientY>innerHeight-40?140:0)}}).catch(()=>{});}}
 
   });
