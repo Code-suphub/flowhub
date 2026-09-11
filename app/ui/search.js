@@ -330,8 +330,10 @@ function portableQueryCommand(item) {
 async function copyText(text) {
   if (document.documentElement.dataset.weborgReadonly === "true") throw new Error("浏览器预览不能修改剪贴板");
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(String(text));
-    return;
+    try {
+      await navigator.clipboard.writeText(String(text));
+      return;
+    } catch {}
   }
   const textarea = document.createElement("textarea");
   textarea.value = String(text);
