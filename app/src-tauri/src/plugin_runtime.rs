@@ -8,7 +8,7 @@ use tauri_plugin_dialog::DialogExt;
 mod sources;
 
 #[derive(Clone,Serialize,Deserialize)]
-pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
+pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default)] searchable:bool, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String, #[serde(default,skip_serializing_if="is_false")] pub interactive:bool }
 fn is_false(value:&bool)->bool{!*value}
@@ -168,6 +168,14 @@ mod tests {
         assert_eq!(Runtime::new(root.clone()).unwrap().list().as_array().unwrap().len(),1);
         drop(first);drop(second);drop(rt);std::fs::remove_dir_all(root).unwrap();
     }
+}
+#[tauri::command]
+pub(crate) async fn plugin_search_call(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,method:String,params:Value)->Result<Value,String>{
+    if window.label()!="main" { return Err("仅快速搜索可调用插件搜索".into()); }
+    let rt=app.state::<Runtime>();
+    let plugin=rt.get(&id)?;
+    if !plugin.enabled || !plugin.manifest.searchable { return Err("插件未提供搜索能力".into()); }
+    rt.session(&id).await?.call(method,params).await
 }
 #[tauri::command]
 pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,method:String,params:Value)->Result<Value,String>{

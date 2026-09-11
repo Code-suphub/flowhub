@@ -55,7 +55,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     const [plugins, config] = await Promise.all([pluginsPromise, ensureConfig()]);
     return plugins.map((plugin) => ({
       ...plugin,
-      available: ["web", "clipboard", "app", "memo", "tools"].includes(plugin.id),
+      available: ["web", "clipboard", "app", "memo", "tools"].includes(plugin.id) || plugin.id === "twofa",
       enabled: config.plugins?.[plugin.id]?.enabled ?? plugin.defaultEnabled !== false
     }));
   }
@@ -83,6 +83,10 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       const configuredItems = config.plugins?.memo?.settings?.items;
       const items = Array.isArray(configuredItems) ? configuredItems : window.FlowHubMemoCatalog.cloneDefaults();
       return window.FlowHubMemoCatalog.rankMemos(items, query, limit, offset)
+        .map((record) => ({ ...record, pluginId: id }));
+    }
+    if (id === "twofa") {
+      return (await invoke("plugin_search_call", { id, method: "search", params: { query, limit, offset } }))
         .map((record) => ({ ...record, pluginId: id }));
     }
     return [];
@@ -190,6 +194,11 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
         return { ok: false, cancelled: true };
       }
       return invoke("delete_clipboard", { id: Number(payload.id) });
+    }
+    if (id === "twofa" && action === "activate") {
+      const result = await invoke("plugin_search_call", { id, method: "activate", params: { name: payload.id || payload.title } });
+      if (result?.code) await navigator.clipboard.writeText(result.code);
+      return result;
     }
     if (action !== "activate") return { ok: false, reason: `插件 ${id} 不支持操作 ${action}` };
     const result = await invoke("activate_target", { pluginId: id, payload });

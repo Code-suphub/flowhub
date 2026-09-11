@@ -15,12 +15,13 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
 let webSearchToken = 0;
 let memoSearchToken = 0;
+let twofaSearchToken = 0;
 let usageSearchToken = 0;
 let allScopeRefreshToken = 0;
 let dnsSearchToken = 0;
@@ -457,6 +458,10 @@ function memoMatches() {
   return state.memoResults.map((memo) => ({ ...memo, type: "memo" }));
 }
 
+function twofaMatches() {
+  return state.twofaResults.map((entry) => ({ ...entry, type: "twofa", pluginId: "twofa" }));
+}
+
 function memoPathHtml(item) {
   const segments = window.FlowHubMemoCatalog?.categorySegments?.(item?.category) || [item?.category || "其他"];
   return segments.map((segment, index) => `${index ? `<i aria-hidden="true">›</i>` : ""}<span>${esc(segment)}</span>`).join("");
@@ -496,8 +501,11 @@ let allInitialResults = [];
 let allPaging = false;
 const resultKey = (item) => `${item.type || item.kind}:${item.id || item.path || item.url || item.title}`;
 function configuredSearchOrder(config) {
+  const hasTwofa = Boolean(config?.plugins?.twofa)
+    || (Array.isArray(state.plugins) && state.plugins.some((plugin) => plugin.id === "twofa"));
   const defaults = config?.core?.webBeforeClipboard === false
     ? ["app", "clipboard", "web", "memo"] : ["app", "web", "clipboard", "memo"];
+  if (hasTwofa) defaults.push("twofa");
   const saved = config?.core?.searchResultOrder;
   return [...new Set([...(Array.isArray(saved) ? saved : []), ...defaults])]
     .filter(id => defaults.includes(id));
@@ -510,7 +518,8 @@ function allCandidates() {
     app: pluginEnabled("app") ? appMatches() : [],
     web: pluginEnabled("web") ? pageMatches().map(page => ({ ...page, type: "page" })) : [],
     clipboard: pluginEnabled("clipboard") ? clipboardMatches() : [],
-    memo: pluginEnabled("memo") ? memoMatches() : []
+    memo: pluginEnabled("memo") ? memoMatches() : [],
+    twofa: pluginEnabled("twofa") && typeof twofaMatches === "function" ? twofaMatches() : []
   });
 }
 function allHasMore() {
@@ -519,7 +528,8 @@ function allHasMore() {
     || (pluginEnabled("clipboard") && state.clipboardHasMore)
     || (pluginEnabled("app") && state.appHasMore)
     || (pluginEnabled("web") && state.webHasMore)
-    || (pluginEnabled("memo") && state.memoHasMore);
+    || (pluginEnabled("memo") && state.memoHasMore)
+    || (pluginEnabled("twofa") && state.twofaHasMore);
 }
 async function loadMoreAll() {
   if (allPaging || state.scope !== "all") return;
@@ -527,7 +537,8 @@ async function loadMoreAll() {
   if ((pluginEnabled("clipboard") && state.clipboardLoadedQuery !== state.query)
     || (pluginEnabled("app") && state.appLoadedQuery !== state.query)
     || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
-    || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query)) return;
+    || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query)
+    || (pluginEnabled("twofa") && state.twofaLoadedQuery !== state.query)) return;
   if (!allResultKeys) { allInitialResults = matches(); allResultKeys = allInitialResults.map(resultKey); }
   const token = allScopeRefreshToken;
   const shown = new Set(allResultKeys);
@@ -539,7 +550,8 @@ async function loadMoreAll() {
         state.clipboardHasMore ? refreshClipboard({ append: true, deferRender: true }) : null,
         state.appHasMore ? refreshApps({ append: true, deferRender: true }) : null,
         state.webHasMore ? refreshWeb({ append: true, deferRender: true }) : null,
-        state.memoHasMore ? refreshMemos({ append: true, deferRender: true }) : null
+        state.memoHasMore ? refreshMemos({ append: true, deferRender: true }) : null,
+        state.twofaHasMore ? refreshTwofa({ append: true, deferRender: true }) : null
       ]);
       if (token !== allScopeRefreshToken || state.scope !== "all") return;
       next = allCandidates().filter(item => !shown.has(resultKey(item)));
@@ -578,20 +590,22 @@ function matches() {
     return tools.length ? [...tools, ...apps] : apps;
   }
   if (state.scope === "memo") return memos;
+  if (state.scope === "twofa") return typeof twofaMatches === "function" ? twofaMatches() : [];
   if (!state.query.trim()) {
     const regularLimit = usages.length ? 4 : 6;
     const visibleUsages = usages.slice(0, 8);
     return [...visibleUsages, ...orderedSources({
       app: withoutUsageDuplicates(apps, visibleUsages).slice(0, 3),
       web: withoutUsageDuplicates(pages, visibleUsages).slice(0, regularLimit),
-      clipboard: clips.slice(0, regularLimit), memo: memos.slice(0, 4)
+      clipboard: clips.slice(0, regularLimit), memo: memos.slice(0, 4), twofa: typeof twofaMatches === "function" ? twofaMatches().slice(0, 4) : []
     })].slice(0, 12);
   }
   const appResults = state.query.trim() ? apps.slice(0, 3) : [];
   const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
+  const twofaResults = state.query.trim() && typeof twofaMatches === "function" ? twofaMatches().slice(0, 4) : [];
   const regularLimit = appResults.length || memoResults.length ? 3 : 6;
   return [...tools, ...(addWeb ? [addWeb] : []), ...orderedSources({
-    app: appResults, web: pages.slice(0, regularLimit), clipboard: clips.slice(0, regularLimit), memo: memoResults
+    app: appResults, web: pages.slice(0, regularLimit), clipboard: clips.slice(0, regularLimit), memo: memoResults, twofa: twofaResults
   })].slice(0, 12);
 }
 
@@ -752,6 +766,17 @@ function renderResult(item, index, items) {
 }
 function renderResultBody(item, index, items) {
   const usageSection = renderUsageSection(item, index, items);
+  if (item.type === "twofa") {
+    return `${usageSection}
+      <div class="result twofa-result ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-icon twofa">⌁</span>
+        <span class="r-body">
+          <span class="r-title">${esc(item.title || item.id || "2FA")}</span>
+          <span class="r-meta"><span class="path">2FA 验证码</span>${item.issuer ? ` · ${esc(item.issuer)}` : ""}</span>
+        </span>
+        <span class="r-kind">复制验证码</span>
+      </div>`;
+  }
   if (item.type === "calculation") {
     return `${usageSection}
       <div class="result calculation-result ${index === state.index ? "active" : ""}" data-i="${index}">
@@ -1077,6 +1102,12 @@ function revealActiveResult() {
 
 function choose(page) {
   if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
+  if (page?.type === "twofa") {
+    Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: page.id, title: page.title }))
+      .then((result) => showActionStatus(result?.code ? `已复制 ${result.name || page.title} 的验证码` : "获取验证码失败"))
+      .catch((error) => showActionStatus(error.message || "获取验证码失败"));
+    return;
+  }
   if (["calculation", "timestamp", "jwt"].includes(page?.type)) {
     void copyText(page.result)
       .then(() => showActionStatus("已复制"))
@@ -1309,14 +1340,17 @@ function invalidatePluginPaging({ resetPaging = true } = {}) {
   appSearchToken += 1;
   webSearchToken += 1;
   memoSearchToken += 1;
+  twofaSearchToken += 1;
   appIconSearchToken += 1;
   state.appLoading = false;
   state.webLoading = false;
   state.memoLoading = false;
+  state.twofaLoading = false;
   if (resetPaging) {
     state.appHasMore = false;
     state.webHasMore = false;
     state.memoHasMore = false;
+    state.twofaHasMore = false;
   }
 }
 
@@ -1340,7 +1374,8 @@ function setScope(scope) {
     const stale = (pluginEnabled("clipboard") && state.clipboardLoadedQuery !== state.query)
       || (pluginEnabled("app") && state.appLoadedQuery !== state.query)
       || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
-      || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query);
+      || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query)
+      || (pluginEnabled("twofa") && state.twofaLoadedQuery !== state.query);
     if (stale) void refreshAllScopes();
   } else if (scope === "clipboard") {
     if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
@@ -1353,6 +1388,9 @@ function setScope(scope) {
   }
   if (scope === "memo") {
     if (state.memoLoadedQuery !== state.query) void refreshMemos();
+  }
+  if (scope === "twofa") {
+    if (state.twofaLoadedQuery !== state.query) void refreshTwofa();
   }
   q?.focus({ preventScroll: true });
 }
@@ -1370,6 +1408,8 @@ function renderKeyboardHint() {
     keyboardHint.innerHTML = `←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
   } else if (state.scope === "memo") {
     keyboardHint.innerHTML = `↑↓ 选择 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴命令`;
+  } else if (state.scope === "twofa") {
+    keyboardHint.innerHTML = `↑↓ 选择 · <code>Tab</code> 范围 · <code>⏎</code> 复制验证码`;
   } else {
     keyboardHint.innerHTML = `↑↓ 结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
   }
@@ -1671,6 +1711,33 @@ async function refreshMemos({ append = false, deferRender = false } = {}) {
   }
 }
 
+async function refreshTwofa({ append = false, deferRender = false } = {}) {
+  if (!pluginEnabled("twofa") || !["all", "twofa"].includes(state.scope)) return;
+  if (append && (!['all', 'twofa'].includes(state.scope) || state.twofaLoading || !state.twofaHasMore)) return;
+  const token = ++twofaSearchToken;
+  const limit = state.scope === "twofa" ? PLUGIN_PAGE_SIZE : 12;
+  const offset = append ? state.twofaResults.length : 0;
+  state.twofaLoading = true;
+  if (!append) state.twofaHasMore = true;
+  if (append && !deferRender) render({ preserveScroll: true });
+  try {
+    const records = await window.weborg.pluginSearch("twofa", { query: state.query, limit, offset });
+    if (token !== twofaSearchToken) return;
+    const next = records || [];
+    const existing = new Set(state.twofaResults.map((item) => item.id));
+    state.twofaResults = append ? [...state.twofaResults, ...next.filter((item) => !existing.has(item.id))] : next;
+    state.twofaLoadedQuery = state.query;
+    state.twofaHasMore = next.length === limit;
+  } catch {
+    if (!append) state.twofaResults = [];
+  } finally {
+    if (token === twofaSearchToken) {
+      state.twofaLoading = false;
+      if (!deferRender) render({ preserveScroll: append });
+    }
+  }
+}
+
 async function refreshUsage() {
   if (state.scope === "clipboard" || state.query.trim()) return;
   const token = ++usageSearchToken;
@@ -1702,7 +1769,8 @@ async function refreshAllScopes() {
     refreshClipboard({ deferRender: true }),
     refreshApps({ deferRender: true }),
     refreshWeb({ deferRender: true }),
-    refreshMemos({ deferRender: true })
+    refreshMemos({ deferRender: true }),
+    refreshTwofa({ deferRender: true })
   ].map(task => task.finally(publish)));
   if (token !== allScopeRefreshToken || state.scope !== "all" || state.query !== query) return;
   render({ preserveScroll: true });
@@ -1728,6 +1796,7 @@ function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
       void refreshApps();
       void refreshWeb();
       void refreshMemos();
+      void refreshTwofa();
     }
     // Nonempty searches do not display usage cards; usage events refresh their cache.
   }, delay);
@@ -1765,10 +1834,12 @@ q.addEventListener("input", () => {
     state.appResults = state.emptyResults.app.slice();
     state.webResults = state.emptyResults.web.slice();
     state.memoResults = state.emptyResults.memo.slice();
+    state.twofaResults = (state.emptyResults.twofa || []).slice();
     state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
     state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
     state.webHasMore = state.webResults.length === 12;
     state.memoHasMore = state.memoResults.length === 12;
+    state.twofaHasMore = state.twofaResults.length === 12;
   }
   state.index = 0;
   const dedicatedWebSearch = state.scope === "web";
@@ -1800,6 +1871,7 @@ resultsEl.addEventListener("scroll", () => {
   if (state.scope === "all") void loadMoreAll();
   else if (state.scope === "clipboard") void refreshClipboard({ append: true });
   else if (state.scope === "app") void refreshApps({ append: true });
+  else if (state.scope === "twofa") void refreshTwofa({ append: true });
   else if (state.scope === "web") void refreshWeb({ append: true });
   else if (state.scope === "memo") void refreshMemos({ append: true });
 });
@@ -1924,8 +1996,8 @@ function prepareForShow() {
   allInitialResults = [];
   allScopeRefreshToken += 1;
   clearTimeout(clipboardSearchTimer);
-  for (const id of ["clipboard", "app", "web", "memo"]) {
-    state[id + "Results"] = state.emptyResults[id].slice();
+  for (const id of ["clipboard", "app", "web", "memo", "twofa"]) {
+    state[id + "Results"] = (state.emptyResults[id] || []).slice();
     state[id + "LoadedQuery"] = "";
   }
   if (q) q.value = "";
@@ -1948,6 +2020,7 @@ function prepareForShow() {
   state.appLoadedLimit = state.appResults.length;
   state.webHasMore = state.webResults.length >= 12;
   state.memoHasMore = state.memoResults.length >= 12;
+  state.twofaHasMore = state.twofaResults.length >= 12;
   resultsEl.scrollTop = 0;
   render();
   focusSearch();
@@ -1965,7 +2038,7 @@ async function initialize() {
   const plugins = await window.weborg.listPlugins();
   renderPluginScopes(plugins);
   const enabled = (id) => plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
-  const [cfg, records, applications, pages, memos, usageSections, update] = await Promise.all([
+  const [cfg, records, applications, pages, memos, twofa, usageSections, update] = await Promise.all([
     window.weborg.getConfig(),
     enabled("clipboard") ? window.weborg.pluginSearch("clipboard", { query: "", kind: "all", limit: CLIPBOARD_PAGE_SIZE, offset: 0 }) : [],
     // Prime the same page size used by the dedicated 应用 scope. The all-scope
@@ -1975,6 +2048,7 @@ async function initialize() {
     enabled("app") ? window.weborg.pluginSearch("app", { query: "", limit: APP_PAGE_SIZE, includeIcons: false }) : [],
     enabled("web") ? window.weborg.pluginSearch("web", { query: "", limit: 12 }) : [],
     enabled("memo") ? window.weborg.pluginSearch("memo", { query: "", limit: 12 }) : [],
+    enabled("twofa") ? window.weborg.pluginSearch("twofa", { query: "", limit: 12 }) : [],
     window.weborg.searchUsage("all"),
     window.weborg.getUpdateState()
   ]);
@@ -2002,6 +2076,10 @@ async function initialize() {
   state.memoLoadedQuery = "";
   state.emptyResults.memo = state.memoResults.slice();
   state.memoHasMore = state.memoResults.length === 12;
+  state.twofaResults = twofa || [];
+  state.twofaLoadedQuery = "";
+  state.emptyResults.twofa = state.twofaResults.slice();
+  state.twofaHasMore = state.twofaResults.length === 12;
   state.usageSections = usageSections || { frequent: [], recent: [] };
   state.usageLoadedScope = "all";
   initialized = true;

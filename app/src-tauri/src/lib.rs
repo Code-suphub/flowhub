@@ -1468,6 +1468,7 @@ pub fn run() {
             search_usage,
             open_settings,
             plugin_runtime::plugin_api,
+            plugin_runtime::plugin_search_call,
             plugin_runtime::plugin_rpc,
             plugin_status::plugin_status_api,
             plugin_canvas::plugin_canvas_api,
