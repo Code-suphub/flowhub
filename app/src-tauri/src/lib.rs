@@ -1500,6 +1500,7 @@ pub fn run() {
             clipboard::search_clipboard,
             clipboard::load_clipboard_assets,
             clipboard::activate_clipboard,
+            clipboard::copy_text,
             clipboard::delete_clipboard,
             cloudflare_probe::inspect_cloudflare,
             updater::log_update_event,

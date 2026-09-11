@@ -220,6 +220,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     pluginSearch,
     loadAppIcons,
     loadClipboardAssets: (ids = []) => invoke("load_clipboard_assets", { ids }),
+    copyText: (text) => invoke("copy_text", { text: String(text) }),
     lookupDns,
     runNetworkDiagnostic: (kind, target, head) => invoke("run_network_diagnostic", { kind, target, head }),
     inspectPort: (port) => invoke("inspect_port", { port }),

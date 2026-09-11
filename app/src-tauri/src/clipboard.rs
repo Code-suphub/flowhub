@@ -988,6 +988,13 @@ pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
 }
 
 #[tauri::command]
+pub fn copy_text(text: String) -> Result<Value, String> {
+    let context = ClipboardContext::new().map_err(|error| error.to_string())?;
+    context.set_text(text).map_err(|error| error.to_string())?;
+    Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
 pub fn activate_clipboard(
     app: tauri::AppHandle,
     state: State<'_, AppState>,

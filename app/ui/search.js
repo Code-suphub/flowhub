@@ -329,6 +329,10 @@ function portableQueryCommand(item) {
 
 async function copyText(text) {
   if (document.documentElement.dataset.weborgReadonly === "true") throw new Error("浏览器预览不能修改剪贴板");
+  if (typeof window.weborg?.copyText === "function") {
+    await window.weborg.copyText(String(text));
+    return;
+  }
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(String(text));
