@@ -884,6 +884,10 @@ fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<V
 }
 
 pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<String>, update: bool) -> Result<Value, String> {
+    // Opening settings from the launcher is an in-app navigation. Workspace
+    // activation notifications do not fire because both windows belong to
+    // FlowHub, so explicitly dismiss the launcher before bringing settings up.
+    hide_main(&app);
     let initial_url = initial_url.and_then(|value| {
         let value = value.trim().to_string();
         match url::Url::parse(&value) {
