@@ -465,7 +465,7 @@ function memoMatches() {
 }
 
 function twofaMatches() {
-  return state.twofaResults.map((entry) => ({ ...entry, type: "twofa", pluginId: "twofa" }));
+  return (state.twofaResults || []).map((entry) => ({ ...entry, type: "twofa", pluginId: "twofa" }));
 }
 
 function memoPathHtml(item) {
@@ -515,14 +515,19 @@ function configuredSearchOrder(config) {
 function orderedSources(groups) {
   return configuredSearchOrder(state.config).flatMap(id => groups[id] || []);
 }
+function orderedAllSources(groups) {
+  const order = ["clipboard", "app", "web", "memo", "twofa"];
+  return order.flatMap(id => groups[id] || []);
+}
 function allCandidates() {
-  return orderedSources({
+  const groups = {
     app: pluginEnabled("app") ? appMatches() : [],
     web: pluginEnabled("web") ? pageMatches().map(page => ({ ...page, type: "page" })) : [],
     clipboard: pluginEnabled("clipboard") ? clipboardMatches() : [],
     memo: pluginEnabled("memo") ? memoMatches() : [],
     twofa: pluginEnabled("twofa") && typeof twofaMatches === "function" ? twofaMatches() : []
-  });
+  };
+  return state.query.trim() ? orderedSources(groups) : orderedAllSources(groups);
 }
 function allHasMore() {
   const shown = new Set(allResultKeys || matches().map(resultKey));
@@ -596,7 +601,7 @@ function matches() {
   if (!state.query.trim()) {
     const regularLimit = usages.length ? 4 : 6;
     const visibleUsages = usages.slice(0, 8);
-    return [...visibleUsages, ...orderedSources({
+    return [...visibleUsages, ...orderedAllSources({
       app: withoutUsageDuplicates(apps, visibleUsages).slice(0, 3),
       web: withoutUsageDuplicates(pages, visibleUsages).slice(0, regularLimit),
       clipboard: clips.slice(0, regularLimit), memo: memos.slice(0, 4), twofa: typeof twofaMatches === "function" ? twofaMatches().slice(0, 4) : []

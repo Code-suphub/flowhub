@@ -18,7 +18,7 @@ state.config = { core: { webBeforeClipboard: false } };
 assert.deepEqual(types(), ['app', 'clipboard', 'page']);
 assert.deepEqual(Array.from(ctx.allCandidates(), item => item.type), ['app', 'clipboard', 'page']);
 state.query = '';
-assert.deepEqual(types(), ['app', 'clipboard', 'page']);
+assert.deepEqual(types(), ['clipboard', 'app', 'page']);
 state.scope = 'clipboard';
 assert.deepEqual(types(), ['clipboard']);
 state.scope = 'app';
@@ -45,7 +45,7 @@ assert.deepEqual(Array.from(ctx.allCandidates(), item => item.type), ['memo', 'c
 state.query = '';
 assert.deepEqual(Array.from(ctx.usageMatches(), item => item.type), ['page', 'app']);
 state.usageSections = {};
-assert.deepEqual(types(), ['memo', 'clipboard', 'page', 'app']);
+assert.deepEqual(types(), ['clipboard', 'app', 'page', 'memo']);
 assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:['web','web','unknown']}})), ['web','app','clipboard','memo']);
 assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:'invalid'}})), ['app','web','clipboard','memo']);
 const settings = fs.readFileSync(require('node:path').join(__dirname, '../ui/settings.js'), 'utf8');
