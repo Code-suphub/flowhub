@@ -11,6 +11,7 @@ mod storage_tests;
 mod web_open;
 mod search_diagnostic_run;
 mod focus_diagnostics;
+mod launcher_visibility;
 #[cfg(target_os = "macos")]
 mod app_launch;
 #[cfg(target_os = "macos")]
@@ -25,10 +26,10 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
         Arc, Mutex, RwLock,
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 #[cfg(target_os = "macos")]
@@ -78,7 +79,7 @@ tauri_panel! {
 }
 
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
-static LAST_MAIN_SHOW_MILLIS: AtomicU64 = AtomicU64::new(0);
+static MAIN_VISIBILITY: Mutex<launcher_visibility::Visibility> = Mutex::new(launcher_visibility::Visibility::new());
 #[tauri::command]
 fn send_test_notification(app: tauri::AppHandle) -> Result<Value, String> {
     let config = hydrated_config(&app.state::<AppState>())?;
@@ -732,6 +733,7 @@ fn application_icon_cache_path(state: &AppState, application_path: &str) -> Path
 }
 
 pub(crate) fn hide_main(app: &tauri::AppHandle) {
+    MAIN_VISIBILITY.lock().unwrap().invalidate();
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
@@ -1048,7 +1050,7 @@ fn toggle_main(app: &tauri::AppHandle) {
     let focused = window.is_focused().unwrap_or(false);
     eprintln!("[flowhub-tauri] 收到唤出请求，当前可见：{visible}，当前聚焦：{focused}");
     if visible && focused {
-        let _ = window.hide();
+        hide_main(app);
         return;
     }
     // macOS uses a non-activating fullscreen-compatible panel. Select the
@@ -1060,13 +1062,7 @@ fn toggle_main(app: &tauri::AppHandle) {
     let _ = window.set_always_on_top(true);
     #[cfg(not(target_os = "macos"))]
     let _ = window.center();
-    LAST_MAIN_SHOW_MILLIS.store(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_millis() as u64)
-            .unwrap_or(0),
-        AtomicOrdering::Release,
-    );
+    MAIN_VISIBILITY.lock().unwrap().show(Instant::now());
     #[cfg(target_os = "macos")]
     show_macos_window(&window);
     #[cfg(not(target_os = "macos"))]
@@ -1366,8 +1362,6 @@ pub fn run() {
                 #[cfg(not(target_os = "macos"))]
                 let _ = window.set_visible_on_all_workspaces(true);
                 let main_window = window.clone();
-                let main_has_focused = Arc::new(AtomicBool::new(false));
-                let focus_state = main_has_focused.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
@@ -1375,32 +1369,26 @@ pub fn run() {
                     } else if let WindowEvent::Focused(true) = event {
                         focus_diagnostics::record("native-focus", json!({"focused": true}));
                         eprintln!("[flowhub-tauri] 主窗口获得焦点");
-                        focus_state.store(true, AtomicOrdering::Release);
+                        MAIN_VISIBILITY.lock().unwrap().invalidate();
                     } else if let WindowEvent::Focused(false) = event {
                         focus_diagnostics::record("native-focus", json!({"focused": false}));
                         eprintln!("[flowhub-tauri] 主窗口失去焦点");
-                        // Ignore the initial/stale blur generated while the
-                        // launcher's hidden window is being created.
-                        if !focus_state.swap(false, AtomicOrdering::AcqRel) {
-                            return;
-                        }
-                        let now = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .map(|duration| duration.as_millis() as u64)
-                            .unwrap_or(0);
-                        let last_show = LAST_MAIN_SHOW_MILLIS.load(AtomicOrdering::Acquire);
-                        if now.saturating_sub(last_show) < 500 {
-                            eprintln!("[flowhub-tauri] 忽略唤醒后的短暂失焦");
-                            return;
-                        }
+                        // Defer early blur, never discard it. A later focus/show
+                        // invalidates this check so it cannot hide a new session.
+                        let check = MAIN_VISIBILITY.lock().unwrap().blur(Instant::now());
                         let blur_window = main_window.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(Duration::from_millis(120));
-                            if !LAUNCHER_PINNED.load(AtomicOrdering::Acquire)
-                                && !blur_window.is_focused().unwrap_or(false) {
-                                eprintln!("[flowhub-tauri] 失焦后隐藏主窗口");
-                                let _ = blur_window.hide();
-                            }
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(check.delay).await;
+                            let app = blur_window.app_handle().clone();
+                            let _ = app.run_on_main_thread(move || {
+                                let visible = blur_window.is_visible().unwrap_or(false);
+                                let focused = blur_window.is_focused().unwrap_or(true);
+                                let hide = MAIN_VISIBILITY.lock().unwrap().should_hide(&check,visible,focused,LAUNCHER_PINNED.load(AtomicOrdering::Acquire));
+                                if hide {
+                                    eprintln!("[flowhub-tauri] 失焦复查后隐藏主窗口");
+                                    hide_main(blur_window.app_handle());
+                                }
+                            });
                         });
                     }
                 });
