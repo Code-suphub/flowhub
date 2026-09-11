@@ -86,7 +86,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
         .map((record) => ({ ...record, pluginId: id }));
     }
     if (id === "twofa") {
-      return (await invoke("plugin_search_call", { id, method: "search", params: { query, limit, offset } }))
+      const twofaQuery = query.replace(/^2fa(?:\s+|$)/i, "").trim();
+      return (await invoke("plugin_search_call", { id, method: "search", params: { query: twofaQuery, limit, offset } }))
         .map((record) => ({ ...record, pluginId: id }));
     }
     return [];
