@@ -1104,7 +1104,10 @@ function choose(page) {
   if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
   if (page?.type === "twofa") {
     Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: page.id, title: page.title }))
-      .then((result) => showActionStatus(result?.code ? `已复制 ${result.name || page.title} 的验证码` : "获取验证码失败"))
+      .then((result) => {
+        if (!result?.code) throw new Error("获取验证码失败");
+        return copyText(result.code).then(() => showActionStatus(`已复制 ${result.name || page.title} 的验证码`));
+      })
       .catch((error) => showActionStatus(error.message || "获取验证码失败"));
     return;
   }

@@ -197,9 +197,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       return invoke("delete_clipboard", { id: Number(payload.id) });
     }
     if (id === "twofa" && action === "activate") {
-      const result = await invoke("plugin_search_call", { id, method: "activate", params: { name: payload.id || payload.title } });
-      if (result?.code) await navigator.clipboard.writeText(result.code);
-      return result;
+      return invoke("plugin_search_call", { id, method: "activate", params: { name: payload.id || payload.title } });
     }
     if (action !== "activate") return { ok: false, reason: `插件 ${id} 不支持操作 ${action}` };
     const result = await invoke("activate_target", { pluginId: id, payload });
