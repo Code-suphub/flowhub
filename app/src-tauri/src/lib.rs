@@ -747,22 +747,8 @@ fn get_launcher_pinned() -> bool {
 }
 
 #[tauri::command]
-fn set_launcher_pinned(app: tauri::AppHandle, pinned: bool) -> bool {
+fn set_launcher_pinned(pinned: bool) -> bool {
     LAUNCHER_PINNED.store(pinned, AtomicOrdering::Release);
-
-    // Keep AppKit's native deactivation behavior in sync with the pin toggle.
-    // The launcher is a non-activating panel, so a Tauri Focused(false) event
-    // is not guaranteed when the user switches to another application.
-    // NSPanel's hidesOnDeactivate is the reliable fallback for the normal
-    // (unpinned) launcher state.
-    #[cfg(target_os = "macos")]
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = app.run_on_main_thread(move || {
-            if let Ok(panel) = window.to_panel::<FlowHubLauncherPanel>() {
-                panel.set_hides_on_deactivate(!pinned);
-            }
-        });
-    }
     pinned
 }
 
@@ -1152,7 +1138,11 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     panel.set_level(PanelLevel::PopUpMenu.value());
     panel.set_floating_panel(true);
-    panel.set_hides_on_deactivate(!LAUNCHER_PINNED.load(AtomicOrdering::Acquire));
+    // Do not rely on NSPanel's hidesOnDeactivate here. A non-activating panel
+    // can be considered deactivated immediately after show, which would hide
+    // the launcher before the first frame is usable. App-switch dismissal is
+    // handled by the workspace activation observer installed at startup.
+    panel.set_hides_on_deactivate(false);
     // A non-activating NSPanel can become the key window and receive search
     // input without activating FlowHub or switching away from another app's
     // fullscreen Space.
@@ -1166,6 +1156,41 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
             .into(),
     );
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn install_launcher_activation_observer(app: &tauri::AppHandle) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
+    use objc2_foundation::{NSNotification, NSOperationQueue};
+    use std::ptr::NonNull;
+
+    let app = app.clone();
+    let activation = RcBlock::new(move |_: NonNull<NSNotification>| {
+        if LAUNCHER_PINNED.load(AtomicOrdering::Acquire) {
+            return;
+        }
+        if NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .is_some_and(|application| application.processIdentifier() != std::process::id() as i32)
+        {
+            hide_main(&app);
+        }
+    });
+    let observer = unsafe {
+        NSWorkspace::sharedWorkspace()
+            .notificationCenter()
+            .addObserverForName_object_queue_usingBlock(
+                Some(NSWorkspaceDidActivateApplicationNotification),
+                None,
+                Some(&NSOperationQueue::mainQueue()),
+                &activation,
+            )
+    };
+    // The observer is intentionally process-lifetime. The returned token owns
+    // the block and must stay alive while the workspace notification center can
+    // invoke it.
+    std::mem::forget(observer);
 }
 
 fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
@@ -1194,9 +1219,15 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
     }
     let _ = app.global_shortcut().unregister_all();
     eprintln!("[flowhub-tauri] 使用官方 global-shortcut 路径");
-    app.global_shortcut()
-        .register(shortcut)
-        .map_err(|error| error.to_string())
+    match app.global_shortcut().register(shortcut) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            eprintln!("[flowhub-tauri] 官方热键注册失败，切换 macOS 回退路径：{error}");
+            app.try_state::<macos_hotkey::MacHotkeyRuntime>()
+                .ok_or_else(|| "自定义 macOS 热键运行时未初始化".to_string())?
+                .register(shortcut)
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1336,12 +1367,12 @@ pub fn run() {
                 std::thread::spawn(move || refresh_application_index(&handle));
             }
             #[cfg(target_os = "macos")]
-            if std::env::var("FLOWHUB_TAURI_CUSTOM_HOTKEY").as_deref() == Ok("1") {
-                app.manage(
-                    macos_hotkey::MacHotkeyRuntime::install(app.handle())
-                        .map_err(std::io::Error::other)?,
-                );
-            }
+            // Keep the Carbon/event-tap fallback ready. Command+Space is often
+            // claimed by Spotlight, which can make the official registrar fail.
+            app.manage(
+                macos_hotkey::MacHotkeyRuntime::install(app.handle())
+                    .map_err(std::io::Error::other)?,
+            );
             app.manage(clipboard::ClipboardRuntime::new());
             app.manage(updater::UpdateRuntime::new(
                 app.package_info().version.to_string().as_str(),
@@ -1371,6 +1402,8 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
                 configure_macos_panel(&window).map_err(std::io::Error::other)?;
+                #[cfg(target_os = "macos")]
+                install_launcher_activation_observer(app.handle());
                 #[cfg(target_os = "macos")]
                 focus_diagnostics::install_native_monitor();
                 #[cfg(not(target_os = "macos"))]
