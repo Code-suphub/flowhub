@@ -36,7 +36,7 @@ assert.deepEqual(types(), ['tool', 'app', 'page', 'clipboard']);
 vm.runInContext(source.slice(source.indexOf('function usageMatches('), source.indexOf('function withoutUsageDuplicates')), ctx);
 state.query = '';
 state.usageSections = { frequent: [{ type: 'page', id: 'p' }, { type: 'app', id: 'a' }], recent: [] };
-assert.deepEqual(Array.from(ctx.usageMatches(), item => item.type), ['app', 'page']);
+assert.deepEqual(Array.from(ctx.usageMatches(), item => item.type), ['page', 'app']);
 ctx.setConfig({ core: { searchResultOrder: ['memo', 'clipboard', 'web', 'app'] } });
 ctx.memoMatches = () => [{type:'memo', id:'memo'}];
 state.query = 'flow';

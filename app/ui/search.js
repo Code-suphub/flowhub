@@ -482,10 +482,6 @@ function usageMatches() {
   const entries = [];
   for (const section of ["frequent", "recent"]) {
     const sectionItems = [...(state.usageSections?.[section] || [])];
-    if (state.scope === "all") {
-      const order = configuredSearchOrder(state.config);
-      sectionItems.sort((a, b) => order.indexOf(a.type === "page" ? "web" : a.type) - order.indexOf(b.type === "page" ? "web" : b.type));
-    }
     for (const item of sectionItems) {
       if (item.type === "app" && !pluginEnabled("app")) continue;
       if (item.type === "page" && !pluginEnabled("web")) continue;
