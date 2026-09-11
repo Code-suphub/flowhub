@@ -1210,24 +1210,13 @@ fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
 
 #[cfg(target_os = "macos")]
 fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Result<(), String> {
-    if std::env::var("FLOWHUB_TAURI_CUSTOM_HOTKEY").as_deref() == Ok("1") {
-        eprintln!("[flowhub-tauri] 使用自定义 macOS 热键回退路径");
-        return app
-            .try_state::<macos_hotkey::MacHotkeyRuntime>()
-            .ok_or_else(|| "自定义 macOS 热键运行时未初始化".to_string())?
-            .register(shortcut);
-    }
-    let _ = app.global_shortcut().unregister_all();
-    eprintln!("[flowhub-tauri] 使用官方 global-shortcut 路径");
-    match app.global_shortcut().register(shortcut) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            eprintln!("[flowhub-tauri] 官方热键注册失败，切换 macOS 回退路径：{error}");
-            app.try_state::<macos_hotkey::MacHotkeyRuntime>()
-                .ok_or_else(|| "自定义 macOS 热键运行时未初始化".to_string())?
-                .register(shortcut)
-        }
-    }
+    // Use the Carbon/event-tap path on macOS. The system global-shortcut
+    // registrar can report Command+Space as registered while Spotlight still
+    // consumes the event, leaving FlowHub unable to summon its launcher.
+    eprintln!("[flowhub-tauri] 使用 macOS Carbon/Event Tap 热键路径");
+    app.try_state::<macos_hotkey::MacHotkeyRuntime>()
+        .ok_or_else(|| "自定义 macOS 热键运行时未初始化".to_string())?
+        .register(shortcut)
 }
 
 #[cfg(not(target_os = "macos"))]
