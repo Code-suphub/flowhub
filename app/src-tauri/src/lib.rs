@@ -747,8 +747,22 @@ fn get_launcher_pinned() -> bool {
 }
 
 #[tauri::command]
-fn set_launcher_pinned(pinned: bool) -> bool {
+fn set_launcher_pinned(app: tauri::AppHandle, pinned: bool) -> bool {
     LAUNCHER_PINNED.store(pinned, AtomicOrdering::Release);
+
+    // Keep AppKit's native deactivation behavior in sync with the pin toggle.
+    // The launcher is a non-activating panel, so a Tauri Focused(false) event
+    // is not guaranteed when the user switches to another application.
+    // NSPanel's hidesOnDeactivate is the reliable fallback for the normal
+    // (unpinned) launcher state.
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(panel) = window.to_panel::<FlowHubLauncherPanel>() {
+                panel.set_hides_on_deactivate(!pinned);
+            }
+        });
+    }
     pinned
 }
 
@@ -1138,7 +1152,7 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     panel.set_level(PanelLevel::PopUpMenu.value());
     panel.set_floating_panel(true);
-    panel.set_hides_on_deactivate(false);
+    panel.set_hides_on_deactivate(!LAUNCHER_PINNED.load(AtomicOrdering::Acquire));
     // A non-activating NSPanel can become the key window and receive search
     // input without activating FlowHub or switching away from another app's
     // fullscreen Space.
