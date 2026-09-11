@@ -49,6 +49,16 @@
     "order": 40
   },
   {
+    "id": "twofa",
+    "name": "2FA 验证码",
+    "description": "按名称搜索并复制一次性验证码",
+    "icon": "⌁",
+    "defaultEnabled": true,
+    "searchable": true,
+    "settingsOrder": 45,
+    "order": 45
+  },
+  {
     "id": "tools",
     "name": "智能工具",
     "description": "识别计算表达式、时间戳、JWT、DNS、IP 归属地和 Cloudflare 状态",
