@@ -10,7 +10,7 @@ mod sources;
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default)] searchable:bool, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
 #[derive(Clone,Serialize,Deserialize)]
-pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String, #[serde(default,skip_serializing_if="is_false")] pub interactive:bool }
+pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String, #[serde(default,rename="minWidth",skip_serializing_if="Option::is_none")] pub min_width:Option<u32>, #[serde(default,rename="minHeight",skip_serializing_if="Option::is_none")] pub min_height:Option<u32>, #[serde(default,skip_serializing_if="is_false")] pub interactive:bool }
 fn is_false(value:&bool)->bool{!*value}
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool, #[serde(default,rename="lastLoadedAt",skip_serializing_if="Option::is_none")] last_loaded_at:Option<i64> }
@@ -53,6 +53,7 @@ impl Runtime {
         let sources=sources::load(&root)?;
         Ok(Self{root,installed:Mutex::new(installed),sessions:tokio::sync::Mutex::new(HashMap::new()),sources:Mutex::new(sources),candidates:Mutex::new(HashMap::new())})
     }
+    pub(crate) fn loaded_at(&self,id:&str)->Option<i64>{self.get(id).ok().and_then(|p|p.last_loaded_at)}
     fn list(&self)->Value { json!(self.installed.lock().unwrap().clone()) }
     fn update(&self, f:impl FnOnce(&mut Vec<Installed>))->Result<Value,String> {
         let mut installed=self.installed.lock().unwrap();let mut next=installed.clone();f(&mut next);
