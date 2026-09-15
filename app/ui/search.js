@@ -940,7 +940,7 @@ function renderResultBody(item, index, items) {
         <span class="r-icon web-add">＋</span>
         <span class="r-body">
           <span class="r-title">添加到网页配置</span>
-          <span class="r-meta"><span class="path">未找到匹配网页</span> · ${esc(item.url)}</span>
+          <span class="r-meta"><span class="path">未找到匹配网页</span> · ${esc(item.url)} · 右键新建</span>
         </span>
         <span class="r-kind">添加</span>
       </div>
@@ -1023,7 +1023,7 @@ function renderResultBody(item, index, items) {
       <span class="r-body">
         <span class="r-title">${esc(item.title || item.id)}</span>
         <span class="r-meta"><span class="path">${esc(pathText(item))}</span>
-          ${noteOf(item) ? ` · ${esc(noteOf(item))}` : ""} · ${esc(normalizeUrl(item.url) || item.url)}
+          ${noteOf(item) ? ` · ${esc(noteOf(item))}` : ""} · ${esc(normalizeUrl(item.url) || item.url)} · 右键编辑
         </span>
       </span>
       <span class="r-kind">${normalizeUrl(item.url) ? "网页" : "无链接"}</span>
@@ -1951,6 +1951,13 @@ resultsEl.addEventListener("contextmenu", (e) => {
   const row = e.target.closest(".result");
   if (!row) return;
   const item = matches()[+row.dataset.i];
+  if (item?.type === "page" || item?.type === "web-add") {
+    e.preventDefault();
+    const url = normalizeUrl(item.url);
+    if (!url || typeof window.weborg?.openSettings !== "function") return;
+    void window.weborg.openSettings({ initialUrl: url });
+    return;
+  }
   if (item?.type !== "clipboard") return;
   e.preventDefault();
   if (document.documentElement.dataset.weborgReadonly === "true") return;
@@ -1999,6 +2006,13 @@ resultsEl.addEventListener("mousemove", (e) => {
 });
 
 function focusSearch() { q?.focus(); q?.select(); }
+function focusSearchAfterWindowActivation() {
+  // A non-activating macOS panel becomes key before WebView focus is settled.
+  // Wait two paints so the first keystroke cannot leak to the previous app.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (!document.hidden) focusSearch();
+  }));
+}
 function prepareForShow() {
   void window.refreshSearchTiming?.();
   window.flowhubSearchTiming?.reset();
@@ -2041,6 +2055,10 @@ function prepareForShow() {
 }
 window.focusSearch = focusSearch;
 window.prepareForShow = prepareForShow;
+window.addEventListener("focus", focusSearchAfterWindowActivation);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) focusSearchAfterWindowActivation();
+});
 window.weborg.onUpdateState?.((update) => renderVersion(update));
 
 // 初始加载

@@ -1097,9 +1097,9 @@ fn toggle_main(app: &tauri::AppHandle) {
             focus_window.outer_position().ok()
         );
     });
-    // Reset the query and refresh data after the first frame so showing the
-    // launcher is not blocked by four concurrent searches on every hotkey.
-    let _ = window.eval("window.prepareForShow?.()");
+    // macOS performs the reset/focus after `show_and_make_key` below. Calling
+    // it here races native first-responder assignment and can send the first
+    // typed characters back to the previously active application.
 }
 
 #[cfg(target_os = "macos")]
@@ -1115,6 +1115,15 @@ fn show_macos_window(window: &tauri::WebviewWindow) {
                     .map(|mtm| macos_launcher_position::position_at_pointer(panel.as_panel(), mtm))
                     .unwrap_or_else(|| json!({"status": "missing-main-thread"}));
                 panel.show_and_make_key();
+                // `show_and_make_key` changes the native first responder. The
+                // earlier call from `toggle_main` can race that transition.
+                // Re-apply launcher state after the panel is key so the first
+                // keystroke is delivered to the search field.
+                if let Some(main) = panel_handle.get_webview_window("main") {
+                    let _ = main.eval(
+                        "window.prepareForShow?.(); window.focusSearch?.();",
+                    );
+                }
                 detail["visible"] = json!(panel.as_panel().isVisible());
                 detail["keyWindow"] = json!(panel.as_panel().isKeyWindow());
                 detail

@@ -148,12 +148,13 @@
       .tree { display: grid; gap: 2px; }
       .tree-row {
         position: relative; width: 100%; min-height: 38px; display: flex; align-items: center; gap: 7px; padding: 6px 8px 6px calc(5px + var(--depth) * 15px);
-        border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; text-align: left; transition: opacity .14s ease, color .14s ease, background .14s ease, transform .14s ease;
+        border-radius: 8px; color: var(--muted); background: transparent; cursor: grab; user-select: none; touch-action: none; text-align: left; transition: opacity .14s ease, color .14s ease, background .14s ease, transform .14s ease;
       }
       .tree-row:hover { color: var(--ink); background: rgba(255, 255, 255, .055); }
       .tree-row.active { color: var(--ink); background: linear-gradient(90deg, rgba(75, 208, 184, .17), rgba(75, 208, 184, .04)); box-shadow: inset 2px 0 var(--accent); }
       .tree-row:focus-visible { outline: 2px solid rgba(75, 208, 184, .7); outline-offset: -2px; }
-      .tree-row.dragging { opacity: .32; transform: scale(.985); }
+      .tree-row:active { cursor: grabbing; }
+      .tree-row.dragging { opacity: .32; transform: scale(.985); cursor: grabbing; }
       .tree-row.drop-inside { color: var(--ink); background: rgba(143, 213, 183, .13); outline: 1px solid rgba(143, 213, 183, .5); outline-offset: -1px; }
       .tree-row.drop-before::after, .tree-row.drop-after::after {
         content: ""; position: absolute; z-index: 3; left: calc(11px + var(--depth) * 15px); right: 7px; height: 2px; border-radius: 999px;
@@ -722,7 +723,7 @@
             </div>
             <div class="tree-filter"><input id="treeFilter" type="search" placeholder="筛选标题、域名或节点 ID…" autocomplete="off" /><span id="treeFilterCount"></span></div>
             <div class="tree-card"><div class="tree" id="tree"></div></div>
-            <p class="side-note">拖动节点左侧手柄可调整顺序或层级；配置会写入当前 <code>config.json</code>。</p>
+            <p class="side-note">拖动节点整行可调整顺序或层级；配置会写入当前 <code>config.json</code>。</p>
           </div>
 
           <div class="module-panel hidden" data-module-panel="clipboard">

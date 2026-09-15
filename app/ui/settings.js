@@ -54,6 +54,8 @@ const TOOL_SETTINGS = {
 };
 const SHIFTED_DIGIT_KEYS = { ")": "0", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9" };
 let draftTimer = null;
+let pointerDrag = null;
+let suppressTreeClickUntil = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -617,7 +619,7 @@ function renderTree() {
   }
   tree.innerHTML = entries.map(({ node, level }) => `
     <div class="tree-row ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0" title="${esc(node.title || node.id)}" aria-grabbed="${state.draggingId === node.id}">
-      <span class="tree-drag-handle" draggable="true" title="拖拽移动节点" aria-label="拖拽移动 ${esc(node.title || node.id)}"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="tree-drag-handle" title="拖拽整行移动节点" aria-label="拖拽整行移动 ${esc(node.title || node.id)}"><i></i><i></i><i></i><i></i><i></i><i></i></span>
       ${node.children?.length ? `<button class="tree-toggle" data-toggle-node="${esc(node.id)}" aria-expanded="${state.expanded.has(node.id)}" aria-label="${state.expanded.has(node.id) ? "收缩" : "展开"}"></button>` : `<span class="tree-toggle-spacer"></span>`}
       ${iconHtml(node)}
       <span class="tree-copy"><strong>${esc(node.title || node.id)}</strong><small>${node.url ? "页面" : `${node.children?.length || 0}`}</small></span>
@@ -1809,6 +1811,7 @@ document.addEventListener("toggle", (event) => {
 }, true);
 
 document.addEventListener("click", (event) => {
+  if (performance.now() < suppressTreeClickUntil && event.target.closest("[data-node-id]")) return;
   const orderButton = event.target.closest("[data-search-order]");
   if (orderButton) {
     const order = configuredSearchOrder(state.config);
@@ -1899,9 +1902,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("dragstart", (event) => {
-  const handle = event.target.closest?.(".tree-drag-handle");
-  const row = handle?.closest("[data-node-id]");
-  if (!row) return;
+  const row = event.target.closest?.("[data-node-id]");
+  if (!row || event.target.closest("button, input, textarea, select")) return;
   state.draggingId = row.dataset.nodeId;
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", state.draggingId);
@@ -1935,6 +1937,67 @@ document.addEventListener("dragend", () => {
   document.querySelectorAll(".tree-row.dragging").forEach((row) => row.classList.remove("dragging"));
   clearDropIndicators();
   state.draggingId = "";
+});
+
+function pointerDropTarget(clientX, clientY) {
+  const row = document.elementFromPoint(clientX, clientY)?.closest?.("[data-node-id]");
+  if (!row || !state.draggingId || row.dataset.nodeId === state.draggingId) return null;
+  const source = nodeEntries().find((entry) => entry.node.id === state.draggingId)?.node;
+  if (!source || nodeContains(source, row.dataset.nodeId)) return null;
+  const position = dropPositionFor(row, clientY);
+  clearDropIndicators();
+  row.classList.add(`drop-${position}`);
+  row.dataset.dropPosition = position;
+  return { row, position };
+}
+
+function clearPointerDrag() {
+  pointerDrag?.row?.releasePointerCapture?.(pointerDrag.pointerId);
+  pointerDrag = null;
+  document.querySelectorAll(".tree-row.dragging").forEach((row) => row.classList.remove("dragging"));
+  clearDropIndicators();
+  state.draggingId = "";
+}
+
+document.addEventListener("pointerdown", (event) => {
+  const row = event.target.closest?.("[data-node-id]");
+  if (!row || event.button !== 0 || event.target.closest("button, input, textarea, select")) return;
+  pointerDrag = { row, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, active: false };
+});
+
+document.addEventListener("pointermove", (event) => {
+  if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+  const moved = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
+  if (!pointerDrag.active && moved < 6) return;
+  if (!pointerDrag.active) {
+    pointerDrag.active = true;
+    state.draggingId = pointerDrag.row.dataset.nodeId;
+    pointerDrag.row.setPointerCapture?.(pointerDrag.pointerId);
+    pointerDrag.row.classList.add("dragging");
+  }
+  event.preventDefault();
+  pointerDropTarget(event.clientX, event.clientY);
+});
+
+document.addEventListener("pointerup", (event) => {
+  if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+  if (pointerDrag.active) {
+    event.preventDefault();
+    const target = pointerDropTarget(event.clientX, event.clientY);
+    const sourceId = state.draggingId;
+    const targetId = target?.row?.dataset.nodeId;
+    const position = target?.position;
+    clearPointerDrag();
+    suppressTreeClickUntil = performance.now() + 180;
+    if (sourceId && targetId && position) moveNodeByDrop(sourceId, targetId, position);
+  } else {
+    pointerDrag = null;
+  }
+});
+
+document.addEventListener("pointercancel", () => {
+  if (pointerDrag?.active) clearPointerDrag();
+  else pointerDrag = null;
 });
 
 document.addEventListener("input", (event) => {
