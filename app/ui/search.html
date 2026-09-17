@@ -146,6 +146,8 @@
         outline: none;
       }
       .r-meta .path { color: var(--accent); }
+      .result-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; align-items: center; flex: 0 0 auto; }
+      .result-actions .tool-action { padding: 3px 8px; font-size: 10px; }
       .clipboard-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
       .clipboard-actions .tool-action { padding: 3px 8px; font-size: 10px; }
       .clipboard-pin { color: var(--accent); }
@@ -203,7 +205,7 @@
       .memo-description { display: block; color: #708594; }
       .r-kind.memo { color: #dba66e; border-color: rgba(219, 166, 110, .28); }
       .foot { border-top: 1px solid rgba(157, 191, 205, .14); padding: 8px 14px; display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: #8098a6; background: rgba(7, 14, 20, .20); }
-      .foot code { color: #c3d8df; background: rgba(7, 14, 20, .60); padding: 2px 6px; border: 1px solid rgba(157, 191, 205, .12); border-radius: 5px; }
+      .foot code, .foot kbd { color: #c3d8df; background: rgba(7, 14, 20, .60); padding: 2px 6px; border: 1px solid rgba(157, 191, 205, .12); border-radius: 5px; font: 10px/1 var(--mono); }
     </style>
     <link rel="stylesheet" href="shared/theme.css" />
   </head>
@@ -237,7 +239,7 @@
       </div>
       <div id="results"></div>
       <div class="foot">
-        <span id="keyboardHint">←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开</span>
+        <span id="keyboardHint">↑↓ 选择结果 · <kbd>⏎</kbd> 打开 · <kbd>F6</kbd> 操作按钮 · <kbd>Tab</kbd> 范围 · <kbd>⌘K</kbd> 回到搜索框</span>
         <span><span id="actionStatus" aria-live="polite"></span> <span id="runtimeMode">FlowHub</span></span>
       </div>
     </div>

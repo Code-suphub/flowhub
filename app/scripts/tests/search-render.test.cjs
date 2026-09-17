@@ -2,7 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const s=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
 let top=120,events=[];
 const resultsEl={get scrollTop(){return top},set scrollTop(v){top=v;events.push('scroll')},set innerHTML(v){events.push('dom')}};
-const ctx=vm.createContext({window:{},state:{config:{},scope:'clipboard',clipboardLoading:false,clipboardHasMore:false},resultsEl,matches:()=>[{}],renderResults:()=>'<div>row</div>',lastResultsHtml:'',windowedResults:false,esc:s=>s.replaceAll('&','&amp;').replaceAll('<','&lt;')});
+const ctx=vm.createContext({document:{getElementById:()=>null},window:{},state:{config:{},scope:'clipboard',clipboardLoading:false,clipboardHasMore:false},resultsEl,matches:()=>[{}],renderResults:()=>'<div>row</div>',lastResultsHtml:'',windowedResults:false,esc:s=>s.replaceAll('&','&amp;').replaceAll('<','&lt;')});
 vm.runInContext(s.slice(s.indexOf('function renderMeasured('),s.indexOf('function revealActiveResult(')),ctx);
 ctx.renderMeasured({preserveScroll:true});assert.deepEqual(events,['dom']);assert.equal(top,120);
 events=[];ctx.lastResultsHtml='';ctx.renderMeasured();assert.deepEqual(events,['scroll','dom']);assert.equal(top,0);

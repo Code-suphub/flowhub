@@ -837,13 +837,58 @@ function renderResults(items, from = 0, to = items.length) {
   return html;
 }
 
+// 统一的结果操作入口：内置结果类型都在同一个操作栏里暴露“当前可用”的动作。
+// 工具结果与剪贴板记录自带同类按钮（data-tool-action / data-clipboard-action），
+// 不再重复渲染；键盘与按钮都走 runResultAction 这一条路径。
+function resultActions(item, index) {
+  const button = (action, label, title) => `<button class="tool-action" type="button" data-result-action="${action}" data-result-index="${index}"${title ? ` title="${esc(title)}"` : ""}>${label}</button>`;
+  const buttons = [];
+  if (item.type === "web" || item.type === "web-add") {
+    buttons.push(button("open", "打开"));
+    if (normalizeUrl(item.url)) buttons.push(button("copy", "复制链接", "复制页面地址"));
+  } else if (item.type === "app") {
+    buttons.push(button("open", "打开"));
+    if (item.path) buttons.push(button("copy", "复制路径", "复制应用路径"));
+  } else if (item.type === "memo") {
+    if (String(item.content || "").trim()) buttons.push(button("copy", "复制命令", "复制备忘里的命令"));
+    buttons.push(button("open", "粘贴"));
+  } else if (item.type === "twofa") {
+    buttons.push(button("copy", "复制验证码"));
+  } else if (["calculation", "timestamp", "jwt"].includes(item.type)) {
+    buttons.push(button("copy", "复制结果"));
+  }
+  if (portableQueryCommand(item)) {
+    buttons.push(button("copy-query", "复制查询命令", "适用于 macOS / Linux；需要 curl 或 dig"));
+  }
+  return buttons.length ? `<span class="result-actions">${buttons.join("")}</span>` : "";
+}
+
+function runResultAction(action, item) {
+  if (action === "open") return choose(item);
+  if (action === "copy-query") {
+    const text = portableQueryCommand(item);
+    if (!text) return showActionStatus("这条结果没有可复制的命令");
+    return copyText(text).then(() => showActionStatus("查询命令已复制")).catch(() => showActionStatus("复制失败"));
+  }
+  if (action !== "copy") return undefined;
+  if (item.type === "twofa") return choose(item);
+  const text = item.type === "web" || item.type === "web-add"
+    ? normalizeUrl(item.url)
+    : item.type === "app" ? String(item.path || "")
+    : item.type === "memo" ? String(item.content || "")
+    : String(item.result || "");
+  if (!text) return showActionStatus("没有可复制的内容");
+  const message = item.type === "app" ? "路径已复制" : item.type === "web" ? "链接已复制" : "已复制";
+  return copyText(text).then(() => showActionStatus(message)).catch(() => showActionStatus("复制失败"));
+}
+
 function renderResult(item, index, items) {
   const registered = window.FlowHubTools.render(item, {esc,index,active:index===state.index,enabled:toolEnabled});
-  if (registered) return registered;
-  const html = renderResultBody(item,index,items);
-  if (!portableQueryCommand(item)) return html;
+  const html = registered || renderResultBody(item,index,items);
+  const actions = registered ? "" : resultActions(item, index);
+  if (!actions) return html;
   const end = html.lastIndexOf("</div>");
-  return html.slice(0,end)+`<button type="button" class="tool-action query-copy" data-copy-query title="适用于 macOS / Linux；需要 curl 或 dig">复制查询命令</button>`+html.slice(end);
+  return end < 0 ? html + actions : html.slice(0,end) + actions + html.slice(end);
 }
 function renderResultBody(item, index, items) {
   const usageSection = renderUsageSection(item, index, items);
@@ -1152,9 +1197,11 @@ function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
       resultsEl.innerHTML = html;
       lastResultsHtml = html;
     }
+    updateKeyboardHint(null);
     return;
   }
   const m = matches();
+  updateKeyboardHint(m[state.index]);
   phase?.("matches");
   const paging = state.scope === "all"
     ? { loading: allPaging, hasMore: allHasMore() }
@@ -1197,6 +1244,46 @@ function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
   if (!m.length) return;
   if (targetIndex != null && plan) resultsEl.scrollTop = plan.targetTop;
   phase?.("scroll");
+}
+
+// 结果操作焦点顺序：F6 进入当前结果的第一个操作按钮，再按 F6 在按钮之间前进，
+// 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
+function focusResultAction(direction = 1) {
+  const actions = [...resultsEl.querySelectorAll(".result.active .tool-action")].filter((button) => !button.disabled);
+  const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
+  if (!actions.length) { returnToSearch(); return; }
+  const index = actions.indexOf(current);
+  if (index < 0) {
+    (direction > 0 ? actions[0] : actions[actions.length - 1]).focus();
+    return;
+  }
+  const next = index + direction;
+  if (next < 0 || next >= actions.length) { returnToSearch(); return; }
+  actions[next].focus();
+}
+
+// 底部快捷键说明只列当前真的能用的操作：范围、选中结果类型和剪贴板插件状态
+// 都会改变可用项，避免显示未实现或当前不可用的快捷键。
+let lastKeyboardHint = "";
+function updateKeyboardHint(item) {
+  const hint = document.getElementById("keyboardHint");
+  if (!hint) return;
+  const parts = [];
+  if (state.scope === "all") parts.push("←→ 常用/最近");
+  parts.push("↑↓ 选择结果");
+  parts.push(`<kbd>⏎</kbd> ${item?.type === "memo" ? "粘贴" : "打开"}`);
+  if (item?.type === "clipboard") {
+    if (item.kind !== "image") parts.push("<kbd>⇧⏎</kbd> 纯文本粘贴");
+    parts.push("<kbd>⌘D</kbd> 置顶");
+    if (item.kind === "text") parts.push("<kbd>⌘E</kbd> 编辑副本");
+    if (document.documentElement.dataset.weborgReadonly !== "true") parts.push("<kbd>⌥⌫</kbd> 删除");
+  }
+  if (item && (item.toolId || item.type === "clipboard" || resultActions(item, 0))) parts.push("<kbd>F6</kbd> 操作按钮");
+  parts.push("<kbd>Tab</kbd> 范围", "<kbd>⌘K</kbd> 回到搜索框");
+  const html = parts.join(" · ");
+  if (html === lastKeyboardHint) return;
+  lastKeyboardHint = html;
+  hint.innerHTML = html;
 }
 
 function revealActiveResult() {
@@ -1589,7 +1676,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveClipboardEdit(); return; }
     return;
   }
-  if (e.key === "F6") { e.preventDefault(); (resultsEl.querySelector(".result.active .tool-action") || resultsEl.querySelector(".tool-action") || q)?.focus(); return; }
+  if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
   if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
@@ -1600,6 +1687,8 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     e.preventDefault();
+    // 焦点在结果操作栏里时先回到搜索框，再按一次才隐藏窗口。
+    if (resultsEl.contains(document.activeElement)) { returnToSearch(); return; }
     if (window.weborg?.hideMain) void window.weborg.hideMain();
     else window.close();
     return;
@@ -1611,6 +1700,8 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Tab") {
+    // 焦点已经在结果操作栏里：交给浏览器的顺序，Tab 不再切换范围。
+    if (resultsEl.contains(document.activeElement)) return;
     e.preventDefault();
     if (!scopeTabHeld) {
       scopeTabHeld = true;
@@ -2090,12 +2181,11 @@ resultsEl.addEventListener("contextmenu", (e) => {
   void window.weborg?.pluginAction("clipboard", "menu", { id: item.id });
 });
 resultsEl.addEventListener("click", (e) => {
-  const command = e.target.closest("[data-copy-query]");
-  if (command) {
+  const resultAction = e.target.closest("[data-result-action]");
+  if (resultAction) {
     e.preventDefault(); e.stopPropagation();
-    const item=matches()[Number(command.closest(".result")?.dataset.i)];
-    const text=item&&portableQueryCommand(item);
-    if (text) void copyText(text).then(()=>showActionStatus("查询命令已复制")).catch(()=>showActionStatus("复制失败"));
+    const item = matches()[Number(resultAction.dataset.resultIndex)];
+    if (item) void Promise.resolve(runResultAction(resultAction.dataset.resultAction, item));
     return;
   }
   const clipAction = e.target.closest("[data-clipboard-action]");

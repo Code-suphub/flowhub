@@ -2,10 +2,15 @@ const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:a
 const source = fs.readFileSync(require('node:path').join(__dirname, '../../ui/search/search.js'), 'utf8');
 let handler, focusCount = 0, selected = 0, prevented = 0;
 const q = { value: '已有关键词', focus: () => focusCount++, select: () => selected++ };
+let inResults = false, hides = 0;
+const resultFocus = [];
 const context = vm.createContext({
   q, scopeTabHeld: true, scopeTabUsedWithArrow: true, searchInputComposing: false,
   searchCompositionEndedAt: 0, performance: { now: () => 1000 }, scopeForShortcut: () => null,
   state: { editingClipboard: null }, cancelClipboardEdit: () => { context.editCancelled = true; },
+  resultsEl: { contains: () => inResults, querySelectorAll: () => [] },
+  focusResultAction: (direction) => resultFocus.push(direction),
+  window: { weborg: { hideMain: () => hides++ } },
   document: { activeElement: {}, getElementById: () => null, addEventListener: (name, fn) => { handler = fn; } },
 });
 vm.runInContext(source.slice(source.indexOf('function returnToSearch()'), source.indexOf('document.addEventListener("keyup"')), context);
@@ -26,6 +31,23 @@ handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey
 assert.equal(context.editCancelled, true, 'Esc 取消编辑');
 assert.equal(preventedKeys.join(','), 'Escape');
 context.state.editingClipboard = null;
+// 结果操作栏的焦点顺序：F6 进入/前进，⇧F6 反向；焦点在结果里时 Esc 先回搜索框。
+prevented = 0;
+handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
+handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: true, target: {}, preventDefault: () => prevented++ });
+assert.equal(resultFocus.join(','), '1,-1');
+assert.equal(prevented, 2, 'F6 由界面接管');
+const beforeFocus = focusCount;
+handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
+assert.equal(hides, 1, '焦点不在结果里时 Esc 隐藏窗口');
+inResults = true;
+handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
+assert.equal(hides, 1, '焦点在结果里时 Esc 不隐藏窗口');
+assert.equal(focusCount, beforeFocus + 1, 'Esc 先回到搜索框');
+const beforeTab = prevented;
+handler({ key: 'Tab', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
+assert.equal(prevented, beforeTab, '结果里的 Tab 交给浏览器顺序，不再被拦截');
+inResults = false;
 console.log('PASS: Command+K returns focus, selects without clearing query, resets held scope key, ignores unrelated modifiers and IME composition');
 // Native focus must stay with the input throughout a primary mouse press.
 const mouse = vm.createContext({activateScopeControl(){}});
