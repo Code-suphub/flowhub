@@ -5,6 +5,7 @@ use storage::{
     configured_path, ensure_object_path, hydrated_config, initialize_state, read_json,
     write_json_atomic,
 };
+mod config_history;
 mod config_save;
 mod web_open;
 mod launcher;

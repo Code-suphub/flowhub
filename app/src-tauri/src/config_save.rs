@@ -347,6 +347,20 @@ fn persist_with_hook(
     // The durable commit marker is the decision point. Cleanup failure cannot
     // turn a committed save into a failure, and startup will only finish cleanup.
     checkpoint("committed").ok();
+    // Keep the config this save replaced. Recording is best-effort: a durable
+    // save must not be reported as failed because history could not be written,
+    // but the reason is surfaced so the UI can warn instead of pretending a
+    // backup exists.
+    match crate::config_history::record(
+        &state.root_dir,
+        journal.files.first().and_then(|file| file.bytes.as_deref()),
+    ) {
+        Ok(crate::config_history::Recorded::Skipped) => {}
+        Ok(crate::config_history::Recorded::Added { id, kept }) => {
+            storage_state["history"] = json!({ "id": id, "kept": kept });
+        }
+        Err(error) => storage_state["historyWarning"] = json!(error),
+    }
     *state.paths.write().expect("FlowHub paths lock poisoned") = AppPaths {
         config_path: target_config.to_path_buf(),
         storage_dir: active,
@@ -947,6 +961,43 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn committed_save_keeps_the_replaced_config_in_history() {
+        let f = Fixture::new();
+        let before = f.state.paths();
+        let mut config = input(&f, &before.storage_dir, &before.config_path);
+        let (storage, _, _) = persist(
+            &f.state,
+            &mut config,
+            &[json!({ "id": "after" })],
+            &before.storage_dir,
+            &before.config_path,
+        )
+        .unwrap();
+        let id = storage["history"]["id"]
+            .as_str()
+            .expect("已提交的保存应记录历史版本");
+        let entries = crate::config_history::list(&f.root).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, id);
+        let kept: Value =
+            serde_json::from_slice(&crate::config_history::read(&f.root, id).unwrap()).unwrap();
+        assert_eq!(kept["version"], "before", "历史条目应保留被替换的旧配置");
+
+        // 内容未变化的保存走 Noop 分支，不应再产生历史条目。
+        let mut same = config.clone();
+        let (storage, _, _) = persist(
+            &f.state,
+            &mut same,
+            &[json!({ "id": "after" })],
+            &before.storage_dir,
+            &before.config_path,
+        )
+        .unwrap();
+        assert!(storage.get("history").is_none(), "Noop 保存不应记录历史");
+        assert_eq!(crate::config_history::list(&f.root).unwrap().len(), 1);
     }
 
     #[test]
