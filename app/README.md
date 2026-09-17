@@ -95,9 +95,9 @@ npm run build:local:install
 
 ## 机器管理插件
 
-机器管理已迁至同级独立 Git 仓库 `flowhub-machines-plugin`，页面、SSH 后端和测试都在插件仓库中维护。FlowHub 只保留通用插件加载器。首次迁移需要更新宿主，然后在「插件市场」选择已构建的插件仓库目录安装。
+机器管理已迁至同级独立 Git 仓库 `flowhub-plugins`，页面、SSH 后端和测试都在插件仓库中维护。FlowHub 只保留通用插件加载器。首次迁移需要更新宿主，然后在「插件市场」选择已构建的插件仓库目录安装。
 
-在插件仓库运行 `npm run dev` 使用模拟数据调试，运行 `npm run build` 构建独立后端；之后在插件市场重新加载，无需重编译 FlowHub。宿主的 `npm run dev:machines` 是同级仓库开发命令的快捷入口。原机器配置和历史数据沿用，详见[独立插件协议](../docs/plugin-runtime.md)。市场支持先配置本地目录或 HTTPS 仓库，再扫描安装。线上独立插件包需要签名、公钥和平台信息，旧声明式线上包需要升级为 schema 2。
+在插件仓库运行 `npm run dev` 使用模拟数据调试，运行 `npm run build` 构建独立后端；之后在插件市场重新加载，无需重编译 FlowHub。宿主的 `npm run dev:machines` 是同级克隆的开发快捷入口，默认查找 `../../flowhub-plugins`，可用 `FLOWHUB_PLUGINS_DIR` 指向其他位置。原机器配置和历史数据沿用，详见[独立插件协议](../docs/architecture/plugin-runtime.md)。市场支持先配置本地目录或 HTTPS 仓库，再扫描安装。线上独立插件包需要签名、公钥和平台信息，旧声明式线上包需要升级为 schema 2。
 
 ## 核心能力
 
