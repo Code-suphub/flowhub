@@ -1,7 +1,7 @@
 {
   "scripts": {
-    "start": "node server.mjs",
-    "test": "node --test scripts/*.test.mjs"
+    "start": "node legacy/server.mjs",
+    "test": "node --test legacy/*.test.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

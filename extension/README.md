@@ -25,7 +25,7 @@ If the manager is not running, it falls back to the bundled `extension/config.js
 
 ## Legacy catalog boundary
 
-The root `server.mjs`, root `index.html`, HTTP CLI config commands / `web list`,
+The `legacy/server.mjs`, `legacy/index.html`, HTTP CLI config commands / `web list`,
 and this extension support only the legacy JSON object with a top-level `items`
 array. An explicit `items: []` is a valid empty catalog. Missing/non-array items,
 non-object nodes, invalid children, and desktop objects containing `core` or

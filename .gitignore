@@ -4,6 +4,7 @@ node_modules/
 app/dist/
 app/src-tauri/target/
 *.log
+.config-*.tmp
 *.db
 *.db-*
 *.sqlite

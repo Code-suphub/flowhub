@@ -20,7 +20,8 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
     if (fixture) await new Promise((resolve) => fixture.close(resolve));
     await rm(dir, { recursive: true, force: true });
   });
-  for (const name of ["server.mjs", "index.html"]) await copyFile(new URL(name, source), join(dir, name));
+  await mkdir(join(dir, "legacy"), { recursive: true });
+  for (const name of ["server.mjs", "index.html"]) await copyFile(new URL(`legacy/${name}`, source), join(dir, "legacy", name));
   await mkdir(join(dir, "extension/src"), { recursive: true });
   await copyFile(new URL("extension/src/config-contract.js", source), join(dir, "extension/src/config-contract.js"));
   const original = '{"items":[],"app":{"title":"Fixture"}}\n';
@@ -30,7 +31,7 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
   await writeFile(join(dir, ".env"), "PRIVATE-FIXTURE");
   await writeFile(join(dir, "outside.txt"), "PRIVATE-FIXTURE");
   await symlink(join(dir, "outside.txt"), join(dir, "linked.html"));
-  child = spawn(process.execPath, [join(dir, "server.mjs")], { env: { ...process.env, PORT: "0", APP_ORIGIN: "http://untrusted.invalid" }, stdio: ["ignore", "pipe", "pipe"] });
+  child = spawn(process.execPath, [join(dir, "legacy", "server.mjs")], { env: { ...process.env, PORT: "0", APP_ORIGIN: "http://untrusted.invalid" }, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += chunk; });
   const base = await new Promise((resolve, reject) => {
@@ -142,11 +143,11 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
       assert.doesNotMatch(result.text, /PRIVATE-FIXTURE/);
     }
     for (const path of ["/%ZZ", "/%E0%A4%A", "//evil.test/", "http://evil.test/", "/\\index.html"]) assert.equal((await call(path)).status, 400, path);
-    await unlink(join(dir, "index.html"));
-    await symlink(join(dir, "outside.txt"), join(dir, "index.html"));
+    await unlink(join(dir, "legacy", "index.html"));
+    await symlink(join(dir, "outside.txt"), join(dir, "legacy", "index.html"));
     assert.equal((await call("/")).status, 500);
-    await unlink(join(dir, "index.html"));
-    await copyFile(new URL("index.html", source), join(dir, "index.html"));
+    await unlink(join(dir, "legacy", "index.html"));
+    await copyFile(new URL("legacy/index.html", source), join(dir, "legacy", "index.html"));
     assert.equal((await call("/")).status, 200);
   });
 

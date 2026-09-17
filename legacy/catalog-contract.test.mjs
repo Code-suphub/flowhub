@@ -18,7 +18,7 @@ test("legacy catalog preserves nodes/metadata and explicit emptiness; desktop ne
 });
 
 test("standalone index validates the same boundary before rendering or editing", async () => {
-  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const fn = html.match(/      function validateLegacyConfig\(config\) \{[\s\S]*?\n      \}/)[0];
   const validateIndex = runInNewContext(`(${fn.trim()})`);
   for (const config of unsupported) assert.throws(() => validateIndex(config));

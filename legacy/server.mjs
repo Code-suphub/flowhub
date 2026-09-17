@@ -4,14 +4,17 @@ import { constants } from "node:fs";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import "./extension/src/config-contract.js";
+import "../extension/src/config-contract.js";
 
 function validateConfig(config) {
   try { return globalThis.FlowHubLegacyCatalog.validate(config); }
   catch (error) { throw fail(400, error.message); }
 }
 
-const rootDir = fileURLToPath(new URL(".", import.meta.url));
+// The page lives in legacy/; config.json stays at the repository root, where the
+// desktop browser preview (app/vite.config.mjs) also reads its default example.
+const legacyDir = fileURLToPath(new URL(".", import.meta.url));
+const rootDir = fileURLToPath(new URL("..", import.meta.url));
 const port = Number(process.env.PORT || 4173);
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid PORT");
 const token = randomBytes(32).toString("hex");
@@ -33,8 +36,8 @@ function sendJson(res, status, body) {
 }
 
 // Only fixed, top-level public files are readable. Never follow a config/index symlink.
-async function readPublicFile(name) {
-  const file = await open(join(rootDir, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+async function readPublicFile(directory, name) {
+  const file = await open(join(directory, name), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || stat.size > BODY_LIMIT) throw fail(500, "文件不可用或过大");
@@ -109,7 +112,7 @@ async function route(req, res) {
     sendJson(res, 200, { token });
   } else if (pathname === "/api/config" && req.method === "GET") {
     let config;
-    try { config = JSON.parse(await readPublicFile("config.json")); }
+    try { config = JSON.parse(await readPublicFile(rootDir, "config.json")); }
     catch (error) {
       if (error instanceof SyntaxError) throw fail(400, "无效 JSON 目录");
       throw error;
@@ -133,7 +136,7 @@ async function route(req, res) {
   } else if (pathname === "/api/probe" && req.method === "GET") {
     sendJson(res, 200, { status: "disabled", embeddable: true, reason: "旧 Web 服务已停用网络探测；是否允许嵌入由浏览器判定" });
   } else if ((pathname === "/" || pathname === "/index.html") && ["GET", "HEAD"].includes(req.method)) {
-    const content = await readPublicFile("index.html");
+    const content = await readPublicFile(legacyDir, "index.html");
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(req.method === "HEAD" ? undefined : content);
   } else if (["/api/session", "/api/config", "/api/probe", "/", "/index.html"].includes(pathname)) {

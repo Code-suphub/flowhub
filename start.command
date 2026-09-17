@@ -2,7 +2,7 @@
 #
 # FlowHub - 一键启动本地管理台
 # 双击此文件（或执行 ./start.command）即可：
-#   1) 若 localhost:4173 尚未运行，则后台启动 node server.mjs
+#   1) 若 localhost:4173 尚未运行，则后台启动 node legacy/server.mjs
 #   2) 等待服务就绪后，用默认浏览器打开 http://localhost:4173/
 #
 # 依赖：已安装 Node.js（node 命令可用）
@@ -34,9 +34,9 @@ is_running() {
 if is_running; then
   echo "[提示] 服务已在运行（${URL}），直接打开浏览器。"
 else
-  echo "[启动] 启动 node server.mjs ..."
+  echo "[启动] 启动 node legacy/server.mjs ..."
   # 后台启动，日志写入 flowhub-server.log
-  nohup node server.mjs > flowhub-server.log 2>&1 &
+  nohup node legacy/server.mjs > flowhub-server.log 2>&1 &
   SERVER_PID=$!
   echo "      已启动，PID=${SERVER_PID}（日志见 flowhub-server.log）"
 
