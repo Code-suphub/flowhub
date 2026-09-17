@@ -1,6 +1,8 @@
 # 旧 Web 服务访问边界
 
-根目录 `npm start` / `start.command` 继续提供旧工作台。服务固定监听 IPv4
+根目录 `npm start` / `start.command` 继续提供旧工作台。服务代码位于
+`legacy/server.mjs`，页面为 `legacy/index.html`；`config.json` 仍在仓库根目录，
+与桌面浏览器预览共用。服务固定监听 IPv4
 `127.0.0.1`，支持当前端口的 `localhost` 与 `127.0.0.1` Host；不提供 LAN
 访问。`PORT` 可指定端口，`APP_ORIGIN` 不再改变信任边界。
 
