@@ -2011,6 +2011,44 @@ mod record_tests {
     }
 
     #[test]
+    fn startup_migrates_an_existing_store_so_clipboard_queries_keep_working() {
+        let f = Fixture::new();
+        let path = f.state.paths().db_path;
+        // 造一个没有 pinned_at 的旧库（真实用户升级前的状态）。
+        {
+            let db = rusqlite::Connection::open(&path).unwrap();
+            db.execute_batch(
+                "DROP TABLE clipboard_records;
+                 CREATE TABLE clipboard_records (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   kind TEXT NOT NULL,
+                   hash TEXT NOT NULL,
+                   content TEXT,
+                   file_name TEXT,
+                   source_name TEXT,
+                   file_paths TEXT,
+                   file_types TEXT,
+                   size INTEGER NOT NULL DEFAULT 0,
+                   created_at TEXT NOT NULL,
+                   last_seen_at TEXT NOT NULL,
+                   copy_count INTEGER NOT NULL DEFAULT 1,
+                   UNIQUE(kind, hash)
+                 );
+                 INSERT INTO clipboard_records(kind,hash,content,size,created_at,last_seen_at)
+                 VALUES ('text','old','旧记录',9,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z');",
+            )
+            .unwrap();
+        }
+        // 已有库的启动路径必须补齐列，否则这里会以 no such column: pinned_at 失败。
+        crate::storage::initialize_startup_catalog(&f.state, true).unwrap();
+        let listed = search_clipboard_records(&f.state, "", "all", 10, 0).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["content"], json!("旧记录"));
+        assert_eq!(listed[0]["pinnedAt"], json!(""));
+        assert_eq!(set_pinned(&f.state, listed[0]["id"].as_i64().unwrap(), true).unwrap()["ok"], json!(true));
+    }
+
+    #[test]
     fn plain_text_uses_paths_for_files_and_refuses_images() {
         let f = Fixture::new();
         let text = insert_text(&f, "text", "hello", "2026-09-09T00:00:00Z");

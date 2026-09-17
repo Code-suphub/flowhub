@@ -256,8 +256,11 @@ pub(crate) fn initialize_startup_catalog(
     state: &AppState,
     existing_store: bool,
 ) -> Result<(), String> {
+    // 已有库也要过一遍 schema：`CREATE TABLE IF NOT EXISTS` 与新增列的补齐都是幂等的，
+    // 少了这一步，给老库加列后查询会直接 `no such column`（见 pinned_at 的回归）。
+    // 此时 `config_save::recover` 已经跑完，读只读校验也已在打开前通过。
+    initialize_database(state)?;
     if !existing_store {
-        initialize_database(state)?;
         import_json_catalog_if_needed(state)?;
     }
     Ok(())

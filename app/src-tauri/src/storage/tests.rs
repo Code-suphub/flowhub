@@ -199,7 +199,8 @@ fn existing_databases_gain_the_pinned_column_without_losing_rows() {
         )
         .unwrap();
     }
-    crate::storage::initialize_schema(&Connection::open(&path).unwrap()).unwrap();
+    // 真实启动路径：已有库也要补齐新增列，否则剪贴板查询会直接 no such column。
+    crate::storage::initialize_startup_catalog(&fixture.state, true).unwrap();
     let db = Connection::open(&path).unwrap();
     let columns = db
         .prepare("PRAGMA table_info(clipboard_records)")
@@ -216,6 +217,6 @@ fn existing_databases_gain_the_pinned_column_without_losing_rows() {
         "keep",
         "补齐列时保留原记录"
     );
-    // 再次初始化是幂等的，不会重复 ALTER。
-    crate::storage::initialize_schema(&Connection::open(&path).unwrap()).unwrap();
+    // 再次走启动路径是幂等的，不会重复 ALTER。
+    crate::storage::initialize_startup_catalog(&fixture.state, true).unwrap();
 }
