@@ -273,6 +273,9 @@ if (!window.weborg) {
     async pickConfigImport() {
       throw new Error("浏览器预览不支持导入配置");
     },
+    async pickWebImport() {
+      throw new Error("浏览器预览不支持导入网页目录");
+    },
     async openConfigPath() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },

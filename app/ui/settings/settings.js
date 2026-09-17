@@ -6,6 +6,7 @@ const state = {
   clipboardStorage: null,
   configHistory: null,
   configImport: null,
+  webImport: null,
   undo: null,
   selectedId: "",
   selectedIds: new Set(),
@@ -25,6 +26,7 @@ const state = {
   draftSavedAt: 0,
   selectedMemoId: "",
   memoFilter: "",
+  memoCategoryBefore: "",
   memoCollapsedCategories: new Set(),
   coreSection: "general",
   appUpdate: { supported: false, currentVersion: "", status: "unsupported", availableVersion: "", percent: 0, error: "" },
@@ -174,6 +176,38 @@ function memoTags(item) {
 
 function memoCategorySegments(item) {
   return window.FlowHubMemoCatalog?.categorySegments?.(item?.category) || [String(item?.category || "其他")];
+}
+
+function splitCategoryPath(value) {
+  const segments = window.FlowHubMemoCatalog?.categorySegments?.(value);
+  return Array.isArray(segments) ? segments : String(value || "").split(/\s*(?:\/|›|>)\s*/).map((segment) => segment.trim()).filter(Boolean);
+}
+
+// 分类是路径字符串：改名一条备忘时，所有以旧路径开头的后代备忘都要跟着换前缀，
+// 否则它们会留在已经改名的旧分类下。折叠状态也按路径记录，一并搬到新键。
+function renameMemoCategory(items, before, after, exceptId) {
+  const from = splitCategoryPath(before);
+  const to = splitCategoryPath(after);
+  if (!from.length || from.join("\u0000") === to.join("\u0000")) return 0;
+  let changed = 0;
+  for (const item of items) {
+    if (item.id === exceptId) continue;
+    const path = splitCategoryPath(item.category);
+    if (path.length <= from.length) continue;
+    if (!from.every((segment, index) => path[index] === segment)) continue;
+    item.category = [...to, ...path.slice(from.length)].join(" / ");
+    changed++;
+  }
+  if (changed) {
+    for (const key of [...state.memoCollapsedCategories]) {
+      const path = splitCategoryPath(key);
+      if (path.length > from.length && from.every((segment, index) => path[index] === segment)) {
+        state.memoCollapsedCategories.delete(key);
+        state.memoCollapsedCategories.add([...to, ...path.slice(from.length)].join(" / "));
+      }
+    }
+  }
+  return changed;
 }
 
 function memoCategoryPath(item) {
@@ -1544,6 +1578,7 @@ function render() {
   renderMode();
   renderModule();
   renderCoreSection();
+  renderWebImportPreview();
   const cancelAddButton = $("#cancelAddBtn");
   if (cancelAddButton) cancelAddButton.hidden = !(state.module === "web" && state.pendingAddId);
   updateStatus();
@@ -1761,8 +1796,162 @@ function moveSelectedToTarget(targetId) {
   toast(`已移动 ${moving.length} 个节点`);
 }
 
-function moveSelected(direction) {
-  const context = selectedContext();
+// 网页目录导入：先按现有目录算出「新增 / 覆盖 / 跳过」，用户在预览里选一种再一次性落地。
+// 重复判定同时看 id 与网址；被跳过的节点不再单独导入其子节点，避免半个分支混进目录。
+function planWebImport(nodes, mode) {
+  const byId = new Map();
+  const urls = new Set();
+  const collect = (list) => {
+    for (const node of list || []) {
+      byId.set(node.id, node);
+      if (node.url) urls.add(node.url);
+      collect(node.children);
+    }
+  };
+  collect(webItems());
+  const additions = [];
+  const replacements = [];
+  const skipped = [];
+  const seenInFile = new Set();
+  const visit = (node, parent) => {
+    if (seenInFile.has(node.id)) {
+      skipped.push({ node, reason: "文件内 ID 重复" });
+      return;
+    }
+    if (byId.has(node.id)) {
+      if (mode !== "overwrite") {
+        skipped.push({ node, reason: "ID 已存在" });
+        return;
+      }
+      const target = byId.get(node.id);
+      seenInFile.add(node.id);
+      replacements.push({ target, node });
+      for (const child of node.children || []) visit(child, target);
+      return;
+    }
+    if (!(node.children || []).length && node.url && urls.has(node.url)) {
+      skipped.push({ node, reason: "网址已存在" });
+      return;
+    }
+    seenInFile.add(node.id);
+    additions.push({ node, parent });
+    byId.set(node.id, node);
+    if (node.url) urls.add(node.url);
+    for (const child of node.children || []) visit(child, node);
+  };
+  for (const node of nodes || []) visit(node, null);
+  return { additions, replacements, skipped };
+}
+
+function applyWebImportPlan(plan) {
+  for (const { node, parent } of plan.additions) {
+    // 子节点由计划单独挂载：原始 children 里可能含被跳过的重复项。
+    node.children = [];
+    const list = parent ? (parent.children ||= []) : webItems();
+    list.push(node);
+  }
+  for (const { target, node } of plan.replacements) {
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "id" || key === "children") continue;
+      target[key] = clone(value);
+    }
+    if (!Array.isArray(target.children)) target.children = [];
+  }
+}
+
+function webImportSummary(plan) {
+  return `新增 ${plan.additions.length} · 覆盖 ${plan.replacements.length} · 跳过 ${plan.skipped.length}`;
+}
+
+function webImportRows(plan) {
+  const rows = [];
+  plan.additions.slice(0, 3).forEach((entry) => rows.push(`<li>新增「${esc(entry.node.title || entry.node.id)}」</li>`));
+  if (plan.additions.length > 3) rows.push(`<li>…还有 ${plan.additions.length - 3} 个新增</li>`);
+  plan.replacements.slice(0, 4).forEach((entry) => rows.push(`<li>覆盖「${esc(entry.target.title || entry.target.id)}」</li>`));
+  if (plan.replacements.length > 4) rows.push(`<li>…还有 ${plan.replacements.length - 4} 个覆盖</li>`);
+  plan.skipped.slice(0, 6).forEach((entry) => rows.push(`<li>跳过「${esc(entry.node.title || entry.node.id)}」：${esc(entry.reason)}</li>`));
+  if (plan.skipped.length > 6) rows.push(`<li>…还有 ${plan.skipped.length - 6} 个跳过</li>`);
+  if (!rows.length) rows.push("<li>文件里没有可用节点</li>");
+  return rows.join("");
+}
+
+function renderWebImportPreview() {
+  const container = $("#webImportPreview");
+  if (!container) return;
+  const pending = state.webImport;
+  if (!pending) {
+    container.hidden = true;
+    container.innerHTML = "";
+    return;
+  }
+  const fresh = planWebImport(pending.items, "new");
+  const overwrite = planWebImport(pending.items, "overwrite");
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="config-import-head">
+      <strong>待导入网页目录</strong>
+      <small>${esc(pending.path || "")} · 文件内有 ${esc(String(pending.items.length))} 个顶层节点</small>
+    </div>
+    <div class="config-import-diff">
+      <div><span>仅导入新增</span><small>${esc(webImportSummary(fresh))}</small><ul>${webImportRows(fresh)}</ul></div>
+      <div><span>覆盖同 ID</span><small>${esc(webImportSummary(overwrite))}</small><ul>${webImportRows(overwrite)}</ul></div>
+    </div>
+    <div class="storage-actions">
+      <button class="button primary" type="button" data-action="apply-web-import" data-import-mode="new">仅导入新增（${fresh.additions.length}）</button>
+      <button class="button" type="button" data-action="apply-web-import" data-import-mode="overwrite">覆盖同 ID（${overwrite.replacements.length}）</button>
+      <button class="button" type="button" data-action="cancel-web-import">取消导入</button>
+    </div>`;
+}
+
+function applyWebImport(mode) {
+  const pending = state.webImport;
+  if (!pending) return;
+  const overwrite = mode === "overwrite";
+  const plan = planWebImport(pending.items, overwrite ? "overwrite" : "new");
+  if (!plan.additions.length && !plan.replacements.length) {
+    toast("没有可导入的节点：文件内容与现有目录重复", true);
+    return;
+  }
+  const snapshot = clone(webItems());
+  applyWebImportPlan(plan);
+  const primary = plan.additions[0]?.node?.id || plan.replacements[0]?.target?.id || "";
+  state.selectedId = primary;
+  state.selectedIds = new Set(primary ? [primary] : []);
+  state.pendingAddId = "";
+  rememberWebUndo(
+    `已导入 ${plan.additions.length + plan.replacements.length} 个网页节点`,
+    snapshot,
+    primary
+  );
+  state.webImport = null;
+  markDirty(`已导入 ${plan.additions.length} 个新增${plan.replacements.length ? `、覆盖 ${plan.replacements.length} 个` : ""}`);
+  render();
+  toast(`已导入 ${plan.additions.length} 个新增${plan.replacements.length ? `、覆盖 ${plan.replacements.length} 个` : ""}`);
+}
+
+function cancelWebImport() {
+  if (!state.webImport) return;
+  state.webImport = null;
+  renderWebImportPreview();
+  toast("已取消导入网页目录");
+}
+
+async function importWebCatalog() {
+  try {
+    const result = await window.weborg.pickWebImport();
+    if (result?.canceled) return toast("已取消导入");
+    const items = Array.isArray(result?.items) ? result.items : [];
+    if (!items.length) throw new Error("导入文件里没有网页节点");
+    state.webImport = { path: String(result?.path || ""), bytes: Number(result?.bytes) || 0, items };
+    renderWebImportPreview();
+  } catch (error) {
+    state.webImport = null;
+    renderWebImportPreview();
+    toast(`导入失败：${String(error?.message || error)}`, true);
+  }
+}
+
+function moveSelected(direction) {  const context = selectedContext();
   if (!context) return;
   const siblings = context.parent ? context.parent.children : webItems();
   const nextIndex = context.index + direction;
@@ -2266,6 +2455,9 @@ function handleAction(action, actionTarget) {
   if (action === "import-config") return importConfig();
   if (action === "apply-config-import") return applyConfigImport(actionTarget?.dataset.importMode === "merge" ? "merge" : "replace");
   if (action === "cancel-config-import") return cancelConfigImport();
+  if (action === "import-web") return importWebCatalog();
+  if (action === "apply-web-import") return applyWebImport(actionTarget?.dataset.importMode);
+  if (action === "cancel-web-import") return cancelWebImport();
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();
@@ -2655,6 +2847,13 @@ document.addEventListener("input", (event) => {
   });
 });
 
+// 分类输入在提交（失焦/回车）时才级联，所以要记住编辑前的路径。
+document.addEventListener("focusin", (event) => {
+  if (event.target?.dataset?.memoField !== "category") return;
+  const memo = materializeMemoItems().find((item) => item.id === state.selectedMemoId);
+  state.memoCategoryBefore = memo?.category ?? "";
+});
+
 document.addEventListener("change", (event) => {
   if (event.target.id === "diagnosticsEnabled") return toggleDiagnostics(event);
   if (event.target.dataset.configField === "proxyAdapter") {
@@ -2667,11 +2866,16 @@ document.addEventListener("change", (event) => {
   }
   if (!event.target.dataset.memoField) return;
   if (event.target.dataset.memoField === "category") {
-    const memo = materializeMemoItems().find((item) => item.id === state.selectedMemoId);
-    if (memo && memo.category !== memoCategoryPath(memo)) {
-      memo.category = memoCategoryPath(memo);
-      markDirty();
-    }
+    const items = materializeMemoItems();
+    const memo = items.find((item) => item.id === state.selectedMemoId);
+    if (!memo) return;
+    const before = state.memoCategoryBefore ?? memo.category;
+    const after = memoCategoryPath(memo);
+    memo.category = after;
+    const renamed = renameMemoCategory(items, before, after, memo.id);
+    state.memoCategoryBefore = after;
+    markDirty(renamed ? `已重命名分类，并同步 ${renamed} 条后代备忘` : undefined);
+    if (renamed) toast(`已同步 ${renamed} 条后代备忘的分类`);
   }
   renderMemoSettings();
 });

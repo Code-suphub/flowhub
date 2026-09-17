@@ -1006,11 +1006,12 @@
 
             <section id="structurePanel">
               <div class="toolbar">
-                <div class="toolbar-group"><span class="toolbar-label">新增</span><button class="button" data-action="add-child">＋ 子节点</button><button class="button" data-action="add-sibling">同级节点</button><button class="button cancel-add" id="cancelAddBtn" data-action="cancel-add" hidden>取消添加</button></div>
+                <div class="toolbar-group"><span class="toolbar-label">新增</span><button class="button" data-action="add-child">＋ 子节点</button><button class="button" data-action="add-sibling">同级节点</button><button class="button" data-action="import-web" title="从 JSON 备份导入网页与目录，重复项会先预览">导入目录</button><button class="button cancel-add" id="cancelAddBtn" data-action="cancel-add" hidden>取消添加</button></div>
                 <div class="toolbar-group"><span class="toolbar-label">排序</span><button class="button" id="moveTopBtn" data-action="move-top" title="移到当前同级顶部">顶部</button><button class="button" id="moveUpBtn" data-action="move-up" title="在当前同级中上移一位">上移</button><button class="button" id="moveDownBtn" data-action="move-down" title="在当前同级中下移一位">下移</button><button class="button" id="moveBottomBtn" data-action="move-bottom" title="移到当前同级底部">底部</button></div>
                 <div class="toolbar-group"><span class="toolbar-label">批量</span><span class="toolbar-label" id="batchSelectionCount" title="按住 ⌘/Ctrl 或 Shift 点击可多选">未多选</span><select id="batchMoveTarget" aria-label="批量移动的目标目录"></select><button class="button" data-action="move-selected" title="把选中的节点移动到目标目录">移动到</button></div>
                 <div class="toolbar-group danger-group"><button class="button danger" id="deleteBtn" data-action="delete">删除节点</button></div>
               </div>
+              <div class="config-import-preview hidden" id="webImportPreview"></div>
               <div id="nodeEditor"></div>
             </section>
 

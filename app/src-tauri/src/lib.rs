@@ -1071,6 +1071,42 @@ async fn pick_config_import(
 }
 
 #[tauri::command]
+async fn pick_web_import(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let directory = state
+        .paths()
+        .config_path
+        .parent()
+        .unwrap_or(&state.root_dir)
+        .to_path_buf();
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("选择要导入的网页目录")
+        .set_directory(directory)
+        .add_filter("JSON 备份", &["json"])
+        .blocking_pick_file();
+    let Some(selected) = selected else {
+        return Ok(json!({ "ok": false, "canceled": true }));
+    };
+    let path = selected.into_path().map_err(|error| error.to_string())?;
+    let bytes = fs::read(&path).map_err(|error| format!("无法读取所选文件：{error}"))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("导入文件过大（上限 8 MiB）".into());
+    }
+    // 只解析，不在这里落地：合并与冲突预览在界面里完成，写入仍走正常保存管线。
+    let items = config_transfer::parse_web_items(&bytes)?;
+    Ok(json!({
+        "ok": true,
+        "path": path.to_string_lossy(),
+        "bytes": bytes.len(),
+        "items": items,
+    }))
+}
+
+#[tauri::command]
 async fn choose_config_path(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -1562,6 +1598,7 @@ pub fn run() {
             restore_config_history,
             export_config,
             pick_config_import,
+            pick_web_import,
             search_applications,
             load_application_icons,
             activate_target,

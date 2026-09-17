@@ -77,6 +77,58 @@ pub(crate) fn export_payload(state: &AppState, scope: &str) -> Result<Value, Str
     }))
 }
 
+fn validate_nodes(nodes: &[Value]) -> Result<(), String> {
+    for node in nodes {
+        let object = node.as_object().ok_or("目录节点必须是 JSON 对象")?;
+        let id = object
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if id.is_empty() {
+            return Err("每个节点都需要非空的 id".into());
+        }
+        for key in ["title", "url", "icon", "note", "accent"] {
+            if let Some(value) = object.get(key) {
+                if !value.is_string() {
+                    return Err(format!("节点 {id} 的 {key} 必须是字符串"));
+                }
+            }
+        }
+        if let Some(children) = object.get("children") {
+            let children = children
+                .as_array()
+                .ok_or_else(|| format!("节点 {id} 的 children 必须是数组"))?;
+            validate_nodes(children)?;
+        }
+    }
+    Ok(())
+}
+
+/// Web catalog nodes from a bare array, `{items:[…]}`, a full config, or an
+/// export envelope — the shapes users actually have on disk.
+pub(crate) fn parse_web_items(bytes: &[u8]) -> Result<Value, String> {
+    let value: Value =
+        serde_json::from_slice(bytes).map_err(|error| format!("不是有效 JSON：{error}"))?;
+    let items = if value.is_array() {
+        value
+    } else if let Some(items) = value.get("items") {
+        items.clone()
+    } else if let Some(items) = value.pointer("/plugins/web/settings/items") {
+        items.clone()
+    } else if let Some(items) = value.pointer("/config/plugins/web/settings/items") {
+        items.clone()
+    } else {
+        return Err("文件里没有找到网页目录（items 数组）".into());
+    };
+    let items = items.as_array().ok_or("items 必须是数组")?.clone();
+    if items.is_empty() {
+        return Err("文件里没有可导入的节点".into());
+    }
+    validate_nodes(&items)?;
+    Ok(Value::Array(items))
+}
+
 pub(crate) fn suggested_file_name(scope: &str) -> String {
     let suffix = if scope == "all" { "config" } else { scope };
     format!(
@@ -219,5 +271,42 @@ mod tests {
             "config": { "core": {} }
         });
         assert!(parse_import(serde_json::to_vec(&mismatched).unwrap().as_slice()).is_err());
+    }
+
+    #[test]
+    fn web_items_come_from_every_supported_shape() {
+        let nodes = json!([{ "id": "a", "title": "A", "children": [{ "id": "b", "url": "https://b.test" }] }]);
+        let bare = serde_json::to_vec(&nodes).unwrap();
+        assert_eq!(parse_web_items(&bare).unwrap(), nodes);
+
+        let wrapped = json!({ "items": nodes.clone() });
+        assert_eq!(parse_web_items(&serde_json::to_vec(&wrapped).unwrap()).unwrap(), nodes);
+
+        let config = json!({ "plugins": { "web": { "settings": { "items": nodes.clone() } } } });
+        assert_eq!(parse_web_items(&serde_json::to_vec(&config).unwrap()).unwrap(), nodes);
+
+        let envelope = json!({ "flowhubExport": 1, "scope": "all", "config": config });
+        assert_eq!(parse_web_items(&serde_json::to_vec(&envelope).unwrap()).unwrap(), nodes);
+    }
+
+    #[test]
+    fn web_items_reject_missing_or_malformed_nodes() {
+        let cases = [
+            json!({ "hello": "world" }),
+            json!({ "items": [] }),
+            json!({ "items": [1, 2] }),
+            json!({ "items": [{ "title": "没有 id" }] }),
+            json!({ "items": [{ "id": "  " }] }),
+            json!({ "items": [{ "id": "a", "url": 3 }] }),
+            json!({ "items": [{ "id": "a", "children": {} }] }),
+            json!({ "items": [{ "id": "a", "children": [{ "title": "缺 id" }] }] })
+        ];
+        for case in cases {
+            assert!(
+                parse_web_items(&serde_json::to_vec(&case).unwrap()).is_err(),
+                "{case} 应被拒绝"
+            );
+        }
+        assert!(parse_web_items(b"{").is_err());
     }
 }
