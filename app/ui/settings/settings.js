@@ -5,6 +5,7 @@ const state = {
   configFile: null,
   clipboardStorage: null,
   configHistory: null,
+  undo: null,
   selectedId: "",
   pendingAddId: "",
   mode: "structure",
@@ -1339,6 +1340,7 @@ function render() {
   renderSelected();
   renderMemoSettings();
   updateMoveActions();
+  renderUndo();
   syncJson();
   renderMode();
   renderModule();
@@ -1379,6 +1381,42 @@ function addSibling() {
   render();
 }
 
+// 单级删除撤销：删除整个分支或备忘后，可用设置页底部的「撤销删除」恢复。
+// §6.1 的批量删除会复用同一个入口，把整批删除记为一条。
+function rememberUndo(entry) {
+  state.undo = entry;
+  renderUndo();
+}
+
+function clearUndo() {
+  if (!state.undo) return;
+  state.undo = null;
+  renderUndo();
+}
+
+function renderUndo() {
+  const button = $("#undoDeleteBtn");
+  if (!button) return;
+  button.classList.toggle("hidden", !state.undo);
+  button.title = state.undo ? `${state.undo.label}；点击撤销` : "";
+}
+
+function undoDeletion() {
+  const entry = state.undo;
+  if (!entry) return;
+  state.undo = null;
+  renderUndo();
+  try {
+    entry.restore();
+  } catch (error) {
+    toast(`撤销失败：${String(error?.message || error)}`, true);
+    return;
+  }
+  markDirty("已撤销删除");
+  render();
+  toast("已撤销删除");
+}
+
 function deleteSelected() {
   const context = selectedContext();
   if (!context) return;
@@ -1386,10 +1424,19 @@ function deleteSelected() {
   const message = childCount ? `“${context.node.title || context.node.id}” 下有 ${childCount} 个子节点，确定删除整个分支吗？` : `确定删除“${context.node.title || context.node.id}”吗？`;
   if (!window.confirm(message)) return;
   const siblings = context.parent ? context.parent.children : webItems();
-  siblings.splice(context.index, 1);
+  const [removed] = siblings.splice(context.index, 1);
   if (context.node.id === state.pendingAddId) state.pendingAddId = "";
   state.expanded.delete(context.node.id);
   state.selectedId = siblings[context.index]?.id || siblings[context.index - 1]?.id || context.parent?.id || "";
+  rememberUndo({
+    label: `已删除“${removed.title || removed.id}”${childCount ? `（含 ${childCount} 个子节点）` : ""}`,
+    restore: () => {
+      const target = context.parent ? context.parent.children : webItems();
+      target.splice(Math.min(context.index, target.length), 0, removed);
+      state.selectedId = removed.id;
+      state.expanded.add(removed.id);
+    }
+  });
   markDirty();
   render();
 }
@@ -1544,6 +1591,8 @@ async function save() {
     if (state.menuBarManagement?.trusted && state.config.core?.menuBar?.organizerEnabled) {
       void refreshMenuBarItems();
     }
+    // 删除已经随这次保存落地，撤销入口不再指向当前状态。
+    clearUndo();
     toast(state.saveConflict ? "配置已提交，源草稿已保留；请重置以查看目标配置，再返回源位置恢复草稿"
       : result.pluginFailures?.length ? `配置已保存，但 ${result.pluginFailures.length} 项系统设置未能生效`
       : opened ? "已打开目标数据库，网页目录已加载；当前网页草稿未写入目标"
@@ -1808,8 +1857,16 @@ function deleteMemo() {
   const index = items.findIndex((item) => item.id === state.selectedMemoId);
   if (index < 0) return;
   if (!window.confirm(`确定删除“${items[index].title || "未命名备忘"}”吗？`)) return;
-  items.splice(index, 1);
+  const [removed] = items.splice(index, 1);
   state.selectedMemoId = items[index]?.id || items[index - 1]?.id || "";
+  rememberUndo({
+    label: `已删除备忘“${removed.title || "未命名备忘"}”`,
+    restore: () => {
+      const list = materializeMemoItems();
+      list.splice(Math.min(index, list.length), 0, removed);
+      state.selectedMemoId = removed.id;
+    }
+  });
   markDirty("已删除备忘录");
   renderMemoSettings();
 }
@@ -1890,6 +1947,7 @@ function handleAction(action, actionTarget) {
   if (action === "clear-clipboard-exclusions") return clearClipboardExclusions();
   if (action === "add-memo") return addMemo();
   if (action === "delete-memo") return deleteMemo();
+  if (action === "undo-delete") return undoDeletion();
   if (action === "reset-memos") return resetMemos();
   if (action === "close") return closeSettings();
   if (action === "format-json") {
