@@ -36,6 +36,7 @@
 
 - [唤出冷启动交互](./architecture/launcher/launcher-cold-interaction.md)
 - [唤出验收步骤](./architecture/launcher/launcher-verification.md)
+- [结果操作、焦点顺序与快捷键](./architecture/launcher/result-actions-and-shortcuts.md)
 
 **内置工具**（[`architecture/tools/`](./architecture/tools)）
 

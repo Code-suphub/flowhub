@@ -1676,10 +1676,11 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveClipboardEdit(); return; }
     return;
   }
-  if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
-  if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
+  // 组合输入期间不抢焦点：IME 的按键交给输入法，F6 也在之后才处理。
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
+  if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
+  if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
   if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyK" || e.key.toLowerCase() === "k")) {
     e.preventDefault();
     returnToSearch();

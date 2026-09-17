@@ -37,6 +37,12 @@ handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: fa
 handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: true, target: {}, preventDefault: () => prevented++ });
 assert.equal(resultFocus.join(','), '1,-1');
 assert.equal(prevented, 2, 'F6 由界面接管');
+context.searchInputComposing = true;
+handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
+assert.equal(resultFocus.length, 2, '组合输入期间 F6 不移焦点');
+handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, isComposing: true, preventDefault: () => prevented++ });
+assert.equal(resultFocus.length, 2, 'isComposing 期间 F6 不移焦点');
+context.searchInputComposing = false;
 const beforeFocus = focusCount;
 handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
 assert.equal(hides, 1, '焦点不在结果里时 Esc 隐藏窗口');
