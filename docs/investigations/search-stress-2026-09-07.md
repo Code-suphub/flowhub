@@ -46,7 +46,7 @@
 ## 复现
 
 ```sh
-python3 app/scripts/search-stress/serve.py
+python3 app/scripts/stress/serve.py
 # 在浏览器打开 http://127.0.0.1:8766，点击 Run stress 和 Run paging checks
 node app/scripts/search-window.test.cjs
 node app/scripts/search-progressive.test.cjs

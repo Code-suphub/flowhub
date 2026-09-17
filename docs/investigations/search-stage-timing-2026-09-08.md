@@ -17,7 +17,7 @@
 
 ## 浏览器验证
 
-本机 Chromium 152，隔离合成数据，生产搜索脚本。运行 `python3 app/scripts/search-stress/serve.py`，打开 localhost:8766，点击 **Run stage timing**。按钮用真实 input 事件进入生产查询调度；clipboard/web/memo 模拟 20ms，app 模拟 900ms。没有读取用户数据。
+本机 Chromium 152，隔离合成数据，生产搜索脚本。运行 `python3 app/scripts/stress/serve.py`，打开 localhost:8766，点击 **Run stage timing**。按钮用真实 input 事件进入生产查询调度；clipboard/web/memo 模拟 20ms，app 模拟 900ms。没有读取用户数据。
 
 首次结果：
 

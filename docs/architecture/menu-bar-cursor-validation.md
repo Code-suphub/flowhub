@@ -14,7 +14,7 @@
 
 用户进一步明确要求不移动真实光标、不干扰操作。现有 CursorMoveGuard 的 hide/warp/show 不符合这一条件；启动前静止保护也不能解决执行中用户移动后被拉回的问题。
 
-新增独立 `scripts/probe-menu-bar-pid.swift`，只创建并移除自己的两个 NSStatusItem，向自身 PID 投递 Command mouse-down / mouse-up，不向 Session 投递，不操作真实光标，不更改已有图标或偏好。默认只查权限，显式 `--self-test` 才实验。明确放行本地输入；这不是一个产品适配器。
+新增独立 `scripts/native/probe-menu-bar-pid.swift`，只创建并移除自己的两个 NSStatusItem，向自身 PID 投递 Command mouse-down / mouse-up，不向 Session 投递，不操作真实光标，不更改已有图标或偏好。默认只查权限，显式 `--self-test` 才实验。明确放行本地输入；这不是一个产品适配器。
 
 本机 macOS 15.5、SDK 15.4，权限预检均为 true。首轮测试状态项位于屏幕外（其中 item x=-4386），未重排；同时硬件鼠标移动计数变化，因此采样的光标变化不能归因于合成事件，也不能声称不动光标。首轮大体积报告输出不完整、停止 run loop 未退出，随后终止了本次自有测试进程；测试状态项已移除。探针改为简短摘要并明确退出，详细样本仅 `--samples` 输出。
 

@@ -105,7 +105,7 @@
 
 ## 自主原生测试与事件循环探针
 
-用户要求后续自行点击验证。CUA连接FlowHub超时，但现有辅助功能与事件发送权限可用，补充`app/scripts/launcher-native-click.swift`：通过AX定位实际“全部/剪切板”按钮，用CGEvent经系统输入路径点击；每次按下前检查命中的是FlowHub的对应按钮，遮挡、位置变化或鼠标被按住时停止。只切换范围，不点击结果或粘贴。`--tap`将按下至松开缩短至约1ms，它仍是软件事件，不能冒充实体触控板轻点。
+用户要求后续自行点击验证。CUA连接FlowHub超时，但现有辅助功能与事件发送权限可用，补充`app/scripts/native/launcher-native-click.swift`：通过AX定位实际“全部/剪切板”按钮，用CGEvent经系统输入路径点击；每次按下前检查命中的是FlowHub的对应按钮，遮挡、位置变化或鼠标被按住时停止。只切换范围，不点击结果或粘贴。`--tap`将按下至松开缩短至约1ms，它仍是软件事件，不能冒充实体触控板轻点。
 
 早期PID定向发送没有正确命中按钮，已剔除，不作为测试通过依据。最终通过系统事件路径发送，每次使用日志中的实际target、scope和焦点验收。
 
@@ -127,8 +127,8 @@ WebKit公开源码`WebViewImpl::nativeMouseEventHandler`先调用文本输入上
 复用自动点击脚本：先显式开启诊断并唤出弹窗，再执行以下命令（应用遮挡时测试会失败，不得把无点击当通过）：
 
 ```sh
-swift app/scripts/launcher-native-click.swift --click
-swift app/scripts/launcher-native-click.swift --click --tap
+swift app/scripts/native/launcher-native-click.swift --click
+swift app/scripts/native/launcher-native-click.swift --click --tap
 ```
 
 新增`focus-diagnostics.test.cjs`覆盖默认关闭、无探针对照、主线程停顿计时和隐藏期间重置，接入npm test。原有91项Rust、UI、预览与生产安全检查通过。

@@ -1,6 +1,6 @@
 # 搜索性能回归基线（2026-09-08）
 
-在本机 Codex 内置 Chromium 152 中，使用仓库 `app/scripts/search-stress/serve.py` 加载当前生产前端及合成数据。未读取真实剪贴板。启动本地服务器后点击 Run stress，再点击 Run paging checks。
+在本机 Codex 内置 Chromium 152 中，使用仓库 `app/scripts/stress/serve.py` 加载当前生产前端及合成数据。未读取真实剪贴板。启动本地服务器后点击 Run stress，再点击 Run paging checks。
 
 这些数据是浏览器前端同步执行与强制布局的耗时，不是原生快捷键到 WebKit 显示延迟；测试中使用直接函数调用，不包含输入防抖和真实数据库／IPC。每组仅 5 次，最大值不能当作可靠的总体 p95。
 
