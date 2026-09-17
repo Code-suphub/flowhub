@@ -21,6 +21,8 @@
 - [唤出冷启动交互](architecture/launcher-cold-interaction.md)
 - [唤出验收步骤](architecture/launcher-verification.md)
 - [菜单栏显示间距](architecture/menu-bar-display-spacing.md)
+- [菜单栏显隐：光标与闪现验证](architecture/menu-bar-cursor-validation.md)
+- [逐个图标控制：原生附属子菜单](architecture/menu-bar-item-submenu.md)
 - [菜单级联外观](architecture/menu-cascade-appearance.md)
 - [网络工具](architecture/network-tools.md)
 - [端口工具](architecture/port-tool.md)
