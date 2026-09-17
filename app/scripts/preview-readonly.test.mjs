@@ -160,7 +160,7 @@ test('preview adapters refuse settings and both clipboard copy implementations',
     const document = { documentElement: { dataset: { weborgReadonly: 'true' } },
       createElement: () => ({ style: {}, select() {}, remove() {} }),
       body: { appendChild() {} }, execCommand: () => { writes++; return true; } };
-    const copyContext = vm.createContext({ document,
+    const copyContext = vm.createContext({ window: {}, document,
       navigator: modern ? { clipboard: { writeText: async () => { writes++; } } } : {} });
     vm.runInContext(copySource, copyContext);
     await assert.rejects(copyContext.copyText('preview'), /浏览器预览不能修改剪贴板/);
