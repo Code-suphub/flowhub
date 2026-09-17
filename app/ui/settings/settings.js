@@ -5,6 +5,7 @@ const state = {
   configFile: null,
   clipboardStorage: null,
   configHistory: null,
+  configImport: null,
   undo: null,
   selectedId: "",
   pendingAddId: "",
@@ -1190,29 +1191,129 @@ async function exportConfig() {
 }
 
 // 导入只改编辑器，落地仍走正常保存：journal、历史备份与系统集成都在同一条路径上。
-function applyImportedConfig(scope, incoming) {
+// 对象递归合并，数组与标量整体替换——导入文件里没有的键保持当前值。
+function mergeConfig(base, incoming) {
+  if (incoming === null || typeof incoming !== "object" || Array.isArray(incoming)) return clone(incoming);
+  const result = base && typeof base === "object" && !Array.isArray(base) ? clone(base) : {};
+  for (const [key, value] of Object.entries(incoming)) {
+    const mergeable = value && typeof value === "object" && !Array.isArray(value)
+      && result[key] && typeof result[key] === "object" && !Array.isArray(result[key]);
+    result[key] = mergeable ? mergeConfig(result[key], value) : clone(value);
+  }
+  return result;
+}
+
+function diffConfigPaths(before, after, prefix = "", out = []) {
+  if (out.length >= 40) return out;
+  const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  if (isObject(before) && isObject(after)) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const key of [...keys].sort()) {
+      diffConfigPaths(before[key], after[key], prefix ? `${prefix}.${key}` : key, out);
+    }
+    return out;
+  }
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    out.push({ path: prefix || "(根)", before, after });
+  }
+  return out;
+}
+
+// 待导入内容留在 state.configImport 里，用户先比较"替换"与"合并"的差异再决定。
+function buildImportedConfig(mode) {
+  const pending = state.configImport;
+  if (!pending) return clone(state.config);
+  const scope = String(pending.scope || "all");
+  const incoming = clone(pending.config || {});
+  if (scope === "all") {
+    return mode === "merge" ? mergeConfig(state.config, incoming) : incoming;
+  }
+  const next = clone(state.config);
+  if (scope === "core") {
+    next.core = mode === "merge" ? mergeConfig(next.core || {}, incoming.core || {}) : clone(incoming.core || {});
+    return next;
+  }
+  next.plugins = { ...(next.plugins || {}) };
+  const picked = incoming.plugins?.[scope] || {};
+  next.plugins[scope] = mode === "merge" ? mergeConfig(next.plugins[scope] || {}, picked) : clone(picked);
+  return next;
+}
+
+function summarizeValue(value) {
+  const text = value === undefined ? "（无）" : JSON.stringify(value);
+  return text === undefined ? "（无）" : text.length > 60 ? `${text.slice(0, 57)}…` : text;
+}
+
+function importDiffRows(diff) {
+  if (!diff.length) return "<li>没有差异</li>";
+  return diff.slice(0, 12)
+    .map((entry) => `<li><code>${esc(entry.path)}</code>：${esc(summarizeValue(entry.before))} → ${esc(summarizeValue(entry.after))}</li>`)
+    .join("");
+}
+
+function renderConfigImportPreview() {
+  const container = $("#configImportPreview");
+  if (!container) return;
+  const pending = state.configImport;
+  if (!pending) {
+    container.hidden = true;
+    container.innerHTML = "";
+    return;
+  }
+  const scope = String(pending.scope || "all");
+  const replaceDiff = diffConfigPaths(state.config, buildImportedConfig("replace"));
+  const mergeDiff = diffConfigPaths(state.config, buildImportedConfig("merge"));
+  const versionNote = pending.appVersion && pending.currentAppVersion && pending.appVersion !== pending.currentAppVersion
+    ? `<div class="field-hint">该文件由 FlowHub ${esc(pending.appVersion)} 导出，当前版本为 ${esc(pending.currentAppVersion)}；字段含义可能已有变化，请先核对差异。</div>`
+    : "";
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="config-import-head">
+      <strong>待导入：${esc(scopeLabel(scope))}</strong>
+      <small>${esc(pending.path || "")}${pending.exportedAt ? ` · 导出于 ${esc(historyTime(Number(pending.exportedAt)))}` : ""}${pending.inferred ? " · 按普通配置文件解析" : ""}</small>
+    </div>
+    ${versionNote}
+    <div class="config-import-diff">
+      <div><span>替换</span><small>${replaceDiff.length} 处变化</small><ul>${importDiffRows(replaceDiff)}</ul></div>
+      <div><span>合并</span><small>${mergeDiff.length} 处变化</small><ul>${importDiffRows(mergeDiff)}</ul></div>
+    </div>
+    <div class="storage-actions">
+      <button class="button primary" type="button" data-action="apply-config-import" data-import-mode="replace">替换导入</button>
+      <button class="button" type="button" data-action="apply-config-import" data-import-mode="merge">合并导入</button>
+      <button class="button" type="button" data-action="cancel-config-import">取消导入</button>
+    </div>`;
+}
+
+function applyConfigImport(mode) {
+  const pending = state.configImport;
+  if (!pending) return;
+  const scope = String(pending.scope || "all");
+  const next = buildImportedConfig(mode);
   // 网页目录保存在数据库里，导出不含 items；导入不能因此清空本地目录。
   const items = clone(pluginConfig("web")?.settings?.items || []);
-  let next;
-  if (scope === "all") {
-    next = clone(incoming);
-  } else if (scope === "core") {
-    next = clone(state.config);
-    next.core = clone(incoming?.core || {});
-  } else {
-    next = clone(state.config);
-    next.plugins = { ...(next.plugins || {}) };
-    next.plugins[scope] = clone(incoming?.plugins?.[scope] || {});
-  }
   next.plugins = { ...(next.plugins || {}) };
   next.plugins.web = { ...(next.plugins.web || {}) };
   next.plugins.web.settings = { ...(next.plugins.web.settings || {}) };
   next.plugins.web.settings.items = items;
   next.plugins.web.settings.catalogStorage = "sqlite";
   state.config = next;
+  state.configImport = null;
   state.selectedId = "";
   state.selectedMemoId = "";
   state.pendingAddId = "";
+  markDirty(`已${mode === "merge" ? "合并" : "替换"}导入配置，请确认后保存`);
+  render();
+  const status = $("#configTransferStatus");
+  if (status) status.textContent = `已按「${mode === "merge" ? "合并" : "替换"}」应用「${scopeLabel(scope)}」到编辑器，确认无误后点击保存；保存前的旧配置会进入配置历史。`;
+  toast(mode === "merge" ? "已合并到编辑器" : "已替换到编辑器");
+}
+
+function cancelConfigImport() {
+  if (!state.configImport) return;
+  state.configImport = null;
+  renderConfigImportPreview();
+  const status = $("#configTransferStatus");
+  if (status) status.textContent = "已取消导入，配置未改动。";
 }
 
 async function importConfig() {
@@ -1223,17 +1324,22 @@ async function importConfig() {
       if (status) status.textContent = "已取消导入。";
       return;
     }
-    const scope = String(result?.scope || "all");
     const incoming = result?.config;
     if (!incoming || typeof incoming !== "object") throw new Error("导入内容不是 JSON 对象");
-    applyImportedConfig(scope, incoming);
-    markDirty("已导入配置，请确认后保存");
-    render();
-    if (status) {
-      status.textContent = `已导入「${scopeLabel(scope)}」${result?.inferred ? "（按普通配置文件解析）" : ""}，确认无误后点击保存。`;
-    }
-    toast("配置已导入编辑器");
+    state.configImport = {
+      path: String(result?.path || ""),
+      scope: String(result?.scope || "all"),
+      exportedAt: Number(result?.exportedAt) || 0,
+      appVersion: String(result?.appVersion || ""),
+      currentAppVersion: String(result?.currentAppVersion || ""),
+      inferred: result?.inferred === true,
+      config: incoming
+    };
+    renderConfigImportPreview();
+    if (status) status.textContent = "已读取导入文件，请在下方比较差异后选择替换或合并。";
   } catch (error) {
+    state.configImport = null;
+    renderConfigImportPreview();
     if (status) status.textContent = `导入失败：${String(error?.message || error)}`;
     toast(String(error?.message || error), true);
   }
@@ -2033,6 +2139,8 @@ function handleAction(action, actionTarget) {
   if (action === "restore-config-history") return restoreConfigHistory(actionTarget?.dataset.historyId);
   if (action === "export-config") return exportConfig();
   if (action === "import-config") return importConfig();
+  if (action === "apply-config-import") return applyConfigImport(actionTarget?.dataset.importMode === "merge" ? "merge" : "replace");
+  if (action === "cancel-config-import") return cancelConfigImport();
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();

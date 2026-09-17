@@ -313,6 +313,14 @@
       .config-history-actions { display: flex; gap: 6px; flex: none; }
       .config-history-actions .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
       .config-history-preview { max-height: 260px; overflow: auto; margin: 8px 0 0; }
+      .config-import-preview { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+      .config-import-head { display: grid; gap: 2px; }
+      .config-import-head small { color: #73766e; font-size: 11px; overflow-wrap: anywhere; }
+      .config-import-diff { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+      .config-import-diff span { font-weight: 650; font-size: 12px; }
+      .config-import-diff small { margin-left: 6px; color: #73766e; font-size: 11px; }
+      .config-import-diff ul { margin: 6px 0 0; padding-left: 16px; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+      .config-import-diff code { font-size: 10px; }
       .memo-workspace { display: grid; grid-template-columns: minmax(230px, .75fr) minmax(0, 1.45fr); gap: 13px; align-items: start; }
       .memo-library, .memo-editor-card { border: 1px solid var(--line); border-radius: 14px; background: rgba(4, 13, 18, .28); overflow: hidden; }
       .memo-library-head { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--line); }
@@ -856,6 +864,7 @@
                     <label for="configTransferScope">导出范围</label>
                     <div class="storage-path-row"><select id="configTransferScope"></select><button class="button" type="button" data-action="export-config">导出…</button></div>
                     <div class="storage-actions"><button class="button" type="button" data-action="import-config">选择要导入的文件…</button></div>
+                    <div class="config-import-preview hidden" id="configImportPreview"></div>
                     <div class="field-hint" id="configTransferStatus" role="status"></div>
                   </div>
                 </div>

@@ -1064,6 +1064,7 @@ async fn pick_config_import(
         "scope": payload["scope"],
         "exportedAt": payload["exportedAt"],
         "appVersion": payload["appVersion"],
+        "currentAppVersion": env!("CARGO_PKG_VERSION"),
         "inferred": payload["inferred"],
         "config": payload["config"],
     }))
