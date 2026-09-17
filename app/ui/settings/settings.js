@@ -733,6 +733,7 @@ function renderSettingsFields() {
   });
   renderConfigPath();
   renderConfigHistory();
+  renderConfigTransfer();
   const proxyAdapter = $("#proxyAdapter");
   if (proxyAdapter) proxyAdapter.value = pluginConfig("tools")?.settings?.proxyAdapter || "auto";
   document.querySelectorAll("[data-tool-setting]").forEach((input) => {
@@ -1145,6 +1146,95 @@ async function restoreConfigHistory(id) {
     await loadConfigHistory();
   } catch (error) {
     if (status) status.textContent = `恢复失败：${String(error?.message || error)}`;
+    toast(String(error?.message || error), true);
+  }
+}
+
+function configTransferScopes() {
+  const ids = Object.keys(state.config?.plugins || {}).sort();
+  return [
+    { id: "all", label: "全部配置" },
+    { id: "core", label: "全局设置（core）" },
+    ...ids.map((id) => ({ id, label: `插件：${id}` }))
+  ];
+}
+
+function renderConfigTransfer() {
+  const select = $("#configTransferScope");
+  if (!select) return;
+  const scopes = configTransferScopes();
+  const current = select.value;
+  select.innerHTML = scopes.map((scope) => `<option value="${esc(scope.id)}">${esc(scope.label)}</option>`).join("");
+  if (scopes.some((scope) => scope.id === current)) select.value = current;
+}
+
+function scopeLabel(scope) {
+  return scope === "all" ? "全部配置" : scope === "core" ? "全局设置" : `插件 ${scope}`;
+}
+
+async function exportConfig() {
+  const status = $("#configTransferStatus");
+  const scope = $("#configTransferScope")?.value || "all";
+  try {
+    const result = await window.weborg.exportConfig(scope);
+    if (result?.canceled) {
+      if (status) status.textContent = "已取消导出。";
+      return;
+    }
+    if (status) status.textContent = `已导出「${scopeLabel(scope)}」到 ${result?.path || "所选文件"}（${Number(result?.bytes) || 0} 字节）。`;
+    toast("配置已导出");
+  } catch (error) {
+    if (status) status.textContent = `导出失败：${String(error?.message || error)}`;
+    toast(String(error?.message || error), true);
+  }
+}
+
+// 导入只改编辑器，落地仍走正常保存：journal、历史备份与系统集成都在同一条路径上。
+function applyImportedConfig(scope, incoming) {
+  // 网页目录保存在数据库里，导出不含 items；导入不能因此清空本地目录。
+  const items = clone(pluginConfig("web")?.settings?.items || []);
+  let next;
+  if (scope === "all") {
+    next = clone(incoming);
+  } else if (scope === "core") {
+    next = clone(state.config);
+    next.core = clone(incoming?.core || {});
+  } else {
+    next = clone(state.config);
+    next.plugins = { ...(next.plugins || {}) };
+    next.plugins[scope] = clone(incoming?.plugins?.[scope] || {});
+  }
+  next.plugins = { ...(next.plugins || {}) };
+  next.plugins.web = { ...(next.plugins.web || {}) };
+  next.plugins.web.settings = { ...(next.plugins.web.settings || {}) };
+  next.plugins.web.settings.items = items;
+  next.plugins.web.settings.catalogStorage = "sqlite";
+  state.config = next;
+  state.selectedId = "";
+  state.selectedMemoId = "";
+  state.pendingAddId = "";
+}
+
+async function importConfig() {
+  const status = $("#configTransferStatus");
+  try {
+    const result = await window.weborg.pickConfigImport();
+    if (result?.canceled) {
+      if (status) status.textContent = "已取消导入。";
+      return;
+    }
+    const scope = String(result?.scope || "all");
+    const incoming = result?.config;
+    if (!incoming || typeof incoming !== "object") throw new Error("导入内容不是 JSON 对象");
+    applyImportedConfig(scope, incoming);
+    markDirty("已导入配置，请确认后保存");
+    render();
+    if (status) {
+      status.textContent = `已导入「${scopeLabel(scope)}」${result?.inferred ? "（按普通配置文件解析）" : ""}，确认无误后点击保存。`;
+    }
+    toast("配置已导入编辑器");
+  } catch (error) {
+    if (status) status.textContent = `导入失败：${String(error?.message || error)}`;
     toast(String(error?.message || error), true);
   }
 }
@@ -1941,6 +2031,8 @@ function handleAction(action, actionTarget) {
   if (action === "refresh-config-history") return loadConfigHistory();
   if (action === "preview-config-history") return previewConfigHistory(actionTarget?.dataset.historyId);
   if (action === "restore-config-history") return restoreConfigHistory(actionTarget?.dataset.historyId);
+  if (action === "export-config") return exportConfig();
+  if (action === "import-config") return importConfig();
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();

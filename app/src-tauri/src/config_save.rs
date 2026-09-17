@@ -65,7 +65,7 @@ fn sync_parent(path: &Path) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(super) fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or("缺少父目录")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     static NEXT: AtomicU64 = AtomicU64::new(0);

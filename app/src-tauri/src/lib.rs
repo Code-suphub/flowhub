@@ -7,6 +7,7 @@ use storage::{
 };
 mod config_history;
 mod config_save;
+mod config_transfer;
 mod web_open;
 mod launcher;
 #[cfg(target_os = "macos")]
@@ -990,6 +991,85 @@ fn get_storage_info(state: State<'_, AppState>) -> Value {
 }
 
 #[tauri::command]
+async fn export_config(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    scope: String,
+) -> Result<Value, String> {
+    let payload = config_transfer::export_payload(&state, &scope)?;
+    let directory = state
+        .paths()
+        .config_path
+        .parent()
+        .unwrap_or(&state.root_dir)
+        .to_path_buf();
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("导出 FlowHub 配置")
+        .set_directory(directory)
+        .set_file_name(config_transfer::suggested_file_name(&scope))
+        .add_filter("JSON 配置", &["json"])
+        .blocking_save_file();
+    let Some(selected) = selected else {
+        return Ok(json!({ "ok": false, "canceled": true }));
+    };
+    let mut path = selected.into_path().map_err(|error| error.to_string())?;
+    if path.extension().is_none() {
+        path.set_extension("json");
+    }
+    let bytes = serde_json::to_vec_pretty(&payload).map_err(|error| error.to_string())?;
+    config_save::atomic_bytes(&path, &bytes)?;
+    Ok(json!({
+        "ok": true,
+        "path": path.to_string_lossy(),
+        "scope": scope,
+        "bytes": bytes.len(),
+    }))
+}
+
+#[tauri::command]
+async fn pick_config_import(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let directory = state
+        .paths()
+        .config_path
+        .parent()
+        .unwrap_or(&state.root_dir)
+        .to_path_buf();
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("选择要导入的 FlowHub 配置")
+        .set_directory(directory)
+        .add_filter("JSON 配置", &["json"])
+        .blocking_pick_file();
+    let Some(selected) = selected else {
+        return Ok(json!({ "ok": false, "canceled": true }));
+    };
+    let path = selected.into_path().map_err(|error| error.to_string())?;
+    let bytes = fs::read(&path).map_err(|error| format!("无法读取所选文件：{error}"))?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("导入文件过大（上限 8 MiB）".into());
+    }
+    // 只解析，不在这里落地：应用导入要经过正常保存管线，才能复用 journal、
+    // 历史备份与系统集成。
+    let payload = config_transfer::parse_import(&bytes)?;
+    Ok(json!({
+        "ok": true,
+        "path": path.to_string_lossy(),
+        "bytes": bytes.len(),
+        "scope": payload["scope"],
+        "exportedAt": payload["exportedAt"],
+        "appVersion": payload["appVersion"],
+        "inferred": payload["inferred"],
+        "config": payload["config"],
+    }))
+}
+
+#[tauri::command]
 async fn choose_config_path(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -1479,6 +1559,8 @@ pub fn run() {
             list_config_history,
             preview_config_history,
             restore_config_history,
+            export_config,
+            pick_config_import,
             search_applications,
             load_application_icons,
             activate_target,

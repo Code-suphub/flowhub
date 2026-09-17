@@ -847,6 +847,18 @@
                   <pre class="config-history-preview field-hint hidden" id="configHistoryPreview"></pre>
                   <div class="field-hint" id="configHistoryStatus" role="status"></div>
                 </div>
+                <div class="settings-block wide config-transfer-block hidden" data-core-section-panel="data">
+                  <div class="update-heading">
+                    <div class="update-title"><strong>配置迁移</strong><code>JSON</code></div>
+                  </div>
+                  <p class="update-copy">导出可以整体或只针对某一个模块。导入的文件先进入编辑器，确认无误后再保存；保存前的旧配置会进入上面的配置历史。网页目录保存在数据库中，不会随导入被替换。</p>
+                  <div class="field">
+                    <label for="configTransferScope">导出范围</label>
+                    <div class="storage-path-row"><select id="configTransferScope"></select><button class="button" type="button" data-action="export-config">导出…</button></div>
+                    <div class="storage-actions"><button class="button" type="button" data-action="import-config">选择要导入的文件…</button></div>
+                    <div class="field-hint" id="configTransferStatus" role="status"></div>
+                  </div>
+                </div>
                 <div class="settings-block wide hidden" data-core-section-panel="menubar">
                   <div class="update-heading">
                     <div class="update-title"><strong>macOS 菜单栏</strong><code>FlowHub</code></div>

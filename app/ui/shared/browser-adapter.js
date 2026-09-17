@@ -267,6 +267,12 @@ if (!window.weborg) {
     async restoreConfigHistory() {
       throw new Error("浏览器预览不能修改配置");
     },
+    async exportConfig() {
+      throw new Error("浏览器预览不支持导出配置");
+    },
+    async pickConfigImport() {
+      throw new Error("浏览器预览不支持导入配置");
+    },
     async openConfigPath() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },

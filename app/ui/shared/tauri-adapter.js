@@ -245,6 +245,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     listConfigHistory: () => invoke("list_config_history"),
     previewConfigHistory: (id) => invoke("preview_config_history", { id }),
     restoreConfigHistory: (id) => invoke("restore_config_history", { id }),
+    exportConfig: (scope) => invoke("export_config", { scope }),
+    pickConfigImport: () => invoke("pick_config_import"),
     chooseConfigPath: () => invoke("choose_config_path"),
     openConfigPath: () => invoke("open_config_path"),
     getClipboardStorageInfo: () => invoke("get_storage_info"),
