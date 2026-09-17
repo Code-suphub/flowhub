@@ -21,6 +21,8 @@
     return month ? `${match[4]}-${String(month).padStart(2,'0')}-${match[2].padStart(2,'0')} ${match[3]}` : value || '—';
   };
   window.FlowHubPortCommands = {parse, commands, formatElapsed, formatStartedAt};
+  const store = () => window.FlowHubCommandStore || null;
+  const toolParams = port => ({port: String(port)});
   let current = {port:null, processes:[], status:'idle'}, timer, token=0, confirming=null, terminating=false;
   const pendingInspections = new Map();
   function inspectOnce(port, api) {
@@ -30,7 +32,13 @@
     }
     return pendingInspections.get(port);
   }
-  async function refresh(port, ctx) {
+  // 历史只记用户明确发起的查询（回车或刷新）：自动预览会在输入过程中反复触发，
+  // 记下来只会得到一堆半截端口号。
+  function remember(port, ctx) {
+    if (!store() || ctx?.enabled?.('commandHistory') === false) return;
+    store().history.record('port', `port ${port}`, { params: toolParams(port) });
+  }
+  async function refresh(port, ctx, { explicit = false } = {}) {
     const version=++token; confirming=null;
     current={port,processes:[],status:'loading'}; ctx.render();
     try {
@@ -38,6 +46,7 @@
       const report=await inspectOnce(port, ctx.api);
       if(version!==token) return;
       current={...report,status:'ready'};
+      if (explicit) remember(port, ctx);
     } catch(error) { if(version===token) current={port,processes:[],status:'error',error:error.message||String(error)}; }
     if(version===token && parse(ctx.queryNow())===port) ctx.render();
   }
@@ -52,7 +61,7 @@
       timer=setTimeout(()=>refresh(port,ctx),180);
     },
     suggestions(ctx) {const port=parse(ctx.query);return port?[{id:`port:${port}`,toolId:'port',type:'port',port,title:`端口 ${port}`,details:current.port===port?current:{status:'idle',processes:[]}}]:[];},
-    render(item,{esc,index,active}) {
+    render(item,{esc,index,active,enabled}) {
       const details=item.details;
       const rows=(details.processes||[]).map(p => {
         const fields = [
@@ -68,10 +77,35 @@
         </section>`;
       }).join('');
       const status=['idle','loading'].includes(details.status)?'正在检查本机端口…':details.error||(details.processes?.length?`${details.processes.length} 个可见进程`:'查询完成 · 未发现可见的监听/绑定进程');
-      return `<div class="result port-result ${active?'active':''}" data-i="${index}"><div class="r-body"><div class="r-title">端口 ${item.port} <span class="r-kind">TCP / UDP</span></div><div class="port-detail" role="status">${esc(status)}</div>${rows}<div class="port-detail">${esc(details.message||details.visibility||'查询本机 TCP 监听、UDP 绑定；其他用户进程可能不可见。')}</div><div class="tool-actions">${button('refresh','刷新')}${button('copy-macos','复制 macOS 查询命令')}${button('copy-linux','复制 Linux 查询命令')}</div><div class="port-detail">回车复制详情 · F6 聚焦操作按钮；结束进程仅作用于本机。</div></div></div>`;
+      const panel=store()&&enabled?.('commandHistory')!==false?store().panelHtml('port',esc):'';
+      return `<div class="result port-result ${active?'active':''}" data-i="${index}"><div class="r-body"><div class="r-title">端口 ${item.port} <span class="r-kind">TCP / UDP</span></div><div class="port-detail" role="status">${esc(status)}</div>${rows}<div class="port-detail">${esc(details.message||details.visibility||'查询本机 TCP 监听、UDP 绑定；其他用户进程可能不可见。')}</div><div class="tool-actions">${button('refresh','刷新')}${button('copy-macos','复制 macOS 查询命令')}${button('copy-linux','复制 Linux 查询命令')}</div><div class="port-detail">回车复制详情 · F6 聚焦操作按钮；结束进程仅作用于本机。</div>${panel}</div></div>`;
     },
-    choose(item,ctx) {return ctx.copy(JSON.stringify({port:item.port,...item.details},(key,value)=>key==='identity'?undefined:value,2)).then(()=>ctx.status('端口详情已复制'));},
+    choose(item,ctx) {remember(item.port,ctx);return ctx.copy(JSON.stringify({port:item.port,...item.details},(key,value)=>key==='identity'?undefined:value,2)).then(()=>ctx.status('端口详情已复制'));},
     async action(action,target,ctx) {
+      const commandId = target?.dataset?.commandId;
+      const entry = store() && commandId
+        ? store().history.list('port').concat(store().templates.list('port')).find(item=>item.id===commandId)
+        : null;
+      if(action==='history-clear') {store().history.clear('port');ctx.render();return ctx.status?.('已清空本工具的历史');}
+      if(action==='template-save') {
+        const value=parse(ctx.queryNow());if(!value)return ctx.status?.('先输入 1-65535 的端口再存为模板');
+        const saved=store().templates.save('port',{query:`port ${value}`,params:toolParams(value)});
+        if(!saved.saved)return ctx.status?.('没有可保存的查询');
+        ctx.render();return ctx.status?.('已存为参数模板');
+      }
+      if(action==='history-forget') {store().history.forget('port',entry?.id);ctx.render();return;}
+      if(action==='template-forget') {store().templates.forget('port',entry?.id);ctx.render();return;}
+      // 复用输入框那条路径：填入后由 180ms 防抖触发真正的查询，避免重复检查同一个端口。
+      if(action==='history-run'||action==='template-run') {
+        const port=entry&&parse(entry.query);
+        if(!port)return ctx.status?.('这条记录的端口已不可用，请重新输入');
+        ctx.setQuery?.(entry.query);return ctx.status?.(`已填入端口 ${port}`);
+      }
+      if(action==='history-copy'||action==='template-copy') {
+        const port=entry&&parse(entry.query);
+        if(!port)return ctx.status?.('这条记录已不可用');
+        await ctx.copy(commands(port).macos);return ctx.status?.('macOS 查询命令已复制');
+      }
       const port=parse(ctx.queryNow()); if (!port) return;
       if(action==='copy-process' || action==='copy-path') {
         const process=current.processes?.find(p=>p.pid===Number(target.dataset.pid));
@@ -85,7 +119,7 @@
         await ctx.copy(text);ctx.status(action==='copy-path'?'路径 / 命令已复制':'进程详情已复制');return;
       }
       if(action.startsWith('copy-')) {await ctx.copy(commands(port)[action==='copy-linux'?'linux':'macos']);ctx.status('查询命令已复制');return;}
-      if(action==='refresh') {clearTimeout(timer);return refresh(port,ctx);}
+      if(action==='refresh') {clearTimeout(timer);return refresh(port,ctx,{explicit:true});}
       const pid=Number(target.dataset.pid);
       if(action==='terminate') {confirming=pid;ctx.render();return;}
       if(action==='cancel') {confirming=null;ctx.render();return;}

@@ -21,11 +21,17 @@ SIGTERM 发送成功不等于进程已退出；工具会重新查询，也可点
 
 这不是外部插件热加载：工具代码随应用发布。既有 IP/DNS 等建议入口已走注册表，但其查询/渲染仍有旧代码留在 search.js，后续可逐个迁移为独立模块。当前规模下无需引入任意第三方 JS/Rust 动态执行；若将来开放第三方插件，需另行设计 manifest、版本兼容、权限和生命周期。
 
+## 命令历史与参数模板
+
+`ui/shared/command-store.js` 保存执行过的 ping／curl／端口查询（每个工具 20 条历史、10 个参数模板，历史总量 100 条），落在搜索窗口的本地存储里。工具结果里的「最近执行」可以重新执行、复制实际命令、移除或清空；「参数模板」把当前查询连同主机／端口／URL 参数存下来，下次直接填入。设置页工具面板有统一的记录开关 `plugins.tools.settings.commandHistory`（默认开）与清空按钮。
+
+端口只记用户明确发起的查询（回车或刷新），180ms 防抖的自动预览不写历史。回放、复制和存模板前都会重新过一遍该工具的 `parse`：参数不合法的记录既不执行也不保存。URL 里的 `user:password`、token／api_key／password 等查询参数、curl 的 `-u`／`--password` 与 `Authorization` 头都判为敏感内容，不写入历史和模板。
+
 ## 验证
 
 ```sh
 cargo test --manifest-path app/src-tauri/Cargo.toml port_inspector --lib
-node app/scripts/port-tool.test.cjs
+node app/scripts/tests/port-tool.test.cjs
 ```
 
 Rust 测试使用自建临时 TCP+UDP 监听子进程，验证启动时间、双协议、错误身份拒绝以及正确身份 SIGTERM；只终止测试自身创建的子进程。JS 测试覆盖输入范围和注入拒绝、确认/取消、复制命令、禁用开关。浏览器使用合成进程数据验证结果卡片和操作；两份复制命令均通过 sh -n，未连接或验证真实堡垒机。
@@ -34,7 +40,7 @@ Rust 测试使用自建临时 TCP+UDP 监听子进程，验证启动时间、双
 
 输入 `ip` / `本机 ip` / `公网 ip` 自动显示统一结果卡，可刷新、分别复制地址、复制 macOS/Linux 查询命令。IPv4/IPv6 并发查询，每项最多 6 秒，先完成的地址先显示；失败不会被误报为没有配置该协议。不再等待归属地查询。卡片明确显示服务观察到的公网出口，代理可能改变结果。
 
-公共查询 helper `public-ip.js` 供桌面/浏览器 adapter 共享；结果交互迁移到 `local-ip-tool.js` 注册模块。`node app/scripts/local-ip-tool.test.cjs` 验证部分成功、渐进返回、旧响应丢弃和复制。浏览器合成地址验证卡片布局；未将合成测试当作真实网络验证。
+公共查询 helper `public-ip.js` 供桌面/浏览器 adapter 共享；结果交互迁移到 `local-ip-tool.js` 注册模块。`node app/scripts/tests/local-ip-tool.test.cjs` 验证部分成功、渐进返回、旧响应丢弃和复制。浏览器合成地址验证卡片布局；未将合成测试当作真实网络验证。
 
 ### 查询负载优化
 

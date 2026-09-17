@@ -307,9 +307,17 @@ async function enrichDnsIpResults(hostname, answers, token) {
   render();
 }
 
+const toolEnabled = key => pluginEnabled("tools") && !["clipboard","memo"].includes(state.scope) && state.config?.plugins?.tools?.settings?.[key] !== false;
+// 参数模板与命令历史要点回搜索框重新执行，走和输入框一样的事件路径。
+function applyQuery(text) {
+  const value = String(text ?? "");
+  if (!q || q.value === value) return;
+  q.value = value;
+  q.dispatchEvent(new Event("input"));
+}
 function toolContext() {
   return {query:state.query, queryNow:()=>state.query, api:window.weborg,
-    enabled:key=>pluginEnabled("tools") && !["clipboard","memo"].includes(state.scope) && state.config?.plugins?.tools?.settings?.[key] !== false,
+    enabled:toolEnabled, setQuery:applyQuery,
     render:()=>render({preserveScroll:true}), copy:copyText, status:showActionStatus};
 }
 for (const [id, suggestions] of [
@@ -764,7 +772,7 @@ function renderResults(items, from = 0, to = items.length) {
 }
 
 function renderResult(item, index, items) {
-  const registered = window.FlowHubTools.render(item, {esc,index,active:index===state.index});
+  const registered = window.FlowHubTools.render(item, {esc,index,active:index===state.index,enabled:toolEnabled});
   if (registered) return registered;
   const html = renderResultBody(item,index,items);
   if (!portableQueryCommand(item)) return html;

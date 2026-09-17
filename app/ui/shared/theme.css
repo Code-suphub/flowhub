@@ -327,6 +327,18 @@ body > .app::before { content: ""; position: fixed; inset: 0; z-index: -1; point
 }
 .network-output { max-height:230px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:10px; border-radius:6px; background:rgba(0,0,0,.14); color:var(--text); font:11px/1.6 var(--mono); user-select:text; }
 
+/* 命令历史与参数模板面板：挂在工具结果里，行内紧凑排布。 */
+.command-panel { margin-top:10px; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:rgba(0,0,0,.1); }
+.command-panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; color:var(--muted); font-size:11px; }
+.command-panel-head .tool-action { padding:3px 8px; font-size:10px; }
+.command-list { display:grid; gap:5px; margin:0; padding:0; list-style:none; }
+.command-list li { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.command-query { display:grid; flex:1; min-width:0; }
+.command-query code { font:11px/1.5 var(--mono); color:var(--text); overflow-wrap:anywhere; }
+.command-query small { color:var(--faint); font-size:10px; }
+.command-actions { display:flex; flex-wrap:wrap; gap:5px; }
+.command-actions .tool-action { padding:3px 8px; font-size:10px; }
+
 /* Collection editors: keep navigation and the editable content in view. */
 .editor-inner[data-module-panel="web"],
 .editor-inner[data-module-panel="memo"] { container-type: inline-size; }

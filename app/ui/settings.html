@@ -992,6 +992,15 @@
               </div>
               <div class="field-hint">时间戳、JWT、DNS 和 IP 仅在输入符合明确格式时出现；DNS 自动归属地每个域名最多查询 2 个公网地址并缓存 10 分钟；Cloudflare 检测仅在选中结果并按回车时发起请求。</div>
             </section>
+            <section class="selected-card clipboard-settings-card">
+              <div class="selected-banner"><span class="selected-icon">⌘</span><div><strong>命令历史与参数模板</strong><small>记录执行过的 ping／curl／端口查询，便于重新执行和复制实际命令；每个工具最多保留 20 条历史与 10 个模板。</small></div></div>
+              <div class="tool-settings-grid">
+                <label class="switch-field"><input type="checkbox" data-tool-setting="commandHistory" />记录执行过的命令</label>
+              </div>
+              <div class="field-hint" id="commandHistorySummary" role="status">—</div>
+              <div class="storage-actions"><button class="button" type="button" data-action="clear-command-history">清空命令历史与模板</button></div>
+              <div class="field-hint">带凭据、密钥或口令的查询（URL 里的 user:password、token／api_key 等查询参数、curl -u／Authorization 头）不写入历史，也不会存成模板。</div>
+            </section>
           </div>
 
           <div class="editor-inner module-panel hidden" data-module-panel="web">
@@ -1123,6 +1132,7 @@
     <script src="shared/tauri-adapter.js"></script>
     <script src="shared/browser-adapter.js"></script>
     <script src="shared/icons.js"></script>
+    <script src="shared/command-store.js"></script>
     <script src="shared/ui-performance.js"></script>
     <script src="settings/collection-layout.js"></script>
     <script src="settings/settings.js"></script>

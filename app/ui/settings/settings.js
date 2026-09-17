@@ -58,7 +58,9 @@ const TOOL_SETTINGS = {
   cloudflare: "Cloudflare 检测",
   localIp: "本机 IP 查询",
   proxy: "代理信息检测",
-  ip: "IP 识别与归属地"
+  ip: "IP 识别与归属地",
+  // 不是独立工具模块，而是 ping／curl／端口共用的记录开关：默认开，可在工具面板关闭。
+  commandHistory: "命令历史"
 };
 const SHIFTED_DIGIT_KEYS = { ")": "0", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9" };
 let draftTimer = null;
@@ -865,6 +867,7 @@ function renderSettingsFields() {
   renderConfigPath();
   renderConfigHistory();
   renderConfigTransfer();
+  renderCommandHistory();
   const proxyAdapter = $("#proxyAdapter");
   if (proxyAdapter) proxyAdapter.value = pluginConfig("tools")?.settings?.proxyAdapter || "auto";
   document.querySelectorAll("[data-tool-setting]").forEach((input) => {
@@ -1301,6 +1304,33 @@ function renderConfigTransfer() {
 
 function scopeLabel(scope) {
   return scope === "all" ? "全部配置" : scope === "core" ? "全局设置" : `插件 ${scope}`;
+}
+
+// 命令历史存在搜索窗口的本地存储里，设置页只做汇总与清空（同一来源，读写同一份）。
+function renderCommandHistory() {
+  const summary = $("#commandHistorySummary");
+  if (!summary) return;
+  const store = window.FlowHubCommandStore;
+  if (!store) {
+    summary.textContent = "浏览器预览不支持读取命令历史";
+    return;
+  }
+  const counts = store.counts();
+  if (!counts.total && !counts.templates) {
+    summary.textContent = "还没有记录：执行 ping／curl／端口查询后会自动出现在对应工具里。";
+    return;
+  }
+  const detail = Object.entries(counts.byTool).sort(([left], [right]) => left.localeCompare(right))
+    .map(([toolId, count]) => `${toolId} ${count}`).join(" · ");
+  summary.textContent = `已记录 ${counts.total} 条命令（${detail || "无"}） · ${counts.templates} 个参数模板`;
+}
+
+function clearCommandHistory() {
+  const store = window.FlowHubCommandStore;
+  if (!store) return;
+  store.clearAll();
+  renderCommandHistory();
+  toast("已清空命令历史与参数模板");
 }
 
 async function exportConfig() {
@@ -2548,6 +2578,7 @@ function handleAction(action, actionTarget) {
   if (action === "import-config") return importConfig();
   if (action === "apply-config-import") return applyConfigImport(actionTarget?.dataset.importMode === "merge" ? "merge" : "replace");
   if (action === "cancel-config-import") return cancelConfigImport();
+  if (action === "clear-command-history") return clearCommandHistory();
   if (action === "import-web") return importWebCatalog();
   if (action === "apply-web-import") return applyWebImport(actionTarget?.dataset.importMode);
   if (action === "cancel-web-import") return cancelWebImport();
