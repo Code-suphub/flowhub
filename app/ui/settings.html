@@ -152,6 +152,9 @@
       }
       .tree-row:hover { color: var(--ink); background: rgba(255, 255, 255, .055); }
       .tree-row.active { color: var(--ink); background: linear-gradient(90deg, rgba(75, 208, 184, .17), rgba(75, 208, 184, .04)); box-shadow: inset 2px 0 var(--accent); }
+      .tree-row.selected { background: rgba(75, 208, 184, .09); }
+      .tree-row.selected.active { background: linear-gradient(90deg, rgba(75, 208, 184, .22), rgba(75, 208, 184, .06)); }
+      #batchMoveTarget { max-width: 190px; min-height: 30px; padding: 0 8px; font-size: 11px; }
       .tree-row:focus-visible { outline: 2px solid rgba(75, 208, 184, .7); outline-offset: -2px; }
       .tree-row:active { cursor: grabbing; }
       .tree-row.dragging { opacity: .32; transform: scale(.985); cursor: grabbing; }
@@ -1005,7 +1008,8 @@
               <div class="toolbar">
                 <div class="toolbar-group"><span class="toolbar-label">新增</span><button class="button" data-action="add-child">＋ 子节点</button><button class="button" data-action="add-sibling">同级节点</button><button class="button cancel-add" id="cancelAddBtn" data-action="cancel-add" hidden>取消添加</button></div>
                 <div class="toolbar-group"><span class="toolbar-label">排序</span><button class="button" id="moveTopBtn" data-action="move-top" title="移到当前同级顶部">顶部</button><button class="button" id="moveUpBtn" data-action="move-up" title="在当前同级中上移一位">上移</button><button class="button" id="moveDownBtn" data-action="move-down" title="在当前同级中下移一位">下移</button><button class="button" id="moveBottomBtn" data-action="move-bottom" title="移到当前同级底部">底部</button></div>
-                <div class="toolbar-group danger-group"><button class="button danger" data-action="delete">删除节点</button></div>
+                <div class="toolbar-group"><span class="toolbar-label">批量</span><span class="toolbar-label" id="batchSelectionCount" title="按住 ⌘/Ctrl 或 Shift 点击可多选">未多选</span><select id="batchMoveTarget" aria-label="批量移动的目标目录"></select><button class="button" data-action="move-selected" title="把选中的节点移动到目标目录">移动到</button></div>
+                <div class="toolbar-group danger-group"><button class="button danger" id="deleteBtn" data-action="delete">删除节点</button></div>
               </div>
               <div id="nodeEditor"></div>
             </section>

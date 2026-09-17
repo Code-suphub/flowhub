@@ -8,6 +8,7 @@ const state = {
   configImport: null,
   undo: null,
   selectedId: "",
+  selectedIds: new Set(),
   pendingAddId: "",
   mode: "structure",
   module: "core",
@@ -603,6 +604,7 @@ function updateStatus() {
 
 function renderTree() {
   const tree = $("#tree");
+  syncSelection();
   const allEntries = nodeEntries();
   const entries = filteredNodeEntries();
   const filterCount = $("#treeFilterCount");
@@ -621,7 +623,7 @@ function renderTree() {
     return;
   }
   tree.innerHTML = entries.map(({ node, level }) => `
-    <div class="tree-row ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0" title="${esc(node.title || node.id)}" aria-grabbed="${state.draggingId === node.id}">
+    <div class="tree-row ${state.selectedIds.has(node.id) ? "selected" : ""} ${node.id === state.selectedId ? "active" : ""}" style="--depth:${level}" data-node-id="${esc(node.id)}" role="button" tabindex="0" title="${esc(node.title || node.id)}" aria-selected="${state.selectedIds.has(node.id)}" aria-grabbed="${state.draggingId === node.id}">
       <span class="tree-drag-handle" title="拖拽整行移动节点" aria-label="拖拽整行移动 ${esc(node.title || node.id)}"><i></i><i></i><i></i><i></i><i></i><i></i></span>
       ${node.children?.length ? `<button class="tree-toggle" data-toggle-node="${esc(node.id)}" aria-expanded="${state.expanded.has(node.id)}" aria-label="${state.expanded.has(node.id) ? "收缩" : "展开"}"></button>` : `<span class="tree-toggle-spacer"></span>`}
       ${iconHtml(node)}
@@ -629,6 +631,7 @@ function renderTree() {
     </div>
   `).join("");
   bindIconFallbacks();
+  renderBatchActions();
 }
 
 function renderSelected() {
@@ -1613,28 +1616,149 @@ function undoDeletion() {
   toast("已撤销删除");
 }
 
-function deleteSelected() {
-  const context = selectedContext();
-  if (!context) return;
-  const childCount = context.node.children?.length || 0;
-  const message = childCount ? `“${context.node.title || context.node.id}” 下有 ${childCount} 个子节点，确定删除整个分支吗？` : `确定删除“${context.node.title || context.node.id}”吗？`;
-  if (!window.confirm(message)) return;
-  const siblings = context.parent ? context.parent.children : webItems();
-  const [removed] = siblings.splice(context.index, 1);
-  if (context.node.id === state.pendingAddId) state.pendingAddId = "";
-  state.expanded.delete(context.node.id);
-  state.selectedId = siblings[context.index]?.id || siblings[context.index - 1]?.id || context.parent?.id || "";
+// 多选：state.selectedIds 是选中集合，state.selectedId 是其中的主选项（编辑器用它）。
+// 批量删除与批量移动都把整批记为一条撤销，恢复时整体回到操作前的目录。
+function syncSelection() {
+  const known = new Set(nodeEntries().map((entry) => entry.node.id));
+  for (const id of [...state.selectedIds]) if (!known.has(id)) state.selectedIds.delete(id);
+  if (!state.selectedId) {
+    if (state.selectedIds.size) state.selectedIds = new Set();
+    return;
+  }
+  if (!state.selectedIds.has(state.selectedId)) state.selectedIds = new Set([state.selectedId]);
+}
+
+// 祖先也被选中时，这一支已经被父节点覆盖，批量操作里不再重复处理。
+function batchSelection() {
+  const entries = nodeEntries();
+  const byId = new Map(entries.map((entry) => [entry.node.id, entry]));
+  // 只有主选项（例如刚载入或其它入口只设了 selectedId）时按单选处理。
+  const selected = state.selectedIds.size
+    ? [...state.selectedIds]
+    : state.selectedId ? [state.selectedId] : [];
+  const chosen = new Set(selected.filter((id) => byId.has(id)));
+  return [...chosen]
+    .filter((id) => {
+      let parent = byId.get(id).parent;
+      while (parent) {
+        if (chosen.has(parent.id)) return false;
+        parent = byId.get(parent.id)?.parent || null;
+      }
+      return true;
+    })
+    .map((id) => byId.get(id));
+}
+
+// 先按父节点分组、再按下标倒序删除，避免同一层里多次删除导致下标错位。
+function removeNodeEntries(targets) {
+  const groups = new Map();
+  for (const entry of targets) {
+    const list = entry.parent ? entry.parent.children : webItems();
+    if (!groups.has(list)) groups.set(list, []);
+    groups.get(list).push(entry.index);
+  }
+  for (const [list, indexes] of groups) {
+    for (const index of [...indexes].sort((left, right) => right - left)) list.splice(index, 1);
+  }
+}
+
+// 整批操作按快照恢复：跨父节点的下标在恢复时最容易出错，直接还原整棵目录更稳。
+function rememberWebUndo(label, snapshot, primaryId) {
   rememberUndo({
-    label: `已删除“${removed.title || removed.id}”${childCount ? `（含 ${childCount} 个子节点）` : ""}`,
+    label,
     restore: () => {
-      const target = context.parent ? context.parent.children : webItems();
-      target.splice(Math.min(context.index, target.length), 0, removed);
-      state.selectedId = removed.id;
-      state.expanded.add(removed.id);
+      const web = pluginConfig("web");
+      web.settings ||= {};
+      web.settings.items = clone(snapshot);
+      state.selectedId = primaryId || "";
+      state.selectedIds = new Set(primaryId ? [primaryId] : []);
+      state.pendingAddId = "";
     }
   });
+}
+
+function renderBatchActions() {
+  const targets = batchSelection();
+  const count = $("#batchSelectionCount");
+  if (count) count.textContent = targets.length > 1 ? `已选 ${targets.length} 项` : "未多选";
+  const deleteButton = $("#deleteBtn");
+  if (deleteButton) deleteButton.textContent = targets.length > 1 ? `删除 ${targets.length} 项` : "删除节点";
+  const select = $("#batchMoveTarget");
+  if (!select) return;
+  const blocked = new Set();
+  const collect = (node) => {
+    blocked.add(node.id);
+    (node.children || []).forEach(collect);
+  };
+  targets.forEach((entry) => collect(entry.node));
+  const current = select.value;
+  const options = [{ id: "", label: "（顶层）" }];
+  for (const { node, level } of nodeEntries()) {
+    if (node.url && !(node.children || []).length) continue;
+    if (blocked.has(node.id)) continue;
+    options.push({ id: node.id, label: `${"　".repeat(level)}${node.title || node.id}` });
+  }
+  select.innerHTML = options.map((option) => `<option value="${esc(option.id)}">${esc(option.label)}</option>`).join("");
+  if (options.some((option) => option.id === current)) select.value = current;
+  select.disabled = targets.length === 0;
+}
+
+function deleteSelected() {
+  const targets = batchSelection();
+  if (!targets.length) return;
+  const branchCount = targets.reduce((sum, entry) => sum + (entry.node.children?.length || 0), 0);
+  const first = targets[0];
+  const message = targets.length > 1
+    ? `确定删除选中的 ${targets.length} 个节点（含子节点共 ${targets.length + branchCount} 个）吗？`
+    : first.node.children?.length
+      ? `“${first.node.title || first.node.id}” 下有 ${first.node.children.length} 个子节点，确定删除整个分支吗？`
+      : `确定删除“${first.node.title || first.node.id}”吗？`;
+  if (!window.confirm(message)) return;
+  const snapshot = clone(webItems());
+  removeNodeEntries(targets);
+  if (targets.some((entry) => entry.node.id === state.pendingAddId)) state.pendingAddId = "";
+  targets.forEach((entry) => state.expanded.delete(entry.node.id));
+  const siblings = first.parent ? first.parent.children : webItems();
+  state.selectedId = siblings[Math.min(first.index, siblings.length - 1)]?.id || siblings[first.index - 1]?.id || first.parent?.id || "";
+  state.selectedIds = new Set(state.selectedId ? [state.selectedId] : []);
+  rememberWebUndo(
+    targets.length > 1
+      ? `已删除 ${targets.length} 个节点`
+      : `已删除“${first.node.title || first.node.id}”${first.node.children?.length ? `（含 ${first.node.children.length} 个子节点）` : ""}`,
+    snapshot,
+    first.node.id
+  );
   markDirty();
   render();
+}
+
+function moveSelectedToTarget(targetId) {
+  const targets = batchSelection();
+  if (!targets.length) return toast("请先选择要移动的节点");
+  const destination = targetId
+    ? nodeEntries().find((entry) => entry.node.id === targetId)?.node
+    : null;
+  if (targetId && !destination) return toast("目标目录不存在");
+  for (const entry of targets) {
+    if (targetId && (entry.node.id === targetId || nodeContains(entry.node, targetId))) {
+      return toast("不能移动到自身或其子目录");
+    }
+  }
+  const label = destination ? `“${destination.title || destination.id}”` : "顶层";
+  if (!window.confirm(`把选中的 ${targets.length} 个节点移动到${label}吗？`)) return;
+  const snapshot = clone(webItems());
+  const moving = targets.map((entry) => entry.node);
+  const primary = moving[0].id;
+  removeNodeEntries(targets);
+  const list = destination ? (destination.children ||= []) : webItems();
+  list.push(...moving);
+  if (destination) state.expanded.add(destination.id);
+  state.selectedId = primary;
+  state.selectedIds = new Set([primary]);
+  rememberWebUndo(`已移动 ${moving.length} 个节点到${label}`, snapshot, primary);
+  markDirty("已批量移动节点");
+  render();
+  toast(`已移动 ${moving.length} 个节点`);
 }
 
 function moveSelected(direction) {
@@ -2112,6 +2236,7 @@ function handleAction(action, actionTarget) {
   if (action === "add-child") return addChild();
   if (action === "add-sibling") return addSibling();
   if (action === "delete") return deleteSelected();
+  if (action === "move-selected") return moveSelectedToTarget($("#batchMoveTarget")?.value || "");
   if (action === "cancel-add") return cancelPendingAdd();
   if (action === "move-up") return moveSelected(-1);
   if (action === "move-down") return moveSelected(1);
@@ -2244,7 +2369,20 @@ document.addEventListener("click", (event) => {
   }
   const nodeId = event.target.closest("[data-node-id]")?.dataset.nodeId;
   if (nodeId) {
-    state.selectedId = nodeId;
+    // ⌘/Ctrl/Shift 点击加入或移出多选；主选项始终留在集合里，编辑器跟着它走。
+    if (event.metaKey || event.ctrlKey || event.shiftKey) {
+      if (state.selectedIds.has(nodeId)) {
+        state.selectedIds.delete(nodeId);
+        if (!state.selectedIds.size) state.selectedIds.add(nodeId);
+        if (!state.selectedIds.has(state.selectedId)) state.selectedId = [...state.selectedIds][0];
+      } else {
+        state.selectedIds.add(nodeId);
+        state.selectedId = nodeId;
+      }
+    } else {
+      state.selectedId = nodeId;
+      state.selectedIds = new Set([nodeId]);
+    }
     renderTree();
     renderSelected();
     updateMoveActions();
