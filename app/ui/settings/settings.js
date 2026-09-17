@@ -23,6 +23,8 @@ const state = {
   expanded: new Set(),
   draggingId: "",
   treeFilter: "",
+  lastRenderedSelectionId: "",
+  lastRenderedTreeFilter: "",
   draftSavedAt: 0,
   selectedMemoId: "",
   memoFilter: "",
@@ -636,8 +638,91 @@ function updateStatus() {
   }
 }
 
+// 目录重绘会整段替换 innerHTML，滚动位置和行内焦点都会丢。重绘前记住视口顶部
+// 那一行以及它相对视口的位置，重绘后按同一位置还原：展开／折叠、增删导致上方
+// 行数变化时视口不会跳动，行本身被删掉时退回原来的滚动偏移。
+function treeScrollContainer() {
+  return document.querySelector(".sidebar") || $("#tree");
+}
+
+function treeRows() {
+  const tree = $("#tree");
+  if (!tree || typeof tree.querySelectorAll !== "function") return [];
+  return Array.from(tree.querySelectorAll(".tree-row") || []);
+}
+
+function treeRowTop(row) {
+  return Number(row.offsetTop) || 0;
+}
+
+function captureTreeView() {
+  const container = treeScrollContainer();
+  if (!container) return null;
+  const scrollTop = Number(container.scrollTop) || 0;
+  const rows = treeRows();
+  const active = typeof document.activeElement === "undefined" ? null : document.activeElement;
+  let anchor = null;
+  for (const row of rows) {
+    const top = treeRowTop(row);
+    if (top + (Number(row.offsetHeight) || 0) > scrollTop) {
+      anchor = { id: String(row.dataset?.nodeId || ""), offset: top - scrollTop };
+      break;
+    }
+  }
+  return {
+    scrollTop,
+    anchor,
+    filter: state.lastRenderedTreeFilter,
+    focusId: active && rows.includes(active) ? String(active.dataset?.nodeId || "") : ""
+  };
+}
+
+function restoreTreeView(view) {
+  const container = treeScrollContainer();
+  if (!view || !container) return;
+  const rows = treeRows();
+  if (!rows.length) {
+    container.scrollTop = 0;
+    return;
+  }
+  // 过滤条件变了，旧偏移没有意义；回到顶部让用户先看到匹配结果。
+  if (view.filter !== state.treeFilter) {
+    container.scrollTop = 0;
+    return;
+  }
+  let next = view.scrollTop;
+  if (view.anchor?.id) {
+    const row = rows.find((item) => String(item.dataset?.nodeId || "") === view.anchor.id);
+    if (row) next = treeRowTop(row) - view.anchor.offset;
+  }
+  container.scrollTop = Math.max(0, next);
+  if (view.focusId) {
+    rows.find((item) => String(item.dataset?.nodeId || "") === view.focusId)?.focus?.();
+  }
+}
+
+// 选中项由新增、导入、批量移动、撤销等动作改变时把该行带进视口。用户自己滚动
+// 时选中项没变，因此不会被拉回。
+function revealTreeRow(nodeId) {
+  if (!nodeId) return;
+  const container = treeScrollContainer();
+  if (!container) return;
+  const row = treeRows().find((item) => String(item.dataset?.nodeId || "") === String(nodeId));
+  if (!row) return;
+  const top = treeRowTop(row);
+  const height = Number(row.offsetHeight) || 0;
+  const viewTop = Number(container.scrollTop) || 0;
+  const viewHeight = Number(container.clientHeight) || 0;
+  if (top < viewTop) container.scrollTop = top;
+  else if (viewHeight && top + height > viewTop + viewHeight) {
+    container.scrollTop = top + height - viewHeight;
+  }
+}
+
 function renderTree() {
   const tree = $("#tree");
+  const view = captureTreeView();
+  const previousSelection = state.lastRenderedSelectionId;
   syncSelection();
   const allEntries = nodeEntries();
   const entries = filteredNodeEntries();
@@ -654,6 +739,10 @@ function renderTree() {
     tree.innerHTML = state.treeFilter.trim()
       ? `<div class="tree-empty">没有匹配的目录或页面。<br />可以尝试标题、域名或节点 ID。</div>`
       : `<div class="tree-empty">还没有目录节点。<br />点击右上角 ＋ 添加一级目录。</div>`;
+    restoreTreeView(view);
+    state.lastRenderedSelectionId = state.selectedId;
+    state.lastRenderedTreeFilter = state.treeFilter;
+    renderBatchActions();
     return;
   }
   tree.innerHTML = entries.map(({ node, level }) => `
@@ -665,6 +754,10 @@ function renderTree() {
     </div>
   `).join("");
   bindIconFallbacks();
+  restoreTreeView(view);
+  if (state.selectedId && state.selectedId !== previousSelection) revealTreeRow(state.selectedId);
+  state.lastRenderedSelectionId = state.selectedId;
+  state.lastRenderedTreeFilter = state.treeFilter;
   renderBatchActions();
 }
 
