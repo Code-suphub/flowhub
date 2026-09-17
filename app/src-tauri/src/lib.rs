@@ -921,6 +921,36 @@ fn open_accessibility_settings(app: tauri::AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
+fn list_config_history(state: State<'_, AppState>) -> Result<Value, String> {
+    Ok(json!({
+        "entries": config_history::list(&state.root_dir)?,
+        "limit": config_history::LIMIT,
+        "directory": config_history::directory(&state.root_dir).to_string_lossy(),
+    }))
+}
+
+#[tauri::command]
+fn preview_config_history(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    let bytes = config_history::read(&state.root_dir, &id)?;
+    let config: Value =
+        serde_json::from_slice(&bytes).map_err(|error| format!("备份不是有效 JSON：{error}"))?;
+    if !config.is_object() {
+        return Err("备份不是 JSON 对象".into());
+    }
+    Ok(json!({ "id": id, "config": config, "bytes": bytes.len() }))
+}
+
+#[tauri::command]
+fn restore_config_history(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    // Serialize against save_config: both write the same config file.
+    let _save = state
+        .config_save
+        .lock()
+        .map_err(|error| error.to_string())?;
+    config_save::restore_history(&state, &id)
+}
+
+#[tauri::command]
 fn get_config_path_info(state: State<'_, AppState>) -> Value {
     let paths = state.paths();
     let configured = hydrated_config(&state)
@@ -1446,6 +1476,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            list_config_history,
+            preview_config_history,
+            restore_config_history,
             search_applications,
             load_application_icons,
             activate_target,

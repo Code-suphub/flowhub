@@ -4,6 +4,7 @@ const state = {
   plugins: [],
   configFile: null,
   clipboardStorage: null,
+  configHistory: null,
   selectedId: "",
   pendingAddId: "",
   mode: "structure",
@@ -730,6 +731,7 @@ function renderSettingsFields() {
     else input.value = value;
   });
   renderConfigPath();
+  renderConfigHistory();
   const proxyAdapter = $("#proxyAdapter");
   if (proxyAdapter) proxyAdapter.value = pluginConfig("tools")?.settings?.proxyAdapter || "auto";
   document.querySelectorAll("[data-tool-setting]").forEach((input) => {
@@ -1024,6 +1026,126 @@ function renderConfigPath() {
   $("#coreConfigPathHint").textContent = state.configFile?.available === false
     ? "浏览器仅用于预览，请在 FlowHub App 中选择或打开配置文件。"
     : "保存后切换到新的配置文件；原文件会保留。";
+}
+
+function historyTime(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "未知时间";
+  const date = new Date(ms);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function historySize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return "";
+  return value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`;
+}
+
+// 历史条目 id 是定宽毫秒时间戳，前缀即保存时间。
+function historyIdTime(id) {
+  return Number(String(id || "").split("-")[0]) || 0;
+}
+
+function describeConfigChanges(current, candidate) {
+  if (!current || !candidate || typeof current !== "object" || typeof candidate !== "object") return "无法与当前配置比较";
+  const keys = new Set([...Object.keys(current), ...Object.keys(candidate)]);
+  const changed = [...keys].filter((key) => JSON.stringify(current[key]) !== JSON.stringify(candidate[key]));
+  return changed.length
+    ? `与当前配置相比，顶层字段不同：${changed.join("、")}`
+    : "与当前配置内容相同";
+}
+
+function renderConfigHistory() {
+  const history = state.configHistory || { entries: [], limit: 0 };
+  const count = $("#configHistoryCount");
+  if (count) count.textContent = history.limit ? `${history.entries.length} / ${history.limit} 份` : `${history.entries.length} 份`;
+  const list = $("#configHistoryList");
+  if (!list) return;
+  if (!history.entries.length) {
+    list.innerHTML = `<div class="field-hint">${history.available === false
+      ? "浏览器预览不提供配置历史；请在 FlowHub App 中查看。"
+      : history.error
+        ? `读取失败：${esc(history.error)}`
+        : "还没有历史版本；每次成功保存前会自动保留上一版配置。"}</div>`;
+    return;
+  }
+  list.innerHTML = history.entries.map((entry, index) => `
+    <div class="config-history-item">
+      <div class="config-history-meta">
+        <strong>${esc(historyTime(entry.created_at))}</strong>
+        <small>${esc(historySize(entry.bytes))} · 目录 ${Number(entry.catalog_count) || 0} 项${index === 0 ? " · 最近" : ""}</small>
+      </div>
+      <div class="config-history-actions">
+        <button class="button" type="button" data-action="preview-config-history" data-history-id="${esc(entry.id)}">预览</button>
+        <button class="button" type="button" data-action="restore-config-history" data-history-id="${esc(entry.id)}">恢复</button>
+      </div>
+    </div>`).join("");
+}
+
+async function loadConfigHistory() {
+  if (typeof window.weborg?.listConfigHistory !== "function") {
+    state.configHistory = { entries: [], limit: 0, available: false };
+    renderConfigHistory();
+    return;
+  }
+  try {
+    const result = await window.weborg.listConfigHistory();
+    state.configHistory = {
+      entries: Array.isArray(result?.entries) ? result.entries : [],
+      limit: Number(result?.limit) || 0,
+      directory: String(result?.directory || ""),
+      available: result?.available !== false
+    };
+  } catch (error) {
+    state.configHistory = { entries: [], limit: 0, error: String(error?.message || error) };
+  }
+  renderConfigHistory();
+}
+
+async function previewConfigHistory(id) {
+  const preview = $("#configHistoryPreview");
+  const status = $("#configHistoryStatus");
+  try {
+    const result = await window.weborg.previewConfigHistory(id);
+    if (preview) {
+      preview.hidden = false;
+      preview.textContent = [
+        `${historyTime(historyIdTime(id))} 的版本`,
+        describeConfigChanges(state.config, result?.config),
+        "",
+        JSON.stringify(result?.config ?? {}, null, 2).slice(0, 6000)
+      ].join("\n");
+    }
+    if (status) status.textContent = "";
+  } catch (error) {
+    if (status) status.textContent = `无法预览：${String(error?.message || error)}`;
+  }
+}
+
+async function restoreConfigHistory(id) {
+  const status = $("#configHistoryStatus");
+  if (!window.confirm(`恢复 ${historyTime(historyIdTime(id))} 的配置？当前配置会先存入历史。`)) return;
+  try {
+    const result = await window.weborg.restoreConfigHistory(id);
+    const warnings = (Array.isArray(result?.warnings) ? result.warnings : []).filter(Boolean).map(String);
+    const unchanged = result?.unchanged === true;
+    const note = unchanged
+      ? "该版本与当前配置相同，未做改动。"
+      : "配置已恢复；涉及系统集成的改动需重启 FlowHub 生效。";
+    if (status) status.textContent = [note, ...warnings].join(" ");
+    toast(unchanged ? "版本相同" : "配置已恢复");
+    if (!unchanged) {
+      const [config, configFile] = await Promise.all([window.weborg.getConfig(), window.weborg.getConfigPathInfo()]);
+      const loaded = clone(normalizeConfig(config));
+      Object.assign(state, { config: loaded, savedConfig: clone(loaded), configFile, dirty: false, jsonDirty: false });
+      render();
+      toast("已加载恢复后的配置；请重启 FlowHub 使系统集成生效");
+    }
+    await loadConfigHistory();
+  } catch (error) {
+    if (status) status.textContent = `恢复失败：${String(error?.message || error)}`;
+    toast(String(error?.message || error), true);
+  }
 }
 
 function renderClipboardStorage() {
@@ -1759,6 +1881,9 @@ function handleAction(action, actionTarget) {
   if (action === "choose-config-path") return chooseConfigPath();
   if (action === "open-config-path") return openConfigPath();
   if (action === "reset-config-path") return resetConfigPath();
+  if (action === "refresh-config-history") return loadConfigHistory();
+  if (action === "preview-config-history") return previewConfigHistory(actionTarget?.dataset.historyId);
+  if (action === "restore-config-history") return restoreConfigHistory(actionTarget?.dataset.historyId);
   if (action === "choose-clipboard-storage") return chooseClipboardStorage();
   if (action === "open-clipboard-storage") return openClipboardStorage();
   if (action === "reset-clipboard-storage") return resetClipboardStorage();
@@ -2183,6 +2308,7 @@ Promise.all([window.weborg.listPlugins(), window.weborg.getConfig(), window.webo
   state.plugins = plugins || [];
   state.clipboardStorage = clipboardStorage;
   state.configFile = configFile;
+  loadConfigHistory();
   state.appUpdate = appUpdate || state.appUpdate;
   state.diagnostics = diagnostics || state.diagnostics;
   state.menuBarManagement = menuBarManagement || state.menuBarManagement;

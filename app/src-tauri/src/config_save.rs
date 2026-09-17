@@ -444,6 +444,55 @@ impl IntegrationPlan {
     }
 }
 
+/// Replace the current config with a retained history entry.
+///
+/// The version being replaced is itself recorded first, so a restore can be
+/// undone from the same list. Callers must hold the `config_save` lock; the
+/// database is untouched, so a restored config that points at another storage
+/// location only takes effect after a restart.
+pub(super) fn restore_history(state: &AppState, id: &str) -> Result<Value, String> {
+    let bytes = crate::config_history::read(&state.root_dir, id)?;
+    let restored: Value =
+        serde_json::from_slice(&bytes).map_err(|error| format!("备份不是有效 JSON：{error}"))?;
+    if !restored.is_object() {
+        return Err("备份不是 JSON 对象，无法恢复".into());
+    }
+    let target = state.paths().config_path.clone();
+    let current = fs::read(&target).ok();
+    if current.as_deref() == Some(bytes.as_slice()) {
+        return Ok(json!({ "restored": id, "unchanged": true, "requiresRestart": false }));
+    }
+    let recorded = crate::config_history::record(&state.root_dir, current.as_deref())?;
+    atomic_bytes(&target, &bytes)?;
+    let restored_storage = crate::storage::configured_path(
+        &restored,
+        &["plugins", "clipboard", "settings", "storagePath"],
+    )
+    .unwrap_or_else(|| state.default_storage_dir.clone());
+    let storage_changed =
+        resolved_path(&restored_storage)? != resolved_path(&state.paths().storage_dir)?;
+    let config_path_changed = crate::storage::configured_path(&restored, &["core", "configPath"])
+        .is_some_and(|path| path != target);
+    let mut warnings = Vec::new();
+    if storage_changed {
+        warnings.push(json!("备份的剪贴板存储位置与当前不同，重启后才会切换"));
+    }
+    if config_path_changed {
+        warnings.push(json!("备份中的配置文件位置与当前不同，下次保存会移动配置文件"));
+    }
+    Ok(json!({
+        "restored": id,
+        "unchanged": false,
+        "path": target.to_string_lossy(),
+        "kept": match recorded {
+            crate::config_history::Recorded::Added { kept, .. } => json!(kept),
+            crate::config_history::Recorded::Skipped => json!(null),
+        },
+        "requiresRestart": true,
+        "warnings": warnings,
+    }))
+}
+
 // Durable success is independent of system integration. In particular, a
 // clipboard/menu error must not skip later integrations or the config broadcast.
 pub(super) fn saved_response(
@@ -998,6 +1047,60 @@ mod tests {
         .unwrap();
         assert!(storage.get("history").is_none(), "Noop 保存不应记录历史");
         assert_eq!(crate::config_history::list(&f.root).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn restoring_a_history_entry_replaces_the_config_and_keeps_the_replaced_one() {
+        let f = Fixture::new();
+        let before = f.state.paths();
+        let mut config = input(&f, &before.storage_dir, &before.config_path);
+        persist(
+            &f.state,
+            &mut config,
+            &[json!({ "id": "after" })],
+            &before.storage_dir,
+            &before.config_path,
+        )
+        .unwrap();
+        let entry = crate::config_history::list(&f.root).unwrap()[0].id.clone();
+        assert_eq!(hydrated_config(&f.state).unwrap()["version"], "after");
+
+        let restored = restore_history(&f.state, &entry).unwrap();
+        assert_eq!(restored["restored"], json!(entry));
+        assert_eq!(restored["unchanged"], json!(false));
+        assert_eq!(restored["requiresRestart"], json!(true));
+        assert_eq!(hydrated_config(&f.state).unwrap()["version"], "before");
+        // 被替换的 after 也进入历史，恢复本身因此可撤销。
+        let entries = crate::config_history::list(&f.root).unwrap();
+        assert_eq!(entries.len(), 2);
+        let newest: Value =
+            serde_json::from_slice(&crate::config_history::read(&f.root, &entries[0].id).unwrap())
+                .unwrap();
+        assert_eq!(newest["version"], "after");
+
+        // 再次恢复同一版本：内容相同，报告 unchanged 且不新增条目。
+        let again = restore_history(&f.state, &entry).unwrap();
+        assert_eq!(again["unchanged"], json!(true));
+        assert_eq!(crate::config_history::list(&f.root).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn restoring_rejects_bad_identifiers_and_non_object_backups() {
+        let f = Fixture::new();
+        let _ = seed(&f);
+        for bad in ["../outside", "", "abc", "2026/01"] {
+            assert!(restore_history(&f.state, bad).is_err(), "{bad} 应被拒绝");
+        }
+        let directory = crate::config_history::directory(&f.root);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("2026010100000.json"), b"[1,2]").unwrap();
+        let error = restore_history(&f.state, "2026010100000").unwrap_err();
+        assert!(error.contains("JSON 对象"), "{error}");
+        assert!(
+            restore_history(&f.state, "2099010100000").is_err(),
+            "不存在的条目应报错"
+        );
+        assert_eq!(hydrated_config(&f.state).unwrap()["version"], "before");
     }
 
     #[test]

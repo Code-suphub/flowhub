@@ -305,6 +305,14 @@
       .storage-path-row input { min-width: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
       .storage-actions { display: flex; flex-wrap: wrap; gap: 7px; }
       .storage-actions .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
+      .config-history-list { display: grid; gap: 6px; margin-top: 8px; }
+      .config-history-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; }
+      .config-history-meta { display: grid; gap: 2px; min-width: 0; }
+      .config-history-meta strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+      .config-history-meta small { color: #73766e; font-size: 11px; }
+      .config-history-actions { display: flex; gap: 6px; flex: none; }
+      .config-history-actions .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
+      .config-history-preview { max-height: 260px; overflow: auto; margin: 8px 0 0; }
       .memo-workspace { display: grid; grid-template-columns: minmax(230px, .75fr) minmax(0, 1.45fr); gap: 13px; align-items: start; }
       .memo-library, .memo-editor-card { border: 1px solid var(--line); border-radius: 14px; background: rgba(4, 13, 18, .28); overflow: hidden; }
       .memo-library-head { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--line); }
@@ -828,6 +836,16 @@
                     <div class="storage-actions"><button class="button" type="button" data-action="open-config-path">在 Finder 中显示</button><button class="button" type="button" data-action="reset-config-path">恢复默认</button></div>
                     <div class="field-hint" id="coreConfigPathHint">保存后切换到新的配置文件；原文件会保留。</div>
                   </div>
+                </div>
+                <div class="settings-block wide config-history-block hidden" data-core-section-panel="data">
+                  <div class="update-heading">
+                    <div class="update-title"><strong>配置历史</strong><code id="configHistoryCount">—</code></div>
+                    <button class="button" type="button" data-action="refresh-config-history">刷新</button>
+                  </div>
+                  <p class="update-copy">每次成功保存前都会保留上一版配置，最多 20 份；恢复前会再次备份当前配置。恢复后需重启 FlowHub，系统集成类改动才会生效。</p>
+                  <div class="config-history-list" id="configHistoryList"><div class="field-hint">正在读取…</div></div>
+                  <pre class="config-history-preview field-hint hidden" id="configHistoryPreview"></pre>
+                  <div class="field-hint" id="configHistoryStatus" role="status"></div>
                 </div>
                 <div class="settings-block wide hidden" data-core-section-panel="menubar">
                   <div class="update-heading">

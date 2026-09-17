@@ -258,6 +258,15 @@ if (!window.weborg) {
     async chooseConfigPath() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中选择配置文件位置" };
     },
+    async listConfigHistory() {
+      return { entries: [], limit: 0, directory: "", available: false };
+    },
+    async previewConfigHistory() {
+      throw new Error("浏览器预览不支持配置历史");
+    },
+    async restoreConfigHistory() {
+      throw new Error("浏览器预览不能修改配置");
+    },
     async openConfigPath() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },

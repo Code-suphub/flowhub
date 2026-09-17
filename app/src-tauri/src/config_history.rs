@@ -36,7 +36,7 @@ pub(crate) enum Recorded {
     Added { id: String, kept: usize },
 }
 
-fn directory(root: &Path) -> PathBuf {
+pub(crate) fn directory(root: &Path) -> PathBuf {
     root.join(DIRECTORY)
 }
 
