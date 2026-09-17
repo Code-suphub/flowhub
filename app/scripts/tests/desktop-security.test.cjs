@@ -15,7 +15,7 @@ assert(!directives['connect-src'].includes('https:'));
 assert(!security.csp.includes('*'));
 assert(!security.csp.includes('ws:'));
 for(const host of ['ipc:','http://ipc.localhost','https://dns.google','https://api4.ipify.org','https://6.ident.me']) assert(directives['connect-src'].includes(host));
-const source=fs.readFileSync(path.join(__dirname,'../../ui/tauri-adapter.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../../ui/shared/tauri-adapter.js'),'utf8');
 let call;
 const context=vm.createContext({invoke:async(name,args)=>{call={name,args};return {status:200}},fetch(){throw Error('must use IPC')}});
 vm.runInContext(source.slice(source.indexOf('  async function inspectCloudflare('),source.indexOf('  async function lookupProxy(')),context);

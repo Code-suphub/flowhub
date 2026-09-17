@@ -1,5 +1,5 @@
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../../ui/search.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../../ui/search/search.js'), 'utf8');
 let handler, focusCount = 0, selected = 0, prevented = 0;
 const q = { value: '已有关键词', focus: () => focusCount++, select: () => selected++ };
 const context = vm.createContext({

@@ -4,9 +4,9 @@ const { execFileSync } = require('node:child_process');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const { performance } = require('node:perf_hooks');
-const current = require('../../ui/web-search.js');
+const current = require('../../ui/search/web-search.js');
 const context = vm.createContext({ module: { exports: {} } });
-vm.runInContext(execFileSync('git', ['show', '588cdca772c71a0b5cf6e95d5bb262129ad632e0:app/ui/web-search.js'], { encoding: 'utf8' }), context);
+vm.runInContext(execFileSync('git', ['show', '588cdca772c71a0b5cf6e95d5bb262129ad632e0:app/ui/search/web-search.js'], { encoding: 'utf8' }), context);
 const baseline = context.module.exports;
 const pages = Array.from({ length: 10000 }, (_, id) => ({ id, title: `工具 GitHub ${id % 37} reference ${id}`,
   url: `https://example${id % 13}.test/docs/${id}`, note: `开发 reference 文档 ${id % 19}`,

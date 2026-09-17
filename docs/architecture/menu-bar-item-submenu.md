@@ -73,7 +73,7 @@ Computer Use 已从主按钮动作入口依次操作“菜单栏整理 → 逐�
 
 紧凑版 `0.1.5-local.20260906144848` 已构建并安装，签名验证通过，Computer Use 从设置页确认版本与草稿保留。安装前的应用移至 `/tmp/flowhub-compact-backup.Kf07qA/FlowHub.app`，可恢复。自动化未读取到状态栏菜单，需要用户实际切换一次以采集新增关闭时序日志；当前不能宣称已解决自动关闭。
 
-2026-09-06：`npm test` 的 16 项 Rust 测试和 JS 语法检查通过；额外 `node --check ui/menu-bar-panel.js`、`git diff --check` 通过。构建生成 `0.1.5-local.20260906143659`，本地开发证书签名和 `codesign --verify --deep --strict` 通过。
+2026-09-06：`npm test` 的 16 项 Rust 测试和 JS 语法检查通过；额外 `node --check ui/menu-bar/menu-bar-panel.js`、`git diff --check` 通过。构建生成 `0.1.5-local.20260906143659`，本地开发证书签名和 `codesign --verify --deep --strict` 通过。
 
 旧版本备份在 `/tmp/flowhub-submenu-backup.DZn5Lh/FlowHub.app`（另保留移动出的 `FlowHub-original.app`），新包已安装到 `/Applications/FlowHub.app` 并启动。Computer Use 在设置页读取到新版本号，启动日志确认主菜单创建成功、隐藏分区 enabled=true/collapsed=false。原设置草稿保留，未保存或重置草稿。
 

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require('node:path').join(__dirname,'../../ui/focus-diagnostics.js'),'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/focus-diagnostics.js'),'utf8');
 async function fixture(enabled,loopEnabled=true) {
   let now=100,focused=true,timer;
   const events={},samples=[],timers=[];

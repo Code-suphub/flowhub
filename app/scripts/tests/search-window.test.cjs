@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-global.window={}; require('../../ui/search-window.js');
+global.window={}; require('../../ui/search/search-window.js');
 const w=new window.FlowHubResultWindow();
 const items=Array.from({length:3000},(_,id)=>({id}));
 const key=x=>String(x.id);

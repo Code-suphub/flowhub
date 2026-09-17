@@ -1,5 +1,5 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
 const fn=source.slice(source.indexOf('async function refreshAllScopes()'),source.indexOf('function queueClipboardRefresh'));
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{

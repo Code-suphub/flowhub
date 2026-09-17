@@ -144,7 +144,7 @@ test('HTTP rejection arrives before an unfinished large request body', async () 
 
 
 test('preview adapters refuse settings and both clipboard copy implementations', async () => {
-  const adapterSource = await readFile(join(app, 'ui/browser-adapter.js'), 'utf8');
+  const adapterSource = await readFile(join(app, 'ui/shared/browser-adapter.js'), 'utf8');
   const context = vm.createContext({
     window: {}, location: { pathname: '/search.html' },
     document: { documentElement: { dataset: {} }, getElementById: () => null },
@@ -154,7 +154,7 @@ test('preview adapters refuse settings and both clipboard copy implementations',
   const result = await context.window.weborg.saveConfig(config);
   assert.equal(result.ok, false);
   assert.equal(result.readonly, true);
-  const searchSource = await readFile(join(app, 'ui/search.js'), 'utf8');
+  const searchSource = await readFile(join(app, 'ui/search/search.js'), 'utf8');
   const copySource = searchSource.slice(searchSource.indexOf('async function copyText('), searchSource.indexOf('function showActionStatus('));
   let writes = 0;
   for (const modern of [true, false]) {

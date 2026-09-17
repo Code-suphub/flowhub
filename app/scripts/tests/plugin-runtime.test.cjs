@@ -7,7 +7,7 @@ test('installed plugin pages are sandboxed and RPC is scoped to the selected fra
     calls.push(args);return {ok:true};
   }}}};
   const state={module:'core'};
-  vm.runInNewContext(fs.readFileSync('ui/plugin-entry.js','utf8'),{window,document:{querySelector:()=>frame},state,renderPluginModules(){},switchModule(m){state.module=m;},console});
+  vm.runInNewContext(fs.readFileSync('ui/plugin/plugin-entry.js','utf8'),{window,document:{querySelector:()=>frame},state,renderPluginModules(){},switchModule(m){state.module=m;},console});
   await new Promise(r=>setImmediate(r));
   const integration=window.FlowHubPluginIntegration;
   assert(integration.has('plugin:example'));assert(!integration.has('plugin:missing'));

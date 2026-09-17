@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FlowHub</title>
-    <link rel="stylesheet" href="browser-preview.css" />
+    <link rel="stylesheet" href="shared/browser-preview.css" />
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       :root {
@@ -189,7 +189,7 @@
       .foot { border-top: 1px solid rgba(157, 191, 205, .14); padding: 8px 14px; display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: #8098a6; background: rgba(7, 14, 20, .20); }
       .foot code { color: #c3d8df; background: rgba(7, 14, 20, .60); padding: 2px 6px; border: 1px solid rgba(157, 191, 205, .12); border-radius: 5px; }
     </style>
-    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="shared/theme.css" />
   </head>
   <body>
     <div class="shell">
@@ -225,21 +225,21 @@
         <span><span id="actionStatus" aria-live="polite"></span> <span id="runtimeMode">FlowHub</span></span>
       </div>
     </div>
-    <script src="web-search.js"></script>
-    <script src="memo-catalog.js"></script>
-    <script src="public-ip.js"></script>
-    <script src="tauri-adapter.js"></script>
-    <script src="browser-adapter.js"></script>
-    <script src="icons.js"></script>
-    <script src="search-window.js"></script>
-    <script src="tool-registry.js"></script>
-    <script src="port-tool.js"></script>
-    <script src="local-ip-tool.js"></script>
-    <script src="network-tools.js"></script>
-    <script src="json-tool.js"></script>
-    <script src="url-tool.js"></script>
-    <script src="search-timing.js"></script>
-    <script src="focus-diagnostics.js"></script>
-    <script src="search.js"></script>
+    <script src="search/web-search.js"></script>
+    <script src="search/memo-catalog.js"></script>
+    <script src="search/public-ip.js"></script>
+    <script src="shared/tauri-adapter.js"></script>
+    <script src="shared/browser-adapter.js"></script>
+    <script src="shared/icons.js"></script>
+    <script src="search/search-window.js"></script>
+    <script src="search/tool-registry.js"></script>
+    <script src="search/port-tool.js"></script>
+    <script src="search/local-ip-tool.js"></script>
+    <script src="search/network-tools.js"></script>
+    <script src="search/json-tool.js"></script>
+    <script src="search/url-tool.js"></script>
+    <script src="search/search-timing.js"></script>
+    <script src="search/focus-diagnostics.js"></script>
+    <script src="search/search.js"></script>
   </body>
 </html>

@@ -1,6 +1,6 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 const window={FlowHubTools:{register(t){window.tool=t;}}};
-vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../../ui/json-tool.js'),'utf8'),{window});
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/json-tool.js'),'utf8'),{window});
 const format=window.FlowHubJson.format;
 assert.equal(format('{"a":[1,{},[]],"b":true}').pretty,'{\n  "a": [\n    1,\n    {},\n    []\n  ],\n  "b": true\n}');
 const raw='{"n":9007199254740993,"e":1e400,"z":-0,"n":2,"s":"a  b, {} \\" \\n <script>"}';

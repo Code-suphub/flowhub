@@ -1,5 +1,5 @@
 // Disposable read-only UI fixture. Never connects to FlowHub's config/database.
-// Run: node scripts/web-search-preview.cjs, then open the printed URL.
+// Run: node scripts/dev/web-search-preview.cjs, then open the printed URL.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');

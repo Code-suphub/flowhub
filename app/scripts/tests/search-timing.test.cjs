@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 let time = 0, frames = [];
 const window = {};
-vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../../ui/search-timing.js'), 'utf8'), {
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../../ui/search/search-timing.js'), 'utf8'), {
  window, performance: { now: () => time }, requestAnimationFrame: cb => frames.push(cb)
 });
 (async () => {

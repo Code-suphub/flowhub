@@ -1,5 +1,5 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
 const slice=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b));
 (async()=>{
  for(const id of ['clipboard','web','memo']) {

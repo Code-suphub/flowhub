@@ -5,7 +5,7 @@ const fs=require('node:fs');
 function setup(){
   const listeners=new Set(),messages=[];let serial=0;
   const window={addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)};
-  vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../../ui/widget-frame.js'),'utf8'),{window,URL,URLSearchParams,location:{href:'https://host/'},crypto:{randomUUID:()=>String(++serial)},setTimeout,clearTimeout});
+  vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../../ui/plugin/widget-frame.js'),'utf8'),{window,URL,URLSearchParams,location:{href:'https://host/'},crypto:{randomUUID:()=>String(++serial)},setTimeout,clearTimeout});
   const frame={isConnected:true,contentWindow:{postMessage:m=>messages.push(m)},setAttribute(k,v){this[k]=v;}};
   return {frame,messages,mount:options=>window.FlowHubWidgetFrame.mount(frame,{url:'https://plugin/card.html',context:{},...options}),async emit(data,source=frame.contentWindow){await Promise.all([...listeners].map(fn=>fn({source,data})));},token:()=>new URL(frame.src).hash.split('=')[1]};
 }

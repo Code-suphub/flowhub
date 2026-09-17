@@ -1,6 +1,6 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 const window={FlowHubTools:{register(t){window.tool=t;}}};
-vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../../ui/url-tool.js'),'utf8'),{window,URL});
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/url-tool.js'),'utf8'),{window,URL});
 const parse=window.FlowHubUrl.parse;
 const url='https://example.com:9000/a%20b?x=1&x=2&q=a+b#%E4%B8%AD';
 const value=parse(url);

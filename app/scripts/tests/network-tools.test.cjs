@@ -1,6 +1,6 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 const context=vm.createContext({window:{},URL});
-for(const file of ['tool-registry.js','network-tools.js'])vm.runInContext(fs.readFileSync(`${__dirname}/../../ui/${file}`,'utf8'),context);
+for(const file of ['search/tool-registry.js','search/network-tools.js'])vm.runInContext(fs.readFileSync(`${__dirname}/../../ui/${file}`,'utf8'),context);
 const {parse,command}=context.window.FlowHubNetworkTools;
 assert.equal(parse('ping example.com').kind,'ping');assert.equal(parse('curl -I https://example.com').head,true);
 for(const q of ['curl -i https://example.com','ping -c 100','ping host;whoami','curl file:///etc/passwd','curl https://user:pass@example.com','curl -X POST https://example.com'])assert.equal(parse(q),null);

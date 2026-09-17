@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/plugin-canvas.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/plugin/plugin-canvas.js'),'utf8');
 const fn=source.slice(source.indexOf('  function minimum('),source.indexOf('  function render('));
 test('plugin minimum sizing preserves generic defaults and bounds manifest input',()=>{
  const ctx=vm.createContext({sources:[{id:'machine',widget:{minWidth:220,minHeight:150}},{id:'docker',widget:{interactive:true}},{id:'bad',widget:{minWidth:99999,minHeight:-1}}]});vm.runInContext(fn,ctx);

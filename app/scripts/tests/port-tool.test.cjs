@@ -1,6 +1,6 @@
 const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const ctx=vm.createContext({window:{},setTimeout,clearTimeout,Promise,JSON});
-for(const file of ['tool-registry.js','port-tool.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../../ui',file),'utf8'),ctx);
+for(const file of ['search/tool-registry.js','search/port-tool.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../../ui',file),'utf8'),ctx);
 const {parse,commands}=ctx.window.FlowHubPortCommands;
 assert.equal(parse('port 9000'),9000);assert.equal(parse('端口 65535'),65535);
 for(const q of ['port 0','port 65536','port 9000; kill 1','port -1','port 90xx'])assert.equal(parse(q),null);

@@ -1,5 +1,5 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const s=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search.js'),'utf8');
+const s=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
 let top=120,events=[];
 const resultsEl={get scrollTop(){return top},set scrollTop(v){top=v;events.push('scroll')},set innerHTML(v){events.push('dom')}};
 const ctx=vm.createContext({window:{},state:{config:{},scope:'clipboard',clipboardLoading:false,clipboardHasMore:false},resultsEl,matches:()=>[{}],renderResults:()=>'<div>row</div>',lastResultsHtml:'',windowedResults:false,esc:s=>s.replaceAll('&','&amp;').replaceAll('<','&lt;')});

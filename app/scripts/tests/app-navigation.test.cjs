@@ -1,5 +1,5 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
 const cut=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end));
 async function main(){
   const q={focus(){},select(){}},state={scope:'app',index:0,usageColumn:0};

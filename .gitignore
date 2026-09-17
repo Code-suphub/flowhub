@@ -11,3 +11,5 @@ app/src-tauri/target/
 *.sqlite3
 *.bak
 weborg-*-check.png
+__pycache__/
+*.pyc

@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../../ui/settings.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../../ui/settings/settings.js'), 'utf8');
 const clone = value => JSON.parse(JSON.stringify(value));
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => {resolve=a; reject=b}); return {promise,resolve,reject}; };
 const draftKey = (file, storage = 'default') => `flowhub:settings-draft:v2:${JSON.stringify([file, storage])}`;

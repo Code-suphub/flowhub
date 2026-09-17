@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FlowHub 配置管理</title>
-    <link rel="stylesheet" href="browser-preview.css" />
+    <link rel="stylesheet" href="shared/browser-preview.css" />
     <style>
       :root {
         --ink: #eef5f4;
@@ -676,8 +676,8 @@
         .core-settings-card [data-core-section-panel].wide { grid-column: 1 / -1; }
       }
     </style>
-    <link rel="stylesheet" href="theme.css" />
-    <link rel="stylesheet" href="settings-appearance.css" />
+    <link rel="stylesheet" href="shared/theme.css" />
+    <link rel="stylesheet" href="settings/settings-appearance.css" />
   </head>
   <body>
     <div class="app">
@@ -1073,16 +1073,16 @@
       </footer>
     </div>
     <div class="toast" id="toast"><span class="toast-message" id="toastMessage" role="status" aria-live="polite" aria-atomic="true"></span><button class="toast-close" id="toastClose" type="button" aria-label="关闭提示">×</button></div>
-    <script src="web-search.js"></script>
-    <script src="memo-catalog.js"></script>
-    <script src="public-ip.js"></script>
-    <script src="tauri-adapter.js"></script>
-    <script src="browser-adapter.js"></script>
-    <script src="icons.js"></script>
-    <script src="ui-performance.js"></script>
-    <script src="collection-layout.js"></script>
-    <script src="settings.js"></script>
-    <script src="plugin-entry.js"></script>
-    <link rel="stylesheet" href="plugin-integration.css">
+    <script src="search/web-search.js"></script>
+    <script src="search/memo-catalog.js"></script>
+    <script src="search/public-ip.js"></script>
+    <script src="shared/tauri-adapter.js"></script>
+    <script src="shared/browser-adapter.js"></script>
+    <script src="shared/icons.js"></script>
+    <script src="shared/ui-performance.js"></script>
+    <script src="settings/collection-layout.js"></script>
+    <script src="settings/settings.js"></script>
+    <script src="plugin/plugin-entry.js"></script>
+    <link rel="stylesheet" href="plugin/plugin-integration.css">
   </body>
 </html>

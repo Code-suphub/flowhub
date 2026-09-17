@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const { test } = require('node:test');
-const search = require('../../ui/web-search.js');
+const search = require('../../ui/search/web-search.js');
 const ids = rows => Array.from(rows, row => row.id);
 
 test('ranking tiers, stable ties, mixed scripts, directory boundaries and pagination', () => {
@@ -63,7 +63,7 @@ function adapter(runtime, initial, deferred) {
   const context = vm.createContext({ window, document: { documentElement: { dataset: {} }, getElementById: () => null },
     location: { pathname: '/search.html' }, console,
     fetch: async url => ({ ok: true, json: async () => url === '/plugins.json' ? [{ id: 'web' }, { id: 'app' }] : config }) });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, `../../ui/${runtime}-adapter.js`), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../../ui/shared', `${runtime}-adapter.js`), 'utf8'), context);
   return { api: window.weborg, events };
 }
 const config = (directory, title = 'Alpha', enabled = true) => ({ plugins: { web: { enabled, settings: { items: [

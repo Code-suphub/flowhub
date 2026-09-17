@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../../ui/search.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../../ui/search/search.js'), 'utf8');
 const state = { scope: 'all', query: 'flow', config: {} };
 const ctx = vm.createContext({
   state, pluginEnabled: () => true,
@@ -48,7 +48,7 @@ state.usageSections = {};
 assert.deepEqual(types(), ['clipboard', 'app', 'page', 'memo']);
 assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:['web','web','unknown']}})), ['web','app','clipboard','memo']);
 assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:'invalid'}})), ['app','web','clipboard','memo']);
-const settings = fs.readFileSync(require('node:path').join(__dirname, '../../ui/settings.js'), 'utf8');
+const settings = fs.readFileSync(require('node:path').join(__dirname, '../../ui/settings/settings.js'), 'utf8');
 const settingsContext = vm.createContext({});
 vm.runInContext(settings.slice(settings.indexOf('function configuredSearchOrder('), settings.indexOf('function renderSearchResultOrder(')), settingsContext);
 for (const config of [{}, state.config, {core:{webBeforeClipboard:false}}, {core:{searchResultOrder:['web','web','bad']}}]) {

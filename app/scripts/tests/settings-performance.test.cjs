@@ -1,5 +1,5 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname, '../../ui/settings.js'),'utf8');
+const source=fs.readFileSync(require('node:path').join(__dirname, '../../ui/settings/settings.js'),'utf8');
 const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
 let scan=0,fields=0,modules=0,navigation=0;let resolveTrust;
 const state={module:'core',coreSection:'general',config:{core:{menuBar:{organizerEnabled:true}}}};
