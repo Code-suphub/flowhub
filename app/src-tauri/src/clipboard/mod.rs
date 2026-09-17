@@ -1243,6 +1243,59 @@ pub fn edit_clipboard(
     Ok(result)
 }
 
+// 临时暂停叠加在配置策略之上，不改配置文件、不重启监控；恢复时回到配置本身的
+// 状态，并把基线刷新到当前剪贴板版本，暂停期间复制的内容不会在恢复后被补采。
+fn apply_temporary_pause(
+    gate: &mut crate::clipboard::privacy::Gate,
+    base: crate::clipboard::privacy::Policy,
+    temporary: bool,
+    revision: Option<isize>,
+) -> bool {
+    let mut policy = base;
+    policy.paused = policy.paused || temporary;
+    let effective = policy.paused;
+    gate.replace(policy, revision);
+    effective
+}
+
+pub fn set_temporary_paused(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    paused: bool,
+) -> Result<Value, String> {
+    let config = crate::storage::hydrated_config(state)?;
+    let base = crate::clipboard::privacy::Policy::from_config(&config);
+    let runtime = app.state::<ClipboardRuntime>();
+    let mut gate = runtime.privacy.lock().map_err(|error| error.to_string())?;
+    let effective = apply_temporary_pause(&mut gate, base, paused, clipboard_revision());
+    Ok(json!({ "paused": effective }))
+}
+
+pub fn capture_state(app: &tauri::AppHandle, state: &AppState) -> Result<Value, String> {
+    let config = crate::storage::hydrated_config(state)?;
+    let enabled = config
+        .pointer("/plugins/clipboard/enabled")
+        .and_then(Value::as_bool)
+        != Some(false);
+    let base = crate::clipboard::privacy::Policy::from_config(&config);
+    let runtime = app.state::<ClipboardRuntime>();
+    let paused = runtime
+        .privacy
+        .lock()
+        .map_err(|error| error.to_string())?
+        .policy
+        .paused;
+    Ok(json!({
+        "enabled": enabled,
+        "paused": paused,
+        "temporaryPaused": paused && !base.paused,
+        "configuredPaused": base.paused,
+        "excludedApps": base.excluded_apps,
+        "blockedByExclusions": !base.excluded_apps.is_empty(),
+        "protectSensitive": base.protect_sensitive,
+    }))
+}
+
 // Maintenance is checked before every queued job as well as on idle timeout,
 // so a continuously nonempty queue cannot starve it. Disconnect wakes immediately.
 fn scheduled_receive<T>(
@@ -1894,6 +1947,66 @@ mod record_tests {
         assert_eq!(
             edited_copy(&f.state, 9999, "x").unwrap()["reason"],
             json!("只有文本记录可以编辑副本")
+        );
+    }
+
+    #[test]
+    fn temporary_pause_stacks_on_config_and_writes_nothing_after_resume_baseline() {
+        let mut gate = crate::clipboard::privacy::Gate::new();
+        let base = crate::clipboard::privacy::Policy::from_config(&json!({}));
+        // 临时暂停：立即阻止采集，并把基线刷到当前版本。
+        assert_eq!(apply_temporary_pause(&mut gate, base.clone(), true, Some(7)), true);
+        assert!(!gate.policy.permits_capture());
+        assert!(!gate.permits_revision(Some(7)));
+        assert!(!gate.permits_revision(Some(8)), "暂停期间的新版本也不会被补采");
+        // 恢复：回到配置本身的允许状态，暂停期间复制的版本不会在恢复后被采集。
+        assert_eq!(apply_temporary_pause(&mut gate, base.clone(), false, Some(9)), false);
+        assert!(gate.policy.permits_capture());
+        assert!(!gate.permits_revision(Some(9)), "恢复时以当时的剪贴板版本为新基线");
+        assert!(gate.permits_revision(Some(10)));
+
+        // 配置里已经暂停时，临时恢复不会解除。
+        let paused = crate::clipboard::privacy::Policy::from_config(&json!({
+            "plugins": { "clipboard": { "settings": { "capturePaused": true } } }
+        }));
+        assert_eq!(apply_temporary_pause(&mut gate, paused, false, Some(11)), true);
+        assert!(!gate.policy.permits_capture());
+    }
+
+    #[test]
+    fn blocked_capture_writes_no_row_and_no_thumbnail() {
+        let f = Fixture::new();
+        let privacy = Arc::new(Mutex::new(crate::clipboard::privacy::Gate::new()));
+        for config in [
+            json!({"plugins": {"clipboard": {"settings": {"capturePaused": true}}}}),
+            json!({"plugins": {"clipboard": {"settings": {"excludedApps": ["com.example.app"]}}}}),
+            json!({"plugins": {"clipboard": {"enabled": false}}}),
+        ] {
+            let mut gate = privacy.lock().unwrap();
+            gate.replace(crate::clipboard::privacy::Policy::from_config(&config), Some(1));
+            let generation = gate.generation;
+            drop(gate);
+            let hash = sha256(config.to_string().as_bytes());
+            let wrote = with_authorized_job(&privacy, generation, || {
+                add_image(&f.state, b"png", &hash, "2026-09-09T00:00:00Z").unwrap();
+            });
+            assert!(wrote.is_none(), "被阻止的采集不执行写入");
+            let count: i64 = database(&f.state)
+                .unwrap()
+                .query_row("SELECT count(*) FROM clipboard_records", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(count, 0, "数据库里没有记录");
+            assert!(!f.state.paths().storage_dir.join("images").join(format!("{hash}.png")).exists(), "没有缩略图文件");
+        }
+        // 允许采集时同一路径会真的写入。
+        let mut gate = privacy.lock().unwrap();
+        gate.replace(crate::clipboard::privacy::Policy::from_config(&json!({})), Some(2));
+        let generation = gate.generation;
+        drop(gate);
+        assert!(with_authorized_job(&privacy, generation, || add_image(&f.state, b"png", &sha256(b"allowed"), "now").unwrap()).is_some());
+        assert_eq!(
+            database(&f.state).unwrap().query_row("SELECT count(*) FROM clipboard_records", [], |row| row.get::<_, i64>(0)).unwrap(),
+            1
         );
     }
 

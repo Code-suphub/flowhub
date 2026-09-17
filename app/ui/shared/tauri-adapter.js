@@ -258,6 +258,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     chooseConfigPath: () => invoke("choose_config_path"),
     openConfigPath: () => invoke("open_config_path"),
     getClipboardStorageInfo: () => invoke("get_storage_info"),
+    getClipboardCaptureState: () => invoke("get_clipboard_capture_state"),
+    setClipboardTemporaryPause: (paused) => invoke("set_clipboard_temporary_pause", { paused: paused === true }),
     chooseClipboardStorage: () => invoke("choose_storage_path"),
     openClipboardStorage: () => invoke("open_storage_path"),
     logUpdateEvent: (event, details = {}) => invoke("log_update_event", { event, details }),

@@ -733,6 +733,24 @@ fn set_launcher_pinned(pinned: bool) -> bool {
 }
 
 #[tauri::command]
+fn get_clipboard_capture_state(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    clipboard::capture_state(&app, &state)
+}
+
+#[tauri::command]
+fn set_clipboard_temporary_pause(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    paused: bool,
+) -> Result<Value, String> {
+    let result = clipboard::set_temporary_paused(&app, &state, paused)?;
+    Ok(json!({ "ok": true, "paused": result["paused"] }))
+}
+
+#[tauri::command]
 fn hide_main_window(app: tauri::AppHandle) -> Result<Value, String> {
     hide_main(&app);
     Ok(json!({ "ok": true }))
@@ -1646,6 +1664,8 @@ pub fn run() {
             clipboard::pin_clipboard,
             clipboard::paste_clipboard_text,
             clipboard::edit_clipboard,
+            get_clipboard_capture_state,
+            set_clipboard_temporary_pause,
             crate::network::cloudflare::inspect_cloudflare,
             updater::log_update_event,
             updater::get_update_state,
