@@ -9,7 +9,7 @@ FlowHub 是一个 macOS 本地启动器，提供应用、网页目录、剪贴�
 - `app/`：Tauri 桌面应用（宿主）。`app/ui/` 页面与浏览器预览适配层、`app/src-tauri/` macOS 原生能力、`app/scripts/` 构建与本地迭代脚本。
 - `extension/`：Chrome 扩展（side panel、popup、new tab 与页面内浮窗）。
 - `legacy/`：已冻结的旧 Web 管理台 `server.mjs` + `index.html` 及其测试，只支持 schema 1 目录。
-- `docs/`：`architecture/` 现行架构、`investigations/` 带日期的排查与性能记录、`tasks/` 任务清单、`releases/` 版本说明。
+- `docs/`：`architecture/` 现行架构（按主题分组）与 `tasks/` 任务清单。一次性排查、性能测量与版本说明不入库，记录留在提交信息与 git 历史中。
 - `.github/workflows/`：GitHub Actions 正式构建与发布。
 - `config.json`：本地配置示例，legacy server 与浏览器预览的数据来源。
 

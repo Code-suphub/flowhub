@@ -3,9 +3,9 @@
 | 目录 | 内容 |
 | --- | --- |
 | [`architecture/`](./architecture) | 当前生效的架构、协议与工具行为说明，按主题分组 |
-| [`investigations/`](./investigations) | 带日期的一次性排查、压测与性能基准记录，按主题分组 |
 | [`tasks/`](./tasks) | 进行中的改进清单与推进顺序 |
-| [`releases/`](./releases) | 历史版本说明 |
+
+一次性排查、性能测量与版本说明不再入库：结论已经落到代码与提交信息里，需要原始数据时从 git 历史取回。
 
 ## 架构文档
 
@@ -45,12 +45,9 @@
 - [自动更新检查](./architecture/automatic-update-checks.md)
 - [旧 Web 服务访问边界](./architecture/legacy/legacy-web-security.md)
 
-## 历史记录
-
-- [机器管理实现记录](./investigations/machines-implementation.md)：宿主内置实现的历史说明，机器业务现已迁入 flowhub-plugins。
-
 ## 放文档的规则
 
 - 描述**当前行为**的放 `architecture/<主题>/`；新增主题时建同级目录，不要平铺回 `architecture/` 根。
-- 一次性排查、压测与性能测量放 `investigations/<主题>/`，并保留带日期的原始文件名（`.json` 与同名 `.md` 成对存放）。
-- 已完成、被取代或迁出本仓库的实现说明放 `investigations/`，不要再放进 `architecture/`。
+- 进行中的改进清单放 `tasks/`。
+- 一次性排查、压测与性能测量**不入库**：结论写进提交信息，需要长期保留的结论提炼进 `architecture/`。
+- 已完成、被取代或已迁出本仓库的实现说明不再单独建文档，随对应代码一起删除。

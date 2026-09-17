@@ -10,10 +10,8 @@ web_organization/
   extension/        Chrome 扩展：side panel、popup、new tab、页面内浮窗
   legacy/           旧 Web 管理台：index.html + 本机 server.mjs（只支持 schema 1 目录）
   docs/
-    architecture/   当前架构与协议说明
-    investigations/ 带日期的一次性排查与性能记录
+    architecture/   当前架构与协议说明（按主题分组）
     tasks/          进行中的任务清单
-    releases/       历史版本说明
   config.json       配置示例，legacy server 与浏览器预览共用
   start.command     双击启动 legacy 本机管理台
 ```
