@@ -279,12 +279,6 @@ if (!window.weborg) {
     async openConfigPath() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },
-    async getClipboardCaptureState() {
-      return { enabled: false, paused: false, available: false, preview: true, excludedApps: [], blockedByExclusions: false };
-    },
-    async setClipboardTemporaryPause() {
-      throw new Error("浏览器预览不能暂停剪贴板记录");
-    },
     async getClipboardStorageInfo() {
       try {
         const response = await fetch("/__weborg/clipboard/storage", { cache: "no-store" });

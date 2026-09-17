@@ -35,8 +35,7 @@
 ## 隐私：暂停与按来源排除
 
 - **持久暂停**：设置页剪贴板面板的「暂停采集」（`plugins.clipboard.settings.capturePaused`）保存后生效；剪贴板插件关闭（`enabled: false`）等同于暂停。暂停期间不写入记录，也不会重放恢复基线之前的剪贴板版本。
-- **临时暂停**：搜索窗口底部的「暂停记录」按钮调用 `set_clipboard_temporary_pause`，只在本次运行内叠加在配置策略之上，不改配置文件、不重启监控，并立即把基线刷到当前剪贴板版本——暂停期间复制的内容不会在恢复后被补采。按钮与状态文字会区分「本次运行暂停」「已在设置中暂停」「剪贴板已停用」。
-- **按来源排除**：macOS 没有可信的剪贴板写入方身份（前台应用与 `org.nspasteboard.source` 都不构成证据）。因此 `excludedApps` 非空时后端保守地**阻止全部采集**，不会按猜测放行；配置里存在旧排除名单时，设置页会说明原因并提供「清空旧列表并保存」。搜索窗口的按钮此时显示「记录已阻止」且不可点击，临时暂停无法绕过。
+- **按来源排除**：macOS 没有可信的剪贴板写入方身份（前台应用与 `org.nspasteboard.source` 都不构成证据）。因此 `excludedApps` 非空时后端保守地**阻止全部采集**，不会按猜测放行；配置里存在旧排除名单时，设置页会说明原因并提供「清空旧列表并保存」。
 - **敏感格式**：`protectSensitive`（默认开）会跳过剪贴板中的密码管理器／临时标记格式（`org.nspasteboard.ConcealedType` 等），与暂停互相独立。
 
 ## 验证
@@ -45,8 +44,7 @@
 cargo test --manifest-path app/src-tauri/Cargo.toml clipboard:: --lib
 cargo test --manifest-path app/src-tauri/Cargo.toml storage::tests::existing_databases --lib
 node app/scripts/tests/clipboard-actions.test.cjs
-node app/scripts/tests/clipboard-pause.test.cjs
 node app/scripts/tests/search-focus.test.cjs
 ```
 
-Rust 测试覆盖置顶排序与三类清理豁免、编辑副本保留原件、纯文本取文本规则、旧库补列不丢数据、临时暂停与恢复基线，以及被阻止的采集既不写数据库也不生成缩略图文件；JS 测试覆盖按钮与快捷键、只读与参数守卫、编辑态键盘、暂停入口的状态与提示。真实剪贴板写入、系统粘贴、图片/文件记录的行为以及真实 WKWebView 仍未人工验收。
+Rust 测试覆盖置顶排序与三类清理豁免、编辑副本保留原件、纯文本取文本规则、旧库补列不丢数据、启动时补齐老库结构，以及被暂停或被排除名单阻止的采集既不写数据库也不生成缩略图文件；JS 测试覆盖按钮与快捷键、只读与参数守卫、编辑态键盘。真实剪贴板写入、系统粘贴、图片/文件记录的行为以及真实 WKWebView 仍未人工验收。

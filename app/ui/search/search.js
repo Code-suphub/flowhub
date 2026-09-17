@@ -2342,74 +2342,12 @@ async function initialize() {
   state.usageLoadedScope = "all";
   initialized = true;
   render();
-  void loadClipboardCaptureState();
   deferUncachedWebIcons(320);
   focusSearch();
 }
 
 void initialize();
 
-
-// 临时暂停只在本次运行内生效：配置文件里的 capturePaused 才是持久开关。
-// 按应用排除名单非空时后端会阻止全部采集，这里只显示状态并引导去设置里清空。
-let clipboardCaptureState = null;
-function renderClipboardPauseState(value) {
-  clipboardCaptureState = value || null;
-  const button = document.getElementById("clipboardPauseBtn");
-  const label = document.getElementById("clipboardPauseState");
-  const details = value || {};
-  const enabled = details.enabled === true;
-  const blocked = details.blockedByExclusions === true;
-  const paused = details.paused === true;
-  const configured = details.configuredPaused === true;
-  // 后端会给出 temporaryPaused；这里兜底：暂停但不是配置里的暂停就是本次运行的临时暂停。
-  const temporary = details.temporaryPaused === undefined ? paused && !configured : details.temporaryPaused === true;
-  if (button) {
-    button.hidden = !enabled;
-    button.disabled = blocked;
-    button.textContent = blocked ? "记录已阻止" : paused ? "恢复记录" : "暂停记录";
-    button.setAttribute("aria-pressed", String(paused));
-    const title = blocked
-      ? "配置里有按应用排除名单；来源无法识别时会阻止全部采集，请在设置中清空旧列表"
-      : configured
-        ? "配置文件里已暂停采集；这里是本次运行的临时暂停"
-        : paused ? "剪贴板记录已临时暂停（本次运行），点击恢复" : "临时暂停剪贴板记录（本次运行），不改配置文件";
-    button.title = title;
-    button.dataset.tooltip = title;
-  }
-  if (label) {
-    label.textContent = details.preview === true ? ""
-      : !enabled ? "剪贴板已停用"
-      : blocked ? "已阻止采集（排除名单）"
-      : temporary ? "已暂停记录（本次运行）"
-      : configured ? "已在设置中暂停采集"
-      : "";
-  }
-}
-
-async function loadClipboardCaptureState() {
-  if (typeof window.weborg?.getClipboardCaptureState !== "function") { renderClipboardPauseState(null); return; }
-  try { renderClipboardPauseState(await window.weborg.getClipboardCaptureState()); }
-  catch { renderClipboardPauseState(null); }
-}
-
-const clipboardPauseBtn = document.getElementById("clipboardPauseBtn");
-if (clipboardPauseBtn && typeof window.weborg?.setClipboardTemporaryPause !== "function") {
-  clipboardPauseBtn.hidden = true;
-} else if (clipboardPauseBtn) {
-  clipboardPauseBtn.addEventListener("click", async () => {
-    clipboardPauseBtn.disabled = true;
-    try {
-      const result = await window.weborg.setClipboardTemporaryPause(clipboardCaptureState?.paused !== true);
-      renderClipboardPauseState({ ...(clipboardCaptureState || {}), ...result, paused: result?.paused === true });
-      showActionStatus(result?.paused ? "已临时暂停剪贴板记录（本次运行）" : "已恢复剪贴板记录");
-    } catch (error) {
-      showActionStatus(`暂停失败：${error?.message || error}`);
-    } finally {
-      clipboardPauseBtn.disabled = false;
-    }
-  });
-}
 
 // Pinning applies for this app session; explicit Escape/open actions still close it.
 let launcherPinned = false;

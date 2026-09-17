@@ -205,12 +205,6 @@
       .memo-description { display: block; color: #708594; }
       .r-kind.memo { color: #dba66e; border-color: rgba(219, 166, 110, .28); }
       .foot { border-top: 1px solid rgba(157, 191, 205, .14); padding: 8px 14px; display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: #8098a6; background: rgba(7, 14, 20, .20); }
-      .foot-status { display: flex; align-items: center; gap: 8px; }
-      .foot-state { color: #e0b070; }
-      .foot-button { padding: 3px 8px; border: 1px solid rgba(157, 191, 205, .24); border-radius: 6px; color: #b9ccd6; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
-      .foot-button:hover, .foot-button:focus-visible { color: #eaf4f8; border-color: rgba(157, 191, 205, .5); outline: none; }
-      .foot-button[aria-pressed="true"] { color: #f0c07a; border-color: rgba(226, 151, 77, .55); }
-      .foot-button:disabled { opacity: .55; cursor: default; }
       .foot code, .foot kbd { color: #c3d8df; background: rgba(7, 14, 20, .60); padding: 2px 6px; border: 1px solid rgba(157, 191, 205, .12); border-radius: 5px; font: 10px/1 var(--mono); }
     </style>
     <link rel="stylesheet" href="shared/theme.css" />
@@ -246,7 +240,7 @@
       <div id="results"></div>
       <div class="foot">
         <span id="keyboardHint">↑↓ 选择结果 · <kbd>⏎</kbd> 打开 · <kbd>F6</kbd> 操作按钮 · <kbd>Tab</kbd> 范围 · <kbd>⌘K</kbd> 回到搜索框</span>
-        <span class="foot-status"><span id="clipboardPauseState" class="foot-state" role="status"></span><button id="clipboardPauseBtn" class="foot-button" type="button" aria-pressed="false" hidden>暂停记录</button><span id="actionStatus" aria-live="polite"></span> <span id="runtimeMode">FlowHub</span></span>
+        <span><span id="actionStatus" aria-live="polite"></span> <span id="runtimeMode">FlowHub</span></span>
       </div>
     </div>
     <script src="search/web-search.js"></script>
