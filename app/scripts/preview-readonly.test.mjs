@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -26,6 +26,7 @@ await mkdir(storage, { recursive: true });
 await mkdir(fixtureApp);
 await symlink(join(app, 'node_modules'), join(fixtureApp, 'node_modules'), 'dir');
 await copyFile(join(app, 'vite.config.mjs'), join(fixtureApp, 'vite.config.mjs'));
+await cp(join(app, 'dev'), join(fixtureApp, 'dev'), { recursive: true });
 const configPath = join(support, 'custom-config.json');
 const locatorPath = join(support, 'config-location.json');
 const databasePath = join(storage, 'weborg.db');
