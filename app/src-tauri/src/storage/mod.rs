@@ -335,6 +335,7 @@ pub(crate) fn initialize_schema(connection: &Connection) -> Result<(), String> {
               created_at TEXT NOT NULL,
               last_seen_at TEXT NOT NULL,
               copy_count INTEGER NOT NULL DEFAULT 1,
+              pinned_at TEXT,
               UNIQUE(kind, hash)
             );
             CREATE INDEX IF NOT EXISTS clipboard_records_recent ON clipboard_records(last_seen_at DESC);
@@ -352,7 +353,27 @@ pub(crate) fn initialize_schema(connection: &Connection) -> Result<(), String> {
             CREATE TABLE IF NOT EXISTS web_catalog_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             ",
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    ensure_columns(connection)
+}
+
+// 旧库在 `validate_existing_storage` 里按固定列集合校验，新增列不能靠改 CREATE TABLE
+// 生效，只能在这里补齐；已存在的列不做任何改动。
+fn ensure_columns(connection: &Connection) -> Result<(), String> {
+    let mut statement = connection
+        .prepare("PRAGMA table_info(clipboard_records)")
+        .map_err(|error| error.to_string())?;
+    let existing = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    if !existing.iter().any(|name| name == "pinned_at") {
+        connection
+            .execute("ALTER TABLE clipboard_records ADD COLUMN pinned_at TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub(crate) fn catalog_count(connection: &Connection) -> Result<i64, String> {

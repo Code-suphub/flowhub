@@ -770,7 +770,7 @@ fn search_clipboard_records(
     let mut statement = connection
         .prepare(
             "SELECT id, kind, hash, content, file_name, source_name, file_paths, file_types,
-                    size, created_at, last_seen_at, copy_count
+                    size, created_at, last_seen_at, copy_count, pinned_at
              FROM clipboard_records
              WHERE (
                ?1 = 'all'
@@ -792,7 +792,7 @@ fn search_clipboard_records(
                ), ?2) > 0
              )
              AND (?5 = 0 OR julianday(last_seen_at) >= julianday(?6))
-             ORDER BY last_seen_at DESC
+             ORDER BY CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, last_seen_at DESC
              LIMIT ?3 OFFSET ?4",
         )
         .map_err(|error| error.to_string())?;
@@ -826,6 +826,7 @@ fn search_clipboard_records(
                     row.get::<_, String>(9)?,
                     row.get::<_, String>(10)?,
                     row.get::<_, i64>(11)?,
+                    row.get::<_, Option<String>>(12)?,
                 ))
             },
         )
@@ -845,6 +846,7 @@ fn search_clipboard_records(
             created_at,
             last_seen_at,
             copy_count,
+            pinned_at,
         ) = row.map_err(|error| error.to_string())?;
         let paths = parse_string_array(file_paths);
         let types = parse_string_array(file_types);
@@ -880,6 +882,7 @@ fn search_clipboard_records(
             "createdAt": created_at,
             "lastSeenAt": last_seen_at,
             "copyCount": copy_count,
+            "pinnedAt": pinned_at.unwrap_or_default(),
             "pluginId": "clipboard"
         }));
     }
@@ -1094,6 +1097,152 @@ pub fn delete_clipboard(
     Ok(json!({ "ok": true }))
 }
 
+// 置顶只改 pinned_at：清理时按 pinned_at IS NULL 过滤，收藏内容不会被过期、
+// 条数或容量规则删掉，也不占用这些预算。
+fn set_pinned(state: &AppState, id: i64, pinned: bool) -> Result<Value, String> {
+    let connection = database(state)?;
+    let now = Utc::now().to_rfc3339();
+    let updated = connection
+        .execute(
+            "UPDATE clipboard_records SET pinned_at = CASE WHEN ?2 THEN ?3 ELSE NULL END WHERE id = ?1",
+            params![id, pinned, now],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated == 0 {
+        return Ok(json!({ "ok": false, "reason": "剪贴板记录不存在或已删除" }));
+    }
+    Ok(json!({ "ok": true, "pinned": pinned }))
+}
+
+#[tauri::command]
+pub fn pin_clipboard(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+    pinned: bool,
+) -> Result<Value, String> {
+    let result = set_pinned(&state, id, pinned)?;
+    if result["ok"] == json!(true) {
+        let _ = app.emit("flowhub:clipboard-updated", ());
+    }
+    Ok(result)
+}
+
+// 纯文本粘贴的取文本规则：图片没有文本表示，文件记录粘贴绝对路径。
+enum PlainText {
+    Text(String),
+    Unavailable(String),
+}
+
+fn plain_text(state: &AppState, id: i64) -> Result<PlainText, String> {
+    let connection = database(state)?;
+    let record = connection
+        .query_row(
+            "SELECT kind, content, file_paths FROM clipboard_records WHERE id = ?",
+            [id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((kind, content, file_paths)) = record else {
+        return Ok(PlainText::Unavailable("剪贴板记录不存在或已过期".into()));
+    };
+    let text = match kind.as_str() {
+        "text" => content.unwrap_or_default(),
+        "file" => parse_string_array(file_paths).join("\n"),
+        "image" => return Ok(PlainText::Unavailable("图片记录没有可粘贴的文本".into())),
+        _ => return Ok(PlainText::Unavailable("未知剪贴板记录类型".into())),
+    };
+    if text.trim().is_empty() {
+        return Ok(PlainText::Unavailable("这条记录没有可粘贴的文本".into()));
+    }
+    Ok(PlainText::Text(text))
+}
+
+#[tauri::command]
+pub fn paste_clipboard_text(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<Value, String> {
+    let text = match plain_text(&state, id)? {
+        PlainText::Text(text) => text,
+        PlainText::Unavailable(reason) => return Ok(json!({ "ok": false, "reason": reason })),
+    };
+    // 纯文本是以应用自己写入剪贴板的，按新文本指纹抑制回采，避免多出一条重复记录。
+    app.state::<ClipboardRuntime>()
+        .suppress(signature("text", &sha256(text.as_bytes())));
+    ClipboardContext::new()
+        .map_err(|error| error.to_string())?
+        .set_text(text)
+        .map_err(|error| error.to_string())?;
+    hide_main(&app);
+    let paste = send_paste();
+    Ok(match paste {
+        Ok(()) => json!({ "ok": true, "pasted": true, "plain": true }),
+        Err(reason) => json!({ "ok": true, "pasted": false, "plain": true, "pasteReason": reason }),
+    })
+}
+
+// 编辑文本副本：写入一条新的文本记录，原记录保持不动；编辑结果与已有文本相同
+// 时只刷新那条记录的时间与次数。
+fn edited_copy(state: &AppState, id: i64, content: &str) -> Result<Value, String> {
+    let text = content.trim_end().to_string();
+    if text.trim().is_empty() {
+        return Ok(json!({ "ok": false, "reason": "编辑后的内容不能为空" }));
+    }
+    let connection = database(state)?;
+    let editable: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM clipboard_records WHERE id = ? AND kind = 'text')",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !editable {
+        return Ok(json!({ "ok": false, "reason": "只有文本记录可以编辑副本" }));
+    }
+    let hash = sha256(text.as_bytes());
+    let now = Utc::now().to_rfc3339();
+    connection
+        .execute(
+            "INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at, copy_count)
+             VALUES ('text', ?, ?, ?, ?, ?, 1)
+             ON CONFLICT(kind, hash) DO UPDATE SET content = excluded.content, size = excluded.size,
+               last_seen_at = excluded.last_seen_at, copy_count = clipboard_records.copy_count + 1",
+            params![hash, text, text.len() as i64, now, now],
+        )
+        .map_err(|error| error.to_string())?;
+    let new_id: i64 = connection
+        .query_row(
+            "SELECT id FROM clipboard_records WHERE kind = 'text' AND hash = ?",
+            [&hash],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(json!({ "ok": true, "id": new_id, "hash": hash }))
+}
+
+#[tauri::command]
+pub fn edit_clipboard(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+    content: String,
+) -> Result<Value, String> {
+    let result = edited_copy(&state, id, &content)?;
+    if result["ok"] == json!(true) {
+        let _ = app.emit("flowhub:clipboard-updated", ());
+    }
+    Ok(result)
+}
+
 // Maintenance is checked before every queued job as well as on idle timeout,
 // so a continuously nonempty queue cannot starve it. Disconnect wakes immediately.
 fn scheduled_receive<T>(
@@ -1202,7 +1351,8 @@ fn cleanup_at(
                        WHEN kind='text' THEN length(CAST(COALESCE(content,'') AS BLOB))
                        ELSE length(CAST(COALESCE(file_paths,'') AS BLOB)) END)
                 OVER (ORDER BY last_seen_at DESC, id DESC) AS bytes
-            FROM clipboard_records)
+            FROM clipboard_records
+            WHERE pinned_at IS NULL)
             SELECT id FROM ranked WHERE (?1 > 0 AND julianday(last_seen_at) < julianday(?2))
               OR (?3 > 0 AND position > ?3) OR (?4 > 0 AND bytes > ?4)
             ORDER BY last_seen_at, id LIMIT ?5",
@@ -1615,5 +1765,172 @@ mod cleanup_tests {
                 .unwrap(),
             1
         );
+    }
+}
+
+#[cfg(test)]
+mod record_tests {
+    use super::*;
+    use crate::storage::tests::Fixture;
+
+    fn now() -> chrono::DateTime<Utc> {
+        "2026-09-09T00:00:00Z".parse().unwrap()
+    }
+    fn policy(days: i64, max_records: i64, max_bytes: i64) -> CleanupPolicy {
+        CleanupPolicy {
+            days,
+            max_records,
+            max_bytes,
+        }
+    }
+    fn insert_text(f: &Fixture, hash: &str, content: &str, at: &str) -> i64 {
+        database(&f.state)
+            .unwrap()
+            .execute(
+                "INSERT INTO clipboard_records(kind,hash,content,size,created_at,last_seen_at) VALUES ('text',?1,?2,?3,?4,?4)",
+                params![hash, content, content.len() as i64, at],
+            )
+            .unwrap();
+        database(&f.state)
+            .unwrap()
+            .query_row(
+                "SELECT id FROM clipboard_records WHERE kind='text' AND hash=?",
+                [hash],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+    fn ids(state: &AppState) -> Vec<i64> {
+        search_clipboard_records(state, "", "all", 20, 0)
+            .unwrap()
+            .iter()
+            .map(|record| record["id"].as_i64().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn pinned_records_sort_first_and_survive_cleanup_until_unpinned() {
+        let f = Fixture::new();
+        let old = insert_text(&f, "old", "旧", "2026-09-01T00:00:00Z");
+        let mid = insert_text(&f, "mid", "中", "2026-09-05T00:00:00Z");
+        let fresh = insert_text(&f, "fresh", "新", "2026-09-09T00:00:00Z");
+        assert_eq!(set_pinned(&f.state, 9999, true).unwrap()["ok"], json!(false));
+        assert_eq!(
+            set_pinned(&f.state, old, true).unwrap(),
+            json!({ "ok": true, "pinned": true })
+        );
+
+        let listed = search_clipboard_records(&f.state, "", "all", 20, 0).unwrap();
+        assert_eq!(listed[0]["id"], json!(old), "置顶记录排在最前");
+        assert_ne!(listed[0]["pinnedAt"], json!(""));
+        assert_eq!(listed[1]["pinnedAt"], json!(""));
+
+        // 条数预算只数未置顶的记录：上限 2 时 mid 与 fresh 都在。
+        assert_eq!(cleanup_at(&f.state, policy(0, 2, 0), now()).unwrap(), 0);
+        assert_eq!(ids(&f.state), vec![old, fresh, mid]);
+        // 上限收紧到 1 时只删未置顶里最旧的那条。
+        assert_eq!(cleanup_at(&f.state, policy(0, 1, 0), now()).unwrap(), 1);
+        assert_eq!(ids(&f.state), vec![old, fresh]);
+
+        // 过期规则同样跳过置顶记录。
+        assert_eq!(cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(), 0);
+        assert_eq!(ids(&f.state), vec![old, fresh]);
+
+        // 取消置顶后重新受清理规则约束。
+        assert_eq!(
+            set_pinned(&f.state, old, false).unwrap(),
+            json!({ "ok": true, "pinned": false })
+        );
+        let listed = search_clipboard_records(&f.state, "", "all", 20, 0).unwrap();
+        assert_eq!(listed[0]["pinnedAt"], json!(""));
+        assert_eq!(cleanup_at(&f.state, policy(1, 0, 0), now()).unwrap(), 1);
+        assert_eq!(ids(&f.state), vec![fresh]);
+    }
+
+    #[test]
+    fn edited_copy_keeps_the_original_and_rejects_empty_or_non_text() {
+        let f = Fixture::new();
+        let original = insert_text(&f, "original", "原文", "2026-09-01T00:00:00Z");
+        let result = edited_copy(&f.state, original, "改过的文本  ").unwrap();
+        assert_eq!(result["ok"], json!(true));
+        let copy = result["id"].as_i64().unwrap();
+        assert_ne!(copy, original);
+
+        let listed = search_clipboard_records(&f.state, "", "text", 20, 0).unwrap();
+        assert_eq!(listed.len(), 2, "编辑副本是新增记录，原记录保留");
+        assert_eq!(listed[0]["id"], json!(copy));
+        assert_eq!(listed[0]["content"], json!("改过的文本"));
+        let kept: String = database(&f.state)
+            .unwrap()
+            .query_row("SELECT content FROM clipboard_records WHERE id=?", [original], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(kept, "原文");
+
+        // 同一内容重复编辑只刷新那条副本。
+        assert_eq!(edited_copy(&f.state, original, "改过的文本").unwrap()["id"], json!(copy));
+        assert_eq!(search_clipboard_records(&f.state, "", "text", 20, 0).unwrap().len(), 2);
+
+        assert_eq!(
+            edited_copy(&f.state, original, "   ").unwrap()["reason"],
+            json!("编辑后的内容不能为空")
+        );
+        database(&f.state)
+            .unwrap()
+            .execute(
+                "INSERT INTO clipboard_records(kind,hash,file_paths,size,created_at,last_seen_at) VALUES ('file','f','[\"/tmp/a\"]',1,'now','now')",
+                [],
+            )
+            .unwrap();
+        let file: i64 = database(&f.state)
+            .unwrap()
+            .query_row("SELECT id FROM clipboard_records WHERE kind='file'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            edited_copy(&f.state, file, "x").unwrap()["reason"],
+            json!("只有文本记录可以编辑副本")
+        );
+        assert_eq!(
+            edited_copy(&f.state, 9999, "x").unwrap()["reason"],
+            json!("只有文本记录可以编辑副本")
+        );
+    }
+
+    #[test]
+    fn plain_text_uses_paths_for_files_and_refuses_images() {
+        let f = Fixture::new();
+        let text = insert_text(&f, "text", "hello", "2026-09-09T00:00:00Z");
+        assert!(matches!(plain_text(&f.state, text).unwrap(), PlainText::Text(value) if value == "hello"));
+
+        let blank = insert_text(&f, "blank", "   ", "2026-09-09T00:00:00Z");
+        assert!(matches!(plain_text(&f.state, blank).unwrap(), PlainText::Unavailable(reason) if reason.contains("没有可粘贴的文本")));
+
+        database(&f.state)
+            .unwrap()
+            .execute(
+                "INSERT INTO clipboard_records(kind,hash,file_paths,size,created_at,last_seen_at) VALUES ('file','f','[\"/tmp/a.txt\",\"/tmp/b.txt\"]',2,'now','now')",
+                [],
+            )
+            .unwrap();
+        let file: i64 = database(&f.state)
+            .unwrap()
+            .query_row("SELECT id FROM clipboard_records WHERE kind='file'", [], |row| row.get(0))
+            .unwrap();
+        assert!(matches!(plain_text(&f.state, file).unwrap(), PlainText::Text(value) if value == "/tmp/a.txt\n/tmp/b.txt"));
+
+        database(&f.state)
+            .unwrap()
+            .execute(
+                "INSERT INTO clipboard_records(kind,hash,file_name,size,created_at,last_seen_at) VALUES ('image','i','i.png',3,'now','now')",
+                [],
+            )
+            .unwrap();
+        let image: i64 = database(&f.state)
+            .unwrap()
+            .query_row("SELECT id FROM clipboard_records WHERE kind='image'", [], |row| row.get(0))
+            .unwrap();
+        assert!(matches!(plain_text(&f.state, image).unwrap(), PlainText::Unavailable(reason) if reason.contains("图片记录")));
+        assert!(matches!(plain_text(&f.state, 9999).unwrap(), PlainText::Unavailable(reason) if reason.contains("不存在")));
     }
 }

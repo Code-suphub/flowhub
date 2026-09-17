@@ -169,3 +169,53 @@ fn aliased_nested_target_is_rejected_before_copying() {
     assert_eq!(fixture.state.storage_dir(), source);
     assert_eq!(fs::read_dir(source.join("nested")).unwrap().count(), 0);
 }
+
+#[test]
+fn existing_databases_gain_the_pinned_column_without_losing_rows() {
+    let fixture = Fixture::new();
+    let path = fixture.state.paths().db_path;
+    // 造一个没有 pinned_at 的旧库：新增列只能靠 initialize_schema 补齐。
+    {
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch(
+            "DROP TABLE clipboard_records;
+             CREATE TABLE clipboard_records (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               kind TEXT NOT NULL,
+               hash TEXT NOT NULL,
+               content TEXT,
+               file_name TEXT,
+               source_name TEXT,
+               file_paths TEXT,
+               file_types TEXT,
+               size INTEGER NOT NULL DEFAULT 0,
+               created_at TEXT NOT NULL,
+               last_seen_at TEXT NOT NULL,
+               copy_count INTEGER NOT NULL DEFAULT 1,
+               UNIQUE(kind, hash)
+             );
+             INSERT INTO clipboard_records(kind,hash,content,size,created_at,last_seen_at)
+             VALUES ('text','old','keep',1,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z');",
+        )
+        .unwrap();
+    }
+    crate::storage::initialize_schema(&Connection::open(&path).unwrap()).unwrap();
+    let db = Connection::open(&path).unwrap();
+    let columns = db
+        .prepare("PRAGMA table_info(clipboard_records)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(columns.iter().any(|name| name == "pinned_at"), "旧库补上 pinned_at 列");
+    assert_eq!(
+        db.query_row("SELECT content FROM clipboard_records", [], |row| row
+            .get::<_, String>(0))
+            .unwrap(),
+        "keep",
+        "补齐列时保留原记录"
+    );
+    // 再次初始化是幂等的，不会重复 ALTER。
+    crate::storage::initialize_schema(&Connection::open(&path).unwrap()).unwrap();
+}

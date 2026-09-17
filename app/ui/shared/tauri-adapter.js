@@ -190,6 +190,13 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
 
   async function pluginAction(id, action, payload = {}) {
     if (id === "clipboard" && action === "activate") return invoke("activate_clipboard", { id: Number(payload.id) });
+    if (id === "clipboard" && action === "plain") return invoke("paste_clipboard_text", { id: Number(payload.id) });
+    if (id === "clipboard" && action === "pin") {
+      return invoke("pin_clipboard", { id: Number(payload.id), pinned: payload.pinned === true });
+    }
+    if (id === "clipboard" && action === "edit") {
+      return invoke("edit_clipboard", { id: Number(payload.id), content: String(payload.content ?? "") });
+    }
     if (id === "clipboard" && ["menu", "delete"].includes(action)) {
       if (!window.confirm("确定删除这条剪贴板记录吗？只会删除历史记录和图片副本，不会删除原始文件。")) {
         return { ok: false, cancelled: true };

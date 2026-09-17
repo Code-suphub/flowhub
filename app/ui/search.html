@@ -146,6 +146,22 @@
         outline: none;
       }
       .r-meta .path { color: var(--accent); }
+      .clipboard-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+      .clipboard-actions .tool-action { padding: 3px 8px; font-size: 10px; }
+      .clipboard-pin { color: var(--accent); }
+      .clipboard-editor {
+        width: 100%;
+        min-height: 84px;
+        margin-top: 6px;
+        padding: 8px;
+        border: 1px solid var(--line-strong);
+        border-radius: 7px;
+        color: var(--text);
+        background: rgba(0, 0, 0, .18);
+        font: 11px/1.6 var(--mono);
+        resize: vertical;
+      }
+      .clipboard-editor:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
       .calculation-result { cursor: default; }
       .calculation-result .calculation-value { color: #c7d1d8; font-weight: 500; font-size: 15px; letter-spacing: .01em; }
       .calculation-result .calculation-expression { color: #718390; font-weight: 350; }

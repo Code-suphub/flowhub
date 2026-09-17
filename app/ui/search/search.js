@@ -15,7 +15,7 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, expandedClipboard: new Set(), usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, expandedClipboard: new Set(), editingClipboard: null, usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
@@ -713,6 +713,72 @@ function isExpandableClipboard(item) {
   return content.length > 120 || content.split("\n").length > 3;
 }
 
+// 剪贴板高频操作：粘贴（原格式）、纯文本粘贴、置顶、编辑副本。
+// 置顶与编辑都改数据库，完成后重新取第一页；粘贴会隐藏窗口，不再刷新。
+function clipboardAction(action, item, extra = {}) {
+  if (document.documentElement.dataset.weborgReadonly === "true") {
+    const reason = "浏览器预览不能修改剪贴板";
+    showActionStatus(reason);
+    return Promise.resolve({ ok: false, reason });
+  }
+  return Promise.resolve(window.weborg?.pluginAction("clipboard", action, { id: Number(item.id ?? item), ...extra }))
+    .then((result) => {
+      if (result?.ok === false && !result.cancelled) showActionStatus(result.reason || "操作失败");
+      return result;
+    })
+    .catch((error) => {
+      showActionStatus(error?.message || String(error || "操作失败"));
+      return { ok: false };
+    });
+}
+
+function pasteClipboardPlain(item) {
+  if (!["text", "file"].includes(item.kind)) return showActionStatus("图片记录没有可粘贴的文本");
+  return clipboardAction("plain", item);
+}
+
+function toggleClipboardPin(item) {
+  const pinned = !item.pinnedAt;
+  return clipboardAction("pin", item, { pinned }).then((result) => {
+    if (result?.ok === false) return result;
+    showActionStatus(pinned ? "已置顶，过期清理不会删除" : "已取消置顶");
+    return refreshClipboard();
+  });
+}
+
+function startClipboardEdit(item) {
+  if (item.kind !== "text") return showActionStatus("只有文本记录可以编辑副本");
+  state.editingClipboard = { id: Number(item.id), text: String(item.content || "") };
+  render({ preserveScroll: true });
+  resultsEl.querySelector(".clipboard-editor")?.focus();
+  return undefined;
+}
+
+function cancelClipboardEdit() {
+  if (!state.editingClipboard) return;
+  state.editingClipboard = null;
+  render({ preserveScroll: true });
+  returnToSearch();
+}
+
+function saveClipboardEdit() {
+  const editing = state.editingClipboard;
+  if (!editing) return Promise.resolve();
+  const editor = resultsEl.querySelector(".clipboard-editor");
+  const text = editor ? editor.value : editing.text;
+  if (!text.trim()) {
+    showActionStatus("编辑后的内容不能为空");
+    editor?.focus();
+    return Promise.resolve();
+  }
+  return clipboardAction("edit", editing.id, { content: text }).then((result) => {
+    if (result?.ok === false) return result;
+    state.editingClipboard = null;
+    showActionStatus("已保存为新的文本记录，原记录保留");
+    return refreshClipboard();
+  });
+}
+
 function clipboardFileIcon(type) {
   if (type === "folder") {
     return `<svg class="clipboard-file-symbol folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h6l1.8 2h9.2v9.7a1.8 1.8 0 0 1-1.8 1.8H5.3a1.8 1.8 0 0 1-1.8-1.8V6.5Z"/><path d="M3.5 8.5h17" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
@@ -992,6 +1058,8 @@ function renderResultBody(item, index, items) {
     const content = String(item.content || "");
     const expandable = isExpandableClipboard(item);
     const expanded = expandable && state.expandedClipboard.has(item.id);
+    const pinned = Boolean(item.pinnedAt);
+    const editing = state.editingClipboard?.id === Number(item.id);
     const icon = item.kind === "image" && item.imageUrl
       ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
       : isFile && item.fileIconUrl
@@ -1008,18 +1076,43 @@ function renderResultBody(item, index, items) {
     const title = item.kind === "image"
       ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
       : isFile ? esc(fileLabel) : clipboardPreviewHtml(preview, expanded);
-    const toggle = expandable
+    const toggle = expandable && !editing
       ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
       : "";
+    const actions = [
+      `<button class="tool-action" type="button" data-clipboard-action="pin" data-clipboard-id="${item.id}" data-clipboard-pinned="${pinned ? "false" : "true"}" title="置顶后过期清理不会删除（⌘D）">${pinned ? "★ 取消置顶（⌘D）" : "☆ 置顶（⌘D）"}</button>`,
+      ["text", "file"].includes(item.kind)
+        ? `<button class="tool-action" type="button" data-clipboard-action="plain" data-clipboard-id="${item.id}" title="只写文本内容，不带原格式（⇧↩）">纯文本粘贴（⇧↩）</button>`
+        : "",
+      item.kind === "text"
+        ? `<button class="tool-action" type="button" data-clipboard-action="edit" data-clipboard-id="${item.id}" title="编辑后的内容作为新记录，原记录保留（⌘E）">编辑副本（⌘E）</button>`
+        : ""
+    ].join("");
+    if (editing) {
+      return `
+      <div class="result clipboard-result editing ${index === state.index ? "active" : ""}" data-i="${index}">
+        <span class="r-body">
+          <span class="r-title clipboard-title">编辑文本副本</span>
+          <span class="r-meta clipboard-meta">保存后写入一条新记录，原记录保留</span>
+          <textarea class="clipboard-editor" data-clipboard-editor rows="5" spellcheck="false" aria-label="编辑文本副本">${esc(state.editingClipboard.text)}</textarea>
+          <span class="clipboard-actions">
+            <button class="tool-action" type="button" data-clipboard-action="edit-save" data-clipboard-id="${item.id}">保存副本（⌘↩）</button>
+            <button class="tool-action" type="button" data-clipboard-action="edit-cancel" data-clipboard-id="${item.id}">取消（Esc）</button>
+          </span>
+        </span>
+      </div>
+    `;
+    }
     return `
       <div class="result clipboard-result ${index === state.index ? "active" : ""}" data-i="${index}">
         ${iconMarkup}
         <span class="r-body">
           <span class="${titleClass}">${title}</span>
           <span class="clipboard-meta-row">
-            <span class="r-meta clipboard-meta"><span class="path">剪切板</span> · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}</span>
+            <span class="r-meta clipboard-meta"><span class="path">剪切板</span> · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}${pinned ? ` · <span class="clipboard-pin" title="已置顶，过期清理不会删除">★ 已置顶</span>` : ""}</span>
             ${toggle}
           </span>
+          <span class="clipboard-actions">${actions}</span>
         </span>
         <span class="r-kind clipboard">${item.kind === "image" ? "图片" : isFile ? clipboardFileTypeLabel(fileType) : "文本"}</span>
       </div>
@@ -1489,6 +1582,13 @@ function returnToSearch() {
 document.getElementById("returnSearchBtn")?.addEventListener("click", returnToSearch);
 
 document.addEventListener("keydown", (e) => {
+  // 编辑副本时键盘归编辑框：Esc 取消、⌘↩ 保存，其余按键交给当前聚焦的控件，
+  // 不再触发搜索导航、范围快捷键或隐藏窗口。
+  if (state.editingClipboard) {
+    if (e.key === "Escape") { e.preventDefault(); cancelClipboardEdit(); return; }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveClipboardEdit(); return; }
+    return;
+  }
   if (e.key === "F6") { e.preventDefault(); (resultsEl.querySelector(".result.active .tool-action") || resultsEl.querySelector(".tool-action") || q)?.focus(); return; }
   if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
@@ -1528,6 +1628,17 @@ document.addEventListener("keydown", (e) => {
   }
   if (document.activeElement !== q) return;
   const m = matches();
+  // 剪贴板高频操作的快捷键：⌘D 置顶/取消置顶、⌘E 编辑副本、⇧↩ 纯文本粘贴。
+  if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyD" || e.key.toLowerCase() === "d")) {
+    const selected = m[state.index];
+    if (selected?.type === "clipboard") { e.preventDefault(); void toggleClipboardPin(selected); }
+    return;
+  }
+  if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyE" || e.key.toLowerCase() === "e")) {
+    const selected = m[state.index];
+    if (selected?.type === "clipboard") { e.preventDefault(); startClipboardEdit(selected); }
+    return;
+  }
   if (e.altKey && ["Backspace", "Delete"].includes(e.key)) {
     const selected = m[state.index];
     if (selected?.type === "clipboard" && document.documentElement.dataset.weborgReadonly !== "true") {
@@ -1545,7 +1656,13 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
     }
   }
-  else if (e.key === "Enter") { const p = m[state.index]; if (p) choose(p); }
+  else if (e.key === "Enter") {
+    const p = m[state.index];
+    if (p) {
+      if (e.shiftKey && p.type === "clipboard") { e.preventDefault(); void pasteClipboardPlain(p); }
+      else choose(p);
+    }
+  }
 });
 
 document.addEventListener("keyup", (e) => {
@@ -1838,6 +1955,7 @@ q.addEventListener("compositionend", () => {
 });
 q.addEventListener("input", () => {
   window.flowhubSearchTiming?.begin("input");
+  state.editingClipboard = null;
   allResultKeys = null;
   allScopeRefreshToken += 1;
   invalidateClipboardPaging();
@@ -1978,6 +2096,19 @@ resultsEl.addEventListener("click", (e) => {
     const item=matches()[Number(command.closest(".result")?.dataset.i)];
     const text=item&&portableQueryCommand(item);
     if (text) void copyText(text).then(()=>showActionStatus("查询命令已复制")).catch(()=>showActionStatus("复制失败"));
+    return;
+  }
+  const clipAction = e.target.closest("[data-clipboard-action]");
+  if (clipAction) {
+    e.preventDefault();e.stopPropagation();
+    const id = Number(clipAction.dataset.clipboardId);
+    const item = state.clipboardResults.find(record => Number(record.id) === id);
+    if (!item) return;
+    if (clipAction.dataset.clipboardAction === "pin") void toggleClipboardPin(item);
+    if (clipAction.dataset.clipboardAction === "plain") void pasteClipboardPlain(item);
+    if (clipAction.dataset.clipboardAction === "edit") startClipboardEdit(item);
+    if (clipAction.dataset.clipboardAction === "edit-save") void saveClipboardEdit();
+    if (clipAction.dataset.clipboardAction === "edit-cancel") cancelClipboardEdit();
     return;
   }
   const action=e.target.closest("[data-tool-action]");

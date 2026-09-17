@@ -5,6 +5,7 @@ const q = { value: '已有关键词', focus: () => focusCount++, select: () => s
 const context = vm.createContext({
   q, scopeTabHeld: true, scopeTabUsedWithArrow: true, searchInputComposing: false,
   searchCompositionEndedAt: 0, performance: { now: () => 1000 }, scopeForShortcut: () => null,
+  state: { editingClipboard: null }, cancelClipboardEdit: () => { context.editCancelled = true; },
   document: { activeElement: {}, getElementById: () => null, addEventListener: (name, fn) => { handler = fn; } },
 });
 vm.runInContext(source.slice(source.indexOf('function returnToSearch()'), source.indexOf('document.addEventListener("keyup"')), context);
@@ -16,6 +17,15 @@ for (const extra of [{metaKey: false}, {altKey: true}, {ctrlKey: true}, {shiftKe
 assert.equal(focusCount, 1);
 context.searchInputComposing = true; handler(event()); assert.equal(focusCount, 1);
 context.searchInputComposing = false; q.value = ''; handler(event()); assert.equal(focusCount, 2); assert.equal(q.value, '');
+// 编辑副本时键盘归编辑框：⌘K 不抢焦点，Esc 取消编辑而不是隐藏窗口。
+context.state.editingClipboard = { id: 7, text: 'x' };
+const preventedKeys = [];
+handler(event());
+assert.equal(focusCount, 2, '编辑中 ⌘K 不抢焦点');
+handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: { tagName: 'TEXTAREA' }, preventDefault: () => preventedKeys.push('Escape') });
+assert.equal(context.editCancelled, true, 'Esc 取消编辑');
+assert.equal(preventedKeys.join(','), 'Escape');
+context.state.editingClipboard = null;
 console.log('PASS: Command+K returns focus, selects without clearing query, resets held scope key, ignores unrelated modifiers and IME composition');
 // Native focus must stay with the input throughout a primary mouse press.
 const mouse = vm.createContext({activateScopeControl(){}});
