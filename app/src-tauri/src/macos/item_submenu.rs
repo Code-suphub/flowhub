@@ -23,7 +23,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSArray, NSObjectNSDelayedPerforming};
 use objc2_foundation::{NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
 
-#[path = "macos_item_overlay.rs"]
+#[path = "item_overlay.rs"]
 mod overlay;
 pub use overlay::synthetic_marker;
 
@@ -200,7 +200,7 @@ define_class!(
                 return;
             }
             if !crate::menu_bar::organizer_enabled()
-                || !crate::macos_accessibility::is_trusted()
+                || !crate::macos::accessibility::is_trusted()
             {
                 iv.switch.setState(if iv.hidden.get() { 0 } else { 1 });
                 iv.switch.setEnabled(false);
@@ -311,7 +311,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         message(menu, "请先启用菜单栏整理", mtm);
         return;
     }
-    if !crate::macos_accessibility::is_trusted() {
+    if !crate::macos::accessibility::is_trusted() {
         message(menu, "请先在设置中授予辅助功能权限", mtm);
         return;
     }
@@ -327,7 +327,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
     // Deliberately retain inventory order. Completion changes only this row's
     // controls, never the menu's structure, row height, or ordering.
     for (item, section) in items {
-        if crate::macos_accessibility::is_fixed_menu_bar_entry(
+        if crate::macos::accessibility::is_fixed_menu_bar_entry(
             &item.owner_name,
             &item.title,
             &item.accessibility_id,
@@ -455,7 +455,7 @@ fn complete(generation: u64, window_id: u32, result: Result<serde_json::Value, S
             iv.capable.set(
                 item.movable
                     && item.hideable
-                    && !crate::macos_accessibility::is_fixed_menu_bar_entry(
+                    && !crate::macos::accessibility::is_fixed_menu_bar_entry(
                         &item.owner_name,
                         &item.title,
                         &item.accessibility_id,
@@ -481,7 +481,7 @@ fn complete(generation: u64, window_id: u32, result: Result<serde_json::Value, S
     iv.switch.setEnabled(
         iv.capable.get()
             && crate::menu_bar::organizer_enabled()
-            && crate::macos_accessibility::is_trusted(),
+            && crate::macos::accessibility::is_trusted(),
     );
 }
 

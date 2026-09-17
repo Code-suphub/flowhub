@@ -682,7 +682,7 @@ fn targeted_mouse_event(
         CGEventFlags::CGEventFlagNull
     });
     event.set_integer_value_field(EventField::EVENT_TARGET_UNIX_PROCESS_ID, owner_pid as i64);
-    event.set_integer_value_field(EventField::EVENT_SOURCE_USER_DATA, crate::macos_item_submenu::synthetic_marker(window_id));
+    event.set_integer_value_field(EventField::EVENT_SOURCE_USER_DATA, crate::macos::item_submenu::synthetic_marker(window_id));
     event.set_integer_value_field(
         EventField::MOUSE_EVENT_WINDOW_UNDER_MOUSE_POINTER,
         window_id as i64,
@@ -842,7 +842,7 @@ pub fn move_menu_bar_item(
             crate::diagnostics::record_event(app, "menu_bar_item_event_post", serde_json::json!({
                 "windowId": window_id, "attempt": _attempt,
                 "eventType": format!("{:?}", event.get_type()),
-                "submenuTracking": crate::macos_item_submenu::is_tracking(),
+                "submenuTracking": crate::macos::item_submenu::is_tracking(),
             }));
             if let Err(error) = post_menu_bar_event(event, item.owner_pid) {
                 // Always release the synthetic button, including tap failure.

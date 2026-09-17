@@ -91,7 +91,7 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)-
             let c=rt.candidates.lock().unwrap().get(p["token"].as_str().unwrap_or("")).cloned().ok_or("安装候选已失效，请重新扫描")?;
             let source=rt.sources.lock().unwrap().iter().find(|s|s.id==c.source).cloned().ok_or("来源已移除")?;
             let package=if let Some(directory)=c.directory{package(directory)?}else{
-                let bytes=download(&c.url,192*1024*1024).await?;if digest(&bytes)!=c.sha256{return Err("插件包校验失败".into());}crate::update_cache::verify(&bytes,&c.signature,&source.key)?;
+                let bytes=download(&c.url,192*1024*1024).await?;if digest(&bytes)!=c.sha256{return Err("插件包校验失败".into());}crate::updater::cache::verify(&bytes,&c.signature,&source.key)?;
                 let directory=rt.root.join("plugin-packages").join(format!("{}-{}",c.manifest.id,chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&directory).map_err(|e|e.to_string())?;
                 let result=(||{unpack(&bytes,&directory)?;let p=package(directory.clone())?;use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(inside(&p.directory,&p.manifest.executable)?,std::fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?;Ok::<_,String>(p)})();
                 match result{Ok(p)=>p,Err(e)=>{let _=std::fs::remove_dir_all(directory);return Err(e);}}

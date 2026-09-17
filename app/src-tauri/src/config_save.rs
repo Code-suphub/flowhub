@@ -392,8 +392,8 @@ impl IntegrationPlan {
         .any(|p| flag(before, p, false) != flag(after, p, false));
         Self {
             clipboard: storage_changed
-                || crate::clipboard_privacy::Policy::from_config(before)
-                    != crate::clipboard_privacy::Policy::from_config(after)
+                || crate::clipboard::privacy::Policy::from_config(before)
+                    != crate::clipboard::privacy::Policy::from_config(after)
                 || cleanup(before) != cleanup(after)
                 || flag(before, "/plugins/clipboard/enabled", true)
                     != flag(after, "/plugins/clipboard/enabled", true),
@@ -487,7 +487,7 @@ mod tests {
         configured_path, database, hydrated_config, initialize_schema, initialize_startup_catalog,
         validate_existing_storage, write_json_atomic,
     };
-    use crate::storage_tests::Fixture;
+    use crate::storage::tests::Fixture;
     use std::time::Duration;
 
     fn seed(f: &Fixture) -> Value {

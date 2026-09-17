@@ -296,7 +296,7 @@ mod tests {
         }
         // Force the first UDP collision to exercise retry on every run. The
         // child reserves both protocols before publishing its selected port.
-        let script = include_str!("../tests/port_listener.py");
+        let script = include_str!("../../tests/port_listener.py");
         let mut child = TestChild(
             Command::new("python3")
                 .args(["-u", "-c", script, "1"])
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn listener_port_conflicts_have_a_bounded_failure_path() {
         let output = Command::new("python3")
-            .args(["-u", "-c", include_str!("../tests/port_listener.py"), "32"])
+            .args(["-u", "-c", include_str!("../../tests/port_listener.py"), "32"])
             .output()
             .unwrap();
         assert!(!output.status.success());

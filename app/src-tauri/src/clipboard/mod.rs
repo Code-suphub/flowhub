@@ -1,3 +1,6 @@
+
+pub(crate) mod privacy;
+
 use crate::storage::database;
 use crate::{application_icon_data_urls, hide_main, AppState};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -28,7 +31,7 @@ use std::{
 use tauri::{Emitter, Manager, State};
 
 pub struct ClipboardRuntime {
-    privacy: Arc<Mutex<crate::clipboard_privacy::Gate>>,
+    privacy: Arc<Mutex<crate::clipboard::privacy::Gate>>,
     shutdown: Mutex<Option<(WatcherShutdown, thread::JoinHandle<()>)>>,
     suppressed: Mutex<Option<(String, Instant)>>,
     writer: Mutex<Option<ClipboardWriter>>,
@@ -37,7 +40,7 @@ pub struct ClipboardRuntime {
 impl ClipboardRuntime {
     pub fn new() -> Self {
         Self {
-            privacy: Arc::new(Mutex::new(crate::clipboard_privacy::Gate::new())),
+            privacy: Arc::new(Mutex::new(crate::clipboard::privacy::Gate::new())),
             shutdown: Mutex::new(None),
             suppressed: Mutex::new(None),
             writer: Mutex::new(None),
@@ -644,7 +647,7 @@ pub fn apply_config(app: &tauri::AppHandle, config: &Value) -> Result<(), String
         let runtime = app.state::<ClipboardRuntime>();
         let mut gate = runtime.privacy.lock().map_err(|e| e.to_string())?;
         gate.replace(
-            crate::clipboard_privacy::Policy::from_config(config),
+            crate::clipboard::privacy::Policy::from_config(config),
             clipboard_revision(),
         );
     }
@@ -1113,7 +1116,7 @@ fn scheduled_receive<T>(
 // Lock order: privacy -> storage. Config application releases privacy before
 // joining the writer; migrations drain the writer before taking storage locks.
 fn with_authorized_job<T>(
-    privacy: &Mutex<crate::clipboard_privacy::Gate>,
+    privacy: &Mutex<crate::clipboard::privacy::Gate>,
     generation: u64,
     persist: impl FnOnce() -> T,
 ) -> Option<T> {
@@ -1252,8 +1255,8 @@ mod writer_tests {
 
     #[test]
     fn privacy_transition_waits_for_inflight_and_discards_queued_images_after_resume() {
-        let f = crate::storage_tests::Fixture::new();
-        let privacy = Arc::new(Mutex::new(crate::clipboard_privacy::Gate::new()));
+        let f = crate::storage::tests::Fixture::new();
+        let privacy = Arc::new(Mutex::new(crate::clipboard::privacy::Gate::new()));
         let worker_gate = privacy.clone();
         let state = f.state.clone();
         let (entered_tx, entered_rx) = mpsc::channel();
@@ -1327,7 +1330,7 @@ mod writer_tests {
 
     #[test]
     fn finish_waits_for_in_flight_write_and_drains_queued_images_before_migration() {
-        let fixture = crate::storage_tests::Fixture::new();
+        let fixture = crate::storage::tests::Fixture::new();
         let state = fixture.state.clone();
         let (sender, receiver) = mpsc::sync_channel::<PendingClipboard>(2);
         let (entered_tx, entered_rx) = mpsc::channel();
@@ -1443,7 +1446,7 @@ mod writer_tests {
 #[cfg(test)]
 mod cleanup_tests {
     use super::*;
-    use crate::storage_tests::Fixture;
+    use crate::storage::tests::Fixture;
     fn now() -> chrono::DateTime<Utc> {
         "2026-09-09T00:00:00Z".parse().unwrap()
     }

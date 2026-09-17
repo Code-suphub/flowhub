@@ -206,7 +206,7 @@ fn number(value: &Value, key: &str) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config_save, storage, storage_tests::Fixture};
+    use crate::{config_save, storage, storage::tests::Fixture};
     use std::fs;
 
     #[test]

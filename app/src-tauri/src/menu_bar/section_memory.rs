@@ -126,7 +126,7 @@ impl Memory {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        super::write_json_atomic(
+        crate::storage::write_json_atomic(
             path,
             &serde_json::to_value(self).map_err(|e| e.to_string())?,
         )

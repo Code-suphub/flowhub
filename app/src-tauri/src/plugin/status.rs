@@ -37,11 +37,11 @@ impl State {
 }
 fn label(id:&str)->String {format!("plugin-status-{id}")}
 fn available(app:&tauri::AppHandle,id:&str)->bool {
-    app.state::<crate::plugin_runtime::Runtime>().status_plugins().iter().any(|(key,_)|key==id)
+    app.state::<crate::plugin::runtime::Runtime>().status_plugins().iter().any(|(key,_)|key==id)
 }
 pub(crate) fn open(app:&tauri::AppHandle,id:&str)->Result<(),String> {
     if !available(app,id){return Err("插件状态组件不可用".into());}
-    crate::plugin_canvas::open(app,id)
+    crate::plugin::canvas::open(app,id)
 }
 #[allow(dead_code)]
 fn open_legacy(app:&tauri::AppHandle,id:&str)->Result<(),String> {
@@ -153,9 +153,9 @@ fn update_tray(app:&tauri::AppHandle,id:&str,title:&str,snapshot:&Value)->Result
 pub(crate) fn start(app:tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut initialized=std::collections::HashSet::new();
-        let mut menu_plugins=app.state::<crate::plugin_runtime::Runtime>().status_plugins();
+        let mut menu_plugins=app.state::<crate::plugin::runtime::Runtime>().status_plugins();
         loop {
-            let plugins=app.state::<crate::plugin_runtime::Runtime>().status_plugins();
+            let plugins=app.state::<crate::plugin::runtime::Runtime>().status_plugins();
             if plugins!=menu_plugins {
                 menu_plugins=plugins.clone();
                 #[cfg(target_os="macos")]
@@ -163,7 +163,7 @@ pub(crate) fn start(app:tauri::AppHandle) {
             }
             for (id,title) in &plugins {
                 let prefs=app.state::<State>().prefs(id);
-                let result=app.state::<crate::plugin_runtime::Runtime>().status_snapshot(id).await;
+                let result=app.state::<crate::plugin::runtime::Runtime>().status_snapshot(id).await;
                 let snapshot=result.unwrap_or_else(|e|json!({"rows":[],"error":e}));
                 app.state::<State>().cache.lock().unwrap().insert(id.clone(),snapshot.clone());
                 let handle=app.clone();let id=id.clone();let title=title.clone();

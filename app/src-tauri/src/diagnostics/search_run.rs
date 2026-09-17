@@ -13,7 +13,7 @@ pub fn start(app: &tauri::AppHandle) {
         crate::show_macos_window(&window);
         #[cfg(not(target_os = "macos"))]
         let _ = window.show();
-        if window.eval(include_str!("../../scripts/stress/native-run.js")).is_ok() { return; }
+        if window.eval(include_str!("../../../scripts/stress/native-run.js")).is_ok() { return; }
     }
     finish();
 }

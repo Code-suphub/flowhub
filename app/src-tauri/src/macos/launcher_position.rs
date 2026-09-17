@@ -22,7 +22,7 @@ fn rect_json(rect: NSRect) -> Value {
     json!({"x": rect.origin.x, "y": rect.origin.y, "width": rect.size.width, "height": rect.size.height})
 }
 
-pub(super) fn position_at_pointer(panel: &NSPanel, mtm: MainThreadMarker) -> Value {
+pub(crate) fn position_at_pointer(panel: &NSPanel, mtm: MainThreadMarker) -> Value {
     let pointer = NSEvent::mouseLocation();
     let screens = NSScreen::screens(mtm);
     let frames: Vec<_> = screens.iter().map(|screen| screen.frame()).collect();

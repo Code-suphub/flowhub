@@ -53,7 +53,7 @@ pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
         let details=state.details.lock().unwrap();
         if !details.get(window.label()).is_some_and(|(owner,_)|owner==&id){return Err("组件调用来源无效".into());}
     }
-    app.state::<crate::plugin_runtime::Runtime>().widget_call(&id,params).await
+    app.state::<crate::plugin::runtime::Runtime>().widget_call(&id,params).await
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Card { id:String, plugin:String, title:String, view:String, size:String, #[serde(default)] row:Option<String>, #[serde(default)] width:Option<u32>, #[serde(default)] height:Option<u32>, #[serde(default)] break_before:bool, #[serde(default)] x:Option<u32>, #[serde(default)] y:Option<u32>, #[serde(default)] metrics:Option<Vec<String>>, #[serde(default)] config:Value }
@@ -97,7 +97,7 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     if action=="detailContext" {
         let state=app.state::<State>();
         let (id,context)=state.details.lock().unwrap().get(window.label()).cloned().ok_or("详情来源无效")?;
-        let definition=app.state::<crate::plugin_runtime::Runtime>().widget(&id)?;
+        let definition=app.state::<crate::plugin::runtime::Runtime>().widget(&id)?;
         return Ok(json!({"plugin":id,"url":format!("flowhub-plugin://{}/{}?v={}",id,definition.detail,chrono::Utc::now().timestamp_millis()),"context":context}));
     }
     if !["settings","plugin-canvas"].contains(&window.label()){return Err("画布来源无效".into());}
@@ -108,13 +108,13 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save(next)?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}
     else if action=="detail" {
         let id=payload["plugin"].as_str().ok_or("缺少插件")?;
-        app.state::<crate::plugin_runtime::Runtime>().widget(id)?;
+        app.state::<crate::plugin::runtime::Runtime>().widget(id)?;
         let config=payload["config"].clone();
         if !config.is_object()||config.to_string().len()>65536{return Err("详情配置无效".into());}
         let title=payload["title"].as_str().unwrap_or("插件详情");
         if title.len()>120{return Err("标题过长".into());}
         let label=format!("widget-detail-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
-        let context=json!({"config":config,"title":title,"snapshot":app.state::<crate::plugin_status::State>().snapshot(id)});
+        let context=json!({"config":config,"title":title,"snapshot":app.state::<crate::plugin::status::State>().snapshot(id)});
         state.details.lock().unwrap().insert(label.clone(),(id.into(),context));
         let result=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("plugin-detail.html".into())).title(format!("{title} · 详情")).inner_size(860.,650.).min_inner_size(520.,400.).build();
         match result {Ok(w)=>{let handle=app.clone();let key=label.clone();w.on_window_event(move|event|{if matches!(event,tauri::WindowEvent::Destroyed){handle.state::<State>().details.lock().unwrap().remove(&key);}});},Err(e)=>{state.details.lock().unwrap().remove(&label);return Err(e.to_string());}}
@@ -125,7 +125,7 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     else if action=="drag" {window.start_dragging().map_err(|e|e.to_string())?;}
     else if action=="close" {window.close().map_err(|e|e.to_string())?;}
     else if action!="get" {return Err("未知画布操作".into());}
-    let sources:Vec<_>=app.state::<crate::plugin_runtime::Runtime>().widget_plugins().into_iter().map(|(id,title)|json!({"lastLoadedAt":app.state::<crate::plugin_runtime::Runtime>().loaded_at(&id),"snapshot":app.state::<crate::plugin_status::State>().snapshot(&id),"widget":app.state::<crate::plugin_runtime::Runtime>().widget(&id).ok(),"id":id,"title":title})).collect();
+    let sources:Vec<_>=app.state::<crate::plugin::runtime::Runtime>().widget_plugins().into_iter().map(|(id,title)|json!({"lastLoadedAt":app.state::<crate::plugin::runtime::Runtime>().loaded_at(&id),"snapshot":app.state::<crate::plugin::status::State>().snapshot(&id),"widget":app.state::<crate::plugin::runtime::Runtime>().widget(&id).ok(),"id":id,"title":title})).collect();
     Ok(json!({"layout":state.layout.lock().unwrap().clone(),"sources":sources}))
 }
 #[cfg(test)]mod tests{use super::*;#[test]fn layouts_validate_and_persist(){let root=std::env::temp_dir().join(format!("canvas-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&root).unwrap();let s=State::new(&root).unwrap();let mut l=Layout::default();l.boards[0].cards.push(Card{id:"a".into(),plugin:"example".into(),title:"CPU".into(),view:"overview".into(),size:"large".into(),row:None,width:None,height:None,break_before:false,x:None,y:None,metrics:None,config:Value::Null});l.boards[0].cards[0].width=Some(413);l.boards[0].cards[0].height=Some(257);s.save(l.clone()).unwrap();assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].width,Some(413));let mut invalid=l.clone();invalid.boards[0].cards[0].width=Some(0);assert!(s.save(invalid).is_err());assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].size,"large");l.boards.push(l.boards[0].clone());assert!(s.save(l).is_err());std::fs::remove_dir_all(root).unwrap();}}

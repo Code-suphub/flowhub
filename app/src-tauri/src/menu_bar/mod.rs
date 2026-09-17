@@ -1,9 +1,13 @@
 //! Menu bar lifecycle, organizer state and native command dispatch.
 //! Storage handles persisted settings; config_save owns recovery readiness.
+
+#[cfg(target_os = "macos")]
+pub(crate) mod icon;
+#[cfg(any(target_os = "macos", test))]
+pub(crate) mod section_memory;
+
 use crate::storage::{ensure_object_path, hydrated_config};
 use crate::{diagnostics, open_settings, toggle_main, AppState};
-#[cfg(target_os = "macos")]
-use crate::{macos_accessibility, macos_item_submenu, menu_bar_icon, menu_bar_section_memory};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSTextAlignment, NSVariableStatusItemLength,
     NSUserInterfaceItemIdentification};
@@ -334,11 +338,11 @@ fn record_organizer_state(app: &tauri::AppHandle, phase: &str) {
     }
     if phase.ends_with(":after_800ms") {
         let inventory = organizer_window_ids().and_then(|ids| {
-            let items = macos_accessibility::menu_bar_items()?;
+            let items = crate::macos::accessibility::menu_bar_items()?;
             Ok(json!({
                 "phase": phase,
                 "count": items.len(),
-                "currentRowCount": macos_accessibility::items_in_menu_bar_row(&items, ids.1).map(|row| row.len()).ok(),
+                "currentRowCount": crate::macos::accessibility::items_in_menu_bar_row(&items, ids.1).map(|row| row.len()).ok(),
                 "controlWindowId": ids.0,
                 "boundaryWindowId": ids.1,
                 "alwaysHiddenBoundaryWindowId": ids.2,
@@ -516,9 +520,9 @@ pub(crate) async fn toggle_menu_bar_items(app: tauri::AppHandle) -> Result<Value
 pub(crate) fn managed_menu_bar_items(
     boundary_id: u32,
     always_boundary_id: u32,
-) -> Result<Vec<(macos_accessibility::MenuBarItem, &'static str)>, String> {
-    let all_items = macos_accessibility::menu_bar_items()?;
-    let all_items = macos_accessibility::items_in_menu_bar_row(&all_items, boundary_id)?;
+) -> Result<Vec<(crate::macos::accessibility::MenuBarItem, &'static str)>, String> {
+    let all_items = crate::macos::accessibility::menu_bar_items()?;
+    let all_items = crate::macos::accessibility::items_in_menu_bar_row(&all_items, boundary_id)?;
     let boundary = all_items.iter().find(|item| item.window_id == boundary_id);
     let always_boundary = all_items
         .iter()
@@ -546,7 +550,7 @@ pub(crate) fn managed_menu_bar_items(
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn menu_bar_item_display_name(item: &macos_accessibility::MenuBarItem) -> String {
+pub(crate) fn menu_bar_item_display_name(item: &crate::macos::accessibility::MenuBarItem) -> String {
     match item.title.as_str() {
         "Clock" => "时钟".to_string(),
         "BentoBox" => "控制中心".to_string(),
@@ -569,7 +573,7 @@ pub(crate) async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, 
         if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
             return Ok(json!({
                 "ok": true,
-                "trusted": macos_accessibility::is_trusted(),
+                "trusted": crate::macos::accessibility::is_trusted(),
                 "organizerEnabled": false,
                 "items": []
             }));
@@ -586,7 +590,7 @@ pub(crate) async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, 
             // Omit only these fixed entries from management UI, not from the
             // underlying inventory used for geometry and diagnostics.
             .filter(|(item, _)| {
-                !macos_accessibility::is_fixed_menu_bar_entry(
+                !crate::macos::accessibility::is_fixed_menu_bar_entry(
                     &item.owner_name,
                     &item.title,
                     &item.accessibility_id,
@@ -613,7 +617,7 @@ pub(crate) async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, 
         );
         return Ok(json!({
             "ok": true,
-            "trusted": macos_accessibility::is_trusted(),
+            "trusted": crate::macos::accessibility::is_trusted(),
             "organizerEnabled": true,
             "items": items
         }));
@@ -635,7 +639,7 @@ pub(crate) async fn set_menu_bar_item_hidden(
         if !ORGANIZER_ENABLED.load(AtomicOrdering::Acquire) {
             return Ok(json!({ "ok": false, "reason": "请先启用菜单栏隐藏分区" }));
         }
-        if !macos_accessibility::is_trusted() {
+        if !crate::macos::accessibility::is_trusted() {
             return Ok(json!({ "ok": false, "reason": "请先授予 FlowHub 辅助功能权限" }));
         }
         if ORGANIZER_ITEM_MOVE_ACTIVE.swap(true, AtomicOrdering::AcqRel) {
@@ -656,10 +660,10 @@ pub(crate) async fn set_menu_bar_item_hidden(
             .join("menu-bar-sections.json");
         let handle = app.clone();
         let move_result = tauri::async_runtime::spawn_blocking(move || {
-            use menu_bar_section_memory::{Identity, Memory, Section};
+            use crate::menu_bar::section_memory::{Identity, Memory, Section};
             // Require both dividers to exist before trusting section geometry.
-            let inventory = macos_accessibility::menu_bar_items()?;
-            let inventory = macos_accessibility::items_in_menu_bar_row(&inventory, boundary_id)?;
+            let inventory = crate::macos::accessibility::menu_bar_items()?;
+            let inventory = crate::macos::accessibility::items_in_menu_bar_row(&inventory, boundary_id)?;
             if ![control_id, boundary_id, always_boundary_id]
                 .iter()
                 .all(|id| inventory.iter().any(|item| item.window_id == *id))
@@ -726,7 +730,7 @@ pub(crate) async fn set_menu_bar_item_hidden(
                 error
             })?;
             let plan = memory.prepare(&identities, index, section, hidden);
-            let section_of = |item: &macos_accessibility::MenuBarItem| {
+            let section_of = |item: &crate::macos::accessibility::MenuBarItem| {
                 if item.x + item.width <= always_boundary.x + 1.0 {
                     Section::AlwaysHidden
                 } else if item.x + item.width <= boundary.x + 1.0 {
@@ -735,14 +739,14 @@ pub(crate) async fn set_menu_bar_item_hidden(
                     Section::Visible
                 }
             };
-            let manageable = |item: &macos_accessibility::MenuBarItem| {
+            let manageable = |item: &crate::macos::accessibility::MenuBarItem| {
                 item.owner_pid != std::process::id() as i32
                     && item.owner_name != "Window Server"
                     && item.title != "Menubar"
                     && item.movable
                     && item.hideable
             };
-            let usable_anchor = |item: &macos_accessibility::MenuBarItem| {
+            let usable_anchor = |item: &crate::macos::accessibility::MenuBarItem| {
                 manageable(item) || Some(item.window_id) == main_anchor
             };
             if hidden && section != Section::AlwaysHidden {
@@ -800,7 +804,7 @@ pub(crate) async fn set_menu_bar_item_hidden(
                 }),
             );
             // Keep both dividers unchanged: unrelated hidden items must never be exposed.
-            macos_accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, true)
+            crate::macos::accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, true)
         })
         .await
         .map_err(|error| error.to_string())?;
@@ -841,7 +845,7 @@ pub(crate) async fn set_menu_bar_item_hidden(
 pub(crate) fn get_menu_bar_management_state() -> Value {
     #[cfg(target_os = "macos")]
     {
-        let trusted = macos_accessibility::is_trusted();
+        let trusted = crate::macos::accessibility::is_trusted();
         return json!({
             "supported": true,
             "trusted": trusted,
@@ -859,7 +863,7 @@ pub(crate) fn request_menu_bar_management_permission(
 ) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {
-        let trusted = macos_accessibility::request_trust();
+        let trusted = crate::macos::accessibility::request_trust();
         if !trusted {
             app.opener()
                 .open_url(
@@ -975,8 +979,8 @@ pub(crate) fn toggle_menu_bar_panel(app: tauri::AppHandle) -> Result<(), String>
 pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<Value, String> {
     // Updating the parent menu while its child is tracking dismisses the entire
     // cascade. The child refreshes row state in-place and refreshes on close.
-    if macos_item_submenu::is_tracking() {
-        macos_item_submenu::defer_refresh();
+    if crate::macos::item_submenu::is_tracking() {
+        crate::macos::item_submenu::defer_refresh();
         return Ok(json!({ "enabled": true, "refreshDeferred": true }));
     }
     if !config_flag(config, "/core/menuBar/enabled", true) {
@@ -999,7 +1003,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
         menu = menu.separator();
     }
     menu = menu.text("flowhub-desktop-widgets", "打开桌面组件…");
-    let plugins = app.state::<crate::plugin_runtime::Runtime>().status_plugins();
+    let plugins = app.state::<crate::plugin::runtime::Runtime>().status_plugins();
     if !plugins.is_empty() {
         let mut monitors = SubmenuBuilder::new(app, "插件监控");
         for (id, title) in plugins {
@@ -1045,7 +1049,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
         tray.set_menu(Some(menu))
             .map_err(|error| error.to_string())?;
         let submenu_app = app.clone();
-        tray.with_inner_tray_icon(move |tray| macos_item_submenu::install(&submenu_app, tray))
+        tray.with_inner_tray_icon(move |tray| crate::macos::item_submenu::install(&submenu_app, tray))
             .map_err(|error| error.to_string())??;
         let after = tray
             .with_inner_tray_icon(|tray| organizer_item_snapshot(Some(tray)))
@@ -1060,7 +1064,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
         return Ok(json!({ "enabled": true }));
     }
     #[cfg(target_os = "macos")]
-    let icon = menu_bar_icon::image();
+    let icon = crate::menu_bar::icon::image();
     #[cfg(not(target_os = "macos"))]
     let icon = app
         .default_window_icon()
@@ -1080,17 +1084,17 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
                 let _ = open_settings(app.clone(), None);
             }
             "flowhub-desktop-widgets" => {
-                if let Err(error) = crate::plugin_canvas::open(app, "") {
+                if let Err(error) = crate::plugin::canvas::open(app, "") {
                     eprintln!("[flowhub-tauri] 无法打开桌面组件：{error}");
                 }
             }
             id if id.starts_with("flowhub-widget:") => {
-                if let Err(error) = crate::plugin_canvas::open(app, &id["flowhub-widget:".len()..]) {
+                if let Err(error) = crate::plugin::canvas::open(app, &id["flowhub-widget:".len()..]) {
                     eprintln!("[flowhub-tauri] 无法打开插件监控：{error}");
                 }
             }
             id if id.starts_with("flowhub-plugin:") => {
-                crate::plugin_status::open_plugin(app, &id["flowhub-plugin:".len()..]);
+                crate::plugin::status::open_plugin(app, &id["flowhub-plugin:".len()..]);
             }
             "flowhub-update" => {
                 // Use the settings controller for progress, errors and its unsaved
@@ -1148,7 +1152,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
     tray.with_inner_tray_icon(|tray| set_organizer_autosave_name(tray, FLOWHUB_TRAY_AUTOSAVE))
         .map_err(|error| error.to_string())?;
     let submenu_app = app.clone();
-    tray.with_inner_tray_icon(move |tray| macos_item_submenu::install(&submenu_app, tray))
+    tray.with_inner_tray_icon(move |tray| crate::macos::item_submenu::install(&submenu_app, tray))
         .map_err(|error| error.to_string())??;
     Ok(json!({ "enabled": true }))
 }
@@ -1161,7 +1165,7 @@ pub(crate) fn apply_menu_bar(_app: &tauri::AppHandle, _config: &Value) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage_tests::Fixture;
+    use crate::storage::tests::Fixture;
     use std::fs;
 
     #[test]
@@ -1261,7 +1265,7 @@ pub(crate) fn run_smoke_test(app: &tauri::AppHandle) -> Result<(), String> {
             return run_single_control_smoke(app);
         }
         configure_organizer_items(app, true, false)?;
-        let menu_bar_items = macos_accessibility::menu_bar_items()?;
+        let menu_bar_items = crate::macos::accessibility::menu_bar_items()?;
         let organizer_ids = organizer_window_ids()?;
         println!(
             "[flowhub-tauri] 菜单栏图标枚举：{}",

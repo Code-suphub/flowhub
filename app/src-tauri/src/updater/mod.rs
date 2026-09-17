@@ -1,4 +1,7 @@
-use crate::update_cache::{self, CachedUpdate};
+
+pub(crate) mod cache;
+
+use crate::updater::cache::CachedUpdate;
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
@@ -340,7 +343,7 @@ async fn download_inner(app: &AppHandle, runtime: &UpdateRuntime) -> Result<Valu
                 sha256: String::new(),
             };
             let cached =
-                match cache_dir(&app).and_then(|dir| update_cache::save(&dir, metadata, &bytes)) {
+                match cache_dir(&app).and_then(|dir| crate::updater::cache::save(&dir, metadata, &bytes)) {
                     Ok(cached) => cached,
                     Err(error) => {
                         let state = runtime.patch(
@@ -427,18 +430,18 @@ async fn install_inner(app: &AppHandle, runtime: &UpdateRuntime) -> Result<Value
         };
         *runtime.available.lock().unwrap() = Some(update.clone());
         if !cached.matches(&update) {
-            update_cache::clear(&cache_dir(&app)?)?;
+            crate::updater::cache::clear(&cache_dir(&app)?)?;
             *runtime.cached.lock().unwrap() = None;
             runtime.patch(&app, json!({"availableVersion":update.version}));
             return Err("发布版本已变化，请下载新版更新包".into());
         }
-        let bytes = match update_cache::bytes(&cache_dir(&app)?, &cached).and_then(|bytes| {
-            update_cache::verify(&bytes, &update.signature, &public_key(&app)?)?;
+        let bytes = match crate::updater::cache::bytes(&cache_dir(&app)?, &cached).and_then(|bytes| {
+            crate::updater::cache::verify(&bytes, &update.signature, &public_key(&app)?)?;
             Ok(bytes)
         }) {
             Ok(bytes) => bytes,
             Err(error) => {
-                update_cache::clear(&cache_dir(&app)?)?;
+                crate::updater::cache::clear(&cache_dir(&app)?)?;
                 *runtime.cached.lock().unwrap() = None;
                 return Err(format!("本地更新包校验失败，请重新下载：{error}"));
             }
@@ -501,7 +504,7 @@ fn public_key(app: &AppHandle) -> Result<String, String> {
 
 fn restore_cache(app: &AppHandle) -> Result<bool, String> {
     let dir = cache_dir(app)?;
-    let Some(cached) = update_cache::read(&dir)? else {
+    let Some(cached) = crate::updater::cache::read(&dir)? else {
         return Ok(false);
     };
     if cached.arch != std::env::consts::ARCH {
@@ -509,7 +512,7 @@ fn restore_cache(app: &AppHandle) -> Result<bool, String> {
     }
     let version = semver::Version::parse(&cached.version).map_err(public_error)?;
     if version <= app.package_info().version {
-        update_cache::clear(&dir)?;
+        crate::updater::cache::clear(&dir)?;
         update_log(
             app,
             "cache.obsolete-removed",
@@ -517,8 +520,8 @@ fn restore_cache(app: &AppHandle) -> Result<bool, String> {
         );
         return Ok(false);
     }
-    let bytes = update_cache::bytes(&dir, &cached)?;
-    update_cache::verify(&bytes, &cached.signature, &public_key(app)?)?;
+    let bytes = crate::updater::cache::bytes(&dir, &cached)?;
+    crate::updater::cache::verify(&bytes, &cached.signature, &public_key(app)?)?;
     let runtime = app.state::<UpdateRuntime>();
     *runtime.cached.lock().unwrap() = Some(cached.clone());
     runtime.patch(
@@ -607,7 +610,7 @@ pub(crate) fn schedule_update_checks(app: &AppHandle) {
         if let Err(error) = restored {
             update_log(&handle, "cache.invalid", json!({"error":error}));
             if let Ok(dir) = cache_dir(&handle) {
-                let _ = update_cache::clear(&dir);
+                let _ = crate::updater::cache::clear(&dir);
             }
         }
         drop(operation);

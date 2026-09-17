@@ -6,16 +6,10 @@ use storage::{
     write_json_atomic,
 };
 mod config_save;
-#[cfg(test)]
-mod storage_tests;
 mod web_open;
-mod search_diagnostic_run;
-mod focus_diagnostics;
-mod launcher_visibility;
+mod launcher;
 #[cfg(target_os = "macos")]
-mod app_launch;
-#[cfg(target_os = "macos")]
-mod macos_launcher_position;
+mod macos;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -44,27 +38,11 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 mod clipboard;
-mod clipboard_privacy;
-mod cloudflare_probe;
 #[cfg(all(test, feature = "custom-protocol"))]
 mod desktop_security;
 mod diagnostics;
-mod port_inspector;
-mod network_diagnostics;
-mod plugin_runtime;
-mod plugin_status;
-mod plugin_canvas;
-#[cfg(target_os = "macos")]
-mod macos_accessibility;
-#[cfg(target_os = "macos")]
-mod macos_hotkey;
-#[cfg(target_os = "macos")]
-mod macos_item_submenu;
-#[cfg(any(target_os = "macos", test))]
-mod menu_bar_section_memory;
-#[cfg(target_os = "macos")]
-mod menu_bar_icon;
-mod update_cache;
+mod network;
+mod plugin;
 mod updater;
 
 #[cfg(target_os = "macos")]
@@ -79,7 +57,7 @@ tauri_panel! {
 }
 
 const DEFAULT_CONFIG: &str = include_str!("../../../config.json");
-static MAIN_VISIBILITY: Mutex<launcher_visibility::Visibility> = Mutex::new(launcher_visibility::Visibility::new());
+static MAIN_VISIBILITY: Mutex<crate::launcher::visibility::Visibility> = Mutex::new(crate::launcher::visibility::Visibility::new());
 #[tauri::command]
 fn send_test_notification(app: tauri::AppHandle) -> Result<Value, String> {
     let config = hydrated_config(&app.state::<AppState>())?;
@@ -836,7 +814,7 @@ async fn activate_target(
             #[cfg(target_os = "macos")]
             {
                 let target = path.to_string();
-                tauri::async_runtime::spawn_blocking(move || app_launch::launch(&target))
+                tauri::async_runtime::spawn_blocking(move || crate::launcher::app::launch(&target))
                     .await.map_err(|error|error.to_string())??;
             }
             #[cfg(not(target_os = "macos"))]
@@ -1112,7 +1090,7 @@ fn show_macos_window(window: &tauri::WebviewWindow) {
         let mut detail = match panel_handle.get_webview_panel("main") {
             Ok(panel) => {
                 let mut detail = objc2::MainThreadMarker::new()
-                    .map(|mtm| macos_launcher_position::position_at_pointer(panel.as_panel(), mtm))
+                    .map(|mtm| crate::macos::launcher_position::position_at_pointer(panel.as_panel(), mtm))
                     .unwrap_or_else(|| json!({"status": "missing-main-thread"}));
                 panel.show_and_make_key();
                 // `show_and_make_key` changes the native first responder. The
@@ -1133,7 +1111,7 @@ fn show_macos_window(window: &tauri::WebviewWindow) {
                 json!({"status": "panel-error", "error": format!("{error:?}")})
             }
         };
-        focus_diagnostics::record("native-show", detail.clone());
+        crate::diagnostics::focus::record("native-show", detail.clone());
         detail["mainThreadQueueMs"] = json!(queue_ms);
         detail["nativeShowMs"] = json!(queued_at.elapsed().as_secs_f64() * 1000.0);
         // Disk access must not delay the panel's first frame. Diagnostics retain
@@ -1227,7 +1205,7 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
     // registrar can report Command+Space as registered while Spotlight still
     // consumes the event, leaving FlowHub unable to summon its launcher.
     eprintln!("[flowhub-tauri] 使用 macOS Carbon/Event Tap 热键路径");
-    app.try_state::<macos_hotkey::MacHotkeyRuntime>()
+    app.try_state::<crate::macos::hotkey::MacHotkeyRuntime>()
         .ok_or_else(|| "自定义 macOS 热键运行时未初始化".to_string())?
         .register(shortcut)
 }
@@ -1241,18 +1219,18 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 }
 
 pub fn run() {
-    focus_diagnostics::initialize();
+    crate::diagnostics::focus::initialize();
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("flowhub-plugin", |context, request| {
             let uri=request.uri();
             let id=uri.host().unwrap_or("");
             let path=uri.path().trim_start_matches('/');
-            let result=context.app_handle().state::<plugin_runtime::Runtime>().asset(id,path);
+            let result=context.app_handle().state::<crate::plugin::runtime::Runtime>().asset(id,path);
             let (status,body,mime)=match result {Ok((data,mime))=>(200,data,mime),Err(error)=>(404,error.into_bytes(),"text/plain")};
             tauri::http::Response::builder().status(status).header("Content-Type",mime).header("Cache-Control","no-store")
                 // The sandbox gives the document an opaque origin. WebKit cannot
                 // match its custom-protocol subresources against 'self'.
-                .header("Content-Security-Policy",plugin_runtime::asset_csp(id))
+                .header("Content-Security-Policy",crate::plugin::runtime::asset_csp(id))
                 .body(body).unwrap()
         })
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -1264,7 +1242,7 @@ pub fn run() {
                 return;
             }
             if args.iter().any(|arg| arg == "--search-diagnostics") {
-                search_diagnostic_run::start(app);
+                crate::diagnostics::search_run::start(app);
                 return;
             }
             #[cfg(target_os = "macos")]
@@ -1274,7 +1252,7 @@ pub fn run() {
             }
             #[cfg(target_os = "macos")]
             if args.iter().any(|arg| arg == "--menu-bar-controls") {
-                macos_item_submenu::open_controls(app);
+                crate::macos::item_submenu::open_controls(app);
                 return;
             }
             if args.iter().any(|arg| arg == "--menu-bar-panel") {
@@ -1355,11 +1333,11 @@ pub fn run() {
             let state = initialize_state().map_err(std::io::Error::other)?;
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
-            app.manage(plugin_runtime::Runtime::new(app.state::<AppState>().root_dir.clone()).map_err(std::io::Error::other)?);
-            app.manage(plugin_status::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
-            app.manage(plugin_canvas::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
-            plugin_canvas::restore(app.handle());
-            plugin_status::start(app.handle().clone());
+            app.manage(crate::plugin::runtime::Runtime::new(app.state::<AppState>().root_dir.clone()).map_err(std::io::Error::other)?);
+            app.manage(crate::plugin::status::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
+            app.manage(crate::plugin::canvas::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
+            crate::plugin::canvas::restore(app.handle());
+            crate::plugin::status::start(app.handle().clone());
             if app
                 .state::<AppState>()
                 .application_index_needs_refresh
@@ -1372,7 +1350,7 @@ pub fn run() {
             // Keep the Carbon/event-tap fallback ready. Command+Space is often
             // claimed by Spotlight, which can make the official registrar fail.
             app.manage(
-                macos_hotkey::MacHotkeyRuntime::install(app.handle())
+                crate::macos::hotkey::MacHotkeyRuntime::install(app.handle())
                     .map_err(std::io::Error::other)?,
             );
             app.manage(clipboard::ClipboardRuntime::new());
@@ -1407,7 +1385,7 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 install_launcher_activation_observer(app.handle());
                 #[cfg(target_os = "macos")]
-                focus_diagnostics::install_native_monitor();
+                crate::diagnostics::focus::install_native_monitor();
                 #[cfg(not(target_os = "macos"))]
                 let _ = window.set_visible_on_all_workspaces(true);
                 let main_window = window.clone();
@@ -1416,11 +1394,11 @@ pub fn run() {
                         api.prevent_close();
                         let _ = main_window.hide();
                     } else if let WindowEvent::Focused(true) = event {
-                        focus_diagnostics::record("native-focus", json!({"focused": true}));
+                        crate::diagnostics::focus::record("native-focus", json!({"focused": true}));
                         eprintln!("[flowhub-tauri] 主窗口获得焦点");
                         MAIN_VISIBILITY.lock().unwrap().invalidate();
                     } else if let WindowEvent::Focused(false) = event {
-                        focus_diagnostics::record("native-focus", json!({"focused": false}));
+                        crate::diagnostics::focus::record("native-focus", json!({"focused": false}));
                         eprintln!("[flowhub-tauri] 主窗口失去焦点");
                         // Defer early blur, never discard it. A later focus/show
                         // invalidates this check so it cannot hide a new session.
@@ -1476,16 +1454,16 @@ pub fn run() {
             get_proxy_info,
             search_usage,
             open_settings,
-            plugin_runtime::plugin_api,
-            plugin_runtime::plugin_search_call,
-            plugin_runtime::plugin_rpc,
-            plugin_status::plugin_status_api,
-            plugin_canvas::plugin_canvas_api,
-            plugin_canvas::plugin_widget_rpc,
+            crate::plugin::runtime::plugin_api,
+            crate::plugin::runtime::plugin_search_call,
+            crate::plugin::runtime::plugin_rpc,
+            crate::plugin::status::plugin_status_api,
+            crate::plugin::canvas::plugin_canvas_api,
+            crate::plugin::canvas::plugin_widget_rpc,
             close_settings,
-            network_diagnostics::run_network_diagnostic,
-            port_inspector::inspect_port,
-            port_inspector::terminate_port_process,
+            crate::network::diagnostics::run_network_diagnostic,
+            crate::network::port_inspector::inspect_port,
+            crate::network::port_inspector::terminate_port_process,
             open_accessibility_settings,
             menu_bar::get_menu_bar_management_state,
             menu_bar::request_menu_bar_management_permission,
@@ -1494,10 +1472,10 @@ pub fn run() {
             menu_bar::set_menu_bar_item_hidden,
             get_config_path_info,
             get_storage_info,
-            search_diagnostic_run::save_search_diagnostic_run,
-            focus_diagnostics::focus_diagnostics_enabled,
-            focus_diagnostics::focus_diagnostics_loop_enabled,
-            focus_diagnostics::record_focus_sample,
+            crate::diagnostics::search_run::save_search_diagnostic_run,
+            crate::diagnostics::focus::focus_diagnostics_enabled,
+            crate::diagnostics::focus::focus_diagnostics_loop_enabled,
+            crate::diagnostics::focus::record_focus_sample,
             diagnostics::get_diagnostics_state,
             diagnostics::set_diagnostics_enabled,
             diagnostics::sample_diagnostics,
@@ -1511,7 +1489,7 @@ pub fn run() {
             clipboard::activate_clipboard,
             clipboard::copy_text,
             clipboard::delete_clipboard,
-            cloudflare_probe::inspect_cloudflare,
+            crate::network::cloudflare::inspect_cloudflare,
             updater::log_update_event,
             updater::get_update_state,
             updater::check_for_updates,

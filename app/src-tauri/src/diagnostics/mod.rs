@@ -1,3 +1,7 @@
+
+pub(crate) mod focus;
+pub(crate) mod search_run;
+
 use serde_json::{json, Value};
 use std::{
     fs::{self, OpenOptions},

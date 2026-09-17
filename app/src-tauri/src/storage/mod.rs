@@ -1,6 +1,10 @@
 //! Storage leases, schema/catalog access, startup migration and snapshot preparation.
 //! Lock order remains config_save -> storage_access -> paths. Connections retain
 //! their shared storage lease until SQLite closes; config_save owns undo recovery.
+
+#[cfg(test)]
+pub(crate) mod tests;
+
 mod usage;
 use crate::{
     application_fingerprint, config_save, load_application_cache, AppPaths, AppState,
