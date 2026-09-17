@@ -21,6 +21,10 @@
 - [打开既有存储](./architecture/storage/storage-open-existing.md)
 - [选择性配置保存](./architecture/storage/selective-config-save.md)
 
+**剪贴板**（[`architecture/clipboard/`](./architecture/clipboard)）
+
+- [留存、清理与高频操作](./architecture/clipboard/retention-and-actions.md)
+
 **菜单栏**（[`architecture/menu-bar/`](./architecture/menu-bar)）
 
 - [菜单栏显示间距](./architecture/menu-bar/menu-bar-display-spacing.md)
