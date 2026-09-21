@@ -1664,26 +1664,30 @@ function renderModule() {
 }
 
 function renderCoreSection() {
-  const sections = {
-    general: { icon: "F", title: "启动与唤出", description: "修改快捷键或登录启动设置，保存后立即生效。" },
-    search: { icon: "⌘", title: "搜索入口", description: "集中管理搜索来源、启停状态和范围快捷键。" },
-    network: { icon: "↗", title: "网络与代理", description: "选择 FlowHub 读取本机代理状态的方式。" },
-    menubar: { icon: "⌂", title: "菜单栏", description: "设置 FlowHub 菜单内容，以及菜单栏图标的显示与整理。" },
-    notifications: { icon: "·", title: "通知", description: "选择需要接收的应用通知，并检查系统通知权限。" },
-    data: { icon: "▤", title: "数据与诊断", description: "查看配置文件位置，或采样本机性能数据以排查问题。" },
-    updates: { icon: "↻", title: "应用更新", description: "查看版本和安装进度，设置自动检查与安装策略。" }
-  };
-  if (!sections[state.coreSection]) state.coreSection = "general";
-  document.querySelectorAll("[data-core-section]").forEach((button) => {
-    const active = button.dataset.coreSection === state.coreSection;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-    button.dataset.helpTooltip = sections[button.dataset.coreSection]?.description || "";
-  });
+  if (!["general", "search", "network", "menubar", "notifications", "data", "updates"].includes(state.coreSection)) state.coreSection = "general";
+  const panelGroup = document.querySelector('.core-settings-card > .clipboard-settings-grid');
+  if (panelGroup) {
+    panelGroup.id = `panel-${state.coreSection}`;
+    panelGroup.setAttribute('role', 'tabpanel');
+    panelGroup.setAttribute('aria-labelledby', `tab-${state.coreSection}`);
+  }
   document.querySelectorAll("[data-core-section-panel]").forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.coreSectionPanel !== state.coreSection);
   });
+  window.dispatchEvent(new Event("flowhub:settings-section"));
 }
+
+// React owns navigation; the existing controller remains the configuration owner.
+window.FlowHubSettingsNavigation = {
+  getSection: () => state.coreSection,
+  selectSection(section) {
+    if (state.coreSection === section) return;
+    state.coreSection = section;
+    renderCoreSection();
+    if (isMenuBarPageVisible()) void refreshMenuBarManagementState();
+    document.querySelector(".editor")?.scrollTo({ top: 0 });
+  }
+};
 
 function renderPluginModules() {
   const plugins = state.plugins
@@ -2685,15 +2689,6 @@ document.addEventListener("click", (event) => {
     return;
   }
   document.querySelectorAll(".shortcut-capture.is-capturing").forEach((active) => finishShortcutCapture(active, { restore: true }));
-  const coreSection = event.target.closest("[data-core-section]")?.dataset.coreSection;
-  if (coreSection) {
-    if (state.coreSection === coreSection) return;
-    state.coreSection = coreSection;
-    renderCoreSection();
-    if (isMenuBarPageVisible()) void refreshMenuBarManagementState();
-    document.querySelector(".editor")?.scrollTo({ top: 0 });
-    return;
-  }
   const module = event.target.closest("[data-module]")?.dataset.module;
   if (module) {
     switchModule(module);

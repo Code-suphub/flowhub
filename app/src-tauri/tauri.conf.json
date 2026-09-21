@@ -4,6 +4,7 @@
   "version": "0.1.11",
   "identifier": "cn.ac.camellia.flowhub",
   "build": {
+    "beforeBuildCommand": "npm run build:ui",
     "beforeDevCommand": "npm run dev:web -- --port 5174",
     "devUrl": "http://127.0.0.1:5174",
     "frontendDist": "../ui"
