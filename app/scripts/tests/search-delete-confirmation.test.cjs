@@ -3,11 +3,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 test('clipboard deletion uses shared dialog; cancel/Escape send no delete, confirmation sends once with explicit flag',async t=>{
-  const {w,q,scope,key,calls}=await setup(t);await scope('clipboard');
+  const {w,q,scope,key,calls}=await setup(t);await scope('clipboard');q.focus();
+  // jsdom allows focus inside a closed dialog; browsers keep those controls inert.
+  const focus=w.HTMLElement.prototype.focus;
+  w.HTMLElement.prototype.focus=function(...args){if(this.closest('dialog:not([open])'))return;return focus.apply(this,args);};
   key('Backspace',{altKey:true});await wait(()=>w.document.querySelector('dialog[open]'));
   assert.equal(calls.filter(c=>c[0]==='action').length,0);
   const find=text=>[...w.document.querySelectorAll('dialog button')].find(b=>b.textContent===text);
-  find('取消').click();await wait(()=>!w.document.querySelector('dialog'));assert.equal(w.document.activeElement,q);
+  find('取消').click();await wait(()=>!w.document.querySelector('dialog'));await wait(()=>w.document.activeElement?.id==='q');
   w.document.querySelector('.clipboard-result').dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>find('确认删除'));
   w.document.querySelector('dialog').dispatchEvent(new w.Event('cancel',{cancelable:true}));await wait(()=>!w.document.querySelector('dialog'));assert.equal(calls.filter(c=>c[0]==='action').length,0);
   let complete;w.weborg.pluginAction=async(...args)=>{calls.push(['action',...args]);return new Promise(resolve=>{complete=resolve;});};
