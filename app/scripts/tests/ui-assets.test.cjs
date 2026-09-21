@@ -18,5 +18,10 @@ assert.ok(fs.existsSync(path.join(ui,'plugins.json')),'plugins.json 必须留在
 // 入口页文件名被 Rust 的 WebviewUrl / tauri.conf.json / desktop_security 直接引用。
 for(const entry of ['search.html','settings.html','menu-bar-panel.html','plugin-canvas.html','plugin-detail.html','plugin-market.html','plugin-status.html']){
   assert.ok(fs.existsSync(path.join(ui,entry)),`入口页 ${entry} 必须留在 ui/ 根目录`);
+  const html=fs.readFileSync(path.join(ui,entry),'utf8');
+  assert.match(html,/src="react\/host\.js"/,`${entry} 必须加载 React 产物`);
+  assert.match(html,/href="react\/host\.css"/,`${entry} 必须加载组件样式`);
+  assert.match(html,/id="[\w-]+-root"/,`${entry} 必须保留 React 挂载点`);
+  assert.doesNotMatch(html,/<(?:select|textarea|button)\b/i,`${entry} 不再保留旧表单副本`);
 }
 console.log(`PASS: ${htmlFiles.length} 个入口页的 ${checked} 处资源引用均可解析，plugins.json 与入口页仍在 ui 根`);

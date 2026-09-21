@@ -1,63 +1,67 @@
-const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
-const cut=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end));
-async function main(){
-  const q={focus(){},select(){}},state={scope:'app',index:0,usageColumn:0};
-  let handler,items,calls=[],messages=[],prevented=0;
-  const document={activeElement:q,documentElement:{dataset:{}},getElementById:()=>null,addEventListener:(name,fn)=>handler=fn};
-  const context=vm.createContext({state,q,document,window:{weborg:{pluginAction:async(...args)=>{calls.push(args);return {ok:true};}}},
-    searchInputComposing:false,searchCompositionEndedAt:0,performance:{now:()=>1000},scopeForShortcut:()=>null,
-    scopeTabHeld:false,scopeTabUsedWithArrow:false,matches:()=>items,revealActiveResult(){},showActionStatus:m=>messages.push(m)});
-  vm.runInContext(cut('function normalizeUrl(', 'function calculateExpression('),context);
-  vm.runInContext(cut('function pathText(', 'function pageMatches('),context);
-  vm.runInContext(cut('function usageIndices(', 'function clipboardTextHtml('),context);
-  vm.runInContext(cut('function choose(', 'function queueDnsLookup('),context);
-  vm.runInContext(cut('function returnToSearch()', 'document.addEventListener("keyup"'),context);
-  const key=(name,extra={})=>handler({key:name,target:q,metaKey:false,ctrlKey:false,altKey:false,shiftKey:false,preventDefault(){prevented++;},...extra});
-  for(const scope of ['all','app','web']){
-    state.scope=scope;state.index=0;state.usageColumn=0;
-    items=['A','B','C','D','E','F'].map((title,i)=>({type:'app',title,path:`/Applications/${title}.app`,...(i<3?{usageSection:'frequent'}:i<5?{usageSection:'recent'}:{})}));
-    key('ArrowRight');assert.equal(state.index,1);
-    key('ArrowRight');assert.equal(state.index,2);
-    key('ArrowLeft');assert.equal(state.index,1);
-    key('ArrowDown');assert.equal(state.index,4);
-    key('ArrowUp');assert.equal(state.index,1);
-    key('Enter');await new Promise(resolve=>setImmediate(resolve));
-    assert.equal(calls.at(-1)[0],'app');assert.equal(calls.at(-1)[2].path,'/Applications/B.app');
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {setup,wait,delay}=require('./search-react-harness.cjs');
+const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
+test('usage rows/columns in all/app/web preserve Enter targets, modifiers, IME and launch failure feedback',async t=>{
+  const {w,q,key,scope,calls,input}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
+  const active=()=>w.document.querySelector('.result.active h3')?.textContent;
+  for(const id of ['all','app']) {
+    await scope(id);key('ArrowRight');await wait(()=>active()==='B');
+    key('ArrowRight');await wait(()=>active()==='C');key('ArrowLeft');await wait(()=>active()==='B');
+    key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='B');
+    key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/B.app'));
   }
-  for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']){
-    state.index=0;const before=prevented;key('ArrowRight',{[modifier]:true});assert.equal(state.index,0);assert.equal(prevented,before);
+  for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']) {
+    assert.equal(key('ArrowRight',{[modifier]:true}),true);assert.equal(active(),'B');
   }
-  items=[{type:'app',title:'Search result',path:'/Applications/A.app'}];state.index=0;
-  const before=prevented;key('ArrowRight');assert.equal(prevented,before);
-  context.searchInputComposing=true;key('Enter');assert.equal(calls.length,3);context.searchInputComposing=false;
-  const app={type:'app',title:'A',path:'/Applications/A.app'};
-  context.window.weborg.pluginAction=async()=>({ok:false,reason:'应用路径为空'});
-  await context.choose(app);assert.equal(messages.at(-1),'应用路径为空');
-  context.window.weborg.pluginAction=async()=>{throw 'Launch Services refused';};
-  await context.choose(app);assert.equal(messages.at(-1),'Launch Services refused');
-  context.window.weborg.pluginAction=()=>{throw new Error('native bridge failed');};
-  await context.choose(app);assert.equal(messages.at(-1),'native bridge failed');
-  const count=messages.length;context.window.weborg.pluginAction=async()=>({ok:false,cancelled:true});
-  await context.choose(app);assert.equal(messages.length,count);
-  console.log('PASS: usage arrows in all/app/web, row/column navigation, Enter target, editing modifiers, IME and launch error feedback');
-
-  const listeners={},activated=[];let now=100,prevent=0;
-  const row={dataset:{i:'0'}},otherRow={dataset:{i:'0'}};
-  const mouse=vm.createContext({resultsEl:{addEventListener:(name,fn)=>listeners[name]=fn},matches:()=>[app],
-    performance:{now:()=>now},choose:item=>activated.push(item.path),document:{documentElement:{dataset:{}}},window:{}});
-  vm.runInContext(cut('let releasedAppPress', 'resultsEl.addEventListener("contextmenu"'),mouse);
-  vm.runInContext(cut('resultsEl.addEventListener("click"', 'resultsEl.addEventListener("mousemove"'),mouse);
-  const event=(stamp,target=row,button=0)=>({timeStamp:stamp,button,detail:1,target:{closest:selector=>selector==='.result'?target:null},preventDefault(){prevent++;}});
-  listeners.mousedown(event(100));assert.equal(activated.length,0);assert.equal(prevent,1);
-  listeners.mouseup(event(180));listeners.click(event(180));assert.equal(activated.length,1);
-  now=500;listeners.mouseup(event(480));now=502;listeners.mousedown(event(400));assert.equal(activated.length,2);
-  listeners.click(event(480));assert.equal(activated.length,2);
-  listeners.mousedown(event(600));listeners.mouseup(event(680));listeners.click(event(680));assert.equal(activated.length,3);
-  now=800;listeners.mouseup(event(780));now=1001;listeners.mousedown(event(700));assert.equal(activated.length,3);
-  now=1100;listeners.mouseup(event(1080));listeners.mousedown(event(1000,otherRow));assert.equal(activated.length,3);
-  app.type='clipboard';now=1200;listeners.mouseup(event(1180));listeners.mousedown(event(1100));assert.equal(activated.length,3);
-  listeners.click({...event(1300),detail:0});assert.equal(activated.length,4);
-  console.log('PASS: app click retains focus; reordered release/press launches once; ordinary clicks, keyboard clicks, stale/mismatched releases and clipboard isolation');
-}
-main().catch(error=>{console.error(error);process.exitCode=1;});
+  q.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));const before=calls.length;
+  key('Enter');assert.equal(calls.length,before);q.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true}));
+  await input('search');await scope('app');assert.equal(key('ArrowRight'),true,'bare arrows in normal result rows belong to input');
+  for(const [action,message] of [
+    [async()=>({ok:false,reason:'应用路径为空'}),'应用路径为空'],
+    [async()=>{throw 'Launch Services refused';},'Launch Services refused'],
+    [()=>{throw new Error('native bridge failed');},'native bridge failed']
+  ]) {w.weborg.pluginAction=action;key('Enter');await wait(()=>w.document.getElementById('actionStatus').textContent===message);}
+  const previous=w.document.getElementById('actionStatus').textContent;
+  w.weborg.pluginAction=async()=>({ok:false,cancelled:true});key('Enter');await delay(20);assert.equal(w.document.getElementById('actionStatus').textContent,previous);
+  const web=await setup(t,{usage:{frequent:['A','B','C'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'})),recent:['D','E'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'}))}});
+  await web.scope('web');web.key('ArrowRight');web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='E');
+  web.key('ArrowUp');web.key('Enter');await wait(()=>web.calls.some(c=>c[0]==='action'&&c[1]==='web'&&c[3].id==='B'));
+});
+test('application metadata updates per query; native icon hydration stays asynchronous and ignores stale replies',async t=>{
+  let resolveOld;const iconCalls=[];
+  const {w,input,scope,calls}=await setup(t,{search:(id,args,fixture)=>id==='app'?[{id:args.query||'initial',title:args.query||'Initial App',path:`/${args.query||'initial'}.app`}]:fixture[id]||[],loadAppIcons:async paths=>{
+    iconCalls.push(paths);
+    if(paths[0]==='/old.app')return new Promise(resolve=>{resolveOld=resolve;});
+    return Object.fromEntries(paths.map(p=>[p,'data:image/png;base64,newIcon']));
+  }});
+  await scope('app');await wait(()=>w.document.querySelector('.app-result img'));
+  assert.ok(calls.filter(c=>c[0]==='search'&&c[1]==='app').every(c=>c[2].includeIcons===false));
+  await input('old');await wait(()=>resolveOld);await input('new');
+  await wait(()=>w.document.querySelector('.app-result h3')?.textContent==='new');
+  resolveOld({'/old.app':'data:image/png;base64,STALE'});await delay(20);
+  assert.equal(w.document.querySelector('.app-result h3').textContent,'new');assert.ok(!w.document.querySelector('.app-result img').src.includes('STALE'));
+  assert.ok(iconCalls.some(paths=>paths[0]==='/new.app'));
+});
+test('native first activation focuses after two paints and reopening resets query without losing navigation',async t=>{
+  const {w,q,input,key,calls}=await setup(t,{native:true});
+  await input('previous');q.blur();const frames=[],original=w.requestAnimationFrame;
+  w.requestAnimationFrame=callback=>{frames.push(callback);return frames.length;};
+  w.dispatchEvent(new w.Event('focus'));assert.notEqual(w.document.activeElement,q);
+  frames.shift()();assert.notEqual(w.document.activeElement,q);frames.shift()();assert.equal(w.document.activeElement,q);
+  assert.equal(q.selectionStart,0);assert.equal(q.selectionEnd,q.value.length);w.requestAnimationFrame=original;
+  w.prepareForShow();await wait(()=>q.value==='');assert.equal(w.document.activeElement,q);
+  key('Tab');q.dispatchEvent(new w.KeyboardEvent('keyup',{key:'Tab',bubbles:true}));await wait(()=>w.document.querySelector('[data-scope="clipboard"]').getAttribute('aria-pressed')==='true');
+  assert.equal(calls.filter(c=>c[0]==='hide').length,0);
+});
+test('app click recovery ignores stale/mismatched releases and never turns clipboard press into paste',async t=>{
+  const {w,scope,calls}=await setup(t);await scope('app');
+  const row=w.document.querySelector('.app-result');
+  const send=(target,type,timeStamp,extra={})=>{const e=new w.MouseEvent(type,{bubbles:true,button:0,detail:1,cancelable:true,...extra});Object.defineProperty(e,'timeStamp',{value:timeStamp});target.dispatchEvent(e);};
+  send(row,'mousedown',100);assert.equal(calls.filter(c=>c[0]==='action').length,0);
+  send(row,'mouseup',180);send(row,'click',180);await wait(()=>calls.filter(c=>c[0]==='action').length===1);
+  send(row,'mouseup',480);send(row,'mousedown',400);send(row,'click',480);await delay(20);assert.equal(calls.filter(c=>c[0]==='action').length,2);
+  send(row,'mouseup',780);await delay(120);send(row,'mousedown',700);assert.equal(calls.filter(c=>c[0]==='action').length,2);
+  await scope('clipboard');const clipboard=w.document.querySelector('.clipboard-result');send(clipboard,'mouseup',1180);send(clipboard,'mousedown',1100);assert.equal(calls.filter(c=>c[0]==='action').length,2);
+  send(clipboard,'click',1300,{detail:0});await wait(()=>calls.filter(c=>c[0]==='action').length===3);
+});

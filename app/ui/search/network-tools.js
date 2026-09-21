@@ -15,10 +15,10 @@
   window.FlowHubNetworkTools = {parse,command};
   for(const kind of ['ping','curl']) {
     let version=0,report=null,error='',busy=false;
-    const button=(action,title,disabled=false)=>`<button type="button" class="tool-action" data-tool-id="${kind}" data-tool-action="${action}" ${disabled?'disabled':''}>${title}</button>`;
+
     // 历史与模板只在桌面版开关打开时读写；测试或预览里没有这个模块就整体跳过。
     const historyEnabled = ctx => Boolean(store()) && ctx?.enabled?.('commandHistory') !== false;
-    const panel = (enabled,esc) => Boolean(store()) && enabled?.('commandHistory') !== false ? store().panelHtml(kind,esc) : '';
+
     const remember = (ctx,q) => {
       if(!historyEnabled(ctx))return;
       const saved=store().history.record(kind,ctx.queryNow(),{params:params(q)});
@@ -47,12 +47,8 @@
     window.FlowHubTools.register({
       id:kind,
       queryChanged(){++version;report=null;error='';},
-      suggestions(ctx){const q=parse(ctx.query);return q?.kind===kind?[{id:`network:${kind}:${q.target}:${q.head}`,toolId:kind,type:'network',q}]:[];},
-      render(item,{esc,index,active,enabled}) {
-        const ipv6=kind==='ping'&&item.q.target.includes(':');
-        const status=busy?'正在执行…':error||(report?`${report.timedOut?'执行超时':report.exitCode===0?'执行完成':'命令未成功'} · ${report.elapsedMs} ms · 退出码 ${report.exitCode??'—'}`:'回车或点击执行');
-        return `<div class="result port-result ${active?'active':''}" data-i="${index}"><div class="r-body"><div class="r-title">${kind==='ping'?'Ping 连通性':item.q.head?'HTTP 响应头':'HTTP GET 请求'}</div><div class="port-detail">${esc(item.q.target)}</div><div class="port-detail" role="status">${esc(status)}</div>${report?`<pre class="network-output">${esc(report.output||'没有输出')}${report.truncated?'\n…输出已截断':''}</pre>`:''}<div class="tool-actions">${button('run',report?'重新执行':'执行',busy)}${button('command',ipv6?'复制 macOS 命令':'复制查询命令')}${ipv6?button('linux','复制 Linux 命令'):''}${report?button('output','复制输出'):''}</div><div class="port-detail">${kind==='ping'?'发送 4 次探测，最多等待 8 秒。无回复不一定表示主机离线。':'支持 GET / HEAD，不自动跟随重定向；最多等待 12 秒。'} · F6 聚焦按钮</div>${panel(enabled,esc)}</div></div>`;
-      },
+      suggestions(ctx){const q=parse(ctx.query);return q?.kind===kind?[{id:`network:${kind}:${q.target}:${q.head}`,toolId:kind,type:'network',q,report,error,busy}]:[];},
+
       choose(item,ctx){return run(ctx);},
       async action(action,target,ctx) {
         if(action==='history-clear'){store().history.clear(kind);ctx.render();return ctx.status?.('已清空本工具的历史');}

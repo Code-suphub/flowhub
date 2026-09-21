@@ -1,323 +1,67 @@
-const fs = require('node:fs');
-const vm = require('node:vm');
-const assert = require('node:assert/strict');
-const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '../../ui/settings/settings.js'), 'utf8');
-const clone = value => JSON.parse(JSON.stringify(value));
-const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => {resolve=a; reject=b}); return {promise,resolve,reject}; };
-const draftKey = (file, storage = 'default') => `flowhub:settings-draft:v2:${JSON.stringify([file, storage])}`;
-const config = label => ({core:{configPath:label}, plugins:{web:{settings:{items:[{id:label}]}}}});
-function harness(mode = 'structure') {
-  const nodes = new Map();
-  const element = id => {
-    if (!nodes.has(id)) nodes.set(id, {value:'', dataset:{}, classList:{add(){},remove(){},toggle(){}}, setAttribute(){},addEventListener(){}});
-    return nodes.get(id);
-  };
-  const listeners = {}, timers = new Map(), storage = new Map();
-  let timerId=0, calls=0, submitted;
-  const saving=deferred(), metadata=deferred(), loading=deferred();
-  const ctx=vm.createContext({console, URL, URLSearchParams, Set, Map, Date, JSON,
-    setTimeout: fn => {timers.set(++timerId,fn); return timerId}, clearTimeout: id => timers.delete(id),
-    localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
-    document:{querySelector:s=>s==='.settings-actionbar'?null:element(s),querySelectorAll:()=>[],addEventListener:(n,f)=>(listeners[n] ||= []).push(f)},
-    window:{location:{search:''},addEventListener(){},confirm:()=>true,flowhubPerformance:{measure:(_,fn)=>fn()},weborg:{
-      saveConfig: c=>{calls++;submitted=c;return saving.promise}, listPlugins:()=>metadata.promise,
-      getClipboardStorageInfo:async()=>({}),getConfigPathInfo:async()=>({activePath:'B'}),getConfig:()=>loading.promise,
-      closeSettings:async()=>{}, getUpdateState:async()=>({}), getDiagnosticsState:async()=>({}), getMenuBarManagementState:async()=>({}),
-    }}
-  });
-  vm.runInContext(source.slice(0,source.lastIndexOf('\nPromise.all([window.weborg.listPlugins()')),ctx);
-  vm.runInContext(`normalizeConfig = value => value; render = () => { syncJson(); }; renderUpdateNotice = () => {}; renderMemoSettings = () => {};`,ctx);
-  const state=vm.runInContext('state',ctx);
-  Object.assign(state,{mode,config:config('A'),savedConfig:config('baseline'),configFile:{activePath:'A'},dirty:true});
-  element('#jsonEditor').value=JSON.stringify(state.config);
-  const input=(target)=>listeners.input.forEach(fn=>fn({target}));
-  const edit=value=>input({dataset:{coreField:'name'},type:'text',value});
-  const json=text=>{element('#jsonEditor').value=text; input({id:'jsonEditor'})};
-  return {ctx,state,saving,metadata,loading,storage,edit,json,element,
-    configInput: input,
-    change:target=>listeners.change.forEach(fn=>fn({target})),
-    initialize:()=>vm.runInContext(source.slice(source.lastIndexOf('\nPromise.all([window.weborg.listPlugins()')),ctx), calls:()=>calls,submitted:()=>submitted,
-    flush(){const pending=[...timers.values()];timers.clear();pending.forEach(fn=>fn())},
-    commit(c=config('A'),operation='save'){saving.resolve({ok:true,config:c,storageState:{operation}})},
-    async tick(){await new Promise(resolve=>setImmediate(resolve))},
-  };
-}
-(async()=>{
-  for (const status of ['available', 'downloaded']) {
-    const h = harness();
-    h.state.appUpdate = {status};
-    let installs = 0;
-    h.ctx.window.confirm = () => { throw new Error('installation must not ask twice'); };
-    h.ctx.window.weborg.downloadAndInstallUpdate = async () => { installs++; return {ok:true,state:{status:'installing'}}; };
-    vm.runInContext('renderAppUpdate = () => {};', h.ctx);
-    await h.ctx.performPrimaryUpdateAction();
-    assert.equal(installs, 0, 'unsaved settings block installation before download');
-    h.state.dirty = false;
-    await h.ctx.performPrimaryUpdateAction();
-    assert.equal(installs, 1, 'one click invokes the complete update operation');
-    assert.equal(h.state.appUpdate.status, 'installing');
-  }
-  console.log('PASS: one-click update and unsaved configuration guard');
-  {
-    const h = harness();
-    h.state.appUpdate = {status:'available'};
-    h.state.dirty = false;
-    const pending = deferred();
-    let installs = 0;
-    h.ctx.window.weborg.downloadAndInstallUpdate = () => { installs++; return pending.promise; };
-    vm.runInContext('renderAppUpdate = () => {};', h.ctx);
-    const operation = h.ctx.performPrimaryUpdateAction();
-    await h.tick();
-    await h.ctx.performPrimaryUpdateAction();
-    assert.equal(installs, 1, 'repeated clicks cannot start another operation');
-    assert.equal(h.element('main').inert, true, 'configuration editing is locked until completion');
-    pending.reject(new Error('network unavailable'));
-    await assert.rejects(operation, /network unavailable/);
-    assert.equal(h.element('main').inert, false, 'failure restores editing and retry');
-    assert.equal(h.state.updateInstalling, false);
-  }
-  {
-    const h=harness(); h.state.config.plugins.clipboard={enabled:true,settings:{}};
-    h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'true'});
-    h.configInput({dataset:{configField:'clipboardProtectSensitive'},value:'false'});
-    h.configInput({dataset:{configField:'clipboardExcludedApps'},value:'com.example.secret'});
-    assert.deepEqual(clone(h.state.config.plugins.clipboard),{enabled:true,settings:{capturePaused:true,protectSensitive:false}},'removed editor cannot create an exclusion');
-    assert(h.element('#clipboardStatusValue').textContent.includes('待保存：暂停采集'));
-    const p=h.ctx.save();
-    assert.equal(h.submitted().plugins.clipboard.settings.capturePaused,true);
-    h.commit(clone(h.submitted())); h.metadata.resolve([]); await p;
-    h.configInput({dataset:{configField:'clipboardCapturePaused'},value:'false'});
-    assert(h.element('#clipboardStatusValue').textContent.includes('允许采集'));
-    assert.equal(h.state.config.plugins.clipboard.enabled,true,'pause never disables history search');
-    assert.equal(h.element('#clipboardLegacyExclusions').hidden,true);
-    console.log('PASS: pause/resume preserves history, unsupported exclusion has no editor');
-  }
-  for (const mode of ['structure','json']) {
-    const h=harness(mode);
-    h.state.config.plugins.clipboard={enabled:true,settings:{capturePaused:true,excludedApps:['legacy.app']}};
-    h.state.savedConfig=clone(h.state.config);
-    h.element('#jsonEditor').value=JSON.stringify(h.state.config);
-    h.ctx.renderClipboardSummary();
-    assert.equal(h.element('#clipboardLegacyExclusions').hidden,false);
-    const p=h.ctx.clearClipboardExclusions();
-    assert.deepEqual(clone(h.submitted().plugins.clipboard.settings),{capturePaused:true,excludedApps:[]});
-    await h.ctx.clearClipboardExclusions();assert.equal(h.calls(),1);
-    h.commit(clone(h.submitted()));h.metadata.resolve([]);await p;
-    h.ctx.renderClipboardSummary();
-    assert.equal(h.element('#clipboardLegacyExclusions').hidden,true);
-    assert.equal(h.state.config.plugins.clipboard.settings.capturePaused,true,'recovery never resumes an explicit pause');
-  }
-  {
-    const h=harness();h.state.config.plugins.clipboard={settings:{excludedApps:['legacy.app']}};
-    h.state.savedConfig=clone(h.state.config);
-    const p=h.ctx.clearClipboardExclusions();h.saving.reject(Error('save failed'));await p;
-    h.ctx.renderClipboardSummary();
-    assert.equal(h.element('#clipboardLegacyExclusions').hidden,false,'failed save retains recovery notice');
-    assert.deepEqual(h.state.savedConfig.plugins.clipboard.settings.excludedApps,['legacy.app']);
-    h.state.saveConflict={draftKey:'source'};await h.ctx.clearClipboardExclusions();assert.equal(h.calls(),1);
-    for(const value of [[null],123,['legacy.app']]) {
-      h.state.config.plugins.clipboard.settings.excludedApps=value;
-      assert(h.ctx.hasLegacyClipboardExclusions(h.state.config));
-    }
-    console.log('PASS: legacy exclusion recovery saves in structure/JSON mode, preserves pause, guards concurrent/conflicting saves and keeps failure notice');
-  }
-  for(const mode of ['structure','json']) {
-    const h=harness(mode);const p=h.ctx.save();
-    await h.ctx.save(); assert.equal(h.calls(),1);
-    assert.equal(h.element('#saveBtn').disabled,true);
-    await h.ctx.reload();assert.equal(h.state.reloading,false,'reload is blocked during save');
-    if(mode==='json') h.json('{"unfinished":'); else h.edit('during-save');
-    assert.equal(h.submitted().core.name,undefined,'submission snapshot is isolated');
-    h.commit();await h.tick();
-    await h.ctx.save(); assert.equal(h.calls(),1,'metadata phase also deduplicated');
-    if(mode==='structure') h.edit('during-metadata');
-    h.flush();assert.ok(h.storage.size,'timer retains draft');
-    h.metadata.resolve([]);await p;
-    assert.equal(h.state.dirty,true);assert.equal(h.state.saving,false);
-    const draft=JSON.parse([...h.storage.values()][0]);
-    if(mode==='json') {assert.equal(h.element('#jsonEditor').value,'{"unfinished":');assert.equal(draft.jsonText,'{"unfinished":');}
-    else {assert.equal(h.state.config.core.name,'during-metadata');assert.equal(draft.config.core.name,'during-metadata');}
-    assert.equal(h.state.savedConfig.core.name,undefined);
-  }
-  for(const mode of ['structure','json']) {
-    const h=harness(mode);const p=h.ctx.save(); h.commit(config('B'),'open');h.metadata.resolve([]); await p;
-    assert.deepEqual(clone(h.state.config),config('B'));assert.equal(h.state.dirty,false);assert.equal(h.storage.size,0);
-    h.edit('after');h.flush();assert.equal(h.state.dirty,true);assert.ok(h.storage.has(draftKey('B')));
-  }
-  for(const mode of ['structure','json']) {
-    const h=harness(mode);const p=h.ctx.save();
-    if(mode==='json') h.json(JSON.stringify(config('new-json')));else h.edit('new-source');
-    h.commit(config('B'),'open');h.metadata.resolve([]);await p;
-    assert.equal(h.state.dirty,true);assert.ok(h.state.saveConflict);
-    await h.ctx.save();assert.equal(h.calls(),1,'source cannot overwrite B');
-    h.flush();assert.ok(h.storage.has(draftKey('A')));assert.equal(h.storage.has(draftKey('B')),false);
-    const reload=h.ctx.reload();h.loading.resolve(config('B'));await reload;
-    assert.deepEqual(clone(h.state.config),config('B'));assert.equal(h.state.dirty,false);
-    assert.ok(h.storage.has(draftKey('A')),'reset to B preserves source recovery');
-  }
-  for(const mode of ['structure','json']) {
-    const h=harness(mode);const p=h.ctx.save();
-    if(mode==='json')h.json('{bad');else h.edit('retained');
-    h.saving.reject(new Error('disk full'));await p;
-    assert.equal(h.state.dirty,true);assert.equal(h.state.saving,false);assert.ok(h.storage.size);
-    assert.deepEqual(clone(h.state.savedConfig),config('baseline'));
-  }
-  {
-    const h=harness();const p=h.ctx.save();h.commit();h.metadata.reject(new Error('metadata unavailable'));await p;
-    assert.deepEqual(clone(h.state.savedConfig),config('A'));
-    assert.equal(h.state.dirty,false,'metadata error does not undo committed config');
-  }
-  {
-    const h=harness();const p=h.ctx.reload();h.edit('reload-race');h.metadata.resolve([]);h.loading.resolve(config('B'));await p;
-    assert.equal(h.state.config.core.name,'reload-race');assert.equal(h.state.dirty,true);assert.ok(h.storage.size);
-  }
-  {
-    const h=harness();h.edit('close-race');await h.ctx.closeSettings();assert.ok(h.storage.size,'close synchronously flushes draft');
-  }
-  {
-    const h=harness();h.ctx.window.weborg.getConfigPathInfo=async()=>{throw new Error('path unavailable')};
-    const p=h.ctx.save();h.commit(config('B'),'open');h.metadata.resolve([]);await p;
-    assert.ok(h.state.saveConflict);await h.ctx.save();assert.equal(h.calls(),1);
-    assert.ok(h.storage.has(draftKey('A')));
-  }
-  {
-    const h=harness();const p=h.ctx.reload();h.loading.reject(new Error('reload failed'));h.metadata.resolve([]);await p;
-    assert.equal(h.state.dirty,true);assert.ok(h.storage.size);assert.equal(h.state.reloading,false);
-  }
-  for (const text of ['', '{invalid']) {
-    const h=harness('json');h.json(text);h.state.mode='structure';h.flush();
-    const draft=[...h.storage.values()][0];
-    const recovered=harness();recovered.storage.set(draftKey('A'),draft);
-    recovered.ctx.window.weborg.getConfigPathInfo=async()=>({activePath:'A'});
-    const init=recovered.initialize();recovered.metadata.resolve([]);recovered.loading.resolve(config('A'));await init;
-    assert.equal(recovered.state.mode,'json');assert.equal(recovered.element('#jsonEditor').value,text);
-    assert.equal(recovered.state.dirty,true);
-  }
-  {
-    const h=harness();const init=h.initialize();h.metadata.resolve([]);h.loading.resolve(config('A'));await init;
-    assert.deepEqual(clone(h.state.config),config('A'),'startup without draft works');
-  }
-  {
-    const h=harness('json');h.json('{invalid');await h.ctx.save();
-    assert.equal(h.calls(),0);assert.equal(h.state.dirty,true);assert.equal(h.state.saving,false);
-    assert.ok(h.storage.size,'invalid JSON is still recoverable');
-  }
-  {
-    const h=harness();const p=h.ctx.save();h.edit('rejected');h.saving.resolve({ok:false,reason:'rejected'});await p;
-    assert.equal(h.state.dirty,true);assert.equal(h.element('#saveBtn').disabled,false);
-    assert.equal(h.state.config.core.name,'rejected');
-  }
-  {
-    const h=harness();const p=h.ctx.save();h.commit();h.metadata.resolve([]);await p;
-    h.edit('next-save');await h.ctx.save();assert.equal(h.calls(),2,'new submission allowed after completion');
-    assert.equal(h.submitted().core.name,'next-save');
-  }
-  {
-    const h=harness();const picker=deferred();h.ctx.window.weborg.chooseConfigPath=()=>picker.promise;
-    const choosing=h.ctx.chooseConfigPath();const reload=h.ctx.reload();h.loading.resolve(config('B'));h.metadata.resolve([]);await reload;
-    picker.resolve({ok:true,path:'stale-choice'});await choosing;
-    assert.equal(h.state.config.core.configPath,'B','late picker cannot modify replacement config');
-  }
-  {
-    const h=harness();h.state.config.plugins.memo={settings:{items:[{id:'memo',category:' A / B '}]}};
-    h.state.selectedMemoId='memo';
-    h.ctx.window.FlowHubMemoCatalog={categorySegments:()=>['A','B']};
-    const p=h.ctx.save();h.change({dataset:{memoField:'category'}});
-    h.commit();h.metadata.resolve([]);await p;
-    assert.equal(h.state.config.plugins.memo.settings.items[0].category,'A / B');
-    assert.equal(h.state.dirty,true,'change-only category normalization increments revision');
-  }
-  const commonFile = '/profile/config.json';
-  const dbConfig = (db, item = db) => ({core:{configPath:commonFile},plugins:{
-    clipboard:{settings:{storagePath:db}},web:{settings:{items:[{id:item}]}}
-  }});
-  async function reopen(db, stored, mode = 'structure') {
-    const h=harness(mode);
-    Object.assign(h.state,{dirty:false,jsonDirty:false});
-    for (const [key,value] of stored) h.storage.set(key,value);
-    h.ctx.window.weborg.getConfigPathInfo=async()=>({activePath:commonFile});
-    h.ctx.window.weborg.getClipboardStorageInfo=async()=>({activePath:db,resolvedPath:db});
-    h.ctx.window.weborg.getConfig=async()=>dbConfig(db);
-    h.metadata.resolve([]);
-    await h.initialize();
-    return h;
-  }
-  for (const mode of ['structure','json']) {
-    const h=await reopen('/A',[],mode);
-    h.state.mode=mode;
-    h.ctx.window.weborg.chooseClipboardStorage=async()=>({ok:true,path:'/B'});
-    await h.ctx.chooseClipboardStorage();
-    assert.equal(h.state.clipboardStorage.resolvedPath,'/B');
-    assert.equal(h.state.draftOrigin.storagePath,'/A','picker preview is not the catalog source');
-    if(mode==='json')h.json(JSON.stringify(h.state.config));
-    const p=h.ctx.save();
-    h.state.config.plugins.web.settings.items=[{id:'A-new'}];
-    h.ctx.markDirty();
-    if(mode==='json')h.json(JSON.stringify(h.state.config));
-    h.ctx.window.weborg.getClipboardStorageInfo=async()=>({activePath:'/B',resolvedPath:'/B'});
-    h.saving.resolve({ok:true,config:dbConfig('/B'),storageState:{operation:'open',activePath:'/B'}});
-    await p;
-    const keyA=draftKey(commonFile,'/A'),keyB=draftKey(commonFile,'/B');
-    assert.ok(h.state.saveConflict);
-    await h.ctx.closeSettings();
-    const retained=JSON.parse(h.storage.get(keyA));
-    assert.equal(retained.origin.storagePath,'/A');
-    assert.equal(retained.saveConflict.sourceOrigin.storagePath,'/A');
-    assert.equal(retained.config.plugins.clipboard.settings.storagePath,'/B');
-    assert.equal(h.storage.has(keyB),false);
-
-    const b=await reopen('/B',h.storage);
-    assert.equal(b.state.config.plugins.web.settings.items[0].id,'/B','reopening B does not restore A catalog');
-    assert.equal(b.state.saveConflict,null);
-    const saveB=b.ctx.save();
-    assert.equal(b.submitted().plugins.web.settings.items[0].id,'/B','saving after reopen cannot overwrite B with A');
-    b.saving.resolve({ok:true,config:dbConfig('/B'),storageState:{operation:'save',activePath:'/B'}});await saveB;
-    assert.ok(b.storage.has(keyA),'saving B does not clear A draft');
-    b.edit('B-draft');b.flush();
-    await b.ctx.reload();
-    assert.ok(b.storage.has(keyA),'resetting B does not clear A draft');
-    assert.equal(b.storage.has(keyB),false);
-    b.edit('B-independent');b.flush();const independentB=b.storage.get(keyB);
-
-    const a=await reopen('/A',b.storage);
-    assert.equal(a.state.saveConflict,null,'returning to the actual source permits recovery');
-    assert.equal(a.state.config.plugins.web.settings.items[0].id,'A-new');
-    assert.equal(a.state.config.plugins.clipboard.settings.storagePath,'/A','recovery drops the old pending B destination');
-    if(mode==='json')assert.equal(JSON.parse(a.element('#jsonEditor').value).plugins.clipboard.settings.storagePath,'/A');
-    const saveA=a.ctx.save();
-    assert.equal(a.submitted().plugins.clipboard.settings.storagePath,'/A');
-    assert.equal(a.submitted().plugins.web.settings.items[0].id,'A-new');
-    a.saving.resolve({ok:true,config:clone(a.submitted()),storageState:{operation:'save',activePath:'/A'}});await saveA;
-    assert.equal(a.storage.has(keyA),false);
-    assert.equal(a.storage.get(keyB),independentB,'saving A does not clear B draft');
-  }
-  {
-    // Existing v1 drafts from the first implementation cannot prove origin.
-    const legacyKey='flowhub:settings-draft:v1:'+commonFile;
-    const stored=new Map([[legacyKey,JSON.stringify({version:1,config:dbConfig('/B','A-legacy'),mode:'structure',savedAt:1})]]);
-    const b=await reopen('/B',stored);
-    assert.ok(b.state.saveConflict);await b.ctx.save();assert.equal(b.calls(),0);
-    await b.ctx.closeSettings();
-    assert.equal(JSON.parse(b.storage.get(legacyKey)).origin,null,'unknown source is not relabeled as B');
-    const again=await reopen('/B',b.storage);
-    assert.ok(again.state.saveConflict);await again.ctx.save();assert.equal(again.calls(),0);
-    await again.ctx.reload();assert.ok(again.storage.has(legacyKey),'reset does not erase unassigned source draft');
-    assert.equal(again.state.config.plugins.web.settings.items[0].id,'/B');
-  }
-  {
-    const a=await reopen('/A',[]);
-    a.state.config.plugins.clipboard.settings.storagePath='/B';a.ctx.markDirty();
-    const pending=a.ctx.save();a.edit('closing-in-flight');await a.ctx.closeSettings();
-    const beforeResponse=new Map(a.storage);
-    assert.equal(JSON.parse(beforeResponse.get(draftKey(commonFile,'/A'))).saveConflict,null);
-    const b=await reopen('/B',beforeResponse);
-    assert.equal(b.state.config.plugins.web.settings.items[0].id,'/B','origin isolates even when the window closes before the save response');
-    const recoveredA=await reopen('/A',beforeResponse);
-    assert.equal(recoveredA.state.config.core.name,'closing-in-flight');
-    assert.equal(recoveredA.state.config.plugins.clipboard.settings.storagePath,'/A');
-    a.saving.resolve({ok:false,reason:'test complete'});await pending;
-  }
-  console.log('PASS: shared config.json, A/B database draft isolation across close/reopen, source recovery, JSON rebinding, per-database cleanup and legacy quarantine');
-  console.log('PASS: isolated snapshots, edits during save/metadata, deduplication, failure, JSON, target-open conflicts, draft timers, reload and close');
-})().catch(error=>{console.error(error);process.exitCode=1});
+const {test}=require('node:test'),assert=require('node:assert/strict');const h=require('./settings-harness.test.cjs');
+const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+test('save isolates submitted snapshot and prevents edits/reload/duplicate submits throughout metadata',async()=>{
+ const gate=deferred();let calls=0;const {store}=await h.loaded({saveConfig:async config=>{calls++;await gate.promise;return {ok:true,config};}});
+ store.edit(c=>{c.core.name='submitted';});const operation=store.save();assert.equal(store.snapshot().busy,true);
+ store.edit(c=>{c.core.name='late';});store.setJson('{"late":');await store.save();await store.reset();assert.equal(calls,1);assert.equal(store.snapshot().config.core.name,'submitted');
+ gate.resolve();await operation;assert.equal(store.dirty,false);assert.equal(store.snapshot().busy,false);assert.equal(localStorage.length,0);store.dispose();
+});
+test('opening an existing database adopts its catalog and next draft is bound to its actual origin',async()=>{
+ let target=false;const config=h.fixture();config.plugins.web.settings.items=[{id:'B'}];
+ const {store}=await h.loaded({saveConfig:async()=>{target=true;return {ok:true,config,storageState:{operation:'open',activePath:'/db/B'}};},getClipboardStorageInfo:async()=>({activePath:target?'/db/B':'/db/A'})});
+ store.edit(c=>{c.plugins.clipboard.settings.storagePath='/db/B';});await store.save();assert.equal(store.snapshot().config.plugins.web.settings.items[0].id,'B');assert.equal(store.dirty,false);
+ store.edit(c=>{c.core.name='next';});store.persist();assert.ok(localStorage.getItem(h.model.draftKey({configPath:'/config/A',storagePath:'/db/B'})));store.dispose();
+});
+test('metadata failure after commit preserves source recovery and blocks further writes until reset',async()=>{
+ let fail=false,calls=0;const {store}=await h.loaded({saveConfig:async config=>{calls++;fail=true;return {ok:true,config};},getClipboardStorageInfo:async()=>{if(fail)throw Error('metadata offline');return {activePath:'/db/A'};}});
+ store.edit(c=>{c.core.name='draft';});await store.save();assert.equal(store.snapshot().conflict,true);assert.equal(calls,1);assert.ok(localStorage.getItem(h.model.draftKey({configPath:'/config/A',storagePath:'/db/A'})));
+ await assert.rejects(store.save(),/源草稿/);assert.equal(calls,1);fail=false;await store.reset();assert.equal(store.snapshot().conflict,false);assert.equal(localStorage.length,1,'reset preserves source draft');store.dispose();
+});
+test('failed saves and reloads preserve drafts; invalid JSON remains recoverable and never reaches adapter',async()=>{
+ const {store,writes}=await h.loaded({saveConfig:async()=>{throw Error('disk full');}});
+ store.edit(c=>{c.core.name='unsaved';});await assert.rejects(store.save(),/disk full/);assert.equal(store.snapshot().busy,false);assert.equal(store.dirty,true);assert.ok(localStorage.length);
+ store.setJson('{"unfinished":');store.persist();await assert.rejects(store.save());assert.equal(writes.length,0);assert.equal(JSON.parse(localStorage.getItem(localStorage.key(0))).jsonText,'{"unfinished":');
+ window.weborg.getConfig=async()=>{throw Error('offline');};await assert.rejects(store.reset(),/offline/);assert.equal(store.snapshot().jsonText,'{"unfinished":');assert.ok(localStorage.length);store.dispose();
+});
+test('same-source recovery drops old destination, preserves invalid JSON; unknown source cannot overwrite active DB',async()=>{
+ const {store}=await h.loaded();const draft=h.fixture();draft.plugins.web.settings.items=[{id:'source'}];draft.plugins.clipboard.settings.storagePath='/db/B';draft.core.configPath='/config/B';
+ store.patch({recovery:{origin:{configPath:'/config/A',storagePath:'/db/A'},config:draft,jsonDirty:true,jsonText:'{"unfinished":'}});
+ store.recoverDraft();assert.equal(store.snapshot().config.plugins.web.settings.items[0].id,'source');assert.equal(store.snapshot().config.plugins.clipboard.settings.storagePath,'');assert.equal(store.snapshot().config.core.configPath,'');assert.equal(store.snapshot().jsonText,'{"unfinished":');
+ store.patch({recovery:{origin:null,config:draft}});assert.throws(()=>store.recoverDraft(),/来源数据库/);store.dispose();
+});
+test('valid raw JSON recovery also drops pending source/destination switches',async()=>{
+ const {store}=await h.loaded(),draft=h.fixture();draft.plugins.clipboard.settings.storagePath='/db/B';
+ store.patch({recovery:{origin:{configPath:'/config/A',storagePath:'/db/A'},config:draft,jsonDirty:true,jsonText:JSON.stringify(draft)}});
+ store.recoverDraft();assert.equal(JSON.parse(store.snapshot().jsonText).plugins.clipboard.settings.storagePath,'');store.dispose();
+});
+test('conflicted same-source recovery preserves raw JSON-only edits and rebinds only source paths',async()=>{
+ const {store}=await h.loaded(),draft=h.fixture(),raw=h.fixture();raw.core.onlyInJson='keep me';raw.core.configPath='/config/B';raw.plugins.clipboard.settings.storagePath='/db/B';raw.plugins.web.settings.items=[{id:'only-in-json'}];
+ store.patch({recovery:{origin:{configPath:'/config/A',storagePath:'/db/A'},config:draft,jsonDirty:true,jsonText:JSON.stringify(raw),saveConflict:{sourceOrigin:{configPath:'/config/A',storagePath:'/db/A'}}}});
+ store.recoverDraft();const recovered=JSON.parse(store.snapshot().jsonText);assert.equal(recovered.core.onlyInJson,'keep me');assert.equal(recovered.plugins.web.settings.items[0].id,'only-in-json');assert.equal(recovered.core.configPath,'');assert.equal(recovered.plugins.clipboard.settings.storagePath,'');
+ store.persist();const persisted=JSON.parse(localStorage.getItem(h.model.draftKey({configPath:'/config/A',storagePath:'/db/A'})));assert.equal(JSON.parse(persisted.jsonText).core.onlyInJson,'keep me');
+ store.patch({recovery:{origin:{configPath:'/config/A',storagePath:'/db/A'},config:draft,jsonDirty:true,jsonText:'{"invalid":',saveConflict:{sourceOrigin:{configPath:'/config/A',storagePath:'/db/A'}}}});store.recoverDraft();store.persist();assert.equal(store.snapshot().jsonText,'{"invalid":');assert.equal(JSON.parse(localStorage.getItem(h.model.draftKey({configPath:'/config/A',storagePath:'/db/A'}))).jsonText,'{"invalid":');store.dispose();
+});
+test('preview cannot edit, save, persist drafts or call native mutation API',async()=>{
+ const {store,writes}=await h.loaded({},true);store.edit(c=>{c.core.name='forbidden';});store.setJson('{}');await store.save();store.persist();
+ assert.equal(store.dirty,false);assert.equal(writes.length,0);assert.equal(localStorage.length,0);
+ await assert.rejects(require('../../src/settings/api.ts').write('sendTestNotification'),/只读/);store.dispose();
+});
+test('update locks editor until completion, failure restores retry, dirty drafts block installation',async()=>{
+ const gate=deferred();let calls=0;const {store}=await h.loaded({downloadAndInstallUpdate:async()=>{calls++;return gate.promise;}});
+ const {primaryUpdate}=require('../../src/settings/Core.tsx');const operation=primaryUpdate(store);await primaryUpdate(store);assert.equal(calls,1);assert.equal(store.snapshot().busy,true);
+ store.edit(c=>{c.core.name='late';});assert.equal(store.dirty,false);gate.reject(Error('network unavailable'));await assert.rejects(operation,/network unavailable/);assert.equal(store.snapshot().busy,false);
+ store.edit(c=>{c.core.name='dirty';});await assert.rejects(primaryUpdate(store),/保存/);assert.equal(calls,1);store.dispose();
+});
+test('clipboard limits clamp/floor finite values and recover invalid values',()=>{
+ for(const key of ['retentionDays','maxRecords','maxBytes']) {assert.equal(h.model.clipboardLimit(3.9,key),3);assert.equal(h.model.clipboardLimit(-1,key),0);assert.equal(h.model.clipboardLimit('bad',key),0);assert.equal(h.model.clipboardLimit(NaN,key),0);assert.equal(h.model.clipboardLimit(Infinity,key),0);assert.equal(h.model.clipboardLimit(Number.MAX_VALUE,key),key==='retentionDays'?3650:Number.MAX_SAFE_INTEGER);}
+});
+test('clipboard pause/protection save boundaries and legacy recovery retain pause; failed save keeps recovery action',async()=>{
+ const config=h.fixture();config.plugins.clipboard.settings={capturePaused:true,protectSensitive:false,excludedApps:['legacy']};let fail=true,submitted;
+ const {store}=await h.loaded({getConfig:async()=>config,saveConfig:async c=>{submitted=c;if(fail)throw Error('save failed');return {ok:true,config:c};}});
+ const {Clipboard}=require('../../src/settings/Core.tsx'),view=await h.mount(Clipboard,{store});
+ assert.equal(view.container.querySelector('[aria-label="暂停采集"]').getAttribute('aria-checked'),'true');
+ await h.click(h.button(view.container,'清空旧列表并保存'));assert.deepEqual(submitted.plugins.clipboard.settings.excludedApps,[]);assert.equal(submitted.plugins.clipboard.settings.capturePaused,true);assert.equal(submitted.plugins.clipboard.enabled,true);assert.ok(h.button(view.container,'清空旧列表并保存'),'saved legacy data remains until commit');
+ fail=false;await h.click(h.button(view.container,'清空旧列表并保存'));assert.equal(h.button(view.container,'清空旧列表并保存'),undefined);assert.equal(store.snapshot().config.plugins.clipboard.settings.capturePaused,true);
+ await h.click(view.container.querySelector('[aria-label="暂停采集"]'));assert.equal(store.snapshot().config.plugins.clipboard.settings.capturePaused,false);assert.equal(store.snapshot().saved.plugins.clipboard.settings.capturePaused,true);
+ await view.unmount();store.dispose();
+});

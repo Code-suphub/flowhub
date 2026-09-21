@@ -1,132 +1,33 @@
-const fs = require('node:fs');
-const vm = require('node:vm');
-const assert = require('node:assert/strict');
-const path = require('node:path');
-
-const source = fs.readFileSync(path.join(__dirname, '../../ui/settings/settings.js'), 'utf8');
-const bootstrapAt = source.lastIndexOf('\nPromise.all([window.weborg.listPlugins()');
-
-function harness(weborg = {}) {
-  const nodes = new Map();
-  const element = (selector) => {
-    if (!nodes.has(selector)) nodes.set(selector, {
-      value: '', textContent: '', innerHTML: '', hidden: false, dataset: {},
-      classList: { add() {}, remove() {}, toggle() {} },
-      setAttribute() {}, addEventListener() {}, appendChild() {}, remove() {}, focus() {},
-      querySelector: () => null, querySelectorAll: () => [], closest: () => null, matches: () => false
-    });
-    return nodes.get(selector);
-  };
-  const ctx = vm.createContext({
-    console, URL, URLSearchParams, Set, Map, Date, JSON, Number, String, Object, Array, Boolean, Promise,
-    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-    document: {
-      documentElement: { dataset: {}, style: { setProperty() {} } },
-      // 与其它 settings 测试一致：不提供 actionbar，跳过 ResizeObserver 分支。
-      querySelector: (selector) => (selector === '.settings-actionbar' ? null : element(selector)),
-      querySelectorAll: () => [],
-      addEventListener() {},
-      createElement: () => element('created')
-    },
-    window: {
-      location: { search: '' }, addEventListener() {}, confirm: () => true,
-      flowhubPerformance: { measure: (_, fn) => fn() },
-      weborg: {
-        listPlugins: async () => [],
-        getConfig: async () => ({ core: { hotkey: 'Alt+Space' }, plugins: { web: { settings: { items: [] } } } }),
-        getClipboardStorageInfo: async () => ({}),
-        getConfigPathInfo: async () => ({ activePath: 'A' }),
-        ...weborg
-      }
-    }
-  });
-  vm.runInContext(source.slice(0, bootstrapAt), ctx);
-  vm.runInContext(`
-    normalizeConfig = value => value;
-    render = () => {};
-    renderUpdateNotice = () => {};
-    renderMemoSettings = () => {};
-    state.config = { core: { hotkey: 'Alt+Space' }, plugins: { web: { settings: { items: [] } } } };
-    state.savedConfig = state.config;
-  `, ctx);
-  return { ctx, element };
-}
-
-(async () => {
-  {
-    const h = harness({
-      listConfigHistory: async () => ({ entries: [
-        { id: '1758096000000', created_at: 1758096000000, bytes: 2048, catalog_count: 7 },
-        { id: '1758009600000-1', created_at: 1758009600000, bytes: 1024, catalog_count: 3 }
-      ], limit: 20 }),
-      previewConfigHistory: async () => ({ config: { core: { hotkey: 'Other' }, plugins: { web: { settings: { items: [] } } } } })
-    });
-    await h.ctx.loadConfigHistory();
-    assert.equal(h.element('#configHistoryCount').textContent, '2 / 20 份');
-    const html = h.element('#configHistoryList').innerHTML;
-    assert.match(html, /data-action="preview-config-history" data-history-id="1758096000000"/);
-    assert.match(html, /data-action="restore-config-history" data-history-id="1758009600000-1"/);
-    assert.match(html, /2\.0 KB/);
-    assert.match(html, /最近/);
-
-    await h.ctx.previewConfigHistory('1758096000000');
-    const preview = h.element('#configHistoryPreview');
-    assert.equal(preview.hidden, false);
-    assert.match(preview.textContent, /顶层字段不同：core/);
-    assert.match(preview.textContent, /"hotkey": "Other"/);
-  }
-
-  {
-    let restored = null;
-    const h = harness({
-      listConfigHistory: async () => ({ entries: [{ id: '1758096000000', created_at: 1758096000000, bytes: 100, catalog_count: 1 }], limit: 20 }),
-      previewConfigHistory: async () => ({ config: {} }),
-      restoreConfigHistory: async (id) => {
-        restored = id;
-        return { restored: id, unchanged: false, requiresRestart: true, warnings: ['备份的剪贴板存储位置与当前不同，重启后才会切换'] };
-      }
-    });
-    await h.ctx.loadConfigHistory();
-    await h.ctx.restoreConfigHistory('1758096000000');
-    assert.equal(restored, '1758096000000');
-    assert.match(h.element('#configHistoryStatus').textContent, /重启/);
-    assert.match(h.element('#configHistoryStatus').textContent, /存储位置/);
-  }
-
-  {
-    let calls = 0;
-    const h = harness({
-      listConfigHistory: async () => ({ entries: [{ id: '1758096000000', created_at: 1758096000000, bytes: 100, catalog_count: 0 }], limit: 20 }),
-      restoreConfigHistory: async (id) => { calls++; return { restored: id, unchanged: true, requiresRestart: false, warnings: [] }; }
-    });
-    await h.ctx.loadConfigHistory();
-    await h.ctx.restoreConfigHistory('1758096000000');
-    assert.equal(calls, 1);
-    assert.match(h.element('#configHistoryStatus').textContent, /相同/);
-  }
-
-  {
-    // 浏览器预览：列表为空并给出说明，恢复被适配层拒绝时展示原因而不是抛到界面外。
-    const h = harness({
-      listConfigHistory: async () => ({ entries: [], limit: 0, directory: '', available: false }),
-      previewConfigHistory: async () => { throw new Error('浏览器预览不支持配置历史'); },
-      restoreConfigHistory: async () => { throw new Error('浏览器预览不能修改配置'); }
-    });
-    await h.ctx.loadConfigHistory();
-    assert.equal(h.element('#configHistoryCount').textContent, '0 份');
-    assert.match(h.element('#configHistoryList').innerHTML, /浏览器预览不提供配置历史/);
-    await h.ctx.restoreConfigHistory('1758096000000');
-    assert.match(h.element('#configHistoryStatus').textContent, /恢复失败：浏览器预览不能修改配置/);
-  }
-
-  {
-    // 旧适配层没有历史接口时也不能崩。
-    const h = harness();
-    await h.ctx.loadConfigHistory();
-    assert.equal(h.element('#configHistoryCount').textContent, '0 份');
-    assert.match(h.element('#configHistoryList').innerHTML, /浏览器预览不提供配置历史/);
-  }
-
-  console.log('PASS: config history list/preview/restore rendering, path warnings and the browser-preview fallback');
-})().catch(error => { console.error(error); process.exitCode = 1; });
+const {test}=require('node:test'),assert=require('node:assert/strict');const h=require('./settings-harness.test.cjs');
+test('history list, preview, restore, unchanged results and restart/path warnings remain visible',async()=>{
+ let restored=[],unchanged=false;const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1758096000000,bytes:2048,catalog_count:7}],limit:20}),previewConfigHistory:async()=>({config:{core:{hotkey:'Other'}}}),restoreConfigHistory:async id=>{restored.push(id);return {unchanged,warnings:['存储位置不同']};}});
+ const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});assert.match(view.container.textContent,/7 项/);assert.match(view.container.textContent,/2048 B/);
+ await h.click(h.button(view.container,'预览'));assert.match(document.querySelector('dialog').textContent,/Other/);await h.click(document.querySelector('dialog [aria-label="关闭"]'));
+ await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.deepEqual(restored,['one']);assert.match(store.snapshot().notice,/重启/);assert.match(store.snapshot().notice,/存储位置/);
+ unchanged=true;await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.match(store.snapshot().notice,/相同/);
+ await view.unmount();store.dispose();
+});
+test('unavailable history, failed preview/restore and missing API are handled without mutation',async()=>{
+ const {store}=await h.loaded({listConfigHistory:async()=>({entries:[],available:false})});const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});assert.match(view.container.textContent,/浏览器预览不提供/);
+ delete window.weborg.listConfigHistory;await h.act(async()=>store.refreshHistory());assert.match(store.snapshot().history.error,/不支持/);assert.equal(store.dirty,false);await view.unmount();store.dispose();
+});
+test('restore locks IPC through metadata reread against duplicate restores, save and close',async()=>{
+ let releaseRestore,releaseMetadata,restores=0,saves=0,reading=false;
+ const restored=h.fixture();restored.core.hotkey='F8';
+ const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1}]}),restoreConfigHistory:async()=>{restores++;await new Promise(r=>releaseRestore=r);reading=true;return {ok:true};},saveConfig:async()=>{saves++;return {ok:true};},getConfig:async()=>reading?restored:h.fixture(),getConfigPathInfo:async()=>{if(reading)await new Promise(r=>releaseMetadata=r);return {activePath:'/config/A'};}});
+ const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));
+ assert.equal(restores,1);assert.equal(store.snapshot().busy,true);assert.equal(document.querySelector('dialog [aria-label="关闭"]').disabled,true);assert.equal(h.button(document.body,'确认恢复').disabled,true);
+ await assert.rejects(store.restoreHistory('two'),/正在进行/);await store.save();await store.reset();assert.equal(saves,0);assert.equal(restores,1);
+ await h.act(async()=>releaseRestore());assert.equal(store.snapshot().busy,true);assert.equal(store.snapshot().config.core.hotkey,'Alt+Space');await store.save();assert.equal(saves,0);
+ await h.act(async()=>releaseMetadata());assert.equal(store.snapshot().busy,false);assert.equal(store.snapshot().config.core.hotkey,'F8');assert.equal(store.dirty,false);assert.equal(document.querySelector('dialog'),null);await view.unmount();store.dispose();
+});
+test('committed history with failed reread blocks saves until explicit reload, preserving JSON draft',async()=>{
+ let committed=false,fail=true,saves=0;
+ const {store}=await h.loaded({restoreConfigHistory:async()=>{committed=true;return {ok:true};},getConfig:async()=>{if(committed&&fail)throw Error('read failed');const c=h.fixture();if(committed)c.core.hotkey='F8';return c;},saveConfig:async()=>{saves++;return {ok:true};}});
+ store.setJson('{"only-in-json":');await assert.rejects(store.restoreHistory('one'),/历史已提交/);assert.equal(store.snapshot().busy,false);assert.equal(store.snapshot().conflict,true);assert.equal(store.dirty,true);assert.equal(store.snapshot().jsonText,'{"only-in-json":');await assert.rejects(store.save(),/源草稿/);await assert.rejects(store.restoreHistory('two'),/显式重载/);assert.equal(saves,0);
+ assert.ok(localStorage.length);fail=false;await store.reset();assert.equal(store.snapshot().config.core.hotkey,'F8');assert.equal(store.snapshot().conflict,false);assert.equal(store.dirty,false);assert.ok(localStorage.length,'source recovery survives target reload');store.dispose();
+});
+test('history restore error is rendered inside the open shared Dialog',async()=>{
+ const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1}]}),restoreConfigHistory:async()=>{throw Error('history unavailable');}});
+ const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.match(document.querySelector('dialog [role="alert"]').textContent,/history unavailable/);assert.equal(document.querySelector('dialog [aria-label="关闭"]').disabled,false);await view.unmount();store.dispose();
+});

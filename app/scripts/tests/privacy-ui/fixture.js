@@ -1,5 +1,6 @@
 window.fixtureCalls=[];
 window.fixtureErrors=[];
+window.fixtureSaveFailure=false;
 addEventListener('error',event=>fixtureErrors.push(event.message));
 addEventListener('unhandledrejection',event=>fixtureErrors.push(String(event.reason)));
 window.fixtureConfig={core:{},plugins:{clipboard:{enabled:true,settings:{excludedApps:['legacy.example']}},web:{enabled:true,settings:{items:[]}},memo:{enabled:true,settings:{items:[]}},app:{enabled:true},tools:{enabled:true}}};
@@ -7,7 +8,10 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 window.__TAURI__={event:{listen:async()=>()=>{}},core:{invoke:async(name,args)=>{
   fixtureCalls.push({name,args:copy(args||{})});
   if(name==='get_config') return copy(fixtureConfig);
-  if(name==='save_config') {fixtureConfig=copy(args.config);return {ok:true,config:copy(fixtureConfig),storageState:{operation:'save'},pluginFailures:[]};}
+  if(name==='save_config') {if(window.fixtureSaveFailure)throw Error('synthetic save failure');fixtureConfig=copy(args.config);return {ok:true,config:copy(fixtureConfig),storageState:{operation:'save'},pluginFailures:[]};}
+  if(name==='plugin_api' && args.action==='list') return [];
+  if(name==='list_config_history') return {entries:[],limit:20};
+  if(name==='list_menu_bar_items') return {items:[]};
   if(name==='get_config_path_info') return {activePath:'/synthetic/config.json'};
   if(name==='get_storage_info') return {activePath:'/synthetic/storage',defaultPath:'/synthetic/storage'};
   if(name==='search_clipboard') return [{id:1,kind:'text',hash:'synthetic-fixture-hash',copyCount:1,content:'synthetic history',createdAt:'2026-09-09',lastSeenAt:'2026-09-09'}];

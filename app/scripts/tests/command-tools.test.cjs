@@ -80,9 +80,7 @@ function button(commandId) {
     const item = h.tools.suggestions(ctx)[0];
     await h.tools.choose(item, ctx);
     assert.equal(h.store.history.list('ping').length, 0);
-    const html = h.tools.render(item, { esc: String, index: 0, active: true, enabled: ctx.enabled });
-    assert.match(html, /本机执行仅在桌面版可用/, '失败原因仍在结果里说明');
-    assert.doesNotMatch(html, /最近执行/);
+    assert.match(h.tools.suggestions(ctx)[0].error, /本机执行仅在桌面版可用/);
   }
 
   {
@@ -148,9 +146,6 @@ function button(commandId) {
     const item = { id: 'network:ping:example.com:false', toolId: 'ping', type: 'network', q: { kind: 'ping', target: 'example.com', head: false } };
     await h.tools.choose(item, ctx);
     assert.equal(h.store.history.list().length, 0, '关闭后不写历史');
-    const html = h.tools.render(item, { esc: String, index: 0, active: true, enabled: ctx.enabled });
-    assert.doesNotMatch(html, /最近执行/);
-    assert.doesNotMatch(html, /参数模板/);
   }
 
   {
@@ -159,12 +154,8 @@ function button(commandId) {
     const ctx = networkContext('ping example.com');
     await h.tools.choose(h.tools.suggestions(ctx)[0], ctx);
     await h.tools.action('ping', 'template-save', {}, ctx);
-    const html = h.tools.render(h.tools.suggestions(ctx)[0], { esc: String, index: 0, active: true, enabled: ctx.enabled });
-    assert.match(html, /最近执行/);
-    assert.match(html, /ping example\.com/);
-    assert.match(html, /data-tool-action="history-run"/);
-    assert.match(html, /data-tool-action="template-run"/);
-    assert.match(html, /host=example\.com/);
+    assert.equal(h.store.history.list('ping')[0].query, 'ping example.com');
+    assert.equal(h.store.templates.list('ping')[0].params.host, 'example.com');
   }
 
   {
@@ -228,8 +219,6 @@ function button(commandId) {
     };
     await h.tools.action('port', 'refresh', { dataset: {} }, ctx);
     assert.equal(h.store.history.list('port').length, 0);
-    const html = h.tools.render({ toolId: 'port', port: 9000, details: { status: 'ready', processes: [] } }, { esc: String, index: 0, active: true, enabled: ctx.enabled });
-    assert.doesNotMatch(html, /最近执行/);
   }
 
   console.log('PASS: ping, curl and port record executed commands, replay them and keep credentials out');

@@ -27,8 +27,8 @@ FlowHub 是一个 macOS 本地启动器，提供应用、网页目录、剪贴�
 ## 前端技术栈与界面约定
 
 - 新增及明确纳入迁移范围的管理页面采用 React + TypeScript + Vite，使用 Tailwind CSS 编写布局与响应式样式；Rust/Tauri 继续负责原生能力与敏感数据。不要为迁移顺带重写未纳入范围的页面。
-- React 页面优先复用公共组件。插件使用插件仓库的 `@flowhub/plugin-common/react`；宿主原生页面使用 `app/ui/shared` 的现有组件。缺少能力先补公共层，不在页面中复制按钮、弹窗、下拉、帮助提示的交互实现。
-- 宿主 React 源码入口为 `app/src/main.tsx`，公共 React 控件在 `app/src/shared`；帮助提示复用宿主现有组件。`npm run build:ui` 生成不入库的 `app/ui/react` 资源，Tauri 构建和 dev:web 启动前会自动构建；开发时用 `npm run dev:ui` 持续重建。宿主构建不能依赖旁边的插件仓库路径。
+- React 页面优先复用公共组件。插件使用插件仓库的 `@flowhub/plugin-common/react`；宿主使用 `app/src/shared` 的 React 控件，`app/ui/shared` 保留主题、原生适配和兼容桥。缺少能力先补公共层，不在页面中复制按钮、弹窗、下拉、帮助提示的交互实现。
+- 宿主 React 源码入口为 `app/src/main.tsx`，公共 React 控件在 `app/src/shared`；帮助提示复用公共 `Help`。`npm run build:ui` 生成不入库的 `app/ui/react` 资源，Tauri 构建和 dev:web 启动前会自动构建；开发时用 `npm run dev:ui` 持续重建。每个 React 页面必须同时引用产物 JS 与 CSS；HTML 只保留挂载点和所需桥接脚本。宿主构建不能依赖旁边的插件仓库路径。
 - 说明文字使用公共悬浮提示／帮助组件，支持鼠标悬浮和键盘聚焦；长说明可用帮助弹窗。验证错误、运行状态、不可逆操作警告不能藏进提示里。
 - Tab 或当前导航已表明用途时，不重复同名大标题、英文眉题和导语。主界面保留操作所需标签与状态，避免多层卡片、超宽控件和无意义留白。
 - Tailwind 负责布局，`--fh-*` 语义变量负责主题；不要在业务页面写死深浅配色。渐进迁移的 island 不启用全局 preflight，避免影响旧页面。

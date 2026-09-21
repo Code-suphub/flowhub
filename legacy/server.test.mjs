@@ -56,7 +56,7 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
 
   await t.test("legacy-only GET/POST and CLI reject desktop snapshots and malformed catalogs", async () => {
     const runCli = async (...args) => {
-      const proc = spawn(process.execPath, [new URL("app/scripts/flowhub-cli.mjs", source).pathname, ...args], { env: { ...process.env, FLOWHUB_URL: base }, stdio: "pipe" });
+      const proc = spawn(process.execPath, [new URL("app/scripts/dev/flowhub-cli.mjs", source).pathname, ...args], { env: { ...process.env, FLOWHUB_URL: base }, stdio: "pipe" });
       let stdout = "", stderr = "";
       proc.stdout.on("data", (chunk) => { stdout += chunk; });
       proc.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -129,7 +129,7 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
     const extensionHeaders = { origin: `chrome-extension://${"a".repeat(32)}`, "sec-fetch-site": "cross-site" };
     assert.equal((await call("/api/config", { headers: extensionHeaders })).status, 200);
     assert.equal((await call("/api/session", { headers: extensionHeaders })).status, 403);
-    const cli = spawn(process.execPath, [new URL("app/scripts/flowhub-cli.mjs", source).pathname, "config", "set", "app.title", '"CLI Fixture"'], { env: { ...process.env, FLOWHUB_URL: base }, stdio: "pipe" });
+    const cli = spawn(process.execPath, [new URL("app/scripts/dev/flowhub-cli.mjs", source).pathname, "config", "set", "app.title", '"CLI Fixture"'], { env: { ...process.env, FLOWHUB_URL: base }, stdio: "pipe" });
     let error = "";
     cli.stderr.on("data", (chunk) => { error += chunk; });
     assert.equal((await once(cli, "exit"))[0], 0, error);

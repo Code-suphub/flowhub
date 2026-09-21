@@ -1,0 +1,43 @@
+html:has(#search-root),body:has(#search-root),#search-root { height:100%; margin:0; overflow:hidden; }
+.search-shell { height:100%; background:var(--fh-surface); color:var(--fh-text); border:1px solid var(--fh-border); border-radius:14px; overflow:hidden; }
+.search-shell h3,.search-shell p { margin:0; }
+.search-shell h3 {font-size:14px;font-weight:650;overflow-wrap:anywhere;}
+.search-header {padding:8px 14px;-webkit-app-region:drag;font-size:12px;}
+.search-header button { -webkit-app-region:no-drag; }
+.search-shell .fh-button {font-size:11px;min-height:28px;padding:4px 8px;}
+.search-input-wrap {padding:6px 14px 12px;}
+.search-input-wrap label {font-size:11px;color:var(--fh-muted);}
+.search-shell #q {height:48px;font-size:19px;padding:0 15px;border-radius:12px;}
+.search-scopes {padding:0 14px 10px;flex-shrink:0;}
+.search-scopes [aria-pressed=true] {background:color-mix(in srgb,var(--fh-accent) 12%,var(--fh-surface));border-color:var(--fh-accent);}
+.search-shell #results {padding:0 12px 12px;scrollbar-width:thin;overflow-anchor:none;}
+.search-shell .result {display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid transparent;border-radius:10px;cursor:pointer;}
+.search-shell .result:hover {background:var(--fh-surface-soft);}
+.search-shell .result.active {background:color-mix(in srgb,var(--fh-accent) 12%,var(--fh-surface));border-color:var(--fh-border);}
+.search-icon {display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;color:var(--fh-accent);font-size:22px;}
+.search-icon img {width:32px;height:32px;object-fit:contain;border-radius:6px;}
+.search-shell .search-meta {font-size:11px;line-height:1.5;color:var(--fh-muted);overflow-wrap:anywhere;margin-top:3px;}
+.search-actions {display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.search-shell .tool-action {font-size:10px;}
+.clipboard-title {font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:7em;overflow:hidden;}
+.clipboard-title.is-expanded {max-height:240px;overflow:auto;}
+.clipboard-editor {box-sizing:border-box;width:100%;min-height:110px;background:var(--fh-canvas);color:var(--fh-text);border:1px solid var(--fh-border);padding:8px;font:12px/1.6 monospace;resize:vertical;}
+.search-command {display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;margin-top:4px;}
+.search-empty {text-align:center;color:var(--fh-muted);padding:20px;font-size:12px;}
+.search-section {padding:8px 6px;font-size:12px;}
+.usage-strip {padding-bottom:8px;}
+.search-shell .usage-tile {width:90px;min-width:90px;flex:0 0 90px;flex-direction:column;align-items:center;text-align:center;}
+.search-shell .search-tile-title {font-size:11px;line-height:1.4;}
+.search-shell .usage-tile .search-icon,.search-shell .usage-tile img {width:40px;height:40px;}
+.search-footer {padding:8px 14px;border-top:1px solid var(--fh-border);font-size:10px;color:var(--fh-muted);}
+.search-update,#actionStatus {color:var(--fh-accent);}
+.search-shell pre {max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--fh-canvas);padding:10px;border-radius:6px;font:11px/1.55 monospace;}
+.search-properties {width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;margin:6px 0;}
+.search-properties th {width:110px;text-align:left;font-weight:500;color:var(--fh-muted);}
+.search-properties td,.search-properties th {padding:4px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere;border-bottom:1px solid var(--fh-border);}
+.search-process,.search-history {padding:8px 0;border-bottom:1px solid var(--fh-border);}
+.search-confirm {color:var(--fh-warning);padding:8px;}
+@media(max-width:520px) {.search-header{padding:6px 10px}.search-scopes,.search-input-wrap{padding-left:10px;padding-right:10px}.search-shell #q{font-size:16px}.search-properties th{width:85px}.search-footer{font-size:9px}}
+html[data-weborg-runtime="browser"][data-weborg-page="search"] body {box-sizing:border-box;min-width:0;}
+html[data-weborg-runtime="browser"][data-weborg-page="search"] #search-root {width:min(620px,100%);height:min(520px,calc(100dvh - 68px));}
+@media(max-width:680px) {html[data-weborg-runtime="browser"][data-weborg-page="search"] #search-root {width:100%;height:calc(100dvh - 24px);}}

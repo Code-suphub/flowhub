@@ -13,7 +13,7 @@ const reg=context.window.FlowHubTools;
  const item=reg.suggestions(ctx)[0];assert.equal(calls,0);
  const first=reg.choose(item,ctx);await reg.choose(item,ctx);assert.equal(calls,1);
  query='ping localhost';reg.queryChanged({...ctx,query});resolve({output:'old response',exitCode:0,elapsedMs:1});await first;
- query=ctx.query;const html=reg.render(reg.suggestions(ctx)[0],{esc:String,index:0,active:true});assert(!html.includes('old response'));
+ query=ctx.query;assert.equal(reg.suggestions(ctx)[0].report,null);
  await reg.action('curl','command',{},ctx);assert(copied.includes('--max-time 10'));
  assert.equal(reg.suggestions({...ctx,enabled:()=>false}).length,0);
  console.log('PASS: network input validation, explicit execution, duplicate suppression, stale response, command copy, disabled tools');

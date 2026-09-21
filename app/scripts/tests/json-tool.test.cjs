@@ -11,8 +11,7 @@ assert.equal(format('["'+'x'.repeat(65536)+'"]'),null);
 (async()=>{
  let copied;const ctx={query:'{"html":"<script>"}',queryNow(){return this.query},copy:async v=>copied=v,status(){}};
  assert.equal(window.tool.suggestions(ctx).length,1);
- const html=window.tool.render({}, {esc:s=>s.replaceAll('<','&lt;'),index:0,active:true});
- assert(!html.includes('<script>'));
+ assert.equal(window.tool.suggestions(ctx)[0].formatted.pretty,format(ctx.query).pretty);
  await window.tool.choose({},ctx);assert.equal(copied,format(ctx.query).pretty);
  await window.tool.action('compact',null,ctx);assert.equal(copied,ctx.query);
  ctx.query='invalid';await window.tool.choose({},ctx);assert.equal(copied,'{"html":"<script>"}');

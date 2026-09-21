@@ -48,9 +48,13 @@ state.usageSections = {};
 assert.deepEqual(types(), ['clipboard', 'app', 'page', 'memo']);
 assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:['web','web','unknown']}})), ['web','app','clipboard','memo']);
 assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:'invalid'}})), ['app','web','clipboard','memo']);
-const settings = fs.readFileSync(require('node:path').join(__dirname, '../../ui/settings/settings.js'), 'utf8');
+const settings = fs.readFileSync(require('node:path').join(__dirname, '../../src/settings/Core.tsx'), 'utf8');
 const settingsContext = vm.createContext({});
-vm.runInContext(settings.slice(settings.indexOf('function configuredSearchOrder('), settings.indexOf('function renderSearchResultOrder(')), settingsContext);
+// Keep the cross-entry ordering contract against the migrated settings logic.
+const ordering = settings.slice(settings.indexOf('const savedOrder ='), settings.indexOf('const moveOrder ='));
+assert.ok(ordering.includes('searchResultOrder'));
+const settingsOrder = require('typescript').transpile(`function configuredSearchOrder(config) { const core = config.core || {}; ${ordering} return order; }`, {target:99});
+vm.runInContext(settingsOrder, settingsContext);
 for (const config of [{}, state.config, {core:{webBeforeClipboard:false}}, {core:{searchResultOrder:['web','web','bad']}}]) {
   assert.deepEqual(Array.from(settingsContext.configuredSearchOrder(config)), Array.from(ctx.configuredSearchOrder(config)));
 }

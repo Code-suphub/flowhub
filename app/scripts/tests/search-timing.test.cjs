@@ -35,5 +35,11 @@ vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../../u
  t.enable(false); const count=t.report().length;
  assert.equal(await t.query('memo',async()=>42),42); t.begin('input');
  assert.equal(t.report().length,count); t.reset(); assert.equal(t.report().length,0);
+ t.enable(true);t.begin('input');const reactRun=t.capture(), reactStart=time;
+ t.applied();t.render(()=>{time+=2;},{deferCommit:true});
+ assert.equal(t.report()[0].firstResponseDomMs,undefined,'React scheduling is not a DOM commit');
+ time+=3;t.commit(reactRun,reactStart);
+ assert.equal(t.report()[0].firstResponseDomMs,5);assert.equal(t.report()[0].reactCommitsMs[0],5);
+ t.begin('input');t.commit(reactRun,reactStart);assert.equal(t.report()[1].firstResponseDomMs,undefined,'stale commits cannot publish timing');
  console.log('PASS: stage boundaries, unapplied response, slow source, next frame, stale/error isolation, opt-in and bounded samples');
 })().catch(e=>{console.error(e);process.exitCode=1});

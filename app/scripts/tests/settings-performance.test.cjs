@@ -1,60 +1,37 @@
-const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
-const source=fs.readFileSync(require('node:path').join(__dirname, '../../ui/settings/settings.js'),'utf8');
-const extract=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
-let scan=0,fields=0,modules=0,navigation=0;let resolveTrust;
-const state={module:'core',coreSection:'general',config:{core:{menuBar:{organizerEnabled:true}}}};
-const ctx=vm.createContext({state,Promise,window:{weborg:{getMenuBarManagementState:()=>{scan++;return new Promise(r=>resolveTrust=r)},listMenuBarItems:async()=>({ok:true,items:[]})}},renderSettingsFields:()=>fields++,renderMenuBarItemControls:()=>{},renderModule:()=>modules++,renderPluginModules:()=>navigation++,document:{querySelector:()=>({scrollTo(){}})},toast:()=>{}});
-vm.runInContext(extract('let menuBarRefreshPending','async function setMenuBarItemHidden')+extract('function switchModule(', '// Native disclosure'),ctx);
-(async()=>{
- await ctx.refreshMenuBarManagementState();assert.equal(scan,0);
- state.coreSection='menubar';const a=ctx.refreshMenuBarManagementState(),b=ctx.refreshMenuBarManagementState();assert.equal(a,b);assert.equal(scan,1);resolveTrust({trusted:true});await a;assert.equal(fields,1);
- const c=ctx.refreshMenuBarManagementState();state.coreSection='general';resolveTrust({trusted:true});await c;assert.equal(fields,1);
- ctx.switchModule('memo');assert.equal(modules,1);assert.equal(navigation,0);ctx.switchModule('memo');assert.equal(modules,1);
- console.log('PASS: hidden-page scan skipped, overlapping refresh deduplicated, late hidden-page result does not rerender fields, module switch does not rebuild navigation, repeated selection is a no-op');
-})().catch(e=>{console.error(e);process.exitCode=1});
-
-// Each item belongs to one category; recursive rendering must not append it twice.
-const memoState = { memoFilter: "", memoCollapsedCategories: new Set() };
-const memoCtx = vm.createContext({
-  state: memoState,
-  memoCategorySegments: item => item.category.split(" / "),
-  renderMemoListItem: item => `<item id="${item.id}"></item>`,
-  esc: value => value,
+const {test}=require('node:test'),assert=require('node:assert/strict');const h=require('./settings-harness.test.cjs');
+test('menu scans are invisible-page gated and concurrent requests share one native request',async()=>{
+ let managementCalls=0,scans=0,resolve;const {store}=await h.loaded();store.edit(c=>{c.core.menuBar.organizerEnabled=true;});
+ window.weborg.getMenuBarManagementState=()=>{managementCalls++;return new Promise(r=>{resolve=r;});};window.weborg.listMenuBarItems=async()=>{scans++;return {items:[]};};
+ const {Core}=require('../../src/settings/Core.tsx');const view=await h.mount(Core,{store,section:'general',onSection:()=>{}});window.dispatchEvent(new window.Event('focus'));assert.equal(managementCalls,0);
+ let a,b;await h.act(async()=>{a=store.refreshMenu();b=store.refreshMenu();});assert.equal(a,b);assert.equal(managementCalls,1);await h.act(async()=>{resolve({trusted:true});await a;});assert.equal(scans,1);
+ await h.act(async()=>view.root.render(h.React.createElement(Core,{store,section:'menubar',onSection:()=>{}})));assert.equal(managementCalls,2);
+ window.dispatchEvent(new window.Event('focus'));assert.equal(managementCalls,2);
+ await h.act(async()=>view.root.render(h.React.createElement(Core,{store,section:'general',onSection:()=>{}})));await h.act(async()=>{resolve({trusted:true});await store.refreshMenu();});
+ window.dispatchEvent(new window.Event('focus'));assert.equal(managementCalls,2);await view.unmount();store.dispose();
 });
-vm.runInContext(extract('function memoTree(', 'function renderMemoListItem('), memoCtx);
-const sampleMemos = [
-  { id: 'parent', category: '编程' },
-  { id: 'nested', category: '编程 / 数据库 / MySQL' },
-  { id: 'sibling', category: '编程 / 数据库 / PostgreSQL' },
-];
-const memoMarkup = memoCtx.renderMemoTreeBranch(memoCtx.memoTree(sampleMemos));
-for (const item of sampleMemos) assert.equal(memoMarkup.split(`<item id="${item.id}">`).length - 1, 1);
-assert.equal(memoCtx.countMemoTreeItems(memoCtx.memoTree(sampleMemos)), 3);
-assert.equal(memoCtx.renderMemoTreeBranch(memoCtx.memoTree([])), '');
-console.log('PASS: nested and parent-category memos render once, counts match, empty tree stays empty');
-
-assert.ok(memoMarkup.includes('编程 / 数据库 / MySQL'));
-assert.ok(memoMarkup.includes('编程 / 数据库 / PostgreSQL'));
-assert.equal((memoMarkup.match(/class="memo-tree-label"/g) || []).length, 4);
-assert.equal((memoMarkup.match(/<strong>编程<\/strong>/g) || []).length, 1);
-assert.equal((memoMarkup.match(/<strong>数据库<\/strong>/g) || []).length, 1);
-assert.ok(memoMarkup.includes('<strong>编程</strong><small>3</small>'));
-console.log('PASS: shared category ancestors merge, parent counts include descendants');
-
-memoState.memoCollapsedCategories.add('编程 / 数据库 / MySQL');
-const folded = memoCtx.renderMemoTreeBranch(memoCtx.memoTree(sampleMemos));
-assert.ok(folded.includes('data-memo-category="编程 / 数据库 / MySQL" >'));
-assert.ok(folded.includes('data-memo-category="编程 / 数据库 / PostgreSQL" open>'));
-memoState.memoFilter = 'mysql';
-assert.ok(memoCtx.renderMemoTreeBranch(memoCtx.memoTree(sampleMemos)).includes('data-memo-category="编程 / 数据库 / MySQL" open>'));
-memoState.memoFilter = '';
-assert.ok(memoCtx.renderMemoTreeBranch(memoCtx.memoTree(sampleMemos)).includes('data-memo-category="编程 / 数据库 / MySQL" >'));
-console.log('PASS: independent category collapse, search expands groups, clearing search restores collapse');
-
-memoState.memoCollapsedCategories.add('编程');
-assert.ok(memoCtx.renderMemoTreeBranch(memoCtx.memoTree(sampleMemos)).includes('data-memo-category="编程" >'));
-memoState.memoFilter = 'mysql';
-const searching = memoCtx.renderMemoTreeBranch(memoCtx.memoTree(sampleMemos.filter(item => item.id === 'nested')));
-for (const path of ['编程', '编程 / 数据库', '编程 / 数据库 / MySQL']) assert.ok(searching.includes(`data-memo-category="${path}" open>`));
-assert.ok(!searching.includes('PostgreSQL'));
-console.log('PASS: parent categories fold and matching search paths expand through all ancestors');
+test('memo hierarchy merges ancestors, counts descendants and emits each memo once',()=>{
+ const tree=h.model.memoTree([{id:'p',title:'Parent',category:'编程'},{id:'n',title:'Nested',category:'编程 / 数据库 / MySQL'},{id:'s',title:'Sibling',category:'编程 / 数据库 / PostgreSQL'}]);
+ assert.equal(tree.count,3);assert.equal(tree.children.length,1);assert.equal(tree.children[0].count,3);assert.equal(tree.children[0].children[0].children.length,2);
+ const collect=b=>[...b.items,...b.children.flatMap(collect)];assert.deepEqual(collect(tree).map(i=>i.id).sort(),['n','p','s']);assert.equal(h.model.memoTree([]).children.length,0);
+});
+test('memo category independent collapse, recursive search expansion, clearing filter restores collapse',async()=>{
+ const {store}=await h.loaded(),{Memos}=require('../../src/settings/Collections.tsx'),view=await h.mount(Memos,{store});
+ const group=path=>view.container.querySelector('[data-memo-category="'+path+'"]');
+ assert.equal(group('编程').getAttribute('aria-expanded'),'true');await h.click(group('编程 / 数据库 / MySQL'));assert.equal(group('编程 / 数据库 / MySQL').getAttribute('aria-expanded'),'false');assert.equal(group('编程 / 数据库 / PostgreSQL').getAttribute('aria-expanded'),'true');
+ await h.click(group('编程'));assert.equal(group('编程').getAttribute('aria-expanded'),'false');
+ await h.input(view.container.querySelector('[aria-label="筛选备忘录"]'),'MySQL');
+ for(const path of ['编程','编程 / 数据库','编程 / 数据库 / MySQL'])assert.equal(group(path).getAttribute('aria-expanded'),'true');assert.equal(group('编程 / 数据库 / PostgreSQL'),null);
+ await h.input(view.container.querySelector('[aria-label="筛选备忘录"]'),'');assert.equal(group('编程').getAttribute('aria-expanded'),'false');
+ await view.unmount();store.dispose();
+});
+test('memo delete/default reset are shared Dialog confirmations and do not mutate before confirmation',async()=>{
+ const {store}=await h.loaded(),{Memos}=require('../../src/settings/Collections.tsx'),view=await h.mount(Memos,{store});
+ await h.click(h.button(view.container,'删除备忘'));assert.equal(store.dirty,false);await h.click(document.querySelector('dialog [aria-label="关闭"]'));assert.equal(store.dirty,false);
+ await h.click(h.button(view.container,'恢复内置'));assert.equal(store.dirty,false);await h.click(h.button(document.body,'确认'));assert.equal(store.snapshot().config.plugins.memo.settings.items,undefined);
+ await h.act(async()=>store.travel('undo'));assert.equal(store.snapshot().config.plugins.memo.settings.items.length,2);
+ await h.click(h.button(view.container,'删除备忘'));await h.click(h.button(document.body,'确认'));assert.equal(store.snapshot().config.plugins.memo.settings.items.length,1);
+ await view.unmount();store.dispose();
+});
+test('memo category rename changes descendants only with path boundaries',()=>{
+ const items=[{id:'a',title:'A',category:'A'},{id:'b',title:'B',category:'A / B'},{id:'c',title:'C',category:'AB / C'}];h.model.renameCategory(items,'A','X','a');assert.equal(items[1].category,'X / B');assert.equal(items[2].category,'AB / C');
+});

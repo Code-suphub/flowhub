@@ -3,7 +3,9 @@ const {execFileSync}=require('node:child_process');
 for(const file of ['serve.mjs','fixture.js','checks.js']) execFileSync(process.execPath,['--check',path.join(__dirname,'privacy-ui',file)]);
 const settingsHtml=fs.readFileSync(path.join(__dirname,'../../ui/settings.html'),'utf8');
 assert(!settingsHtml.includes('id="clipboardExcludedApps"'));
-assert(settingsHtml.includes('data-action="clear-clipboard-exclusions"'));
+assert(settingsHtml.includes('id="settings-root"'));
+// Exercise the React recovery controls rather than searching removed static markup.
+execFileSync(process.execPath,['--test','--test-name-pattern=clipboard|preview',path.join(__dirname,'settings-storage.test.cjs')],{stdio:'inherit'});
 const security=JSON.parse(fs.readFileSync(path.join(__dirname,'../../src-tauri/tauri.conf.json'))).app.security;
 const directives=Object.fromEntries(security.csp.split(';').map(x=>x.trim().split(/\s+/)).filter(x=>x[0]).map(([name,...sources])=>[name,sources]));
 assert.deepEqual(directives['script-src'],["'self'"]);

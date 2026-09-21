@@ -16,7 +16,7 @@ const read=file=>fs.readFileSync(`${__dirname}/../../ui/${file}`,'utf8');
  const context={query,queryNow:()=>query,enabled:()=>true,render(){},status(){},copy:async text=>copied=text,api:{lookupLocalIp:()=>new Promise(resolve=>resolveLookup=resolve)}};
  const registry=ctx.window.FlowHubTools;
  const refresh=registry.action('localIp','refresh',{},context);
- assert(registry.render(registry.suggestions(context)[0],{esc:String,index:0,active:true}).includes('正在查询'));
+ assert(registry.suggestions(context)[0].details.pending.includes('ipv4'));
  query='something else';registry.queryChanged({...context,query});resolveLookup(result);await refresh;
  assert.equal(registry.suggestions({...context,query}).length,0);
  query='公网 ip';context.query=query;context.api.lookupLocalIp=async()=>result;

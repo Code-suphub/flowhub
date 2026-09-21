@@ -27,14 +27,24 @@
       return name => { const end = now(); (run.phases ??= []); if (run.phases.length < 500) run.phases.push({name, ms:end-last}); last=end; };
     },
     applied() { if (current) current.hasAppliedSource = true; },
-    render(task) {
+    commit(run, startedAt) {
+      if (!run || !enabled || current !== run) return;
+      const end = now();
+      const commits = (run.reactCommitsMs ??= []);
+      if (commits.length < 100) commits.push(end - startedAt);
+      if (run.hasAppliedSource && run.firstResponseDomMs == null) {
+        run.firstResponseDomMs = end - run.start;
+        requestAnimationFrame(() => { if (enabled && current === run) run.nextFrameWaitMs = now() - end; });
+      }
+    },
+    render(task, {deferCommit = false} = {}) {
       const run = current, start = now();
       try { return task(); }
       finally {
         if (run && run === current) {
           const end = now();
           if (run.renders.length < 100) run.renders.push(end - start);
-          if (run.hasAppliedSource && run.firstResponseDomMs == null) {
+          if (!deferCommit && run.hasAppliedSource && run.firstResponseDomMs == null) {
             run.firstResponseDomMs = end - run.start;
             requestAnimationFrame(() => {
               if (enabled && current === run) run.nextFrameWaitMs = now() - end;

@@ -50,7 +50,7 @@
     } catch(error) { if(version===token) current={port,processes:[],status:'error',error:error.message||String(error)}; }
     if(version===token && parse(ctx.queryNow())===port) ctx.render();
   }
-  const button=(action,text,extra='')=>`<button type="button" class="tool-action" data-tool-id="port" data-tool-action="${action}" ${extra}>${text}</button>`;
+
   window.FlowHubTools.register({
     id:'port',
     queryChanged(ctx) {
@@ -60,26 +60,8 @@
       current={port,processes:[],status:'loading'};
       timer=setTimeout(()=>refresh(port,ctx),180);
     },
-    suggestions(ctx) {const port=parse(ctx.query);return port?[{id:`port:${port}`,toolId:'port',type:'port',port,title:`端口 ${port}`,details:current.port===port?current:{status:'idle',processes:[]}}]:[];},
-    render(item,{esc,index,active,enabled}) {
-      const details=item.details;
-      const rows=(details.processes||[]).map(p => {
-        const fields = [
-          ['进程', p.name], ['PID', String(p.pid)], ['用户', p.user],
-          ['监听 / 绑定', p.sockets.join('\n')],
-          ['启动时间', formatStartedAt(p.startedAt)], ['已运行', formatElapsed(p.elapsed)],
-          ['路径 / 命令', p.executable]
-        ];
-        return `<section class="port-process" aria-label="${esc(p.name)}，PID ${p.pid}">
-          <table class="process-properties"><caption>进程详情 · PID ${p.pid}</caption><tbody>${fields.map(([label,value]) => `<tr><th scope="row">${label}${label==='启动时间'?'<small>本机时区</small>':''}</th><td>${esc(value || '—')}</td></tr>`).join('')}</tbody></table>
-          <div class="process-actions">${button('copy-process','复制详情',`data-pid="${p.pid}"`)}${button('copy-path','复制路径 / 命令',`data-pid="${p.pid}"`)}${confirming===p.pid?'':button('terminate','结束进程',`data-pid="${p.pid}"`)}</div>
-          ${confirming===p.pid?`<div class="port-confirm">确认向 ${esc(p.name)}（PID ${p.pid}）发送 SIGTERM？${button('confirm','确认结束',`data-pid="${p.pid}"`)}${button('cancel','取消')}</div>`:''}
-        </section>`;
-      }).join('');
-      const status=['idle','loading'].includes(details.status)?'正在检查本机端口…':details.error||(details.processes?.length?`${details.processes.length} 个可见进程`:'查询完成 · 未发现可见的监听/绑定进程');
-      const panel=store()&&enabled?.('commandHistory')!==false?store().panelHtml('port',esc):'';
-      return `<div class="result port-result ${active?'active':''}" data-i="${index}"><div class="r-body"><div class="r-title">端口 ${item.port} <span class="r-kind">TCP / UDP</span></div><div class="port-detail" role="status">${esc(status)}</div>${rows}<div class="port-detail">${esc(details.message||details.visibility||'查询本机 TCP 监听、UDP 绑定；其他用户进程可能不可见。')}</div><div class="tool-actions">${button('refresh','刷新')}${button('copy-macos','复制 macOS 查询命令')}${button('copy-linux','复制 Linux 查询命令')}</div><div class="port-detail">回车复制详情 · F6 聚焦操作按钮；结束进程仅作用于本机。</div>${panel}</div></div>`;
-    },
+    suggestions(ctx) {const port=parse(ctx.query);return port?[{id:`port:${port}`,toolId:'port',type:'port',port,confirming,terminating,title:`端口 ${port}`,details:current.port===port?current:{status:'idle',processes:[]}}]:[];},
+
     choose(item,ctx) {remember(item.port,ctx);return ctx.copy(JSON.stringify({port:item.port,...item.details},(key,value)=>key==='identity'?undefined:value,2)).then(()=>ctx.status('端口详情已复制'));},
     async action(action,target,ctx) {
       const commandId = target?.dataset?.commandId;

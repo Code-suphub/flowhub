@@ -1,13 +1,21 @@
-// FlowHub 桌面启动器 - 渲染层逻辑
-const q = document.getElementById("q");
-const resultsEl = document.getElementById("results");
-const pinBtn = document.getElementById("pinBtn");
-const settingsBtn = document.getElementById("settingsBtn");
-const clipboardKindRow = document.getElementById("clipboardKindRow");
-const scopeRow = document.getElementById("scopeRow");
-const keyboardHint = document.getElementById("keyboardHint");
-const actionStatus = document.getElementById("actionStatus");
-const versionBadge = document.getElementById("versionBadge");
+// Search business controller. React owns markup and element events.
+window.createFlowHubSearchController = function(root, publish) {
+let disposed = false;
+const cleanups = [], handlers = {};
+const q = root.querySelector('#q'), resultsEl = root.querySelector('#results');
+const bind = (target, name, callback) => {
+  if (target === document || target === window) {
+    target.addEventListener(name, callback);
+    cleanups.push(() => target.removeEventListener(name, callback));
+  } else handlers[target === q ? 'input:' + name : 'results:' + name] = callback;
+};
+const subscribe = (method, callback) => {
+  const off = window.weborg[method]?.((...args) => { if (!disposed) return callback(...args); });
+  if (typeof off === 'function') cleanups.push(off);
+};
+let updateState = null, statusText = '', launcherPinned = false;
+
+
 let scopeOrder = ["all"];
 const clipboardKinds = ["all", "text", "image", "file"];
 const CLIPBOARD_PAGE_SIZE = 30;
@@ -41,23 +49,14 @@ let ipSearchTimer = null;
 let proxySearchTimer = null;
 let inputRenderFrame = null;
 let webInputSearchFrame = null;
-let lastResultsHtml = "";
 let webIconTimer = null;
 let showUncachedWebIcons = false;
 const loadedWebIcons = new Set();
 const failedWebIcons = new Set();
 
-function renderVersion(update) {
-  if (!versionBadge) return;
-  const version = String(update?.currentVersion || "").trim();
-  const text = version ? `v${version}` : "浏览器预览";
-  const hasUpdate = update?.status === "available" || update?.status === "downloaded";
-  versionBadge.textContent = version ? `v${version.split("-")[0]}${version.includes("-local") ? " · 本地版" : ""}` : text;
-  versionBadge.classList.toggle("update", hasUpdate);
-  versionBadge.title = hasUpdate ? `发现正式版 v${update.availableVersion || "新版本"}` : `当前应用版本：${text}`;
-}
+function renderVersion(update) { updateState = update; render({preserveScroll:true}); }
 
-const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 
 function normalizeUrl(url) {
   const v = String(url || "").trim();
@@ -307,13 +306,15 @@ async function enrichDnsIpResults(hostname, answers, token) {
   render();
 }
 
-const toolEnabled = key => pluginEnabled("tools") && !["clipboard","memo"].includes(state.scope) && state.config?.plugins?.tools?.settings?.[key] !== false;
+const toolEnabled = key => pluginEnabled("tools") && !["clipboard","memo"].includes(state.scope)
+  && !(key === 'commandHistory' && document.documentElement.dataset.weborgReadonly === 'true')
+  && state.config?.plugins?.tools?.settings?.[key] !== false;
 // 参数模板与命令历史要点回搜索框重新执行，走和输入框一样的事件路径。
 function applyQuery(text) {
   const value = String(text ?? "");
   if (!q || q.value === value) return;
   q.value = value;
-  q.dispatchEvent(new Event("input"));
+  handlers['input:input']();
 }
 function toolContext() {
   return {query:state.query, queryNow:()=>state.query, api:window.weborg,
@@ -359,11 +360,10 @@ async function copyText(text) {
 }
 
 function showActionStatus(message) {
-  if (!actionStatus) return;
-  clearTimeout(actionStatusTimer);
-  actionStatus.textContent = message;
-  actionStatusTimer = setTimeout(() => { actionStatus.textContent = ""; }, 1200);
+  clearTimeout(actionStatusTimer); statusText = String(message || ''); render({preserveScroll:true});
+  actionStatusTimer = setTimeout(() => {statusText = ''; render({preserveScroll:true});}, 2400);
 }
+
 function webAddSuggestion(pages) {
   const url = normalizeUrl(state.query);
   if (!url || pages.some((page) => normalizeUrl(page.url) === url)) return null;
@@ -378,17 +378,7 @@ function webAddSuggestion(pages) {
 }
 const noteOf = (n) => String(n?.note || "").trim();
 
-function iconHtml(n) {
-  const raw = String(n?.icon || "").trim();
-  const isImage = /^https?:\/\//i.test(raw)
-    || /^data:image\//i.test(raw)
-    || /^(?:\.\/|\/)?assets\/[^?#]+\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i.test(raw);
-  if (isImage) {
-    if (failedWebIcons.has(raw) || (!showUncachedWebIcons && !loadedWebIcons.has(raw))) return "⌁";
-    return `<img src="${esc(raw)}" data-web-icon="${esc(raw)}" width="22" height="22" loading="lazy" decoding="async" alt="" />`;
-  }
-  return esc(raw || "⌁");
-}
+
 
 function deferUncachedWebIcons(delay = 260) {
   showUncachedWebIcons = false;
@@ -476,10 +466,7 @@ function twofaMatches() {
   return (state.twofaResults || []).map((entry) => ({ ...entry, type: "twofa", pluginId: "twofa" }));
 }
 
-function memoPathHtml(item) {
-  const segments = window.FlowHubMemoCatalog?.categorySegments?.(item?.category) || [item?.category || "其他"];
-  return segments.map((segment, index) => `${index ? `<i aria-hidden="true">›</i>` : ""}<span>${esc(segment)}</span>`).join("");
-}
+
 
 function usageKey(item) {
   return `${item.type}:${item.usageKey || item.id || item.path || item.url || item.title}`;
@@ -672,39 +659,10 @@ function moveVertical(items, offset) {
   state.index = Math.max(0, Math.min(items.length - 1, state.index + offset));
 }
 
-function clipboardTextHtml(text) {
-  // Render frequent status symbols as lightweight inline vectors. The original
-  // clipboard string remains untouched for copy/paste and expanded content.
-  return esc(text).replace(/[❌✅]/gu, symbol => symbol === "❌"
-    ? '<svg role="img" aria-label="❌" width="14" height="14" viewBox="0 0 16 16" style="vertical-align:-2px;color:#ec6767"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>'
-    : '<svg role="img" aria-label="✅" width="14" height="14" viewBox="0 0 16 16" style="vertical-align:-2px"><rect width="16" height="16" rx="3" fill="#4eaa75"/><path d="m3 8 3 3 7-7" stroke="white" fill="none" stroke-width="2"/></svg>');
-}
-
-function clipboardPreviewHtml(content, expanded) {
-  const preview = expanded ? content : content.slice(0, 300).split("\n").slice(0, 5).join("\n");
-  const text = preview + (!expanded && preview.length < content.length ? "…" : "");
-  return (expanded ? esc : clipboardTextHtml)(text || "空文本");
-}
-
 function toggleClipboardPreview(button) {
   const id = Number(button.dataset.clipboardToggle);
-  const item = state.clipboardResults.find(record => Number(record.id) === id);
-  const row = button.closest(".clipboard-result");
-  const title = row?.querySelector(".clipboard-title");
-  if (!item || !title) return;
-  const expanded = !state.expandedClipboard.has(id);
-  if (expanded) state.expandedClipboard.add(id);
-  else state.expandedClipboard.delete(id);
-  // Keep the row and button alive: rebuilding results loses scroll and focus.
-  title.innerHTML = clipboardPreviewHtml(String(item.content || ""), expanded);
-  title.classList.toggle("is-expanded", expanded);
-  title.scrollTop = 0;
-  button.setAttribute("aria-expanded", String(expanded));
-  button.textContent = expanded ? "⌃ 收起" : "⌄ 展开";
-  const style = getComputedStyle(row);
-  resultWindow.heights.set(resultKey({...item,type:"clipboard"}),
-    row.getBoundingClientRect().height + parseFloat(style.marginTop || 0) + parseFloat(style.marginBottom || 0));
-  lastResultsHtml = "";
+  if (state.expandedClipboard.has(id)) state.expandedClipboard.delete(id); else state.expandedClipboard.add(id);
+  render({preserveScroll:true});
 }
 
 function isExpandableClipboard(item) {
@@ -737,6 +695,31 @@ function pasteClipboardPlain(item) {
   return clipboardAction("plain", item);
 }
 
+function requestClipboardDelete(item) {
+  if (document.documentElement.dataset.weborgReadonly === 'true') return showActionStatus('浏览器预览不能删除剪贴板记录');
+  if (state.deletingClipboard?.busy) return;
+  state.deletingClipboard = {id:Number(item.id),busy:false,error:''};
+  render({preserveScroll:true});
+}
+function cancelClipboardDelete() {
+  if (state.deletingClipboard?.busy) return;
+  state.deletingClipboard = null;
+  render({preserveScroll:true});
+}
+async function confirmClipboardDelete() {
+  const pending = state.deletingClipboard;
+  if (!pending || pending.busy) return;
+  pending.busy = true; pending.error = ''; render({preserveScroll:true});
+  const result = await clipboardAction('delete',pending.id,{confirmed:true});
+  if (result?.ok === false) {
+    pending.busy = false; pending.error = result.reason || '删除失败，请重试';
+    render({preserveScroll:true}); return;
+  }
+  state.deletingClipboard = null;
+  showActionStatus('已删除剪贴板历史记录');
+  await refreshClipboard();
+}
+
 function toggleClipboardPin(item) {
   const pinned = !item.pinnedAt;
   return clipboardAction("pin", item, { pinned }).then((result) => {
@@ -750,7 +733,7 @@ function startClipboardEdit(item) {
   if (item.kind !== "text") return showActionStatus("只有文本记录可以编辑副本");
   state.editingClipboard = { id: Number(item.id), text: String(item.content || "") };
   render({ preserveScroll: true });
-  resultsEl.querySelector(".clipboard-editor")?.focus();
+  requestAnimationFrame(() => resultsEl.querySelector(".clipboard-editor")?.focus());
   return undefined;
 }
 
@@ -779,89 +762,7 @@ function saveClipboardEdit() {
   });
 }
 
-function clipboardFileIcon(type) {
-  if (type === "folder") {
-    return `<svg class="clipboard-file-symbol folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h6l1.8 2h9.2v9.7a1.8 1.8 0 0 1-1.8 1.8H5.3a1.8 1.8 0 0 1-1.8-1.8V6.5Z"/><path d="M3.5 8.5h17" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
-  }
-  if (type === "image") {
-    return `<svg class="clipboard-file-symbol image" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><path d="m5.5 17 4.2-4.2 2.8 2.4 2.3-2.2 3.7 4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></svg>`;
-  }
-  return `<svg class="clipboard-file-symbol file" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2.8h8l4 4v14.4H6z" fill="currentColor"/><path d="M14 2.8v4h4" fill="none" stroke="#17232d" stroke-linejoin="round" stroke-width="1.4"/><path d="M8.5 11h7M8.5 14h7M8.5 17h5" fill="none" stroke="#17232d" stroke-linecap="round" stroke-width="1.2"/></svg>`;
-}
 
-function clipboardFileTypeLabel(type) {
-  return type === "folder" ? "文件夹" : type === "image" ? "图片" : "文件";
-}
-
-function usageSectionHeading(section) {
-  const title = section === "frequent" ? "常用入口" : "最近使用";
-  const hint = section === "frequent" ? "按热度" : "刚刚打开";
-  return `<div class="usage-section"><span>${title}</span><small>${hint}</small></div>`;
-}
-
-function renderUsageSection(item, index, items) {
-  if (!item.usageSection || (items[index - 1] && items[index - 1].usageSection === item.usageSection)) return "";
-  return usageSectionHeading(item.usageSection);
-}
-
-function renderUsageTile(item, index) {
-  const appIcon = item.type === "app"
-    ? (item.iconUrl || state.appResults.find((application) => application.path === item.path)?.iconUrl || "")
-    : "";
-  const icon = item.type === "app"
-    ? (appIcon ? `<img src="${esc(appIcon)}" loading="lazy" decoding="async" alt="" />` : "▣")
-    : iconHtml(item);
-  return `
-    <div class="result usage-tile ${item.type === "app" ? "app" : "web"} ${index === state.index ? "active" : ""}" data-i="${index}" title="${esc(item.title || "")}">
-      <span class="usage-tile-icon">${icon}</span>
-      <span class="usage-tile-name">${esc(item.title || "未命名")}</span>
-    </div>
-  `;
-}
-
-function renderResults(items, from = 0, to = items.length) {
-  let html = "";
-  for (let index = from; index < to;) {
-    const item = items[index];
-    if (item.usageSection) {
-      const start = index;
-      const section = item.usageSection;
-      while (index < to && items[index].usageSection === section) index += 1;
-      html += usageSectionHeading(section);
-      html += `<div class="usage-strip">${items.slice(start, index).map((entry, offset) => renderUsageTile(entry, start + offset)).join("")}</div>`;
-      continue;
-    }
-    html += renderResult(item, index, items);
-    index += 1;
-  }
-  return html;
-}
-
-// 统一的结果操作入口：内置结果类型都在同一个操作栏里暴露“当前可用”的动作。
-// 工具结果与剪贴板记录自带同类按钮（data-tool-action / data-clipboard-action），
-// 不再重复渲染；键盘与按钮都走 runResultAction 这一条路径。
-function resultActions(item, index) {
-  const button = (action, label, title) => `<button class="tool-action" type="button" data-result-action="${action}" data-result-index="${index}"${title ? ` title="${esc(title)}"` : ""}>${label}</button>`;
-  const buttons = [];
-  if (item.type === "web" || item.type === "web-add") {
-    buttons.push(button("open", "打开"));
-    if (normalizeUrl(item.url)) buttons.push(button("copy", "复制链接", "复制页面地址"));
-  } else if (item.type === "app") {
-    buttons.push(button("open", "打开"));
-    if (item.path) buttons.push(button("copy", "复制路径", "复制应用路径"));
-  } else if (item.type === "memo") {
-    if (String(item.content || "").trim()) buttons.push(button("copy", "复制命令", "复制备忘里的命令"));
-    buttons.push(button("open", "粘贴"));
-  } else if (item.type === "twofa") {
-    buttons.push(button("copy", "复制验证码"));
-  } else if (["calculation", "timestamp", "jwt"].includes(item.type)) {
-    buttons.push(button("copy", "复制结果"));
-  }
-  if (portableQueryCommand(item)) {
-    buttons.push(button("copy-query", "复制查询命令", "适用于 macOS / Linux；需要 curl 或 dig"));
-  }
-  return buttons.length ? `<span class="result-actions">${buttons.join("")}</span>` : "";
-}
 
 function runResultAction(action, item) {
   if (action === "open") return choose(item);
@@ -872,7 +773,7 @@ function runResultAction(action, item) {
   }
   if (action !== "copy") return undefined;
   if (item.type === "twofa") return choose(item);
-  const text = item.type === "web" || item.type === "web-add"
+  const text = item.type === "page" || item.type === "web" || item.type === "web-add"
     ? normalizeUrl(item.url)
     : item.type === "app" ? String(item.path || "")
     : item.type === "memo" ? String(item.content || "")
@@ -882,369 +783,30 @@ function runResultAction(action, item) {
   return copyText(text).then(() => showActionStatus(message)).catch(() => showActionStatus("复制失败"));
 }
 
-function renderResult(item, index, items) {
-  const registered = window.FlowHubTools.render(item, {esc,index,active:index===state.index,enabled:toolEnabled});
-  const html = registered || renderResultBody(item,index,items);
-  const actions = registered ? "" : resultActions(item, index);
-  if (!actions) return html;
-  const end = html.lastIndexOf("</div>");
-  return end < 0 ? html + actions : html.slice(0,end) + actions + html.slice(end);
-}
-function renderResultBody(item, index, items) {
-  const usageSection = renderUsageSection(item, index, items);
-  if (item.type === "twofa") {
-    return `${usageSection}
-      <div class="result twofa-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon twofa">⌁</span>
-        <span class="r-body">
-          <span class="r-title">${esc(item.title || item.id || "2FA")}</span>
-          <span class="r-meta"><span class="path">2FA 验证码</span>${item.issuer ? ` · ${esc(item.issuer)}` : ""}</span>
-        </span>
-        <span class="r-kind">复制验证码</span>
-      </div>`;
-  }
-  if (item.type === "calculation") {
-    return `${usageSection}
-      <div class="result calculation-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">＝</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">${esc(item.result)}</span>
-          <span class="r-meta calculation-expression">计算 · ${esc(item.expression)}</span>
-        </span>
-        <span class="r-kind calculation">结果</span>
-      </div>
-    `;
-  }
-  if (item.type === "timestamp") {
-    return `${usageSection}
-      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">◷</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">${esc(item.result)}</span>
-          <span class="r-meta calculation-expression">时间戳 · ${esc(item.expression)}（${esc(item.unit)}）</span>
-        </span>
-        <span class="r-kind calculation">转换</span>
-      </div>
-    `;
-  }
-  if (item.type === "jwt") {
-    const subject = item.payload?.sub || item.payload?.iss || "header + payload";
-    return `${usageSection}
-      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">◇</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">JWT 解析</span>
-          <span class="r-meta calculation-expression">${esc(subject)} · 回车复制 JSON</span>
-        </span>
-        <span class="r-kind calculation">工具</span>
-      </div>
-    `;
-  }
-  if (item.type === "ip") {
-    const details = item.details;
-    const location = [details?.city, details?.region, details?.country_name].filter(Boolean).join(" · ");
-    const detailsBody = details?.private
-      ? `<span class="ip-empty">私有地址 · 无公网归属地</span>`
-      : details?.error
-        ? `<span class="ip-empty">查询失败 · 请检查网络</span>`
-        : details
-          ? `<span class="ip-details">${[
-              location && ["位置", location],
-              details.org && ["组织", details.org],
-              details.asn && ["ASN", details.asn],
-              details.timezone && ["时区", details.timezone]
-            ].filter(Boolean).map(([label, value]) => `<span class="ip-line"><span class="ip-label">${esc(label)}</span><span class="ip-value" title="${esc(value)}">${esc(value)}</span></span>`).join("") || `<span class="ip-empty">归属地未知</span>`}</span>`
-          : `<span class="ip-empty">正在查询 IP 归属地…</span>`;
-    return `${usageSection}
-      <div class="result calculation-result ip-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">⌁</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">${esc(item.result)}</span>
-          ${detailsBody}
-          <span class="r-meta calculation-expression">回车复制详情</span>
-        </span>
-        <span class="r-kind calculation">IP 归属地</span>
-      </div>
-    `;
-  }
-  if (item.type === "dns") {
-    const dnsResolved = state.dnsResult?.hostname === item.hostname;
-    const answerRows = item.answers?.length
-      ? item.answers.slice(0, 8).map((answer) => {
-          const address = String(answer.data || "");
-          const geo = [1, 28].includes(Number(answer.type)) && dnsIpGeoEnabled() ? state.dnsIpResults[address] : null;
-          const geoText = geo?.error
-            ? "归属地查询失败"
-            : geo
-              ? [geo.city, geo.region, geo.country_name].filter(Boolean).join(" · ") || "归属地未知"
-              : [1, 28].includes(Number(answer.type)) && dnsIpGeoEnabled() ? "正在查询归属地…" : "";
-          return `<span class="dns-line"><span class="dns-label">${esc(dnsRecordType(answer.type))}</span><span class="dns-value" title="${esc(address)}"><span>${esc(address)}</span>${geoText ? `<small class="dns-geo">${esc(geoText)}</small>` : ""}</span></span>`;
-        }).join("")
-      : "";
-    const answerBody = answerRows
-      ? `<span class="dns-details">${answerRows}</span>`
-      : `<span class="dns-empty">${dnsResolved ? "无 DNS 记录" : "正在查询 DNS…"}</span>`;
-    return `${usageSection}
-      <div class="result calculation-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">⌁</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">DNS · ${esc(item.hostname)} · ${esc(item.family || "记录")}</span>
-          ${answerBody}
-          <span class="r-meta calculation-expression">${item.answers?.length > 8 ? `还有 ${item.answers.length - 8} 条记录 · ` : ""}回车复制完整记录</span>
-        </span>
-        <span class="r-kind calculation">工具</span>
-      </div>
-    `;
-  }
-  if (item.type === "cloudflare") {
-    const details = item.details;
-    const status = details?.challenge
-      ? "检测到 Cloudflare 挑战或拦截"
-      : details?.cloudflare
-        ? `检测到 Cloudflare · HTTP ${details.status || "?"}`
-        : details
-          ? `未发现 Cloudflare 特征 · HTTP ${details.status || "?"}`
-          : item.cnameEvidence?.length
-            ? "DNS 记录疑似经过 Cloudflare · 回车确认"
-            : "回车检测 Cloudflare 与拦截状态";
-    const evidence = details?.evidence?.length
-      ? details.evidence.join("、")
-      : item.cnameEvidence?.length
-        ? `CNAME: ${item.cnameEvidence.join("、")}`
-        : details
-          ? "未发现响应头特征"
-          : "不会自动发起 HTTP 请求";
-    return `${usageSection}
-      <div class="result calculation-result cloudflare-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">⌁</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">Cloudflare · ${esc(item.hostname)}</span>
-          <span class="r-meta calculation-expression">${esc(status)}</span>
-          <span class="cloudflare-evidence">${esc(evidence)}</span>
-        </span>
-        <span class="r-kind calculation">检测</span>
-      </div>
-    `;
-  }
-  if (item.type === "proxy") {
-    const details = item.details;
-    const formatEndpoint = (entry) => entry?.enabled && entry.host ? `${entry.host}:${entry.port || ""}` : "未启用";
-    const rows = details ? [
-      ["HTTP", formatEndpoint(details.http)],
-      ["HTTPS", formatEndpoint(details.https)],
-      ["SOCKS", formatEndpoint(details.socks)],
-      details.egressIp ? ["出口 IP", details.egressIp] : null,
-      details.node?.remoteAddress ? ["当前节点", `${details.node.nodeName || "当前连接"} · ${details.node.remoteAddress}`] : null
-    ].filter(Boolean) : [];
-    const body = details?.error
-      ? `<span class="proxy-line"><span class="proxy-value">${esc(details.error)}</span></span>`
-      : details
-        ? `<div class="proxy-details">${rows.map(([label, value]) => `<span class="proxy-line"><span class="proxy-label">${esc(label)}</span><span class="proxy-value" title="${esc(value)}">${esc(value)}</span></span>`).join("")}</div>`
-        : `<span class="proxy-line"><span class="proxy-value">正在读取系统代理…</span></span>`;
-    return `${usageSection}
-      <div class="result calculation-result proxy-result tool-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon calculation">⇄</span>
-        <span class="r-body">
-          <span class="r-title calculation-value">代理信息</span>
-          ${body}
-          <span class="r-meta calculation-expression proxy-hint">回车复制详情</span>
-        </span>
-        <span class="r-kind calculation">工具</span>
-      </div>
-    `;
-  }
-  if (item.type === "web-add") {
-    return `
-      <div class="result web-add-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon web-add">＋</span>
-        <span class="r-body">
-          <span class="r-title">添加到网页配置</span>
-          <span class="r-meta"><span class="path">未找到匹配网页</span> · ${esc(item.url)} · 右键新建</span>
-        </span>
-        <span class="r-kind">添加</span>
-      </div>
-    `;
-  }
-  if (item.type === "memo") {
-    const command = String(item.content || "").split("\n").slice(0, 2).join("\n");
-    return `${usageSection}
-      <div class="result memo-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="memo-terminal" aria-hidden="true">›_</span>
-        <span class="r-body">
-          <span class="memo-path">${memoPathHtml(item)}</span>
-          <span class="memo-heading"><span class="r-title">${esc(item.title || "未命名备忘")}</span></span>
-          <code class="memo-command">${esc(command)}</code>
-          ${item.description ? `<span class="r-meta memo-description">${esc(item.description)}</span>` : ""}
-        </span>
-        <span class="r-kind memo">命令</span>
-      </div>
-    `;
-  }
-  if (item.type === "app") {
-    const icon = item.iconUrl
-      ? `<img src="${esc(item.iconUrl)}" loading="lazy" decoding="async" alt="" />`
-      : "▣";
-    const packageName = String(item.fileName || "").replace(/\.app$/i, "");
-    const alias = packageName && packageName !== item.title ? ` · ${esc(packageName)}` : "";
-    return `${usageSection}
-      <div class="result app-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-icon app">${icon}</span>
-        <span class="r-body">
-          <span class="r-title">${esc(item.title || "未命名应用")}</span>
-          <span class="r-meta"><span class="path">应用</span>${alias} · ${esc(item.path)}</span>
-        </span>
-        <span class="r-kind">应用</span>
-      </div>
-    `;
-  }
-  if (item.type === "clipboard") {
-    const isFile = item.kind === "file";
-    const fileType = isFile ? (item.fileType || "file") : "image";
-    const content = String(item.content || "");
-    const expandable = isExpandableClipboard(item);
-    const expanded = expandable && state.expandedClipboard.has(item.id);
-    const pinned = Boolean(item.pinnedAt);
-    const editing = state.editingClipboard?.id === Number(item.id);
-    const icon = item.kind === "image" && item.imageUrl
-      ? `<img src="${esc(item.imageUrl)}" loading="lazy" decoding="async" alt="" />`
-      : isFile && item.fileIconUrl
-        ? `<img class="native-clipboard-icon" src="${esc(item.fileIconUrl)}" loading="lazy" decoding="async" alt="" />`
-      : isFile ? clipboardFileIcon(fileType) : "▤";
-    const iconMarkup = item.kind === "text" ? "" : `<span class="r-icon clipboard">${icon}</span>`;
-    const preview = item.kind === "image"
-      ? `图片 · ${formatBytes(item.size)}`
-      : isFile
-        ? (item.fileNames || []).join(" · ") || `${item.fileCount || 0} 个文件`
-      : content;
-    const fileLabel = (item.fileNames || []).join(" · ") || `${item.fileCount || 0} 个文件`;
-    const titleClass = `r-title clipboard-title${expandable ? " expandable" : ""}${expanded ? " is-expanded" : ""}`;
-    const title = item.kind === "image"
-      ? (item.sourceName ? `图片 · ${esc(item.sourceName)}` : "剪切板图片")
-      : isFile ? esc(fileLabel) : clipboardPreviewHtml(preview, expanded);
-    const toggle = expandable && !editing
-      ? `<button class="clipboard-toggle" type="button" data-clipboard-toggle="${item.id}" aria-expanded="${expanded}">${expanded ? "⌃ 收起" : "⌄ 展开"}</button>`
-      : "";
-    const actions = [
-      `<button class="tool-action" type="button" data-clipboard-action="pin" data-clipboard-id="${item.id}" data-clipboard-pinned="${pinned ? "false" : "true"}" title="置顶后过期清理不会删除（⌘D）">${pinned ? "★ 取消置顶（⌘D）" : "☆ 置顶（⌘D）"}</button>`,
-      ["text", "file"].includes(item.kind)
-        ? `<button class="tool-action" type="button" data-clipboard-action="plain" data-clipboard-id="${item.id}" title="只写文本内容，不带原格式（⇧↩）">纯文本粘贴（⇧↩）</button>`
-        : "",
-      item.kind === "text"
-        ? `<button class="tool-action" type="button" data-clipboard-action="edit" data-clipboard-id="${item.id}" title="编辑后的内容作为新记录，原记录保留（⌘E）">编辑副本（⌘E）</button>`
-        : ""
-    ].join("");
-    if (editing) {
-      return `
-      <div class="result clipboard-result editing ${index === state.index ? "active" : ""}" data-i="${index}">
-        <span class="r-body">
-          <span class="r-title clipboard-title">编辑文本副本</span>
-          <span class="r-meta clipboard-meta">保存后写入一条新记录，原记录保留</span>
-          <textarea class="clipboard-editor" data-clipboard-editor rows="5" spellcheck="false" aria-label="编辑文本副本">${esc(state.editingClipboard.text)}</textarea>
-          <span class="clipboard-actions">
-            <button class="tool-action" type="button" data-clipboard-action="edit-save" data-clipboard-id="${item.id}">保存副本（⌘↩）</button>
-            <button class="tool-action" type="button" data-clipboard-action="edit-cancel" data-clipboard-id="${item.id}">取消（Esc）</button>
-          </span>
-        </span>
-      </div>
-    `;
-    }
-    return `
-      <div class="result clipboard-result ${index === state.index ? "active" : ""}" data-i="${index}">
-        ${iconMarkup}
-        <span class="r-body">
-          <span class="${titleClass}">${title}</span>
-          <span class="clipboard-meta-row">
-            <span class="r-meta clipboard-meta"><span class="path">剪切板</span> · ${esc(formatTime(item.lastSeenAt))} · ${item.copyCount} 次 · ${esc(item.hash.slice(0, 12))}${pinned ? ` · <span class="clipboard-pin" title="已置顶，过期清理不会删除">★ 已置顶</span>` : ""}</span>
-            ${toggle}
-          </span>
-          <span class="clipboard-actions">${actions}</span>
-        </span>
-        <span class="r-kind clipboard">${item.kind === "image" ? "图片" : isFile ? clipboardFileTypeLabel(fileType) : "文本"}</span>
-      </div>
-    `;
-  }
-  return `${usageSection}
-    <div class="result ${index === state.index ? "active" : ""}" data-i="${index}">
-      <span class="r-icon">${iconHtml(item)}</span>
-      <span class="r-body">
-        <span class="r-title">${esc(item.title || item.id)}</span>
-        <span class="r-meta"><span class="path">${esc(pathText(item))}</span>
-          ${noteOf(item) ? ` · ${esc(noteOf(item))}` : ""} · ${esc(normalizeUrl(item.url) || item.url)} · 右键编辑
-        </span>
-      </span>
-      <span class="r-kind">${normalizeUrl(item.url) ? "网页" : "无链接"}</span>
-    </div>
-  `;
-}
-
 const resultWindow = new window.FlowHubResultWindow();
 let windowedResults = false;
 let windowRenderFrame = 0;
 function render(options = {}) {
-  return window.flowhubSearchTiming ? window.flowhubSearchTiming.render(() => renderMeasured(options)) : renderMeasured(options);
+  if (window.flowhubSearchTiming) return window.flowhubSearchTiming.render(() => renderSnapshot(options), {deferCommit:true});
+  return renderSnapshot(options);
+}
+function renderSnapshot(options = {}) {
+  if (disposed) return;
+  const timing = {run:window.flowhubSearchTiming?.capture(),startedAt:performance.now()};
+  if (!options.preserveScroll && resultsEl.scrollTop) resultsEl.scrollTop = 0;
+  const items = state.config ? matches() : [];
+  state.index = Math.max(0, Math.min(state.index, items.length - 1));
+  windowedResults = items.length > 80;
+  const plan = windowedResults ? resultWindow.plan(items, resultKey, resultsEl.scrollTop, resultsEl.clientHeight, options.targetIndex) : null;
+  const paging = state.scope === 'all' ? {loading:allPaging,hasMore:state.config && allHasMore()} : {loading:state[state.scope+'Loading'],hasMore:state[state.scope+'HasMore']};
+  publish({state:{...state,expandedClipboard:new Set(state.expandedClipboard)},items,plan,paging,statusText,updateState,launcherPinned,showUncachedWebIcons,loadedWebIcons,failedWebIcons,timing});
+  if (options.targetIndex != null) requestAnimationFrame(() => {
+    if (disposed) return;
+    if (plan) resultsEl.scrollTop = plan.targetTop;
+    resultsEl.querySelector('.result[data-i="'+state.index+'"]')?.scrollIntoView({block:'nearest'});
+  });
 }
 
-function renderMeasured({ preserveScroll = false, targetIndex = null } = {}) {
-  const phase = window.flowhubSearchTiming?.phases?.();
-  const currentScrollTop = resultsEl.scrollTop;
-  const previousScrollTop = preserveScroll ? currentScrollTop : 0;
-  // Reset before DOM mutation. Reassigning the same scrollTop afterwards forces
-  // WebKit to lay out the newly inserted rows synchronously, even at zero.
-  if (!preserveScroll && currentScrollTop !== 0) resultsEl.scrollTop = 0;
-  if (!state.config) {
-    const html = `<div class="empty">配置加载中…</div>`;
-    if (html !== lastResultsHtml) {
-      resultsEl.innerHTML = html;
-      lastResultsHtml = html;
-    }
-    updateKeyboardHint(null);
-    return;
-  }
-  const m = matches();
-  updateKeyboardHint(m[state.index]);
-  phase?.("matches");
-  const paging = state.scope === "all"
-    ? { loading: allPaging, hasMore: allHasMore() }
-    : state.scope === "clipboard"
-    ? { loading: state.clipboardLoading, hasMore: state.clipboardHasMore }
-    : state.scope === "app"
-      ? { loading: state.appLoading, hasMore: state.appHasMore }
-      : state.scope === "web"
-        ? { loading: state.webLoading, hasMore: state.webHasMore }
-        : state.scope === "memo"
-          ? { loading: state.memoLoading, hasMore: state.memoHasMore }
-          : null;
-  windowedResults = m.length > 80;
-  let plan = null;
-  if (windowedResults) plan = resultWindow.plan(m, resultKey, previousScrollTop, resultsEl.clientHeight, targetIndex);
-  const resultHtml = plan
-    ? `<div aria-hidden="true" style="height:${plan.before}px"></div>${renderResults(m, plan.from, plan.to)}<div aria-hidden="true" style="height:${plan.after}px"></div>`
-    : renderResults(m);
-  const html = !m.length
-    ? `<div class="empty">${paging?.loading ? "正在加载…" : "没有匹配项"}</div>`
-    : `${resultHtml}${paging && (paging.loading || !paging.hasMore) ? `<div class="plugin-load-status">${paging.loading ? "正在加载更多…" : "已经到底了"}</div>` : ""}`;
-  phase?.("markup");
-  if (html !== lastResultsHtml) {
-    resultsEl.innerHTML = html;
-    lastResultsHtml = html;
-  }
-  phase?.("dom");
-  if (plan) {
-    for (const group of plan.groups) {
-      const row = resultsEl.querySelector(`.result[data-i="${group.start}"]`);
-      if (!row) continue;
-      const element = m[group.start].usageSection ? row.parentElement : row;
-      const style = getComputedStyle(element);
-      const height = element.getBoundingClientRect().height + parseFloat(style.marginTop || 0) + parseFloat(style.marginBottom || 0);
-      const heading = m[group.start].usageSection ? element.previousElementSibling?.getBoundingClientRect().height || 0 : 0;
-      resultWindow.heights.set(group.id, height + heading);
-    }
-  }
-  phase?.("layout");
-  if (!m.length) return;
-  if (targetIndex != null && plan) resultsEl.scrollTop = plan.targetTop;
-  phase?.("scroll");
-}
 
 // 结果操作焦点顺序：F6 进入当前结果的第一个操作按钮，再按 F6 在按钮之间前进，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
@@ -1264,36 +826,9 @@ function focusResultAction(direction = 1) {
 
 // 底部快捷键说明只列当前真的能用的操作：范围、选中结果类型和剪贴板插件状态
 // 都会改变可用项，避免显示未实现或当前不可用的快捷键。
-let lastKeyboardHint = "";
-function updateKeyboardHint(item) {
-  const hint = document.getElementById("keyboardHint");
-  if (!hint) return;
-  const parts = [];
-  if (state.scope === "all") parts.push("←→ 常用/最近");
-  parts.push("↑↓ 选择结果");
-  parts.push(`<kbd>⏎</kbd> ${item?.type === "memo" ? "粘贴" : "打开"}`);
-  if (item?.type === "clipboard") {
-    if (item.kind !== "image") parts.push("<kbd>⇧⏎</kbd> 纯文本粘贴");
-    parts.push("<kbd>⌘D</kbd> 置顶");
-    if (item.kind === "text") parts.push("<kbd>⌘E</kbd> 编辑副本");
-    if (document.documentElement.dataset.weborgReadonly !== "true") parts.push("<kbd>⌥⌫</kbd> 删除");
-  }
-  if (item && (item.toolId || item.type === "clipboard" || resultActions(item, 0))) parts.push("<kbd>F6</kbd> 操作按钮");
-  parts.push("<kbd>Tab</kbd> 范围", "<kbd>⌘K</kbd> 回到搜索框");
-  const html = parts.join(" · ");
-  if (html === lastKeyboardHint) return;
-  lastKeyboardHint = html;
-  hint.innerHTML = html;
-}
+function updateKeyboardHint() {}
+function revealActiveResult() { render({preserveScroll:true,targetIndex:state.index}); }
 
-function revealActiveResult() {
-  resultsEl.querySelector(".result.active")?.classList.remove("active");
-  if (windowedResults && !resultsEl.querySelector(`.result[data-i="${state.index}"]`)) render({ preserveScroll: true, targetIndex: state.index });
-  const active = resultsEl.querySelector(`.result[data-i="${state.index}"]`);
-  if (!active) return;
-  active.classList.add("active");
-  active.scrollIntoView({ block: "nearest" });
-}
 
 function choose(page) {
   if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
@@ -1498,30 +1033,9 @@ function queueProxyLookup() {
 }
 
 function renderPluginScopes(plugins) {
-  state.plugins = (plugins || []).filter((plugin) => plugin.enabled && plugin.available).sort((a, b) => a.order - b.order);
-  const scopes = [{ id: "all", name: "全部" }, ...state.plugins.filter((plugin) => plugin.searchable)];
-  scopeOrder = scopes.map(plugin => plugin.id);
-  if (!scopeOrder.includes(state.scope)) state.scope = "all";
-  // Preserve pressed/focused nodes across config refreshes. Replacing a button
-  // between mousedown and mouseup prevents the browser from delivering click.
-  const existing = new Map(Array.from(scopeRow.querySelectorAll("[data-scope]"), button => [button.dataset.scope, button]));
-  let previous = null;
-  for (const scope of scopes) {
-    let button = existing.get(scope.id);
-    if (!button) {
-      button = document.createElement("button");
-      button.type = "button";
-      button.className = "scope-button";
-      button.dataset.scope = scope.id;
-    }
-    if (button.textContent !== scope.name) button.textContent = scope.name;
-    button.classList.toggle("active", state.scope === scope.id);
-    const anchor = previous ? previous.nextElementSibling : scopeRow.querySelector("[data-scope]");
-    if (anchor !== button) scopeRow.insertBefore(button, anchor);
-    existing.delete(scope.id);
-    previous = button;
-  }
-  for (const button of existing.values()) button.remove();
+ state.plugins = (plugins || []).filter(p => p.enabled && p.available).sort((a,b)=>a.order-b.order);
+ scopeOrder = ['all',...state.plugins.filter(p=>p.searchable).map(p=>p.id)];
+ if (!scopeOrder.includes(state.scope)) state.scope = 'all';
 }
 
 function pluginEnabled(id) {
@@ -1561,8 +1075,6 @@ function setScope(scope) {
   state.scope = scope;
   window.FlowHubTools.queryChanged(toolContext());
   state.index = 0;
-  document.querySelectorAll("[data-scope]").forEach((item) => item.classList.toggle("active", item.dataset.scope === scope));
-  clipboardKindRow?.classList.toggle("visible", scope === "clipboard");
   renderKeyboardHint();
   render();
   // Scope switches should be instant when the current query is already cached.
@@ -1580,6 +1092,7 @@ function setScope(scope) {
   }
   if (scope === "app") {
     if (!state.appLoading && (state.appLoadedQuery !== state.query || (scope === "app" && state.appLoadedLimit < APP_PAGE_SIZE))) void refreshApps();
+    else if (state.appResults.some(item => !item.iconUrl)) void hydrateAppIcons(state.appResults, appIconSearchToken);
   }
   if (scope === "web") {
     if (state.webLoadedQuery !== state.query) void refreshWeb();
@@ -1598,38 +1111,20 @@ function moveScope(offset) {
   setScope(scopeOrder[(current + offset + scopeOrder.length) % scopeOrder.length]);
 }
 
-function renderKeyboardHint() {
-  if (!keyboardHint) return;
-  if (state.scope === "clipboard") {
-    keyboardHint.innerHTML = `↑↓ 记录 · 点击切换类型 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴`;
-  } else if (["all", "app", "web"].includes(state.scope)) {
-    keyboardHint.innerHTML = `←→ 常用/最近 · ↑↓ 区块与结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
-  } else if (state.scope === "memo") {
-    keyboardHint.innerHTML = `↑↓ 选择 · <code>Tab</code> 范围 · <code>⏎</code> 粘贴命令`;
-  } else if (state.scope === "twofa") {
-    keyboardHint.innerHTML = `↑↓ 选择 · <code>Tab</code> 范围 · <code>⏎</code> 复制验证码`;
-  } else {
-    keyboardHint.innerHTML = `↑↓ 结果 · <code>Tab</code> 范围 · <code>⏎</code> 打开`;
-  }
-}
+function renderKeyboardHint() {}
 
 function setClipboardKind(kind) {
   if (!clipboardKinds.includes(kind)) return;
   invalidateClipboardPaging();
   state.clipboardKind = kind;
   state.index = 0;
-  document.querySelectorAll("[data-clipboard-kind]").forEach((item) => {
-    const active = item.dataset.clipboardKind === kind;
-    item.classList.toggle("active", active);
-    item.setAttribute("aria-pressed", String(active));
-  });
   render();
   void refreshClipboard();
   q?.focus({ preventScroll: true });
 }
 
 // 更新配置（主进程每次呼出都会推送）
-window.weborg.onConfig(async (cfg) => {
+subscribe("onConfig", async (cfg) => {
   setConfig(cfg);
   window.FlowHubTools.queryChanged(toolContext());
   renderPluginScopes(await window.weborg.listPlugins());
@@ -1666,9 +1161,11 @@ function returnToSearch() {
   q.focus({ preventScroll: true });
   q.select();
 }
-document.getElementById("returnSearchBtn")?.addEventListener("click", returnToSearch);
 
-document.addEventListener("keydown", (e) => {
+
+bind(document, "keydown", (e) => {
+  // The shared Dialog owns Escape, Enter and its focus trap while confirming.
+  if (state.deletingClipboard) return;
   // 编辑副本时键盘归编辑框：Esc 取消、⌘↩ 保存，其余按键交给当前聚焦的控件，
   // 不再触发搜索导航、范围快捷键或隐藏窗口。
   if (state.editingClipboard) {
@@ -1734,7 +1231,7 @@ document.addEventListener("keydown", (e) => {
   if (e.altKey && ["Backspace", "Delete"].includes(e.key)) {
     const selected = m[state.index];
     if (selected?.type === "clipboard" && document.documentElement.dataset.weborgReadonly !== "true") {
-      window.weborg?.pluginAction("clipboard", "menu", { id: selected.id });
+      requestClipboardDelete(selected);
       e.preventDefault();
       return;
     }
@@ -1757,7 +1254,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-document.addEventListener("keyup", (e) => {
+bind(document, "keyup", (e) => {
   if (e.key !== "Tab" || !scopeTabHeld) return;
   e.preventDefault();
   if (!scopeTabUsedWithArrow) moveScope(scopeTabTapOffset);
@@ -1766,7 +1263,7 @@ document.addEventListener("keyup", (e) => {
   q?.focus({ preventScroll: true });
 });
 
-window.addEventListener("blur", () => {
+bind(window, "blur", () => {
   scopeTabHeld = false;
   scopeTabUsedWithArrow = false;
 });
@@ -1853,7 +1350,7 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
     state.appHasMore = next.length === limit;
     void hydrateAppIcons(next, iconToken);
   } catch {
-    if (!append) state.appResults = [];
+    if (token === appSearchToken && !append) state.appResults = [];
   } finally {
     if (token === appSearchToken) {
       state.appLoading = false;
@@ -1865,7 +1362,7 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
 async function hydrateAppIcons(applications, token) {
   await new Promise((resolve) => setTimeout(resolve, 90));
   if (token !== appIconSearchToken) return;
-  const paths = (applications || []).map((application) => application.path).filter(Boolean);
+  const paths = (applications || []).filter(application => !application.iconUrl).map((application) => application.path).filter(Boolean);
   if (!paths.length || !window.weborg?.loadAppIcons) return;
   try {
     const icons = await window.weborg.loadAppIcons(paths);
@@ -1900,7 +1397,7 @@ async function refreshWeb({ append = false, deferRender = false } = {}) {
     state.webLoadedQuery = state.query;
     state.webHasMore = next.length === limit;
   } catch {
-    if (!append) state.webResults = [];
+    if (token === webSearchToken && !append) state.webResults = [];
   } finally {
     if (token === webSearchToken) {
       state.webLoading = false;
@@ -1929,7 +1426,7 @@ async function refreshMemos({ append = false, deferRender = false } = {}) {
     state.memoLoadedQuery = state.query;
     state.memoHasMore = next.length === limit;
   } catch {
-    if (!append) state.memoResults = [];
+    if (token === memoSearchToken && !append) state.memoResults = [];
   } finally {
     if (token === memoSearchToken) {
       state.memoLoading = false;
@@ -1956,7 +1453,7 @@ async function refreshTwofa({ append = false, deferRender = false } = {}) {
     state.twofaLoadedQuery = state.query;
     state.twofaHasMore = next.length === limit;
   } catch {
-    if (!append) state.twofaResults = [];
+    if (token === twofaSearchToken && !append) state.twofaResults = [];
   } finally {
     if (token === twofaSearchToken) {
       state.twofaLoading = false;
@@ -2038,14 +1535,14 @@ function queueWebInputSearch() {
   });
 }
 
-q.addEventListener("compositionstart", () => {
+bind(q, "compositionstart", () => {
   searchInputComposing = true;
 });
-q.addEventListener("compositionend", () => {
+bind(q, "compositionend", () => {
   searchInputComposing = false;
   searchCompositionEndedAt = performance.now();
 });
-q.addEventListener("input", () => {
+bind(q, "input", () => {
   window.flowhubSearchTiming?.begin("input");
   state.editingClipboard = null;
   allResultKeys = null;
@@ -2085,15 +1582,15 @@ q.addEventListener("input", () => {
     queueClipboardRefresh();
   }
 });
-resultsEl.addEventListener("load", (event) => {
+bind(resultsEl, "load", (event) => {
   const icon = event.target.closest?.("img[data-web-icon]");
   if (icon?.dataset.webIcon) loadedWebIcons.add(icon.dataset.webIcon);
 }, true);
-resultsEl.addEventListener("error", (event) => {
+bind(resultsEl, "error", (event) => {
   const icon = event.target.closest?.("img[data-web-icon]");
   if (icon?.dataset.webIcon) failedWebIcons.add(icon.dataset.webIcon);
 }, true);
-resultsEl.addEventListener("scroll", () => {
+bind(resultsEl, "scroll", () => {
   if (windowedResults && !windowRenderFrame) windowRenderFrame = requestAnimationFrame(() => { windowRenderFrame = 0; render({ preserveScroll: true }); });
   if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight >= 160) return;
   if (state.scope === "all") void loadMoreAll();
@@ -2103,7 +1600,7 @@ resultsEl.addEventListener("scroll", () => {
   else if (state.scope === "web") void refreshWeb({ append: true });
   else if (state.scope === "memo") void refreshMemos({ append: true });
 });
-settingsBtn?.addEventListener("click", () => window.weborg?.openSettings());
+
 // A captured cold WKWebView sequence was mouseup -> mousedown, with no click.
 // Navigation is reversible: activate on primary press instead of waiting for
 // synthesized click. Keep click for keyboard/assistive activation; dedupe it.
@@ -2122,14 +1619,9 @@ function preserveSearchFocus(event) {
   event.preventDefault();
   activateScopeControl(button);
 }
-scopeRow?.addEventListener("mousedown", preserveSearchFocus);
-clipboardKindRow?.addEventListener("mousedown", preserveSearchFocus);
-scopeRow?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-scope]");
-  if (button) activateScopeControl(button);
-});
-document.querySelectorAll("[data-clipboard-kind]").forEach((button) => button.addEventListener("click", () => activateScopeControl(button)));
-window.weborg.onClipboardUpdated(() => {
+
+
+subscribe("onClipboardUpdated", () => {
   invalidateClipboardPaging();
   state.clipboardLoadedQuery = null;
   allResultKeys = null;
@@ -2137,19 +1629,19 @@ window.weborg.onClipboardUpdated(() => {
   allScopeRefreshToken += 1;
   queueClipboardRefresh(80, true);
 });
-window.weborg.onUsageUpdated(() => { void refreshUsage(); });
+subscribe("onUsageUpdated", () => { void refreshUsage(); });
 // Keep keyboard navigation available after an application click, including a
 // WebKit release-before-press sequence. Launch only after a matching release;
 // ordinary presses still wait for click. Never apply this to paste/delete.
 let releasedAppPress = null;
 let recoveredAppClick = null;
-resultsEl.addEventListener("mouseup", (e) => {
+bind(resultsEl, "mouseup", (e) => {
   const row = e.target.closest(".result");
   const item = row && matches()[Number(row.dataset.i)];
   releasedAppPress = e.button === 0 && item?.type === "app"
     ? { row, path:item.path, stamp:e.timeStamp, received:performance.now() } : null;
 });
-resultsEl.addEventListener("mousedown", (e) => {
+bind(resultsEl, "mousedown", (e) => {
   const released = releasedAppPress;
   releasedAppPress = null;
   recoveredAppClick = null;
@@ -2165,7 +1657,7 @@ resultsEl.addEventListener("mousedown", (e) => {
     choose(item);
   }
 });
-resultsEl.addEventListener("contextmenu", (e) => {
+bind(resultsEl, "contextmenu", (e) => {
   const row = e.target.closest(".result");
   if (!row) return;
   const item = matches()[+row.dataset.i];
@@ -2179,9 +1671,9 @@ resultsEl.addEventListener("contextmenu", (e) => {
   if (item?.type !== "clipboard") return;
   e.preventDefault();
   if (document.documentElement.dataset.weborgReadonly === "true") return;
-  void window.weborg?.pluginAction("clipboard", "menu", { id: item.id });
+  requestClipboardDelete(item);
 });
-resultsEl.addEventListener("click", (e) => {
+bind(resultsEl, "click", (e) => {
   const resultAction = e.target.closest("[data-result-action]");
   if (resultAction) {
     e.preventDefault(); e.stopPropagation();
@@ -2223,19 +1715,18 @@ resultsEl.addEventListener("click", (e) => {
   }
   if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
 });
-resultsEl.addEventListener("mousemove", (e) => {
+bind(resultsEl, "mousemove", (e) => {
   const row = e.target.closest(".result");
   if (!row) return;
   const i = Number(row.dataset.i);
   if (!Number.isFinite(i) || i === state.index) return;
   const position = usagePosition(matches(), i);
   if (position) state.usageColumn = position.column;
-  resultsEl.querySelector(".result.active")?.classList.remove("active");
-  row.classList.add("active");
   state.index = i;
+  render({preserveScroll:true});
 });
 
-function focusSearch() { q?.focus(); q?.select(); }
+function focusSearch() { if (state.deletingClipboard || state.editingClipboard) return; q?.focus(); q?.select(); }
 function focusSearchAfterWindowActivation() {
   // A non-activating macOS panel becomes key before WebView focus is settled.
   // Wait two paints so the first keystroke cannot leak to the previous app.
@@ -2285,15 +1776,16 @@ function prepareForShow() {
 }
 window.focusSearch = focusSearch;
 window.prepareForShow = prepareForShow;
-window.addEventListener("focus", focusSearchAfterWindowActivation);
-document.addEventListener("visibilitychange", () => {
+bind(window, "focus", focusSearchAfterWindowActivation);
+bind(document, "visibilitychange", () => {
   if (!document.hidden) focusSearchAfterWindowActivation();
 });
-window.weborg.onUpdateState?.((update) => renderVersion(update));
+subscribe("onUpdateState", renderVersion);
 
 // 初始加载
 async function initialize() {
   const plugins = await window.weborg.listPlugins();
+  if (disposed) return;
   renderPluginScopes(plugins);
   const enabled = (id) => plugins.some((plugin) => plugin.id === id && plugin.enabled && plugin.available);
   const [cfg, records, applications, pages, memos, twofa, usageSections, update] = await Promise.all([
@@ -2310,6 +1802,7 @@ async function initialize() {
     window.weborg.searchUsage("all"),
     window.weborg.getUpdateState()
   ]);
+  if (disposed) return;
   setConfig(cfg);
   renderVersion(update);
   state.clipboardResults = records || [];
@@ -2344,44 +1837,100 @@ async function initialize() {
   render();
   deferUncachedWebIcons(320);
   focusSearch();
+  if (state.query.trim()) queueClipboardRefresh(0);
 }
 
-void initialize();
+const ready = initialize().catch(error => showActionStatus(error.message || '初始化失败'));
 
-
-// Pinning applies for this app session; explicit Escape/open actions still close it.
-let launcherPinned = false;
-function renderPinState(pinned) {
-  launcherPinned = pinned;
-  pinBtn.setAttribute("aria-pressed", String(pinned));
-  const label = pinned
-    ? "取消固定：切换到其他应用时自动收起"
-    : "固定窗口：切换到其他应用时不自动收起";
-  pinBtn.title = label;
-  pinBtn.setAttribute("aria-label", label);
-  pinBtn.dataset.tooltip = label;
-}
-if (pinBtn) {
-  pinBtn.innerHTML = window.flowhubIcon("pin");
-  renderPinState(false);
-  pinBtn.disabled = !window.weborg?.setLauncherPinned;
-  if (pinBtn.disabled) {
-    pinBtn.title = pinBtn.dataset.tooltip = "固定窗口仅在桌面应用中可用";
-  } else {
-    window.weborg.getLauncherPinned().then(renderPinState).catch(() => {});
-    pinBtn.addEventListener("click", async () => {
-      pinBtn.disabled = true;
-      try {
-        renderPinState(await window.weborg.setLauncherPinned(!launcherPinned));
-      } catch (error) {
-        pinBtn.title = pinBtn.dataset.tooltip = `固定窗口失败：${error.message || error}`;
-      } finally {
-        pinBtn.disabled = false;
-      }
-    });
+// Explicit native-only QA bridge. Reports contain counts/lengths, never values,
+// URLs, commands, clipboard content or native process identities.
+const diagnosticBridge = {
+  ready,
+  checkpoint() {
+    const query = q.value, scope = state.scope;
+    return () => { if (!disposed) { applyQuery(query); setScope(scope); } };
+  },
+  setQuery: applyQuery, setScope, refreshAll: refreshAllScopes, loadMore: loadMoreAll,
+  hasTool: id => matches().some(item => item.toolId === id),
+  resultsElement: () => resultsEl,
+  inspect({details = false} = {}) {
+    const sources = ['clipboard','app','web','memo','twofa'];
+    const items = matches();
+    return {
+      initialized: initialized && !disposed,
+      loading: sources.some(id => state[id+'Loading']), paging: allPaging,
+      loaded: items.length, hasMore: initialized && allHasMore(),
+      rows: resultsEl.querySelectorAll('.result').length,
+      htmlChars: details ? resultsEl.outerHTML.length : undefined,
+      sizes: details ? items.slice(0,120).map(item => ({type:item.type,content:String(item.content||'').length,
+        preview:String(item.content||'').split('\n').slice(0,2).join('\n').length,
+        description:String(item.description||'').length,title:String(item.title||'').length,
+        icon:String(item.iconUrl||item.imageUrl||'').length})) : undefined,
+      queriesCurrent: sources.map(id => ({source:id,current:state[id+'LoadedQuery']===state.query,
+        hasMore:state[id+'HasMore'],count:state[id+'Results'].length}))
+    };
   }
+};
+if (window.__TAURI__?.core?.invoke) window.FlowHubSearchDiagnostics = diagnosticBridge;
+
+// Synthetic harness only: fixture owns the adapter and native access is absent.
+// No state, records, keys, or native diagnostic bridge cross this boundary.
+const fixture = !window.__TAURI__ && window.FlowHubSearchFixture?.api === window.weborg
+  ? window.FlowHubSearchFixture : null;
+if (fixture) {
+  const refreshers = {clipboard:refreshClipboard,app:refreshApps,web:refreshWeb,memo:refreshMemos,twofa:refreshTwofa};
+  const fixtureBridge = Object.freeze({
+    ready,
+    async reset() {
+      await ready;
+      if (disposed || !initialized) throw new Error('fixture-not-ready');
+      clearTimeout(clipboardSearchTimer);
+      invalidateClipboardPaging(); invalidatePluginPaging(); ++allScopeRefreshToken;
+      allResultKeys = null; allInitialResults = []; allPaging = false;
+      state.query = ''; q.value = ''; state.scope = 'all'; state.index = 0;
+      state.editingClipboard = null; state.expandedClipboard.clear();
+      for (const id of Object.keys(refreshers)) {
+        state[id+'Results'] = []; state.emptyResults[id] = [];
+        state[id+'LoadedQuery'] = null; state[id+'HasMore'] = true;
+      }
+      window.FlowHubTools.queryChanged(toolContext());
+      await refreshAllScopes();
+    },
+    select(index) {
+      state.index = Math.max(0, Math.min(matches().length-1, Number(index) || 0));
+      revealActiveResult();
+    },
+    reopen: prepareForShow,
+    async loadMore() {
+      if (state.scope === 'all') await loadMoreAll();
+      else await refreshers[state.scope]?.({append:true});
+    },
+    inspect() {
+      const items = matches();
+      return {initialized:initialized && !disposed,scope:state.scope,
+        loading:Object.keys(refreshers).some(id=>state[id+'Loading']) || allPaging,
+        loaded:items.length,unique:new Set(items.map(resultKey)).size,
+        hasMore:state.scope==='all'?allHasMore():Boolean(state[state.scope+'HasMore'])};
+    }
+  });
+  fixture.connect(fixtureBridge);
+  cleanups.push(() => fixture.disconnect(fixtureBridge));
 }
-settingsBtn.innerHTML = window.flowhubIcon("settings");
-settingsBtn.title = "打开 FlowHub 设置";
-settingsBtn.setAttribute("aria-label", settingsBtn.title);
-settingsBtn.dataset.tooltip = settingsBtn.title;
+
+
+if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
+return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+  togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
+  dispose() {
+    disposed=true; cleanups.forEach(fn=>fn());
+    invalidateClipboardPaging(); invalidatePluginPaging(); ++allScopeRefreshToken; ++usageSearchToken; ++dnsSearchToken; ++ipSearchToken; ++proxySearchToken;
+    [clipboardSearchTimer,dnsSearchTimer,ipSearchTimer,proxySearchTimer,actionStatusTimer,webIconTimer].forEach(clearTimeout);
+    [inputRenderFrame,webInputSearchFrame,windowRenderFrame].forEach(cancelAnimationFrame);
+    window.FlowHubTools.queryChanged({...toolContext(),enabled:()=>false,query:''});
+    for (const id of ['dns','cloudflare','proxy','timestamp','jwt','ip','calculator']) window.FlowHubTools.unregister(id);
+    if(window.focusSearch===focusSearch) delete window.focusSearch;
+    if(window.prepareForShow===prepareForShow) delete window.prepareForShow;
+    if(window.FlowHubSearchDiagnostics===diagnosticBridge) delete window.FlowHubSearchDiagnostics;
+  }
+};
+};

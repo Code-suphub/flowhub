@@ -8,16 +8,12 @@ const wait = async predicate => {
   for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
   assert.ok(predicate(), 'React state did not settle');
 };
-function setup(invoke, settings = false) {
-  const dom = new JSDOM(`<div id="${settings ? 'settings-navigation-root' : 'market-root'}"></div>`, { url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true });
+function setup(invoke) {
+  const dom = new JSDOM('<div id="market-root"></div>', { url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; };
   if (invoke) w.__TAURI__ = { core: { invoke } };
-  if (settings) {
-    let section = 'general';
-    w.FlowHubSettingsNavigation = { getSection: () => section, selectSection: value => { section = value; w.dispatchEvent(new w.Event('flowhub:settings-section')); } };
-  }
   w.eval(bundle);
   const button = label => [...w.document.querySelectorAll('button')].find(el => el.textContent === label);
   return { dom, w, button };
@@ -74,14 +70,4 @@ test('busy operations cannot be submitted twice and uninstall is confirmed', asy
   await wait(() => resolve);
   assert.equal(mock.calls.filter(c => c.action === 'uninstall').length, 1);
   resolve(); await wait(() => !w.document.querySelector('dialog'));
-});
-test('settings React navigation supports keyboard selection and external updates', async t => {
-  const { dom, w, button } = setup(undefined, true); t.after(() => dom.window.close());
-  await wait(() => button('基础'));
-  button('基础').focus(); button('基础').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-  await wait(() => button('搜索入口').getAttribute('aria-selected') === 'true');
-  assert.equal(w.document.activeElement, button('搜索入口'));
-  w.FlowHubSettingsNavigation.selectSection('updates');
-  await wait(() => button('更新').getAttribute('aria-selected') === 'true');
-  assert.match(button('更新').dataset.helpTooltip, /版本/);
 });

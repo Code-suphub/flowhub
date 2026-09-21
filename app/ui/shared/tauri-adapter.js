@@ -198,9 +198,9 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       return invoke("edit_clipboard", { id: Number(payload.id), content: String(payload.content ?? "") });
     }
     if (id === "clipboard" && ["menu", "delete"].includes(action)) {
-      if (!window.confirm("确定删除这条剪贴板记录吗？只会删除历史记录和图片副本，不会删除原始文件。")) {
-        return { ok: false, cancelled: true };
-      }
+      if (document.documentElement.dataset.weborgReadonly === 'true') return {ok:false,readonly:true,reason:'浏览器预览不能删除剪贴板记录'};
+      if (payload.confirmed !== true) return {ok:false,cancelled:true,reason:'删除剪贴板记录需要明确确认'};
+      if (!Number.isSafeInteger(Number(payload.id)) || Number(payload.id) <= 0) return {ok:false,reason:'剪贴板记录编号无效'};
       return invoke("delete_clipboard", { id: Number(payload.id) });
     }
     if (id === "twofa" && action === "activate") {

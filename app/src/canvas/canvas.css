@@ -1,0 +1,34 @@
+/* React canvas geometry and plugin surfaces; layout utilities come from Tailwind. */
+html:has(#canvas-root), body:has(#canvas-root) { background: transparent; }
+body:has(#canvas-root) { margin: 0; padding: 16px; }
+body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface); }
+.fh-canvas-app { color: var(--fh-text); font: 14px/1.5 "SF Pro Display", "PingFang SC", sans-serif; }
+.fh-canvas-app *, .fh-canvas-app *::after { box-sizing: border-box; }
+.canvas-toolbar { width: max-content; max-width: 100%; min-height: 42px; margin-bottom: 12px; padding: 6px 8px; border-radius: 12px; background: var(--fh-surface); backdrop-filter: blur(20px); font-size: 12px; }
+.canvas-toolbar .fh-button, .canvas-toolbar .fh-input { padding: 5px 9px; font-size: 12px; }
+.canvas-toolbar .brand { cursor: move; }
+.canvas-toolbar.surface-inactive { opacity: 0; visibility: hidden; pointer-events: none; }
+.fh-canvas-app #notice { margin: 0 8px 10px; font-size: 12px; }
+.fh-canvas-app #notice:empty { display: none; }
+.fh-canvas-app .primary { background: var(--fh-accent); color: var(--fh-on-accent); }
+.canvas-card { min-width: 160px; min-height: 120px; border: 1px solid var(--fh-border); border-radius: 22px; background: var(--fh-surface); box-shadow: 0 7px 18px color-mix(in srgb, var(--fh-text) 10%, transparent); cursor: pointer; touch-action: none; }
+.canvas-card:focus-visible { outline: 2px solid var(--fh-accent); outline-offset: 3px; }
+.canvas-card .widget-content { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.canvas-card .widget-hit { inset: 0; z-index: 1; }
+.canvas-card.interactive { min-width: 320px; min-height: 280px; cursor: default; touch-action: auto; }
+.canvas-card.interactive .widget-content { pointer-events: auto; height: calc(100% - 24px); margin-top: 24px; }
+.canvas-card.interactive .widget-hit { inset: 0 0 auto; height: 24px; cursor: grab; text-align: center; color: var(--fh-muted); background: var(--fh-surface); touch-action: none; }
+.canvas-card .resize-handle { right: 0; bottom: 0; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 8px 0 20px 0; background: transparent; color: var(--fh-muted); cursor: nwse-resize; touch-action: none; opacity: 0; z-index: 3; }
+.canvas-card:hover .resize-handle, .canvas-card:focus-within .resize-handle { opacity: .8; }
+.canvas-card.moving { z-index: 10; opacity: .7; cursor: grabbing; }
+.canvas-card.swap-target { outline: 2px solid var(--fh-accent); outline-offset: 2px; }
+.canvas-card.swap-target::after { content: "松开交换位置"; position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--fh-surface) 70%, transparent); color: var(--fh-text); pointer-events: none; z-index: 5; }
+.canvas-blank { padding: 24px; text-align: center; border: 1px dashed var(--fh-border); border-radius: 16px; background: var(--fh-surface); }
+.fh-canvas-app .fh-dialog { width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; background: var(--fh-surface); color: var(--fh-text); border: 1px solid var(--fh-border); border-radius: 16px; padding: 18px; }
+.fh-canvas-app .fh-dialog::backdrop { background: transparent; }
+.fh-canvas-app .fh-dialog h2 { font-size: 17px; margin: 0; }
+.canvas-editor { display: block; width: 100%; height: 230px; border: 0; }
+.canvas-menu { z-index: 1000; width: 168px; padding: 5px; border: 1px solid var(--fh-border); border-radius: 10px; background: var(--fh-surface); box-shadow: 0 8px 28px color-mix(in srgb, var(--fh-text) 20%, transparent); }
+.canvas-menu .fh-button { width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 10px; font-size: 12px; }
+.canvas-menu .fh-button:hover, .canvas-menu .fh-button:focus-visible { background: var(--fh-surface-soft); }
+@media (max-width: 600px) { .canvas-toolbar .brand span { display: none; } .canvas-toolbar { gap: 4px; } }

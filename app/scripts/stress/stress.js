@@ -1,42 +1,91 @@
-const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-const makeRows=(n,long=false)=>Array.from({length:n},(_,i)=>({id:i+1,kind:'text',content:long&&i===0?'test '.repeat(28000):`synthetic record ${i} ${'text '.repeat(30)}`,hash:'0123456789abcdef',copyCount:1,lastSeenAt:'2026-09-07T00:00:00Z'}));
-function seed(n,long=false) {allResultKeys=null;state.query='';state.clipboardResults=makeRows(n,long);state.appResults=[];state.memoResults=[];state.webResults=[];state.emptyResults={clipboard:state.clipboardResults.slice(0,30),app:[],web:[],memo:[]};for(const id of ['clipboard','app','web','memo']){state[id+'LoadedQuery']='';state[id+'HasMore']=false;} }
-const baseRender=render; let milestones=null;
-render=function(...args){const r=baseRender(...args);if(milestones&&document.querySelector('#results').textContent.includes('FAST_RESULT'))milestones.first??=performance.now();return r;};
-document.querySelector('#runStress').onclick=async()=>{
- const report={engine:navigator.userAgent,scopes:[],reopen:[],slow:{}};
- for(const n of [30,300,1000,3000]){
-  seed(n);const times=[];for(let i=0;i<5;i++){setScope('all');await frame();const t=performance.now();setScope('clipboard');const height=resultsEl.scrollHeight;times.push(performance.now()-t);await frame();}
-  report.scopes.push({n,ms:times,domRows:resultsEl.querySelectorAll('.result').length,nodes:resultsEl.querySelectorAll('*').length});
-  const t=performance.now();prepareForShow();resultsEl.scrollHeight;report.reopen.push({n,ms:performance.now()-t,rows:resultsEl.querySelectorAll('.result').length});
- }
- seed(30,true);setScope('all');await frame();let t=performance.now();setScope('clipboard');resultsEl.scrollHeight;report.longRecord={chars:140000,ms:performance.now()-t,domChars:resultsEl.textContent.length};
- for(const id of ['clipboard','app','web','memo']){seed(30);state.scope='all';await frame();const start=performance.now();setScope(id);resultsEl.scrollHeight;report.scopes.push({scope:id,n:30,ms:performance.now()-start});}
- seed(0);state.scope='all';state.query='FAST_RESULT';window.weborg.pluginSearch=async(id)=>{await new Promise(r=>setTimeout(r,id==='app'?900:20));return id==='clipboard'?[{...makeRows(1)[0],content:'FAST_RESULT'}]:[];};
- milestones={};t=performance.now();await refreshAllScopes();report.slow={firstResultMs:milestones.first-t,allCompleteMs:performance.now()-t};milestones=null;
- document.querySelector('#stressReport').textContent=JSON.stringify(report,null,2);
-};
-const flowButton=document.createElement('button');flowButton.textContent='Run paging checks';flowButton.style='position:fixed;left:4px;top:38px;z-index:9999';document.body.append(flowButton);
-flowButton.onclick=async()=>{
- seed(3000);setScope('clipboard');await frame();resultsEl.scrollTop=resultsEl.scrollHeight;await frame();await frame();
- const atEnd=Number(resultsEl.querySelector('.result:last-of-type')?.dataset.i || [...resultsEl.querySelectorAll('.result')].at(-1)?.dataset.i);
- state.index=1200;revealActiveResult();await frame();const keyboardVisible=!!resultsEl.querySelector('.result[data-i="1200"]');
- resultsEl.scrollTop=0;await frame();await frame();const atStart=Number(resultsEl.querySelector('.result')?.dataset.i);
- seed(3000);setScope('all');let pages=0,maxDOM=0;const t=performance.now();
- while(allHasMore()&&pages<300){await loadMoreAll();pages++;maxDOM=Math.max(maxDOM,resultsEl.querySelectorAll('.result').length);if(pages%25===0)await frame();}
- const all=matches();const report={atEnd,atStart,keyboardVisible,pages,loaded:all.length,unique:new Set(all.map(resultKey)).size,maxDOM,totalMs:performance.now()-t};
- document.querySelector('#stressReport').textContent=JSON.stringify(report,null,2);
-};
-const timingButton=document.createElement('button');timingButton.textContent='Run stage timing';timingButton.style='position:fixed;left:4px;top:72px;z-index:9999';document.body.append(timingButton);
-timingButton.onclick=async()=>{
- const original=window.weborg.pluginSearch;
- timingButton.disabled=true;
- try {
-  seed(0);state.scope='all';
-  window.weborg.pluginSearch=async(id)=>{await new Promise(r=>setTimeout(r,id==='app'?900:20));return id==='clipboard'?[{...makeRows(1)[0],content:'TIMING_RESULT'}]:[];};
-  window.flowhubSearchTiming.enable(true);window.flowhubSearchTiming.reset();
-  q.value='TIMING_RESULT';q.dispatchEvent(new Event('input',{bubbles:true}));
-  await new Promise(r=>setTimeout(r,1300));
-  document.querySelector('#stressReport').textContent=JSON.stringify(window.flowhubSearchTiming.report(),null,2);
- } finally {window.weborg.pluginSearch=original;timingButton.disabled=false;}
-};
+(() => {
+  const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const bounded=(task,ms=10000)=>{
+    let timer;return Promise.race([task,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('fixture-timeout')),ms);})]).finally(()=>clearTimeout(timer));
+  };
+  const buttons=[...document.querySelectorAll('[data-stress-run]')];
+  const reportEl=document.querySelector('#stressReport');
+  let busy=false;
+  async function run(kind) {
+    if(busy)return;
+    busy=true;buttons.forEach(button=>{button.disabled=true;});
+    reportEl.textContent='Running synthetic checks…';
+    const fixture=window.FlowHubSearchFixture;
+    let observer;
+    try {
+      if(!fixture || window.__TAURI__)throw new Error('fixture-unavailable');
+      const bridge=await bounded(fixture.connected);await bounded(bridge.ready);
+      if(!bridge.inspect().initialized)throw new Error('fixture-not-initialized');
+      const results=document.querySelector('#results'),input=document.querySelector('#q');
+      const scope=async id=>{
+        const button=document.querySelector(`[data-scope="${id}"]`);
+        if(!button)throw new Error('fixture-scope-unavailable');
+        button.click();await frame();
+      };
+      const query=text=>{input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));};
+      const settle=async()=>{
+        await sleep(220);const deadline=performance.now()+10000;
+        while(bridge.inspect().loading){if(performance.now()>deadline)throw new Error('fixture-timeout');await sleep(10);}
+        await frame();
+      };
+      const seed=async(count,long=false,options={})=>{fixture.configure({count,long,...options});await bounded(bridge.reset());await frame();};
+      // Prime through real pagination instead of injecting internal state.
+      const prime=async(n,long=false)=>{
+        await seed(n,long);await scope('clipboard');
+        let pages=0;while(bridge.inspect().hasMore && pages++<110)await bounded(bridge.loadMore());
+        await frame();if(bridge.inspect().loaded!==n)throw new Error('fixture-prime-incomplete');
+      };
+      let report={engine:navigator.userAgent};
+      if(kind==='stress') {
+        report.scopes=[];report.reopen=[];
+        for(const n of [30,300,1000,3000]) {
+          await prime(n);const times=[];
+          for(let i=0;i<5;i++) {
+            await scope('all');const start=performance.now();await scope('clipboard');
+            void results.scrollHeight;times.push(performance.now()-start);
+          }
+          report.scopes.push({n,ms:times,domRows:results.querySelectorAll('.result').length,nodes:results.querySelectorAll('*').length});
+          const start=performance.now();bridge.reopen();await frame();
+          report.reopen.push({n,ms:performance.now()-start,rows:results.querySelectorAll('.result').length});
+        }
+        await prime(30,true);await scope('all');let start=performance.now();await scope('clipboard');
+        report.longRecord={chars:140000,ms:performance.now()-start,domChars:results.textContent.length};
+        for(const id of ['clipboard','app','web','memo']) {
+          await seed(30);const start=performance.now();await scope(id);report.scopes.push({scope:id,n:30,ms:performance.now()-start});
+        }
+        await seed(0);fixture.configure({count:1,marker:'FAST_RESULT',sourceDelays:{app:900,clipboard:20}});
+        let first=null;observer=new MutationObserver(()=>{if(results.textContent.includes('FAST_RESULT'))first??=performance.now();});
+        observer.observe(results,{childList:true,subtree:true,characterData:true});
+        start=performance.now();query('FAST_RESULT');await settle();
+        report.slow={firstResultMs:first===null?null:first-start,allCompleteMs:performance.now()-start};
+      } else if(kind==='paging') {
+        await prime(3000);results.scrollTop=results.scrollHeight;results.dispatchEvent(new Event('scroll'));await frame();await frame();
+        const atEnd=Number([...results.querySelectorAll('.result')].at(-1)?.dataset.i);
+        bridge.select(1200);await frame();const keyboardVisible=!!results.querySelector('.result[data-i="1200"]');
+        results.scrollTop=0;results.dispatchEvent(new Event('scroll'));await frame();await frame();
+        const atStart=Number(results.querySelector('.result')?.dataset.i);
+        await seed(3000);let pages=0,maxDOM=0;const start=performance.now();
+        while(bridge.inspect().hasMore && pages<300) {
+          await bounded(bridge.loadMore());await frame();pages++;
+          maxDOM=Math.max(maxDOM,results.querySelectorAll('.result').length);
+        }
+        const {loaded,unique,hasMore}=bridge.inspect();
+        report={...report,atEnd,atStart,keyboardVisible,pages,loaded,unique,hasMore,maxDOM,totalMs:performance.now()-start};
+      } else if(kind==='timing') {
+        await seed(0);fixture.configure({count:1,marker:'TIMING_RESULT',sourceDelays:{app:900,clipboard:20}});
+        window.flowhubSearchTiming.enable(true);window.flowhubSearchTiming.reset();query('TIMING_RESULT');await settle();
+        report={...report,runs:window.flowhubSearchTiming.report()};
+      } else throw new Error('fixture-check-unknown');
+      reportEl.textContent=JSON.stringify(report,null,2);return report;
+    } catch(error) {
+      const report={error:String(error.message || 'fixture-failed')};reportEl.textContent=JSON.stringify(report);return report;
+    } finally {
+      observer?.disconnect();
+      try {fixture?.configure();if(fixture?.bridge())await bounded(fixture.bridge().reset());} catch {}
+      window.flowhubSearchTiming?.enable(false);
+      busy=false;buttons.forEach(button=>{button.disabled=false;});
+    }
+  }
+  for(const button of buttons)button.addEventListener('click',()=>{void run(button.dataset.stressRun);});
+})();

@@ -1,21 +1,33 @@
 # 宿主 React 迁移
 
-## 已完成（第一批）
+## 迁移范围
 
-- React + TypeScript + Vite + Tailwind 构建入口：`app/src/`。
-- 插件市场：发现、已安装、来源、来源编辑、安装／卸载确认。删除旧 DOM 脚本和专用 CSS。
-- 宿主设置：分类导航由 React 接管；`FlowHubSettingsNavigation` 只桥接当前分类，不复制配置状态。删除旧导航 HTML、事件分支和样式。
-- 宿主 React 共享控件：Button、Input、Field、Tabs、Dialog。导航帮助继续使用宿主现有 `help-tooltip.js`。
+本任务覆盖 FlowHub 桌面宿主全部交互页面，不包括 Chrome 扩展及冻结的 legacy 管理台。Rust/Tauri、SQLite 和插件隔离协议不更换技术栈。
 
-## 后续批次
+| 页面 | React 源码 | 挂载点 |
+| --- | --- | --- |
+| 搜索窗口 | `app/src/search` | `search-root` |
+| 宿主设置 | `app/src/settings` | `settings-root` |
+| 插件市场 | `app/src/market` | `market-root` |
+| 菜单栏面板 | `app/src/surfaces/MenuBarPanel.tsx` | `menu-bar-root` |
+| 插件状态 | `app/src/surfaces/PluginStatus.tsx` | `plugin-status-root` |
+| 插件详情 | `app/src/surfaces/PluginDetail.tsx` | `plugin-detail-root` |
+| 桌面组件画布 | `app/src/canvas` | `canvas-root` |
 
-- [ ] 提取设置状态与保存 API 的类型化接口，保留草稿、重置、错误处理。
-- [ ] 迁移基础、搜索入口（含拖拽排序）、通知。
-- [ ] 迁移网络、菜单栏与权限状态。
-- [ ] 迁移数据与诊断、更新；验证配置历史、导入导出与更新渠道。
-- [ ] 接管侧栏及剩余宿主设置面板，删除被替代的 settings.js 渲染与事件。
+`index.html` 仅负责跳转搜索窗口。HTML 保留资源加载与挂载点，业务界面由 React 渲染。共享控件为 `app/src/shared` 的 Button、Input、Field、Tabs、Dialog、Select、Switch、Tooltip/Help。
 
-这不是“宿主设置全部迁移完成”：表单和配置存储仍由旧控制器负责，迁移按面板逐项验收。
+搜索异步业务控制器、纯工具算法、原生／浏览器适配层、主题桥和插件安全桥继续使用已有 JavaScript；它们不再拼接页面 UI。保留这些模块不等于保留旧表单或隐藏旧界面。原生入口通过显式桥调用 React 状态，不依赖模块私有变量变成全局。
+
+## 验收清单
+
+- [x] 七个桌面页面使用 React + TypeScript，复用公共控件与语义主题。
+- [x] 删除替换后的旧 DOM 渲染、事件绑定、专用 CSS 和未使用的旧控件。
+- [x] 搜索来源、工具视图、分页、焦点、原生诊断桥及卸载清理。
+- [x] 画布布局、拖拽／缩放、菜单、编辑器 ready/save 与隔离 RPC。
+- [x] 设置草稿／路径切换、导入导出、历史、排序与原生入口隔离行为回归。
+- [x] 全量宿主测试及资源完整性检查。
+
+真实安装后的系统权限、更新安装和 WebKit 原生压测需要单独执行；隔离模拟测试不代表已经操作或验收用户的真实数据。
 
 ## 构建与验证
 

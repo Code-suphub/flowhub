@@ -13,7 +13,7 @@ const reg=ctx.window.FlowHubTools;
  await reg.action('port','refresh',{dataset:{}},context);
  const item=reg.suggestions(context)[0];assert.equal(item.details.processes.length,1);
  await reg.action('port','confirm',{dataset:{pid:'4242'}},context);assert.equal(calls,0);
- await reg.action('port','terminate',{dataset:{pid:'4242'}},context);assert(reg.render(reg.suggestions(context)[0],{esc:String,index:0,active:true}).includes('确认结束'));
+ await reg.action('port','terminate',{dataset:{pid:'4242'}},context);assert.equal(reg.suggestions(context)[0].confirming,4242);
  await reg.action('port','cancel',{dataset:{}},context);await reg.action('port','confirm',{dataset:{pid:'4242'}},context);assert.equal(calls,0);
  await reg.action('port','terminate',{dataset:{pid:'4242'}},context);await reg.action('port','confirm',{dataset:{pid:'4242'}},context);assert.equal(calls,1);
  await reg.action('port','copy-linux',{dataset:{}},context);assert(copied.includes('PORT=9000'));

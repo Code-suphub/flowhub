@@ -18,6 +18,6 @@ assert.equal(parse('x'.repeat(65537)),null);
  await window.tool.action('value',{dataset:{part:'2'}},ctx);assert.equal(copied,'9000');
  await window.tool.choose({},ctx);assert(copied.includes('参数 · x: 1\n参数 · x: 2'));
  ctx.query='urldecode %3Cscript%3E';window.tool.suggestions(ctx);
- assert(!window.tool.render({}, {esc:s=>s.replaceAll('<','&lt;'),index:0,active:true}).includes('<script>'));
+ assert.equal(window.tool.suggestions(ctx)[0].parsed.value,'<script>');
  console.log('PASS: URL fields, duplicate parameters, plus rules, encoding errors, safe schemes/preview, copy');
 })().catch(e=>{console.error(e);process.exitCode=1});

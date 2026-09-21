@@ -1,106 +1,26 @@
-const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../../ui/search/search.js'), 'utf8');
-let handler, focusCount = 0, selected = 0, prevented = 0;
-const q = { value: '已有关键词', focus: () => focusCount++, select: () => selected++ };
-let inResults = false, hides = 0;
-const resultFocus = [];
-const context = vm.createContext({
-  q, scopeTabHeld: true, scopeTabUsedWithArrow: true, searchInputComposing: false,
-  searchCompositionEndedAt: 0, performance: { now: () => 1000 }, scopeForShortcut: () => null,
-  state: { editingClipboard: null }, cancelClipboardEdit: () => { context.editCancelled = true; },
-  resultsEl: { contains: () => inResults, querySelectorAll: () => [] },
-  focusResultAction: (direction) => resultFocus.push(direction),
-  window: { weborg: { hideMain: () => hides++ } },
-  document: { activeElement: {}, getElementById: () => null, addEventListener: (name, fn) => { handler = fn; } },
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {setup,wait,delay}=require('./search-react-harness.cjs');
+test('scope primary press deduplicates click, F6/Escape, IME and bare cursor arrows preserve focus contracts',async t=>{
+  const {w,q,scope,key,calls}=await setup(t);
+  q.focus();q.value='preserve';
+  const button=w.document.querySelector('[data-scope="app"]');
+  const before=calls.length;button.dispatchEvent(new w.MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true}));button.click();
+  await wait(()=>button.getAttribute('aria-pressed')==='true');assert.equal(w.document.activeElement,q);assert.equal(q.value,'preserve');assert.equal(calls.length,before);
+  key('F6');assert.ok(w.document.activeElement.classList.contains('tool-action'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert.equal(w.document.activeElement,q);
+  q.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));key('F6');assert.equal(w.document.activeElement,q);q.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true}));
+  await scope('clipboard');assert.equal(key('ArrowLeft'),true);assert.equal(key('ArrowRight'),true);
+  key('k',{metaKey:true,code:'KeyK'});assert.equal(q.selectionStart,0);assert.equal(q.selectionEnd,q.value.length);
+  key('Escape');assert.equal(calls.filter(c=>c[0]==='hide').length,1);
 });
-vm.runInContext(source.slice(source.indexOf('function returnToSearch()'), source.indexOf('document.addEventListener("keyup"')), context);
-const event = extra => ({ key: 'k', code: 'KeyK', metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++, ...extra });
-handler(event());
-assert.equal(focusCount, 1); assert.equal(selected, 1); assert.equal(prevented, 1);
-assert.equal(q.value, '已有关键词'); assert.equal(context.scopeTabHeld, false);
-for (const extra of [{metaKey: false}, {altKey: true}, {ctrlKey: true}, {shiftKey: true}, {isComposing: true}]) handler(event(extra));
-assert.equal(focusCount, 1);
-context.searchInputComposing = true; handler(event()); assert.equal(focusCount, 1);
-context.searchInputComposing = false; q.value = ''; handler(event()); assert.equal(focusCount, 2); assert.equal(q.value, '');
-// 编辑副本时键盘归编辑框：⌘K 不抢焦点，Esc 取消编辑而不是隐藏窗口。
-context.state.editingClipboard = { id: 7, text: 'x' };
-const preventedKeys = [];
-handler(event());
-assert.equal(focusCount, 2, '编辑中 ⌘K 不抢焦点');
-handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: { tagName: 'TEXTAREA' }, preventDefault: () => preventedKeys.push('Escape') });
-assert.equal(context.editCancelled, true, 'Esc 取消编辑');
-assert.equal(preventedKeys.join(','), 'Escape');
-context.state.editingClipboard = null;
-// 结果操作栏的焦点顺序：F6 进入/前进，⇧F6 反向；焦点在结果里时 Esc 先回搜索框。
-prevented = 0;
-handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
-handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: true, target: {}, preventDefault: () => prevented++ });
-assert.equal(resultFocus.join(','), '1,-1');
-assert.equal(prevented, 2, 'F6 由界面接管');
-context.searchInputComposing = true;
-handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
-assert.equal(resultFocus.length, 2, '组合输入期间 F6 不移焦点');
-handler({ key: 'F6', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, isComposing: true, preventDefault: () => prevented++ });
-assert.equal(resultFocus.length, 2, 'isComposing 期间 F6 不移焦点');
-context.searchInputComposing = false;
-const beforeFocus = focusCount;
-handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
-assert.equal(hides, 1, '焦点不在结果里时 Esc 隐藏窗口');
-inResults = true;
-handler({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
-assert.equal(hides, 1, '焦点在结果里时 Esc 不隐藏窗口');
-assert.equal(focusCount, beforeFocus + 1, 'Esc 先回到搜索框');
-const beforeTab = prevented;
-handler({ key: 'Tab', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, target: {}, preventDefault: () => prevented++ });
-assert.equal(prevented, beforeTab, '结果里的 Tab 交给浏览器顺序，不再被拦截');
-inResults = false;
-console.log('PASS: Command+K returns focus, selects without clearing query, resets held scope key, ignores unrelated modifiers and IME composition');
-// Native focus must stay with the input throughout a primary mouse press.
-const mouse = vm.createContext({activateScopeControl(){}});
-vm.runInContext(source.slice(source.indexOf('function preserveSearchFocus('), source.indexOf('scopeRow?.addEventListener("mousedown"')), mouse);
-let cancelled = 0;
-const press = (button, control) => mouse.preserveSearchFocus({button, target: {closest: () => control}, preventDefault(){cancelled++;}});
-press(0, {}); assert.equal(cancelled, 1);
-press(2, {}); press(0, null); assert.equal(cancelled, 1);
-// A config refresh during a press retains the same event target and selection.
-const children = [];
-const root = { querySelectorAll: () => children.slice(), querySelector: () => children[0] || null,
-  insertBefore(node, anchor) { const old = children.indexOf(node); if (old >= 0) children.splice(old, 1); const index = anchor ? children.indexOf(anchor) : children.length; children.splice(index, 0, node); }
-};
-function createButton() {
-  const node = { dataset: {}, textContent: '', classList: { toggle(name, active) { node.active = active; } }, remove() { children.splice(children.indexOf(node), 1); } };
-  Object.defineProperty(node, 'nextElementSibling', {get: () => children[children.indexOf(node)+1] || null});
-  return node;
-}
-const scopes = vm.createContext({state: {scope:'clipboard'}, scopeOrder:[], scopeRow:root, document:{createElement:createButton}});
-vm.runInContext(source.slice(source.indexOf('function renderPluginScopes('), source.indexOf('function pluginEnabled(')), scopes);
-const plugins = [{id:'clipboard',name:'剪切板',enabled:true,available:true,searchable:true,order:1}, {id:'app',name:'应用',enabled:true,available:true,searchable:true,order:2}];
-scopes.renderPluginScopes(plugins);
-const pressed = children[1];
-scopes.renderPluginScopes(plugins.map(p => ({...p})));
-assert.equal(children[1], pressed); assert(pressed.active); assert(!children[0].active);
-scopes.renderPluginScopes(plugins.map(p => ({...p,name:p.id==='clipboard'?'剪贴板':p.name})));
-assert.equal(children[1], pressed); assert.equal(pressed.textContent,'剪贴板');
-scopes.renderPluginScopes(plugins.filter(p=>p.id==='app'));
-assert.equal(scopes.state.scope,'all'); assert(children[0].active); assert.equal(children.length,2);
-console.log('PASS: scope mouse press preserves input focus; refresh retains pressed nodes and active scope');
-
-// Replay the actual cold trace: release, press, no synthesized click.
-let switches = 0, restored = 0;
-const clickState = {scope:'all',clipboardKind:'all'};
-const events = {};
-const navigation = vm.createContext({state:clickState,q:{focus(){restored++;}},
-  setScope(scope){switches++;clickState.scope=scope;},setClipboardKind(kind){switches++;clickState.clipboardKind=kind;},
-  scopeRow:{addEventListener(name,fn){events[name]=fn;}},clipboardKindRow:{addEventListener(){}},
-  document:{querySelectorAll:()=>[]}});
-vm.runInContext(source.slice(source.indexOf('function activateScopeControl('),source.indexOf('window.weborg.onClipboardUpdated(')),navigation);
-const control={dataset:{scope:'clipboard'}};
-const input={button:0,target:{closest:()=>control},preventDefault(){}};
-// The release has no handler: the following press must complete navigation.
-events.mouseup?.(input);events.mousedown(input);
-assert.equal(clickState.scope,'clipboard');assert.equal(switches,1);
-events.click(input);assert.equal(switches,1);assert.equal(restored,1);
-control.dataset.scope='app';events.click({...input,detail:0});
-assert.equal(clickState.scope,'app');assert.equal(switches,2);
-control.dataset.scope='web';events.mousedown({...input,button:2});assert.equal(switches,2);
-console.log('PASS: captured release-before-press trace switches once without click; normal click deduplicates and keyboard activation works');
+test('Tab tap/hold changes scope once, config refresh retains the pressed button and cold app release/press launches once',async t=>{
+  const {w,q,scope,key,calls,events}=await setup(t);
+  key('Tab');q.dispatchEvent(new w.KeyboardEvent('keyup',{key:'Tab',bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[data-scope="clipboard"]').getAttribute('aria-pressed')==='true');
+  key('Tab');key('ArrowRight');q.dispatchEvent(new w.KeyboardEvent('keyup',{key:'Tab',bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[data-scope="app"]').getAttribute('aria-pressed')==='true');
+  const button=w.document.querySelector('[data-scope="app"]');await events.onConfig({plugins:{tools:{settings:{}}}});await delay(20);assert.equal(w.document.querySelector('[data-scope="app"]'),button);
+  const row=w.document.querySelector('.app-result');
+  const release=new w.MouseEvent('mouseup',{button:0,bubbles:true});Object.defineProperty(release,'timeStamp',{value:200});row.dispatchEvent(release);
+  const press=new w.MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true});Object.defineProperty(press,'timeStamp',{value:150});row.dispatchEvent(press);
+  await delay(20);assert.equal(calls.filter(c=>c[0]==='action'&&c[1]==='app').length,1);assert.equal(w.document.activeElement,q);
+});

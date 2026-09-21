@@ -1,5 +1,13 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+test('React styles only reference defined shared theme tokens',()=>{
+  const root=path.join(__dirname,'../../src'), files=[];
+  function visit(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())visit(file);else if(entry.name.endsWith('.css'))files.push(file);}}
+  visit(root);
+  const css=[fs.readFileSync(path.join(__dirname,'../../ui/shared/palette.css'),'utf8'),...files.map(file=>fs.readFileSync(file,'utf8'))].join('\n');
+  const defined=new Set([...css.matchAll(/(--fh-[\w-]+)\s*:/g)].map(match=>match[1]));
+  for(const file of files)for(const match of fs.readFileSync(file,'utf8').matchAll(/var\((--fh-[\w-]+)/g))assert.ok(defined.has(match[1]),`${path.relative(root,file)} references undefined ${match[1]}`);
+});
 test('theme colors keep switch states, icons and supporting text legible',()=>{
   const palette=fs.readFileSync(path.join(__dirname,'../../ui/shared/palette.css'),'utf8');
   const luminance=hex=>hex.match(/[a-f\d]{2}/gi).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
