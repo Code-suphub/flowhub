@@ -1,0 +1,15 @@
+.help-dialog-trigger{display:inline-grid;place-items:center;vertical-align:middle;width:24px;height:24px;min-width:24px;padding:3px;margin-left:6px;border:0;border-radius:50%;color:var(--fh-muted);background:transparent;cursor:pointer}
+.help-dialog-trigger svg{width:18px;height:18px}
+.help-dialog-trigger:hover{background:var(--fh-surface-soft);color:var(--fh-accent)}
+.help-dialog-trigger:focus-visible{outline:2px solid var(--fh-accent);outline-offset:2px}
+.help-dialog{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:80vh;overflow:auto;padding:20px;border:1px solid var(--fh-border);border-radius:12px;background:var(--fh-surface);color:var(--fh-text);box-shadow:0 16px 60px #0003}
+.help-dialog::backdrop{background:#0006}
+.help-dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.help-dialog h2{margin:0;font-size:16px}
+.help-dialog header button{background:var(--fh-surface-soft);color:var(--fh-text);border:0;border-radius:6px;width:30px;height:30px;font-size:20px;cursor:pointer}
+.help-dialog-copy p{font-size:13px;line-height:1.8;margin:12px 0 0;white-space:pre-wrap}
+.field:has(> .help-dialog-trigger){position:relative}
+.field>.help-dialog-trigger{position:absolute;right:0;top:0}
+.field:has(> .help-dialog-trigger)>label{padding-right:30px}
+.help-tooltip{position:fixed;z-index:10000;box-sizing:border-box;max-width:min(320px,calc(100vw - 16px));padding:10px 12px;border:1px solid var(--fh-border);border-radius:8px;background:var(--fh-surface);color:var(--fh-text);box-shadow:0 6px 20px #0002;font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.help-tooltip[hidden]{display:none}

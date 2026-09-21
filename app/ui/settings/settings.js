@@ -808,12 +808,55 @@ function renderSearchResultOrder() {
   const names = { app: "应用", web: "网页", clipboard: "剪贴板", memo: "备忘录" };
   const order = configuredSearchOrder(state.config);
   $("#coreSearchResultOrder").innerHTML = order.map((id, index) => `
-    <li class="scope-master-row">
+    <li class="search-order-block" tabindex="0" data-order-id="${id}" aria-label="${names[id]}，第 ${index + 1} 位；拖拽或按 Alt 加方向键排序">
+      <span aria-hidden="true" class="order-grip">⠿</span>
       <span class="plugin-control-copy"><strong>${index + 1}. ${names[id]}</strong></span>
-      <button class="button" type="button" data-search-order="${id}" data-direction="-1" aria-label="上移${names[id]}" ${index === 0 ? "disabled" : ""}>上移</button>
-      <button class="button" type="button" data-search-order="${id}" data-direction="1" aria-label="下移${names[id]}" ${index === order.length - 1 ? "disabled" : ""}>下移</button>
     </li>`).join("");
 }
+function moveSearchResult(id, next) {
+  const order = configuredSearchOrder(state.config), index = order.indexOf(id);
+  if(index < 0 || next < 0 || next >= order.length || index === next)return;
+  order.splice(index,1); order.splice(next,0,id);
+  state.config.core ||= {}; state.config.core.searchResultOrder = order;
+  markDirty(); renderSearchResultOrder();
+  document.querySelector(`[data-order-id="${id}"]`)?.focus();
+}
+let searchOrderDrag = null;
+function endSearchOrderDrag() {
+  const drag = searchOrderDrag; searchOrderDrag = null;
+  if(drag?.item.hasPointerCapture?.(drag.pointerId))drag.item.releasePointerCapture(drag.pointerId);
+  document.querySelectorAll('.search-order-block').forEach(item=>item.classList.remove('is-dragging','drop-target'));
+}
+function searchOrderTarget(event) {
+  return document.elementFromPoint(event.clientX,event.clientY)?.closest('[data-order-id]');
+}
+document.addEventListener('pointerdown',event=>{
+  const item=event.target.closest('[data-order-id]');
+  if(!item || event.button!==0)return;
+  searchOrderDrag={item,pointerId:event.pointerId,x:event.clientX,y:event.clientY,active:false};
+  item.setPointerCapture(event.pointerId);
+});
+document.addEventListener('pointermove',event=>{
+  const drag=searchOrderDrag;if(!drag || drag.pointerId!==event.pointerId)return;
+  if(!drag.active && Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<5)return;
+  drag.active=true;event.preventDefault();drag.item.classList.add('is-dragging');
+  const target=searchOrderTarget(event);
+  document.querySelectorAll('.search-order-block').forEach(item=>item.classList.toggle('drop-target',item===target && item!==drag.item));
+});
+document.addEventListener('pointerup',event=>{
+  const drag=searchOrderDrag;if(!drag || drag.pointerId!==event.pointerId)return;
+  const target=searchOrderTarget(event);endSearchOrderDrag();
+  if(drag.active && target){event.preventDefault();moveSearchResult(drag.item.dataset.orderId,configuredSearchOrder(state.config).indexOf(target.dataset.orderId));}
+});
+document.addEventListener('pointercancel',endSearchOrderDrag);
+window.addEventListener('blur',endSearchOrderDrag);
+document.addEventListener('keydown',event=>{if(event.key==='Escape' && searchOrderDrag){event.preventDefault();event.stopImmediatePropagation();endSearchOrderDrag();}},true);
+document.addEventListener('keydown',event=>{
+  const item=event.target.closest('[data-order-id]');
+  if(!item || !event.altKey || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;
+  event.preventDefault(); event.stopPropagation();
+  moveSearchResult(item.dataset.orderId,configuredSearchOrder(state.config).indexOf(item.dataset.orderId)+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1));
+});
 function renderSettingsFields() {
   const coreHotkey = $("#coreHotkey");
   const coreHotkeyValue = state.config?.core?.hotkey || "Alt+Space";
@@ -842,6 +885,8 @@ function renderSettingsFields() {
   document.querySelectorAll("[data-notification-field]:not([data-notification-field='enabled'])").forEach((input) => { input.disabled = !notificationsEnabled; });
   document.querySelectorAll("[data-organizer-field]:not([data-organizer-field='organizerEnabled'])").forEach((input) => { input.disabled = !organizerEnabled; });
   $("#organizerControls")?.classList.toggle("is-disabled", !organizerEnabled);
+  const organizerDetails = $("#organizerDetails");
+  if (organizerDetails) organizerDetails.hidden = !organizerEnabled;
   const organizerToggle = document.querySelector('[data-action="toggle-menu-bar-items"]');
   if (organizerToggle) organizerToggle.disabled = !organizerEnabled || document.documentElement.dataset.weborgRuntime === "browser";
   const management = state.menuBarManagement || {};
@@ -1633,14 +1678,11 @@ function renderCoreSection() {
     const active = button.dataset.coreSection === state.coreSection;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
+    button.dataset.helpTooltip = sections[button.dataset.coreSection]?.description || "";
   });
   document.querySelectorAll("[data-core-section-panel]").forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.coreSectionPanel !== state.coreSection);
   });
-  const section = sections[state.coreSection];
-  $("#coreSectionIcon").textContent = section.icon;
-  $("#coreSectionTitle").textContent = section.title;
-  $("#coreSectionDescription").textContent = section.description;
 }
 
 function renderPluginModules() {
@@ -2636,21 +2678,6 @@ document.addEventListener("toggle", (event) => {
 
 document.addEventListener("click", (event) => {
   if (performance.now() < suppressTreeClickUntil && event.target.closest("[data-node-id]")) return;
-  const orderButton = event.target.closest("[data-search-order]");
-  if (orderButton) {
-    const order = configuredSearchOrder(state.config);
-    const index = order.indexOf(orderButton.dataset.searchOrder);
-    const next = index + Number(orderButton.dataset.direction);
-    if (orderButton.disabled || index < 0 || next < 0 || next >= order.length) return;
-    [order[index], order[next]] = [order[next], order[index]];
-    state.config.core ||= {};
-    state.config.core.searchResultOrder = order;
-    markDirty();
-    renderSearchResultOrder();
-    const movedButton = document.querySelector(`[data-search-order="${orderButton.dataset.searchOrder}"][data-direction="${orderButton.dataset.direction}"]`);
-    (movedButton?.disabled ? document.querySelector(`[data-search-order="${orderButton.dataset.searchOrder}"]:not(:disabled)`) : movedButton)?.focus();
-    return;
-  }
   const shortcutButton = event.target.closest(".shortcut-capture");
   if (shortcutButton) {
     event.preventDefault();

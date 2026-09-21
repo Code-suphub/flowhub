@@ -1,0 +1,14 @@
+.select-shell{position:relative;display:inline-block;min-width:0;max-width:100%;vertical-align:middle}
+.field>.select-shell,.field label>.select-shell,dialog label>.select-shell{display:block;width:100%}
+.select-shell .select-trigger{position:relative;box-sizing:border-box;display:block;width:100%;min-height:34px;padding:7px 32px 7px 10px;border:1px solid var(--fh-border);border-radius:7px;background:var(--fh-surface-soft);color:var(--fh-text);font:inherit;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.select-shell .select-trigger::after{content:'';position:absolute;right:12px;top:50%;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-70%) rotate(45deg)}
+.select-trigger:focus-visible{outline:2px solid var(--fh-accent);outline-offset:2px}
+.select-trigger:disabled{opacity:.5;cursor:not-allowed}
+.select-menu[popover]{position:fixed;inset:auto;margin:0;box-sizing:border-box;max-height:min(280px,70vh);padding:4px;overflow:auto;z-index:10000;background:var(--fh-surface);color:var(--fh-text);border:1px solid var(--fh-border);border-radius:8px;box-shadow:0 8px 24px #0003}
+.select-menu[popover] button{display:block;width:100%;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--fh-text);font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.select-menu[popover] button[aria-selected=true]{background:var(--fh-surface-soft);color:var(--fh-accent)}
+.select-menu[popover] button:hover,.select-menu[popover] button:focus-visible{outline:2px solid var(--fh-accent);outline-offset:-2px;background:var(--fh-surface-soft)}
+.select-menu[popover] input{box-sizing:border-box;width:100%;padding:8px;border:1px solid var(--fh-border);background:var(--fh-surface);color:var(--fh-text);border-radius:5px}
+.select-menu[hidden],.select-menu [hidden],select[hidden]{display:none!important}
+.storage-path-row>.select-shell{flex:0 1 280px}
+.field>.select-shell{max-width:460px}

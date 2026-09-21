@@ -2,7 +2,10 @@
   let installed=[],currentModule='',generation=0;
   const frame=document.querySelector('#pluginFrame'), invoke=window.__TAURI__?.core?.invoke;
   const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const button=(module,title)=>`<button class="module-button" type="button" data-module="${escape(module)}" aria-label="${escape(title)}" title="${escape(title)}"><i class="module-nav-icon">${window.flowhubIcon('plugins')}</i><span class="module-nav-copy"><strong>${escape(title)}</strong></span></button>`;
+  const button=(module,title)=>{
+    const active=state.module===module;
+    return `<button class="module-button${active ? ' active' : ''}" type="button" data-module="${escape(module)}" aria-pressed="${active}" aria-label="${escape(title)}" title="${escape(title)}"><i class="module-nav-icon">${window.flowhubIcon('plugins')}</i><span class="module-nav-copy"><strong>${escape(title)}</strong></span></button>`;
+  };
   async function refresh() {
     if (!invoke) return;
     installed=await invoke('plugin_api',{action:'list',payload:{}});

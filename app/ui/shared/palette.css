@@ -1,0 +1,46 @@
+/* Shared FlowHub palette. The host resolves system/light/dark; standalone previews use local preference. */
+:root[data-theme] {
+  --fh-canvas: #101112;
+  --fh-surface: #141516;
+  --fh-surface-soft: #202224;
+  --fh-text: #d7dadd;
+  --fh-muted: #969da6;
+  --fh-border: #34373b;
+  --fh-accent: #91baff;
+  --fh-on-accent: #142238;
+  --fh-danger: #ff899a;
+  --fh-danger-soft: #3c2430;
+  --fh-warning: #efc578;
+  --fh-warning-soft: #382e1d;
+  --fh-positive: #6ad8b4;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --fh-canvas: #f4f7fc;
+  --fh-surface: #ffffff;
+  --fh-surface-soft: #edf2f9;
+  --fh-text: #243348;
+  --fh-muted: #64758b;
+  --fh-border: #dce4ef;
+  --fh-accent: #2563d9;
+  --fh-on-accent: #ffffff;
+  --fh-danger: #bd3549;
+  --fh-danger-soft: #fff0f2;
+  --fh-warning: #95620b;
+  --fh-warning-soft: #fff7e5;
+  --fh-positive: #087f65;
+  color-scheme: light;
+}
+:root[data-theme] {
+ --bg:var(--fh-canvas); --stage-bg:var(--fh-canvas); --stage-mid:var(--fh-surface);
+ --panel:var(--fh-surface); --panel-deep:var(--fh-canvas); --ink:var(--fh-text);
+ --text:var(--fh-text); --text-strong:var(--fh-text); --muted:var(--fh-muted); --faint:var(--fh-muted);
+ --line:var(--fh-border); --line-strong:var(--fh-border); --surface:var(--fh-surface-soft);
+ --surface-raised:var(--fh-surface-soft); --surface-border:var(--fh-border);
+ --accent:var(--fh-accent); --accent-strong:var(--fh-accent); --accent-rgb:145,186,255;
+ --blue:var(--fh-accent); --blue-rgb:145,186,255; --success:var(--fh-positive);
+ --warning:var(--fh-warning); --danger:var(--fh-danger);
+ --btn-primary-bg:var(--fh-accent); --btn-primary-fg:var(--fh-on-accent);
+ --btn-secondary-bg:var(--fh-surface-soft); --btn-secondary-border:var(--fh-border); --btn-secondary-fg:var(--fh-text);
+}
+:root[data-theme=light] { --accent-rgb:37,99,217; --blue-rgb:37,99,217; }

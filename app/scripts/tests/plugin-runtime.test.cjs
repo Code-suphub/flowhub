@@ -19,3 +19,26 @@ test('installed plugin pages are sandboxed and RPC is scoped to the selected fra
   assert.equal(calls[0].id,'example');assert.equal(calls[1].result.ok,true);
   integration.show('extensions');assert.equal(frame.sandbox,undefined);
 });
+
+test('navigation keeps the selected market or plugin highlighted after refresh',async()=>{
+  const state={module:'extensions'};
+  let navigation='';
+  const window={addEventListener(){},flowhubIcon:()=>'',__TAURI__:{core:{invoke:async()=>[
+    {enabled:true,manifest:{id:'example',name:'Example',ui:'ui/index.html'}}
+  ]}}};
+  vm.runInNewContext(fs.readFileSync('ui/plugin/plugin-entry.js','utf8'),{
+    window,document:{querySelector:()=>({})},state,console,
+    renderPluginModules(){navigation=window.FlowHubPluginIntegration.navigation();},
+    switchModule(module){state.module=module;}
+  });
+  const selected=()=>[...navigation.matchAll(/<button class="module-button active"[^>]*data-module="([^"]+)" aria-pressed="true"/g)].map(match=>match[1]);
+  await window.FlowHubPluginIntegration.refresh();
+  assert.deepEqual(selected(),['extensions']);
+  state.module='plugin:example';
+  await window.FlowHubPluginIntegration.refresh();
+  assert.deepEqual(selected(),['plugin:example']);
+  state.module='core';
+  await window.FlowHubPluginIntegration.refresh();
+  assert.deepEqual(selected(),[]);
+  assert.equal((navigation.match(/aria-pressed="false"/g)||[]).length,2);
+});

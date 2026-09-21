@@ -5,7 +5,7 @@ const mock=`(()=>{let sources=[],installed=[];const manifest={schema:2,id:'previ
 http.createServer(async(req,res)=>{
  const name=new URL(req.url,'http://localhost').pathname.slice(1)||'plugin-market.html';
  // 入口页在 ui/ 根，资源在 ui/plugin/ 下；按实际相对路径放行。
- const allowed=new Set(['plugin-market.html','plugin/plugin-market.css','plugin/plugin-market.js']);
+ const allowed=new Set(['plugin-market.html','plugin/plugin-market.css','plugin/plugin-market.js','shared/palette.css','shared/theme.js']);
  if(!allowed.has(name)){res.writeHead(404).end();return;}
  try{let body=await readFile(new URL('../../ui/'+name,import.meta.url),'utf8');if(name.endsWith('.html'))body=body.replace('<script src="plugin/plugin-market.js">','<script>'+mock+'</script><script src="plugin/plugin-market.js">');res.setHeader('Content-Type',name.endsWith('.html')?'text/html; charset=utf-8':name.endsWith('.css')?'text/css':'text/javascript');res.end(body);}catch{res.writeHead(500).end();}
 }).listen(5194,'127.0.0.1',()=>console.log('Mock plugin market: http://127.0.0.1:5194'));
