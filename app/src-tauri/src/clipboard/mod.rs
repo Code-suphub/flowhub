@@ -81,7 +81,8 @@ struct ClipboardChangeHandler {
 
 impl ClipboardHandler for ClipboardChangeHandler {
     fn on_clipboard_change(&mut self) {
-        if let Err(error) = capture_clipboard(&self.app) {
+        let app = self.app.clone();
+        if let Err(error) = run_on_main_thread(&self.app, move || capture_clipboard(&app)) {
             eprintln!("[flowhub][clipboard] 读取剪贴板失败：{error}");
             crate::diagnostics::record_event(
                 &self.app,
@@ -90,6 +91,24 @@ impl ClipboardHandler for ClipboardChangeHandler {
             );
         }
     }
+}
+
+/// AppKit's NSPasteboard is main-thread confined on macOS. The clipboard
+/// watcher invokes handlers from its worker thread, so every clipboard-rs
+/// operation must cross the Tauri main-thread boundary before touching it.
+fn run_on_main_thread<T, F>(app: &tauri::AppHandle, work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (sender, receiver) = mpsc::sync_channel(1);
+    app.run_on_main_thread(move || {
+        let _ = sender.send(work());
+    })
+    .map_err(|error| error.to_string())?;
+    receiver
+        .recv()
+        .map_err(|_| "主线程剪贴板任务未返回".to_string())
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -982,9 +1001,12 @@ pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
     let hash = sha256(text.as_bytes());
     app.state::<ClipboardRuntime>()
         .suppress(signature("text", &hash));
-    ClipboardContext::new()
-        .and_then(|context| context.set_text(text.to_string()))
-        .map_err(|error| error.to_string())?;
+    let text = text.to_string();
+    run_on_main_thread(app, move || {
+        ClipboardContext::new()
+            .and_then(|context| context.set_text(text))
+            .map_err(|error| error.to_string())
+    })??;
     hide_main(app);
     let paste = send_paste();
     Ok(match paste {
@@ -994,9 +1016,11 @@ pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub fn copy_text(text: String) -> Result<Value, String> {
-    let context = ClipboardContext::new().map_err(|error| error.to_string())?;
-    context.set_text(text).map_err(|error| error.to_string())?;
+pub fn copy_text(app: tauri::AppHandle, text: String) -> Result<Value, String> {
+    run_on_main_thread(&app, move || {
+        let context = ClipboardContext::new().map_err(|error| error.to_string())?;
+        context.set_text(text).map_err(|error| error.to_string())
+    })??;
     Ok(json!({ "ok": true }))
 }
 
@@ -1028,29 +1052,41 @@ pub fn activate_clipboard(
     };
     app.state::<ClipboardRuntime>()
         .suppress(signature(&kind, &hash));
-    let context = ClipboardContext::new().map_err(|error| error.to_string())?;
-    match kind.as_str() {
-        "text" => context.set_text(content.unwrap_or_default()),
-        "file" => {
-            let files = parse_string_array(file_paths)
-                .into_iter()
-                .filter(|path| Path::new(path).exists())
-                .collect::<Vec<_>>();
-            if files.is_empty() {
-                return Ok(json!({ "ok": false, "reason": "文件已不存在或无法访问" }));
-            }
-            context.set_files(files)
-        }
-        "image" => {
-            let file_name = file_name.unwrap_or_default();
-            let bytes = fs::read(connection.storage_dir.join("images").join(file_name))
-                .map_err(|_| "图片文件不存在或已损坏".to_string())?;
-            let image = RustImageData::from_bytes(&bytes).map_err(|error| error.to_string())?;
-            context.set_image(image)
-        }
-        _ => return Ok(json!({ "ok": false, "reason": "未知剪贴板记录类型" })),
+    let files = parse_string_array(file_paths)
+        .into_iter()
+        .filter(|path| Path::new(path).exists())
+        .collect::<Vec<_>>();
+    if kind == "file" && files.is_empty() {
+        return Ok(json!({ "ok": false, "reason": "文件已不存在或无法访问" }));
     }
-    .map_err(|error| error.to_string())?;
+    if !matches!(kind.as_str(), "text" | "file" | "image") {
+        return Ok(json!({ "ok": false, "reason": "未知剪贴板记录类型" }));
+    }
+    let image_bytes = if kind == "image" {
+        let file_name = file_name.unwrap_or_default();
+        Some(
+            fs::read(connection.storage_dir.join("images").join(file_name))
+                .map_err(|_| "图片文件不存在或已损坏".to_string())?,
+        )
+    } else {
+        None
+    };
+    let write_kind = kind.clone();
+    let write_content = content.unwrap_or_default();
+    run_on_main_thread(&app, move || {
+        let context = ClipboardContext::new().map_err(|error| error.to_string())?;
+        match write_kind.as_str() {
+            "text" => context.set_text(write_content),
+            "file" => context.set_files(files),
+            "image" => {
+                let bytes = image_bytes.ok_or("图片文件不存在或已损坏")?;
+                let image = RustImageData::from_bytes(&bytes).map_err(|error| error.to_string())?;
+                context.set_image(image)
+            }
+            _ => unreachable!("clipboard kind was validated before dispatch"),
+        }
+        .map_err(|error| error.to_string())
+    })??;
     hide_main(&app);
     let paste = send_paste();
     Ok(match paste {
@@ -1178,10 +1214,12 @@ pub fn paste_clipboard_text(
     // 纯文本是以应用自己写入剪贴板的，按新文本指纹抑制回采，避免多出一条重复记录。
     app.state::<ClipboardRuntime>()
         .suppress(signature("text", &sha256(text.as_bytes())));
-    ClipboardContext::new()
-        .map_err(|error| error.to_string())?
-        .set_text(text)
-        .map_err(|error| error.to_string())?;
+    run_on_main_thread(&app, move || {
+        ClipboardContext::new()
+            .map_err(|error| error.to_string())?
+            .set_text(text)
+            .map_err(|error| error.to_string())
+    })??;
     hide_main(&app);
     let paste = send_paste();
     Ok(match paste {
