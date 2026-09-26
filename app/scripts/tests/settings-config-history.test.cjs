@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');const h=r
 test('history list, preview, restore, unchanged results and restart/path warnings remain visible',async()=>{
  let restored=[],unchanged=false;const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1758096000000,bytes:2048,catalog_count:7}],limit:20}),previewConfigHistory:async()=>({config:{core:{hotkey:'Other'}}}),restoreConfigHistory:async id=>{restored.push(id);return {unchanged,warnings:['存储位置不同']};}});
  const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});assert.match(view.container.textContent,/7 项/);assert.match(view.container.textContent,/2048 B/);
- await h.click(h.button(view.container,'预览'));assert.match(document.querySelector('dialog').textContent,/Other/);await h.click(document.querySelector('dialog [aria-label="关闭"]'));
+ await h.click(h.button(view.container,'预览'));assert.match(document.querySelector('[role="dialog"]').textContent,/Other/);await h.click(document.querySelector('[role="dialog"] [aria-label="关闭"]'));
  await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.deepEqual(restored,['one']);assert.match(store.snapshot().notice,/重启/);assert.match(store.snapshot().notice,/存储位置/);
  unchanged=true;await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.match(store.snapshot().notice,/相同/);
  await view.unmount();store.dispose();
@@ -16,10 +16,10 @@ test('restore locks IPC through metadata reread against duplicate restores, save
  const restored=h.fixture();restored.core.hotkey='F8';
  const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1}]}),restoreConfigHistory:async()=>{restores++;await new Promise(r=>releaseRestore=r);reading=true;return {ok:true};},saveConfig:async()=>{saves++;return {ok:true};},getConfig:async()=>reading?restored:h.fixture(),getConfigPathInfo:async()=>{if(reading)await new Promise(r=>releaseMetadata=r);return {activePath:'/config/A'};}});
  const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));
- assert.equal(restores,1);assert.equal(store.snapshot().busy,true);assert.equal(document.querySelector('dialog [aria-label="关闭"]').disabled,true);assert.equal(h.button(document.body,'确认恢复').disabled,true);
+ assert.equal(restores,1);assert.equal(store.snapshot().busy,true);assert.equal(document.querySelector('[role="dialog"] [aria-label="关闭"]').disabled,true);assert.equal(h.button(document.body,'确认恢复').disabled,true);
  await assert.rejects(store.restoreHistory('two'),/正在进行/);await store.save();await store.reset();assert.equal(saves,0);assert.equal(restores,1);
  await h.act(async()=>releaseRestore());assert.equal(store.snapshot().busy,true);assert.equal(store.snapshot().config.core.hotkey,'Alt+Space');await store.save();assert.equal(saves,0);
- await h.act(async()=>releaseMetadata());assert.equal(store.snapshot().busy,false);assert.equal(store.snapshot().config.core.hotkey,'F8');assert.equal(store.dirty,false);assert.equal(document.querySelector('dialog'),null);await view.unmount();store.dispose();
+ await h.act(async()=>releaseMetadata());assert.equal(store.snapshot().busy,false);assert.equal(store.snapshot().config.core.hotkey,'F8');assert.equal(store.dirty,false);assert.equal(document.querySelector('[role="dialog"]'),null);await view.unmount();store.dispose();
 });
 test('committed history with failed reread blocks saves until explicit reload, preserving JSON draft',async()=>{
  let committed=false,fail=true,saves=0;
@@ -29,5 +29,5 @@ test('committed history with failed reread blocks saves until explicit reload, p
 });
 test('history restore error is rendered inside the open shared Dialog',async()=>{
  const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1}]}),restoreConfigHistory:async()=>{throw Error('history unavailable');}});
- const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.match(document.querySelector('dialog [role="alert"]').textContent,/history unavailable/);assert.equal(document.querySelector('dialog [aria-label="关闭"]').disabled,false);await view.unmount();store.dispose();
+ const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.match(document.querySelector('[role="dialog"] [role="alert"]').textContent,/history unavailable/);assert.equal(document.querySelector('[role="dialog"] [aria-label="关闭"]').disabled,false);await view.unmount();store.dispose();
 });

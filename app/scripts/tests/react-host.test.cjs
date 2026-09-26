@@ -43,10 +43,10 @@ test('scan and install require an explicit confirmation; cancel makes no install
   const mock = backend(); const { dom, w, button } = setup(mock.invoke); t.after(() => dom.window.close());
   await wait(() => button('刷新来源') && !button('刷新来源').disabled);
   button('刷新来源').click(); await wait(() => button('重新安装'));
-  button('重新安装').click(); await wait(() => w.document.querySelector('dialog[open]'));
-  assert.match(w.document.querySelector('dialog').textContent, /可访问当前用户文件和网络/);
-  assert.equal(w.document.querySelector('dialog [data-slot="alert-title"]')?.textContent, '运行权限提醒');
-  button('取消').click(); await wait(() => !w.document.querySelector('dialog'));
+  button('重新安装').click(); await wait(() => w.document.querySelector('[role="dialog"]'));
+  assert.match(w.document.querySelector('[role="dialog"]').textContent, /可访问当前用户文件和网络/);
+  assert.equal(w.document.querySelector('[role="dialog"] [data-slot="alert-title"]')?.textContent, '运行权限提醒');
+  button('取消').click(); await wait(() => !w.document.querySelector('[role="dialog"]'));
   assert.equal(mock.calls.some(c => c.action === 'installCandidate'), false);
   button('重新安装').click(); await wait(() => button('确认'));
   button('确认').click(); await wait(() => button('重新加载'));
@@ -65,9 +65,9 @@ test('source dialog save failure is visible inside the dialog and keeps input', 
   assert.equal(form.querySelector('input').labels[0].textContent, '名称');
   assert.equal(form.querySelector('#source-location').labels[0].textContent, '目录');
   w.document.querySelector('form').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  await wait(() => w.document.querySelector('dialog [role="alert"]'));
-  assert.match(w.document.querySelector('dialog [role="alert"]').textContent, /来源无效/);
-  assert.equal(w.document.querySelector('dialog input').value, '测试来源');
+  await wait(() => w.document.querySelector('[role="dialog"] [role="alert"]'));
+  assert.match(w.document.querySelector('[role="dialog"] [role="alert"]').textContent, /来源无效/);
+  assert.equal(w.document.querySelector('[role="dialog"] input').value, '测试来源');
 });
 test('source form labels the HTTPS location and signing key', async t => {
   const mock = backend(); const { dom, w, button } = setup(mock.invoke); t.after(() => dom.window.close());
@@ -87,5 +87,5 @@ test('busy operations cannot be submitted twice and uninstall is confirmed', asy
   await wait(() => button('确认')); button('确认').click(); button('确认').click();
   await wait(() => resolve);
   assert.equal(mock.calls.filter(c => c.action === 'uninstall').length, 1);
-  resolve(); await wait(() => !w.document.querySelector('dialog'));
+  resolve(); await wait(() => !w.document.querySelector('[role="dialog"]'));
 });

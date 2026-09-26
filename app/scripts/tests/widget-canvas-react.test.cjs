@@ -134,7 +134,7 @@ test('editor waits for authenticated readiness and save; double submits and fore
   s.message(frame, { type: 'flowhub:widget-config', id: saves[0].id, config: { filter: 'bad' } }, { source: s.w });
   assert.equal(s.calls.filter(call => call.action === 'save').length, 0);
   s.message(frame, { type: 'flowhub:widget-config', id: saves[0].id, config: { filter: 'saved' } });
-  await wait(() => !s.w.document.querySelector('dialog'));
+  await wait(() => !s.w.document.querySelector('[role="dialog"]'));
   await wait(() => s.calls.some(call => call.action === 'save'));
   assert.equal(s.calls.find(call => call.action === 'save').payload.boards[0].cards[0].config.filter, 'saved');
 });
@@ -144,7 +144,7 @@ test('native pointer exit disposes a pending editor and ignores late save replie
   s.message(frame, { type: 'flowhub:widget-ready' }); await wait(() => !s.w.document.querySelector('#widgetForm button[type=submit]').disabled);
   s.submit('widgetForm'); await wait(() => s.responses.some(message => message.type === 'flowhub:widget-save'));
   const save = s.responses.find(message => message.type === 'flowhub:widget-save');
-  s.setCursor({ x: -20, y: -20 }); await wait(() => !s.w.document.querySelector('dialog'));
+  s.setCursor({ x: -20, y: -20 }); await wait(() => !s.w.document.querySelector('[role="dialog"]'));
   s.message(frame, { type: 'flowhub:widget-config', id: save.id, config: { late: true } });
   await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(s.calls.filter(call => call.action === 'save').length, 0);
 });

@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useRef, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Tooltip } from './controls';
 import { Button as ShadcnButton } from '../components/ui/button';
 import { Input as ShadcnInput } from '../components/ui/input';
 import { Tabs as ShadcnTabs, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Dialog as ShadcnDialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { cn } from '../lib/utils';
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
@@ -23,17 +24,20 @@ export function Tabs({ items, value, onChange, label }: { items: readonly Tab[];
     </TabsList>
   </ShadcnTabs>;
 }
-// Native dialog provides the focus trap/top layer; all host React dialogs share this lifecycle.
 export function Dialog({ title, onClose, busy, children, notice }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string }) {
-  const ref = useRef<HTMLDialogElement>(null), titleId = useId();
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const dialog = ref.current!; dialog.showModal();
-    return () => { dialog.close(); if (previous?.isConnected) previous.focus(); };
+  const previousFocus = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
+  useEffect(() => () => {
+    const previous = previousFocus.current;
+    if (previous?.isConnected) requestAnimationFrame(() => { if (previous.isConnected) previous.focus(); });
   }, []);
-  return <dialog ref={ref} className="fh-dialog" aria-labelledby={titleId} aria-busy={busy} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
-    <header className="flex items-center justify-between gap-4 mb-4"><h2 id={titleId}>{title}</h2><Button disabled={busy} aria-label="关闭" onClick={onClose}>×</Button></header>
-    {children}
-    {notice ? <p role="alert" className="whitespace-pre-wrap">{notice}</p> : null}
-  </dialog>;
+  return <ShadcnDialog open onOpenChange={open => { if (!open && !busy) onClose(); }} disablePointerDismissal>
+    <DialogContent className="fh-dialog gap-0" showCloseButton={false} aria-busy={busy}>
+      <DialogHeader className="mb-4 flex-row items-center justify-between gap-4">
+        <DialogTitle>{title}</DialogTitle>
+        <DialogClose render={<Button disabled={busy} aria-label="关闭" />}>×</DialogClose>
+      </DialogHeader>
+      {children}
+      {notice ? <p role="alert" className="whitespace-pre-wrap">{notice}</p> : null}
+    </DialogContent>
+  </ShadcnDialog>;
 }

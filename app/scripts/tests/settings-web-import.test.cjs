@@ -17,9 +17,9 @@ test('overwrite retains location/existing descendants and applies nested replace
 test('web file picker previews before applying, cancels cleanly and surfaces empty/error files',async()=>{
  let result={path:'/mock/web.json',items:[{id:'new',title:'New'}]}; const {store,writes}=await h.loaded({pickWebImport:async()=>result}),{WebCatalog}=require('../../src/settings/Collections.tsx'),view=await h.mount(WebCatalog,{store});
  await h.click(h.button(view.container,'导入…'));assert.match(document.body.textContent,/新增：new/);assert.equal(store.dirty,false);
- await h.click(document.querySelector('dialog [aria-label="关闭"]'));assert.equal(store.dirty,false);
+ await h.click(document.querySelector('[role="dialog"] [aria-label="关闭"]'));assert.equal(store.dirty,false);
  await h.click(h.button(view.container,'导入…'));await h.click(h.button(document.body,'应用为草稿'));assert.equal(store.snapshot().config.plugins.web.settings.items.at(-1).id,'new');assert.equal(writes.length,0);
- result={canceled:true};await h.click(h.button(view.container,'导入…'));assert.equal(document.querySelector('dialog'),null);
+ result={canceled:true};await h.click(h.button(view.container,'导入…'));assert.equal(document.querySelector('[role="dialog"]'),null);
  result={items:[]};await h.click(h.button(view.container,'导入…'));assert.match(store.snapshot().notice,/没有网页节点/);
  window.weborg.pickWebImport=async()=>{throw new Error('不是有效 JSON');};await h.click(h.button(view.container,'导入…'));assert.match(store.snapshot().notice,/不是有效 JSON/);
  await view.unmount();store.dispose();

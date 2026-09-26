@@ -18,7 +18,7 @@ test('file import preview/cancel has no writes; applying is a reversible draft; 
  let exports=[]; const {store,writes}=await h.loaded({pickConfigImport:async()=>({path:'/mock/config.json',scope:'core',appVersion:'0.1',currentAppVersion:'0.2',config:{core:{hotkey:'F1'}}}),exportConfig:async scope=>{exports.push(scope);return {path:'/mock/export.json'};}});
  const {DataPanel}=require('../../src/settings/Core.tsx'), view=await h.mount(DataPanel,{store});
  await h.click(h.button(view.container,'导入配置…')); assert.match(document.body.textContent,/core.hotkey/); assert.match(document.body.textContent,/版本不同/); assert.equal(store.dirty,false); assert.equal(writes.length,0);
- await h.click(document.querySelector('dialog [aria-label="关闭"]')); assert.equal(store.snapshot().config.core.hotkey,'Alt+Space');
+ await h.click(document.querySelector('[role="dialog"] [aria-label="关闭"]')); assert.equal(store.snapshot().config.core.hotkey,'Alt+Space');
  await h.click(h.button(view.container,'导入配置…')); await h.click(h.button(document.body,'应用为草稿')); assert.equal(store.snapshot().config.core.hotkey,'F1'); assert.equal(store.dirty,true); assert.equal(writes.length,0);
  await h.act(async()=>store.travel('undo')); assert.equal(store.snapshot().config.core.hotkey,'Alt+Space');
  await h.click(h.button(view.container,'导出配置…')); assert.deepEqual(exports,['all']);

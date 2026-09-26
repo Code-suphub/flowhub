@@ -26,7 +26,7 @@ test('memo category independent collapse, recursive search expansion, clearing f
 });
 test('memo delete/default reset are shared Dialog confirmations and do not mutate before confirmation',async()=>{
  const {store}=await h.loaded(),{Memos}=require('../../src/settings/Collections.tsx'),view=await h.mount(Memos,{store});
- await h.click(h.button(view.container,'删除备忘'));assert.equal(store.dirty,false);await h.click(document.querySelector('dialog [aria-label="关闭"]'));assert.equal(store.dirty,false);
+ await h.click(h.button(view.container,'删除备忘'));assert.equal(store.dirty,false);await h.click(document.querySelector('[role="dialog"] [aria-label="关闭"]'));assert.equal(store.dirty,false);
  await h.click(h.button(view.container,'恢复内置'));assert.equal(store.dirty,false);await h.click(h.button(document.body,'确认'));assert.equal(store.snapshot().config.plugins.memo.settings.items,undefined);
  await h.act(async()=>store.travel('undo'));assert.equal(store.snapshot().config.plugins.memo.settings.items.length,2);
  await h.click(h.button(view.container,'删除备忘'));await h.click(h.button(document.body,'确认'));assert.equal(store.snapshot().config.plugins.memo.settings.items.length,1);

@@ -30,8 +30,8 @@
 .fh-tabs { display:flex; gap:20px; overflow-x:auto; border-bottom:1px solid var(--fh-border); margin-bottom:16px; }
 .fh-tabs button { font:inherit; cursor:pointer; flex-shrink:0; color:var(--fh-muted); background:none; border:0; border-bottom:2px solid transparent; padding:10px 2px; }
 .fh-tabs [aria-selected=true] { color:var(--fh-accent); border-bottom-color:var(--fh-accent); font-weight:600; }
-.fh-dialog { box-sizing:border-box; width:min(520px,calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:auto; padding:20px; background:var(--fh-surface); color:var(--fh-text); border:1px solid var(--fh-border); border-radius:12px; font:14px/1.5 -apple-system,sans-serif; }
-.fh-dialog::backdrop { background:rgb(0 0 0 / .35); }
+.fh-dialog { box-sizing:border-box; width:min(520px,calc(100vw - 32px)); max-width:none; max-height:calc(100vh - 32px); overflow:auto; padding:20px; background:var(--fh-surface); color:var(--fh-text); border:1px solid var(--fh-border); border-radius:12px; font:14px/1.5 -apple-system,sans-serif; }
+[data-slot="dialog-overlay"] { background:rgb(0 0 0 / .35); }
 .fh-dialog h2 { font-size:17px; margin:0; }
 .fh-market { padding:16px 20px; }
 .fh-market h1 { font-size:20px; margin:0; }

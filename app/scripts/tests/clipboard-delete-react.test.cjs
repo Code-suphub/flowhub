@@ -5,8 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { setup, wait, delay } = require('./search-react-harness.cjs');
 
-const dialog = s => s.w.document.querySelector('dialog[open]');
-const button = (s, label) => [...s.w.document.querySelectorAll('dialog button')]
+const dialog = s => s.w.document.querySelector('[role="dialog"]');
+const button = (s, label) => [...s.w.document.querySelectorAll('[role="dialog"] button')]
   .find(node => node.textContent === label);
 const actions = s => s.calls.filter(call => call[0] === 'action');
 const searches = s => s.calls.filter(call => call[0] === 'search' && call[1] === 'clipboard').length;
@@ -16,12 +16,10 @@ async function open(s) {
   await wait(() => dialog(s));
 }
 function cancelEvent(s) {
-  const event = new s.w.Event('cancel', { cancelable: true });
-  dialog(s).dispatchEvent(event);
-  assert.equal(event.defaultPrevented, true);
+  dialog(s).dispatchEvent(new s.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 }
 
-test('clipboard delete: cancel button, close button and native cancel never dispatch deletion', async t => {
+test('clipboard delete: cancel button, close button and Escape never dispatch deletion', async t => {
   const s = await setup(t);
   await s.scope('clipboard');
   for (const cancel of [
@@ -122,10 +120,10 @@ test('clipboard delete: modal keyboard events do not run search actions, navigat
   await open(s);
   const initialCalls = s.calls.length;
   const selected = s.q.getAttribute('aria-activedescendant');
-  // JSDOM has no native Enter click, Escape cancel, Tab traversal or modal
-  // focus trap. These events verify the application's keydown isolation only.
+  // JSDOM does not emulate native Enter activation or Tab traversal.
+  // These events verify the application's keydown isolation only.
   for (const [key, extra] of [
-    ['Enter', {}], ['Enter', { shiftKey: true }], ['Escape', {}],
+    ['Enter', {}], ['Enter', { shiftKey: true }],
     ['Delete', { altKey: true }], ['d', { metaKey: true }],
     ['e', { metaKey: true }], ['k', { metaKey: true }],
     ['F6', {}], ['ArrowDown', {}], ['Tab', {}],
