@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Button, Dialog, Field, Input } from '../shared/ui';
+import { Button, Dialog, Input } from '../shared/ui';
+import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
 import { EmptyState, Help, Select, Switch } from '../shared/controls';
 import { nativeHost } from '../shared/native';
 import { WidgetSurface } from './WidgetSurface';
@@ -30,10 +31,12 @@ function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
       } catch (error) { if (alive.current && current === handle.current) setError(String(error)); }
       finally { saving.current = false; if (alive.current) setBusy(false); }
     }}>
-      <Field label="插件"><Select id="source" label="插件" value={plugin} disabled={busy} options={[{ value: '', label: '请选择插件', disabled: true }, ...sources.filter(source => source.widget).map(source => ({ value: source.id, label: source.title }))]}
-        onChange={value => { handle.current = null; setReady(false); setError(''); setPlugin(value); }} /></Field>
+      <FieldGroup className="gap-3">
+        <Field data-disabled={busy}><FieldLabel htmlFor="source">插件</FieldLabel><Select id="source" label="插件" value={plugin} disabled={busy} options={[{ value: '', label: '请选择插件', disabled: true }, ...sources.filter(source => source.widget).map(source => ({ value: source.id, label: source.title }))]}
+          onChange={value => { handle.current = null; setReady(false); setError(''); setPlugin(value); }} /></Field>
+        {source ? <Field data-disabled={busy}><FieldLabel htmlFor="cardTitle">卡片名称</FieldLabel><Input id="cardTitle" value={title} maxLength={60} disabled={busy} placeholder="默认使用插件名称" onChange={event => setTitle(event.target.value)} /></Field> : null}
+      </FieldGroup>
       {source ? <>
-        <Field label="卡片名称"><Input id="cardTitle" value={title} maxLength={60} disabled={busy} placeholder="默认使用插件名称" onChange={event => setTitle(event.target.value)} /></Field>
         <WidgetSurface key={plugin} kind="editor" source={source} card={editor.card?.plugin === plugin ? editor.card : undefined} invoke={invoke} preview={preview}
           onEditor={(value, isReady) => { handle.current = value; setReady(isReady); }} />
         {!ready ? <p role="status">等待插件编辑器就绪…</p> : null}

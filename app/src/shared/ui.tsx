@@ -14,9 +14,6 @@ export function Button({ className = '', variant, size = 'lg', type = 'button', 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <ShadcnInput {...props} />;
 }
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="grid gap-2 text-sm">{label}{children}</label>;
-}
 export type Tab = { id: string; label: string; help?: string };
 export function Tabs({ items, value, onChange, label }: { items: readonly Tab[]; value: string; onChange: (id: string) => void; label: string }) {
   const ref = useRef<HTMLElement>(null);

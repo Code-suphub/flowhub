@@ -111,6 +111,8 @@ test('pointer drag, cancellation, resize minimum and keyboard resize keep frames
 test('editor waits for authenticated readiness and save; double submits and foreign replies are ignored', async t => {
   const s = setup(t); await ready(s); const frame = await edit(s); s.frameMessages(frame);
   const submit = () => s.w.document.querySelector('#widgetForm button[type=submit]');
+  assert.equal(s.w.document.querySelectorAll('#widgetForm [data-slot="field"]').length, 2);
+  assert.equal(s.w.document.getElementById('cardTitle').labels[0].textContent, '卡片名称');
   assert.equal(submit().disabled, true);
   s.message(frame, { type: 'flowhub:widget-ready' }, { source: s.w });
   s.message(frame, { type: 'flowhub:widget-ready', token: 'wrong' }, { data: { type: 'flowhub:widget-ready', token: 'wrong' } });
