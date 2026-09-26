@@ -22,13 +22,14 @@ before(async () => {
           import {createElement as h, useState} from 'react';
           import {createRoot} from 'react-dom/client';
           import {Select, Tooltip, Switch} from './shared/controls.tsx';
-          import {Button} from './shared/ui.tsx';
+          import {Button, Tabs} from './shared/ui.tsx';
           function Harness({kind, initial, onChange, content, ...props}) {
             const [value, setValue] = useState(initial);
             const change = next => {onChange(next);setValue(next);};
             if (kind === 'button') return h(Button, {className: props.className, disabled: props.disabled, type: props.type, variant: props.variant, onClick: () => onChange('clicked')}, 'Action');
             if (kind === 'select') return h(Select, {...props, value, onChange: change});
             if (kind === 'switch') return h(Switch, {...props, checked: value, onChange: change});
+            if (kind === 'tabs') return h(Tabs, {items: [{id:'alpha',label:'Alpha'}, {id:'beta',label:'Beta'}], value, onChange: change, label:'Test tabs'});
             return h(Tooltip, {content}, h('button', {type:'button'}, 'Tooltip trigger'));
           }
           export function mount(root, props) {
@@ -107,6 +108,17 @@ test('Button preserves native click and disabled behavior with shadcn variants',
   assert.equal(danger.trigger.disabled, true);
   danger.trigger.click();
   assert.deepEqual(danger.calls, []);
+});
+
+test('Tabs preserve selection, panel linkage, and arrow-key activation', async t => {
+  const s = await setup(t, 'tabs');
+  const tabs = [...s.document.querySelectorAll('[role="tab"]')];
+  assert.equal(s.document.querySelector('[role="tablist"]').getAttribute('aria-label'), 'Test tabs');
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+  assert.equal(tabs[1].getAttribute('aria-controls'), 'panel-beta');
+  s.key('ArrowRight');
+  await wait(() => tabs[1].getAttribute('aria-selected') === 'true');
+  assert.deepEqual(s.calls, ['beta']);
 });
 
 test('Select renders its controlled value, label, options and disabled items', async t => {

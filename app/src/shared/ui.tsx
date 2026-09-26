@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ComponentProp
 import { Tooltip } from './controls';
 import { Button as ShadcnButton } from '../components/ui/button';
 import { Input as ShadcnInput } from '../components/ui/input';
+import { Tabs as ShadcnTabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { cn } from '../lib/utils';
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
@@ -16,17 +17,11 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
 }
 export type Tab = { id: string; label: string; help?: string };
 export function Tabs({ items, value, onChange, label }: { items: readonly Tab[]; value: string; onChange: (id: string) => void; label: string }) {
-  const ref = useRef<HTMLElement>(null);
-  return <nav ref={ref} className="fh-tabs" role="tablist" aria-label={label}>
-    {items.map((item, index) => <Tooltip key={item.id} content={item.help}><button type="button" role="tab" id={`tab-${item.id}`} aria-controls={`panel-${item.id}`}
-      aria-selected={value === item.id} tabIndex={value === item.id ? 0 : -1}
-      onClick={() => onChange(item.id)} onKeyDown={event => {
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length;
-        onChange(items[next].id); ref.current?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus();
-      }}>{item.label}</button></Tooltip>)}
-  </nav>;
+  return <ShadcnTabs value={value} onValueChange={next => onChange(String(next))} className="min-w-0 flex-1">
+    <TabsList variant="line" activateOnFocus className="fh-tabs w-full justify-start" aria-label={label}>
+      {items.map(item => <Tooltip key={item.id} content={item.help}><TabsTrigger className="flex-none" value={item.id} id={`tab-${item.id}`} aria-controls={`panel-${item.id}`}>{item.label}</TabsTrigger></Tooltip>)}
+    </TabsList>
+  </ShadcnTabs>;
 }
 // Native dialog provides the focus trap/top layer; all host React dialogs share this lifecycle.
 export function Dialog({ title, onClose, busy, children, notice }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string }) {
