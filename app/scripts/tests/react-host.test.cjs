@@ -36,6 +36,7 @@ test('browser preview disables mutation but leaves navigation usable', async t =
   assert.equal(button('安装开发目录').disabled, true);
   button('配置来源').click(); await wait(() => button('添加来源'));
   assert.equal(button('添加来源').disabled, true);
+  assert.equal(w.document.querySelector('[data-slot="empty-title"]')?.textContent, '还没有插件来源');
   assert.match(w.document.body.textContent, /浏览器预览只读/);
 });
 test('scan and install require an explicit confirmation; cancel makes no install call', async t => {

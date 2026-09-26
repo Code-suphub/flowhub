@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { api, available, getInvoke, refreshNavigation, type Candidate, type Installed, type Manifest, type Source } from './api';
 
@@ -9,6 +10,9 @@ const blankSource = (): Source => ({ id: '', name: '', kind: 'local', location: 
 type Confirmation = { title: string; detail: string; warning?: string; action: () => Promise<void> };
 function Row({ title, children, actions }: { title: string; children: ReactNode; actions: ReactNode }) {
   return <article className="fh-row"><div className="fh-row-copy"><h2>{title}</h2><div className="fh-muted">{children}</div></div><div className="fh-actions">{actions}</div></article>;
+}
+function MarketEmpty({ title, description }: { title: string; description: string }) {
+  return <Empty className="py-8"><EmptyHeader><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader></Empty>;
 }
 export function Market() {
   const [tab, setTab] = useState('discover'), [installed, setInstalled] = useState<Installed[]>([]), [sources, setSources] = useState<Source[]>([]);
@@ -52,17 +56,17 @@ export function Market() {
     <section id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab === 'discover' ? <><div className="flex flex-wrap gap-2 mb-2"><div className="w-full sm:w-64"><Input type="search" aria-label="搜索插件" placeholder="搜索插件名称或描述" value={query} onChange={e => setQuery(e.target.value)} /></div><Button disabled={disabled || !sources.length} onClick={() => void run(() => scan(sources), false)}>刷新来源</Button><Button onClick={() => setTab('sources')}>配置来源</Button></div>
         {found.filter(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())).map(item => <Row key={`${item.source}:${item.manifest.id}`} title={`${item.manifest.name} · ${item.manifest.version}`} actions={<Button disabled={disabled} onClick={() => install(item.manifest, () => api('installCandidate', { token: item.token }))}>{installed.some(p => p.manifest.id === item.manifest.id) ? '重新安装' : '安装'}</Button>}><p>{item.manifest.description}</p><p>来源：{sources.find(s => s.id === item.source)?.name}</p></Row>)}
-        {!found.some(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())) ? <p className="fh-muted py-4">{query ? '没有匹配的插件。' : !sources.length ? '还没有插件来源，请先配置来源。' : '点击“刷新来源”查找可安装插件。'}</p> : null}
+        {!found.some(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())) ? <MarketEmpty title={query ? '没有匹配的插件' : !sources.length ? '还没有插件来源' : '尚未发现插件'} description={query ? '试试其他关键词。' : !sources.length ? '请先配置来源。' : '点击“刷新来源”查找可安装插件。'} /> : null}
       </> : null}
       {tab === 'installed' ? <>{installed.map(item => <Row key={item.manifest.id} title={`${item.manifest.name} · ${item.manifest.version}${item.enabled ? '' : ' · 已停用'}`} actions={<>
         <Button disabled={disabled} onClick={() => void run(async () => { await api('reload', { id: item.manifest.id }); setNotice('重新加载完成'); })}>重新加载</Button>
         <Button disabled={disabled} onClick={() => void run(async () => { await api('enable', { id: item.manifest.id, enabled: !item.enabled }); })}>{item.enabled ? '停用' : '启用'}</Button>
         <Button className="danger" disabled={disabled} onClick={() => setConfirmation({ title: '卸载插件', detail: `确认卸载 ${item.manifest.name}？`, action: async () => { await api('uninstall', { id: item.manifest.id }); } })}>卸载</Button>
-      </>}><p>{item.directory}</p><p>最近加载：{item.lastLoadedAt ? new Date(item.lastLoadedAt).toLocaleString() : '暂无记录'}</p></Row>)}{!installed.length ? <p className="fh-muted py-4">尚未安装插件。</p> : null}</> : null}
+      </>}><p>{item.directory}</p><p>最近加载：{item.lastLoadedAt ? new Date(item.lastLoadedAt).toLocaleString() : '暂无记录'}</p></Row>)}{!installed.length ? <MarketEmpty title="尚未安装插件" description="从“发现”页面安装插件。" /> : null}</> : null}
       {tab === 'sources' ? <><div className="flex justify-end"><Button disabled={disabled} onClick={() => setEditing(blankSource())}>添加来源</Button></div>{sources.map(source => <Row key={source.id} title={source.name} actions={<>
         <Button disabled={disabled} onClick={() => void run(() => scan([source]), false)}>扫描</Button><Button disabled={disabled} onClick={() => setEditing({ ...source })}>编辑</Button>
         <Button className="danger" disabled={disabled} onClick={() => setConfirmation({ title: '移除来源', detail: `移除 ${source.name}？不会卸载已安装的插件。`, action: async () => { await api('removeSource', { id: source.id }); setFound(old => old.filter(item => item.source !== source.id)); } })}>移除</Button>
-      </>}><p>{source.kind === 'local' ? '本地目录' : 'HTTPS 仓库'} · {source.location}</p></Row>)}{!sources.length ? <p className="fh-muted py-4">还没有插件来源。</p> : null}</> : null}
+      </>}><p>{source.kind === 'local' ? '本地目录' : 'HTTPS 仓库'} · {source.location}</p></Row>)}{!sources.length ? <MarketEmpty title="还没有插件来源" description="添加来源后即可扫描插件。" /> : null}</> : null}
     </section>
     {editing ? <Dialog notice={notice} title={editing.id ? '编辑来源' : '添加来源'} busy={busy} onClose={() => setEditing(null)}><form className="grid gap-4" onSubmit={event => { event.preventDefault(); void run(async () => { await api('saveSource', { ...editing, name: editing.name.trim(), location: editing.location.trim(), key: editing.kind === 'https' ? editing.key.trim() : '' }); setFound([]); setEditing(null); setNotice('来源已保存，可扫描插件。'); }); }}>
       <FieldGroup className="gap-4">
