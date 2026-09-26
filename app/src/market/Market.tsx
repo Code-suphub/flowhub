@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { api, available, getInvoke, refreshNavigation, type Candidate, type Installed, type Manifest, type Source } from './api';
 
 const tabs = [{ id: 'discover', label: '发现' }, { id: 'installed', label: '已安装' }, { id: 'sources', label: '来源' }];
@@ -66,7 +67,7 @@ export function Market() {
     {editing ? <Dialog notice={notice} title={editing.id ? '编辑来源' : '添加来源'} busy={busy} onClose={() => setEditing(null)}><form className="grid gap-4" onSubmit={event => { event.preventDefault(); void run(async () => { await api('saveSource', { ...editing, name: editing.name.trim(), location: editing.location.trim(), key: editing.kind === 'https' ? editing.key.trim() : '' }); setFound([]); setEditing(null); setNotice('来源已保存，可扫描插件。'); }); }}>
       <FieldGroup className="gap-4">
         <Field data-disabled={busy}><FieldLabel htmlFor="source-name">名称</FieldLabel><Input id="source-name" autoFocus required maxLength={100} disabled={busy} value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></Field>
-        <FieldSet className="border-0 p-0 m-0 gap-0"><FieldLegend variant="label">来源类型</FieldLegend><div className="flex gap-4">{(['local', 'https'] as const).map(kind => <label key={kind}><input type="radio" name="kind" value={kind} disabled={busy} checked={editing.kind === kind} onChange={() => setEditing({ ...editing, kind })} />{kind === 'local' ? '本地目录' : 'HTTPS 仓库'}</label>)}</div></FieldSet>
+        <FieldSet className="border-0 p-0 m-0 gap-0"><FieldLegend variant="label">来源类型</FieldLegend><RadioGroup className="flex gap-4" value={editing.kind} disabled={busy} onValueChange={kind => setEditing({ ...editing, kind: kind as Source['kind'] })}>{(['local', 'https'] as const).map(kind => <div key={kind} className="flex items-center gap-2"><RadioGroupItem id={`source-kind-${kind}`} value={kind} /><FieldLabel htmlFor={`source-kind-${kind}`}>{kind === 'local' ? '本地目录' : 'HTTPS 仓库'}</FieldLabel></div>)}</RadioGroup></FieldSet>
         <Field data-disabled={busy}><FieldLabel htmlFor="source-location">{editing.kind === 'local' ? '目录' : '仓库索引地址'}</FieldLabel><Input id="source-location" required disabled={busy} value={editing.location} onChange={e => setEditing({ ...editing, location: e.target.value })} /></Field>
         {editing.kind === 'local' ? <Button disabled={busy} onClick={() => void run(async () => { const path = await api<string | null>('chooseSource'); if (path) setEditing(old => old ? { ...old, location: path } : null); }, false)}>选择目录</Button> : <Field data-disabled={busy}><FieldLabel htmlFor="source-key">仓库签名公钥</FieldLabel><Input id="source-key" disabled={busy} value={editing.key} onChange={e => setEditing({ ...editing, key: e.target.value })} placeholder="minisign 公钥" /></Field>}
       </FieldGroup>

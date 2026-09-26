@@ -59,8 +59,9 @@ test('source dialog save failure is visible inside the dialog and keeps input', 
   const form = w.document.querySelector('form');
   assert.equal(form.querySelectorAll('[data-slot="field-group"]').length, 1);
   assert.equal(form.querySelectorAll('[data-slot="field"]').length, 2);
+  assert.equal(form.querySelectorAll('[role="radio"]').length, 2);
   assert.equal(form.querySelector('input').labels[0].textContent, '名称');
-  assert.equal([...form.querySelectorAll('input')].at(-1).labels[0].textContent, '目录');
+  assert.equal(form.querySelector('#source-location').labels[0].textContent, '目录');
   w.document.querySelector('form').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
   await wait(() => w.document.querySelector('dialog [role="alert"]'));
   assert.match(w.document.querySelector('dialog [role="alert"]').textContent, /来源无效/);
@@ -71,7 +72,7 @@ test('source form labels the HTTPS location and signing key', async t => {
   await wait(() => button('刷新来源') && !button('刷新来源').disabled);
   button('来源').click(); await wait(() => button('编辑')); button('编辑').click();
   await wait(() => w.document.querySelector('#source-location'));
-  w.document.querySelector('input[value="https"]').click();
+  w.document.querySelector('#source-kind-https').click();
   await wait(() => w.document.querySelector('#source-key'));
   assert.equal(w.document.querySelector('#source-location').labels[0].textContent, '仓库索引地址');
   assert.equal(w.document.querySelector('#source-key').labels[0].textContent, '仓库签名公钥');
