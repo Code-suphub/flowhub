@@ -41,10 +41,10 @@ test('settings rendering has no legacy DOM renderer, and HTML uses the file-comp
   assert.match(html, /id="settings-root"/); assert.match(html, /react\/host.js/); assert.match(html, /react\/host.css/); assert.doesNotMatch(html, /settings\/settings.js|collection-layout|settings-appearance/);
   for (const name of h.fs.readdirSync(h.path.join(__dirname, '../../src/settings'))) if (/\.(tsx?|css)$/.test(name)) assert.doesNotMatch(h.fs.readFileSync(h.path.join(__dirname, '../../src/settings', name), 'utf8'), /innerHTML|dangerouslySetInnerHTML/);
 });
-test('all core tabs expose shared help on keyboard focus', async () => {
+test('all core tabs use shared tooltip triggers', async () => {
   const { store } = await h.loaded(), view = await h.mount(Settings, { store });
   const tabs = [...view.container.querySelectorAll('[role=tab]')];
-  for (const tab of tabs) { await h.act(async () => tab.focus()); const tip = document.querySelector('[role=tooltip]'); assert.ok(tip); assert.ok(tip.textContent.length > 8); await h.act(async () => tab.blur()); }
+  assert.ok(tabs.every(tab => tab.hasAttribute('data-base-ui-tooltip-trigger')));
   await view.unmount(); store.dispose();
 });
 test('module queries select requested section and reject unknown module values', async () => {

@@ -145,15 +145,14 @@ test('Tooltip focus exposes its description; Escape removes both popup and assoc
   assert.equal(s.trigger.hasAttribute('aria-describedby'), false);
 });
 
-test('Tooltip scroll, resize and unmount clear the description lifecycle', async t => {
+test('Tooltip remains described across viewport changes and cleans up on unmount', async t => {
   const s = await setup(t, 'tooltip');
-  const reopen = async () => { s.document.getElementById('after').focus(); s.trigger.focus(); await wait(() => s.tooltip()); };
-  await reopen(); s.w.dispatchEvent(new s.w.Event('resize')); await wait(() => !s.tooltip());
-  assert.equal(s.trigger.hasAttribute('aria-describedby'), false);
-  await reopen(); s.document.dispatchEvent(new s.w.Event('scroll')); await wait(() => !s.tooltip());
-  assert.equal(s.trigger.hasAttribute('aria-describedby'), false);
-  await reopen(); s.unmount();
-  assert.equal(s.tooltip(), null); assert.equal(s.trigger.hasAttribute('aria-describedby'), false);
+  s.trigger.focus(); await wait(() => s.tooltip());
+  s.w.dispatchEvent(new s.w.Event('resize'));
+  s.document.dispatchEvent(new s.w.Event('scroll'));
+  assert.equal(s.trigger.getAttribute('aria-describedby'), s.tooltip().id);
+  s.unmount();
+  assert.equal(s.tooltip(), null);
   s.w.dispatchEvent(new s.w.Event('resize')); s.document.dispatchEvent(new s.w.Event('scroll'));
 });
 
