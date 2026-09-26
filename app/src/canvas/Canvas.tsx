@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Button, Dialog, Input } from '../shared/ui';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
 import { EmptyState, Help, Select, Switch } from '../shared/controls';
 import { nativeHost } from '../shared/native';
@@ -263,7 +264,10 @@ export function Canvas() {
           }}>⌟</Button>
         </article>;
       })}
-      {loaded && !board.cards.length ? <div className="canvas-blank grid gap-3"><EmptyState>从已安装的插件中添加组件。</EmptyState><Button className="primary" onClick={() => add()}>＋ 添加第一个组件</Button></div> : null}
+      {loaded && !board.cards.length ? <Empty className="canvas-blank">
+        <EmptyHeader><EmptyTitle>还没有组件</EmptyTitle><EmptyDescription>从已安装的插件中添加组件。</EmptyDescription></EmptyHeader>
+        <EmptyContent><Button className="primary w-full" onClick={() => add()}>＋ 添加第一个组件</Button></EmptyContent>
+      </Empty> : null}
     </main>
     {menu ? <div ref={menuNode} className="canvas-menu fixed grid" role="menu" style={{ left: menu.x, top: menu.y }} onKeyDown={event => {
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')], index = buttons.indexOf(document.activeElement as HTMLButtonElement);

@@ -63,6 +63,17 @@ test('React owns the entry and retains the original isolated bridge, with no leg
   assert.equal(fs.existsSync(path.join(app, 'ui/plugin/plugin-canvas.js')), false);
 });
 
+test('empty canvas explains how to add a component and opens the editor', async t => {
+  const emptyLayout = layout(); emptyLayout.boards[0].cards = [];
+  const s = setup(t, { layout: emptyLayout });
+  await wait(() => s.button('＋ 添加第一个组件') && !s.w.document.getElementById('add').disabled);
+  assert.ok(s.w.document.querySelector('.canvas-blank[data-slot="empty"]'));
+  assert.equal(s.w.document.querySelector('.canvas-blank [data-slot="empty-title"]').textContent, '还没有组件');
+  assert.match(s.w.document.querySelector('.canvas-blank').textContent, /从已安装的插件中添加组件/);
+  s.button('＋ 添加第一个组件').click();
+  await wait(() => s.w.document.getElementById('widgetForm'));
+});
+
 test('pin, board create/rename/switch/delete and native drag/close persist correctly', async t => {
   const s = setup(t); await ready(s);
   s.w.document.querySelector('[role=switch]').click(); await wait(() => s.calls.some(call => call.action === 'save' && call.payload.pinned));
