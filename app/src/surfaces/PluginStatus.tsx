@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
+import { Checkbox } from '../components/ui/checkbox';
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
 import { invoke, nativeHost } from '../shared/native';
 
 interface Row {id: string; name: string; status: string; at?: number; values?: {cpu?: number; memory?: number; disk?: number}}
@@ -57,8 +59,12 @@ export function PluginStatus() {
     {available ? <details><summary>显示设置</summary><div className="fh-row"><span>显示菜单栏状态</span><Switch label="显示菜单栏状态" checked={draft.tray} disabled={saving} onChange={tray => edit({...draft, tray})}/></div>
       <Button onClick={() => void api('menu').catch(error => setMessage(String(error)))}>打开菜单栏下拉</Button>
       <div className="fh-row"><span>窗口始终置顶</span><Switch label="窗口始终置顶" checked={draft.pinned} disabled={saving} onChange={pinned => edit({...draft, pinned})}/></div>
-      <h2>关注机器 <Help>未勾选时显示全部机器。</Help></h2>
-      <div className="fh-status-favorites">{rows.map(row => <label key={row.id}><input type="checkbox" checked={draft.favorites.includes(row.id)} disabled={saving} onChange={event => edit({...draft, favorites: event.target.checked ? [...draft.favorites, row.id] : draft.favorites.filter(value => value !== row.id)})}/>{row.name}</label>)}</div>
+      <FieldSet><FieldLegend variant="label">关注机器 <Help>未勾选时显示全部机器。</Help></FieldLegend>
+        <FieldGroup className="fh-status-favorites">{rows.map(row => <Field key={row.id} orientation="horizontal" data-disabled={saving}>
+          <Checkbox id={`favorite-${row.id}`} checked={draft.favorites.includes(row.id)} disabled={saving} onCheckedChange={checked => edit({...draft, favorites: checked ? [...draft.favorites, row.id] : draft.favorites.filter(value => value !== row.id)})} />
+          <FieldLabel htmlFor={`favorite-${row.id}`}>{row.name}</FieldLabel>
+        </Field>)}</FieldGroup>
+      </FieldSet>
       <Button disabled={saving} onClick={() => void save()}>{saving ? '保存中…' : '保存设置'}</Button>
     </details> : null}
   </main>;

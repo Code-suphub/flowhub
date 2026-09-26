@@ -19,7 +19,6 @@
 .fh-status-page details { margin-top:16px; }
 .fh-status-page summary { cursor:pointer; }
 .fh-status-favorites { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px; }
-.fh-status-favorites input { accent-color:var(--fh-accent); }
 .fh-detail-page { height:100vh; display:flex; flex-direction:column; }
 .fh-detail-page iframe { border:0; width:100%; flex:1; min-height:0; background:var(--fh-canvas); }
 .fh-detail-page p { margin:12px; color:var(--fh-danger); }
