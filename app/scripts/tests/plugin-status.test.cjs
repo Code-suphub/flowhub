@@ -16,6 +16,8 @@ test('React status saves zero or multiple favorites and does not submit twice',a
     await settle(()=>w.document.querySelectorAll('.fh-status-favorites [role=checkbox]').length===2);
     assert.equal(w.document.querySelector('label[for="favorite-a"]')?.textContent,'A');
     await settle(()=>w.document.body.textContent.includes('后台采集未开启') && w.document.querySelector('[aria-label="窗口始终置顶"]')?.getAttribute('aria-checked')==='true');
+    assert.equal(w.document.querySelectorAll('.fh-status-summary [data-slot=badge]').length,4);
+    assert.equal(w.document.querySelectorAll('.fh-status-row [data-slot=badge]').length,2);
     for(const [index,id] of ['a','b'].entries())if(favorites.includes(id)){
       w.document.querySelectorAll('.fh-status-favorites [role=checkbox]')[index].click();
       await settle(()=>w.document.querySelectorAll('.fh-status-favorites [role=checkbox]')[index].getAttribute('aria-checked')==='true');

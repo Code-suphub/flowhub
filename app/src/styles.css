@@ -16,6 +16,8 @@
   --color-muted: var(--fh-surface-soft);
   --color-muted-foreground: var(--fh-muted);
   --color-destructive: var(--fh-danger);
+  --color-success: var(--fh-positive);
+  --color-warning: var(--fh-warning);
   --color-border: var(--fh-border);
 }
 .fh-root { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--fh-text); }

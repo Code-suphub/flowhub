@@ -8,10 +8,6 @@
 .fh-menubar-panel small { display:block; color:var(--fh-muted); }
 .fh-menubar-panel footer { padding-top:12px; font-size:12px; color:var(--fh-muted); }
 .fh-status-summary { display:flex; flex-wrap:wrap; gap:16px; color:var(--fh-muted); padding:8px 0; }
-.fh-status-healthy { color:var(--fh-positive); }
-.fh-status-error { color:var(--fh-danger); }
-.fh-status-stale { color:var(--fh-warning); }
-.fh-status-unknown { color:var(--fh-muted); }
 .fh-status-row { border-bottom:1px solid var(--fh-border); padding:12px 0; }
 .fh-status-row dl { display:flex; gap:24px; margin:8px 0; }
 .fh-status-row dt,.fh-status-row small { color:var(--fh-muted); font-size:12px; }
