@@ -28,6 +28,18 @@ test('search migration contains no HTML proxy or legacy result markup renderer',
   const files=['ui/search/search.js','ui/search/port-tool.js','ui/search/network-tools.js','ui/search/json-tool.js','ui/search/url-tool.js','ui/search/local-ip-tool.js','src/search/index.tsx','src/search/Results.tsx','src/search/Tools.tsx'];
   for(const file of files)assert.doesNotMatch(fs.readFileSync(path.join(app,file),'utf8'),/innerHTML|dangerouslySetInnerHTML|DOMParser|renderResultBody|panelHtml/);
 });
+test('clipboard copy editor uses shared Textarea and keeps cancel behavior',async t=>{
+  const {w,scope}=await setup(t);
+  await scope('clipboard');
+  await wait(()=>w.document.querySelector('[data-clipboard-action="edit"]'));
+  w.document.querySelector('[data-clipboard-action="edit"]').click();
+  await wait(()=>w.document.querySelector('[data-clipboard-editor]'));
+  const editor=w.document.querySelector('[data-clipboard-editor]');
+  assert.equal(editor.getAttribute('data-slot'),'textarea');
+  assert.match(editor.value,/text line/);
+  w.document.querySelector('[data-clipboard-action="edit-cancel"]').click();
+  await wait(()=>!w.document.querySelector('[data-clipboard-editor]'));
+});
 test('React history and parameter templates expose replay/copy/remove controls and remain absent in read-only preview',async t=>{
   const {w,input}=await setup(t);await input('ping example.com');
   w.document.querySelector('[data-tool-action="run"]').click();await wait(()=>w.document.querySelector('[data-tool-action="history-run"]'));
