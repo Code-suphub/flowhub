@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Switch as ShadcnSwitch } from '../components/ui/switch';
 
 export function Switch({checked, onChange, disabled, label}: {checked: boolean; onChange: (value: boolean) => void; disabled?: boolean; label: string}) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className="fh-switch" onClick={() => onChange(!checked)}><span /></button>;
+  return <ShadcnSwitch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} />;
 }
 
 export function Tooltip({children, content}: {children: ReactNode; content?: ReactNode}) {

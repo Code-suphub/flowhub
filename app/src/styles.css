@@ -2,6 +2,14 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "./";
+@theme inline {
+  --color-background: var(--fh-surface);
+  --color-foreground: var(--fh-text);
+  --color-primary: var(--fh-accent);
+  --color-primary-foreground: var(--fh-on-accent);
+  --color-input: var(--fh-border);
+  --color-ring: var(--fh-accent);
+}
 .fh-root { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--fh-text); }
 .fh-root *, .fh-dialog * { box-sizing:border-box; }
 .fh-button,.fh-input { font:inherit; color:var(--fh-text); border:1px solid var(--fh-border); border-radius:7px; background:var(--fh-surface); padding:7px 11px; min-height:36px; }
@@ -24,12 +32,7 @@
 .fh-market h2 { font-size:14px; margin:0; }
 .fh-market p { margin:4px 0; }
 .fh-muted { color:var(--fh-muted); }
-.fh-switch { flex-shrink:0; width:36px; height:22px; padding:2px; border:1px solid var(--fh-muted); border-radius:20px; background:var(--fh-surface-soft); cursor:pointer; }
-.fh-switch span { display:block; width:16px; height:16px; border-radius:50%; background:var(--fh-muted); transition:transform .15s; }
-.fh-switch[aria-checked=true] { background:var(--fh-accent); border-color:var(--fh-accent); }
-.fh-switch[aria-checked=true] span { transform:translateX(12px); background:var(--fh-on-accent); }
-.fh-switch:disabled { opacity:.5; cursor:default; }
-.fh-switch:focus-visible,.fh-help button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
+.fh-help button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
 .fh-help { position:relative; display:inline-flex; vertical-align:middle; }
 .fh-tooltip-anchor { display:inline-flex; flex-shrink:0; }
 .fh-help button { border:0; background:none; color:var(--fh-muted); width:28px; height:28px; font:600 14px/1 system-ui; cursor:help; }

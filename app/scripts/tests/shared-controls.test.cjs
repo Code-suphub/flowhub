@@ -73,8 +73,9 @@ async function setup(t, kind, overrides = {}) {
   let unmounted = false;
   const unmount = () => { if (!unmounted) { root.unmount(); unmounted = true; } };
   t.after(() => { unmount(); dom.window.close(); assert.deepEqual(errors, [], 'No browser runtime errors'); });
-  await wait(() => document.querySelector('#root button'));
-  const trigger = document.querySelector('#root button');
+  const triggerSelector = kind === 'switch' ? '#root [role="switch"]' : '#root button';
+  await wait(() => document.querySelector(triggerSelector));
+  const trigger = document.querySelector(triggerSelector);
   const key = value => {
     const event = new w.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true });
     trigger.dispatchEvent(event); return event;
@@ -210,7 +211,7 @@ test('Tooltip without content creates no empty popup or dangling description', a
 
 test('Switch emits controlled booleans and exposes checked state and label', async t => {
   const s = await setup(t, 'switch');
-  assert.equal(s.trigger.type, 'button'); assert.equal(s.trigger.getAttribute('role'), 'switch');
+  assert.equal(s.trigger.getAttribute('role'), 'switch');
   assert.equal(s.trigger.getAttribute('aria-label'), 'Test control');
   assert.equal(s.trigger.getAttribute('aria-checked'), 'false');
   s.trigger.click(); await wait(() => s.trigger.getAttribute('aria-checked') === 'true');
@@ -222,6 +223,6 @@ test('disabled Switch preserves checked state and never calls onChange', async t
   const s = await setup(t, 'switch', { initial: true, disabled: true });
   const before = s.document.getElementById('before'); before.focus();
   s.trigger.focus(); s.trigger.click(); s.trigger.click();
-  assert.equal(s.trigger.disabled, true); assert.equal(s.document.activeElement, before);
+  assert.equal(s.trigger.getAttribute('aria-disabled'), 'true'); assert.equal(s.trigger.tabIndex, -1);
   assert.equal(s.trigger.getAttribute('aria-checked'), 'true'); assert.deepEqual(s.calls, []);
 });
