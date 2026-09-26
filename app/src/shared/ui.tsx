@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Tooltip } from './controls';
+import { Input as ShadcnInput } from '../components/ui/input';
 
 export function Button({ className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button type="button" className={`fh-button ${className}`} {...props} />;
 }
-export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`fh-input ${className}`} {...props} />;
+export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <ShadcnInput {...props} />;
 }
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="grid gap-2 text-sm">{label}{children}</label>;
