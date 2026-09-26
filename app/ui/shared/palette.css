@@ -38,6 +38,7 @@
  --line:var(--fh-border); --line-strong:var(--fh-border); --surface:var(--fh-surface-soft);
  --surface-raised:var(--fh-surface-soft); --surface-border:var(--fh-border);
  --accent:var(--fh-accent); --accent-strong:var(--fh-accent); --accent-rgb:145,186,255;
+ --fh-accent-soft:color-mix(in srgb,var(--fh-accent) 12%,var(--fh-surface));
  --blue:var(--fh-accent); --blue-rgb:145,186,255; --success:var(--fh-positive);
  --warning:var(--fh-warning); --danger:var(--fh-danger);
  --btn-primary-bg:var(--fh-accent); --btn-primary-fg:var(--fh-on-accent);
