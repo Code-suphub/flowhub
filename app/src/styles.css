@@ -9,6 +9,12 @@
   --color-primary-foreground: var(--fh-on-accent);
   --color-input: var(--fh-border);
   --color-ring: var(--fh-accent);
+  --color-popover: var(--fh-surface);
+  --color-popover-foreground: var(--fh-text);
+  --color-accent: var(--fh-surface-soft);
+  --color-accent-foreground: var(--fh-text);
+  --color-muted-foreground: var(--fh-muted);
+  --color-border: var(--fh-border);
 }
 .fh-root { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--fh-text); }
 .fh-root *, .fh-dialog * { box-sizing:border-box; }
@@ -37,11 +43,6 @@
 .fh-tooltip-anchor { display:inline-flex; flex-shrink:0; }
 .fh-help button { border:0; background:none; color:var(--fh-muted); width:28px; height:28px; font:600 14px/1 system-ui; cursor:help; }
 .fh-help-content { position:fixed; z-index:100; width:280px; max-width:calc(100vw - 40px); padding:10px 12px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-surface); box-shadow:0 4px 16px rgb(0 0 0 / .12); color:var(--fh-text); font:400 13px/1.6 -apple-system,sans-serif; letter-spacing:normal; text-transform:none; white-space:normal; }
-.fh-select-react { position:relative; min-width:0; }
-.fh-select-react > button { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
-.fh-select-options { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50; padding:4px; max-height:240px; overflow:auto; background:var(--fh-surface); border:1px solid var(--fh-border); border-radius:8px; box-shadow:0 4px 16px rgb(0 0 0 / .12); }
-.fh-select-options button { display:block; width:100%; text-align:left; padding:8px; border:0; border-radius:4px; color:var(--fh-text); background:none; font:inherit; cursor:pointer; }
-.fh-select-options button.active,.fh-select-options button[aria-selected=true] { background:var(--fh-surface-soft); color:var(--fh-accent); }
 .fh-empty { color:var(--fh-muted); padding:12px 0; }
 .fh-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--fh-border); }
 .fh-row-copy { min-width:0; flex:1; }

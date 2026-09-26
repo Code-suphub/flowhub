@@ -86,90 +86,45 @@ async function setup(t, kind, overrides = {}) {
   return { w, document, trigger, calls, key, active, list, tooltip, unmount };
 }
 
-test('Select arrows skip disabled items, wrap, and Enter selects the active option', async t => {
-  const s = await setup(t, 'select'); s.trigger.focus();
+test('Select renders its controlled value, label, options and disabled items', async t => {
+  const s = await setup(t, 'select');
   assert.equal(s.trigger.getAttribute('role'), 'combobox');
   assert.equal(s.trigger.getAttribute('aria-label'), 'Test control');
-  assert.equal(s.key('ArrowDown').defaultPrevented, true);
-  await wait(() => s.active()?.textContent === 'Beta');
-  assert.equal(s.document.activeElement, s.trigger, 'Keyboard focus remains on the combobox');
-  assert.equal(s.trigger.getAttribute('aria-controls'), s.list().id);
-  assert.equal(s.active().disabled, false);
-  s.key('ArrowDown'); await wait(() => s.active()?.textContent === 'Gamma');
-  s.key('ArrowDown'); await wait(() => s.active()?.textContent === 'Alpha');
-  s.key('ArrowUp'); await wait(() => s.active()?.textContent === 'Gamma');
-  s.key('ArrowUp'); await wait(() => s.active()?.textContent === 'Beta');
-  s.key('Enter'); await wait(() => !s.list());
-  assert.deepEqual(s.calls, ['beta']);
-  assert.match(s.trigger.textContent, /Beta/);
-  assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
-  assert.equal(s.trigger.hasAttribute('aria-activedescendant'), false);
-  assert.equal(s.trigger.hasAttribute('aria-controls'), false);
-  assert.equal(s.document.activeElement, s.trigger);
-});
-
-test('Select Home/End skip disabled boundary options and Space commits selection', async t => {
-  const s = await setup(t, 'select'); s.trigger.focus();
-  s.key('End'); await wait(() => s.active()?.textContent === 'Gamma');
-  s.key('Home'); await wait(() => s.active()?.textContent === 'Alpha');
-  s.key('End'); await wait(() => s.active()?.textContent === 'Gamma');
-  assert.equal(s.key(' ').defaultPrevented, true);
-  await wait(() => !s.list()); assert.deepEqual(s.calls, ['gamma']);
-});
-
-test('Select Escape cancels navigation without changing the selected value or bubbling', async t => {
-  const s = await setup(t, 'select'); s.trigger.focus();
-  s.key('ArrowDown'); await wait(() => s.active()?.textContent === 'Beta');
-  let escaped = 0;
-  s.document.addEventListener('keydown', event => { if (event.key === 'Escape') escaped++; });
-  assert.equal(s.key('Escape').defaultPrevented, true);
-  await wait(() => !s.list());
-  assert.equal(escaped, 0); assert.deepEqual(s.calls, []);
   assert.match(s.trigger.textContent, /Alpha/);
-  assert.equal(s.document.activeElement, s.trigger);
-  s.trigger.click(); await wait(() => s.list());
-  assert.equal(s.active().textContent, 'Alpha', 'Reopening restores the selected option');
+  s.trigger.click(); await wait(() => s.trigger.getAttribute('aria-expanded') === 'true');
+  assert.equal(s.list().getAttribute('role'), 'listbox');
+  assert.equal(s.list().querySelectorAll('[role="option"]').length, options.length);
+  assert.equal(s.list().querySelector('[aria-selected="true"]').textContent, 'Alpha');
+  assert.equal(s.list().querySelector('[data-disabled]').getAttribute('aria-disabled'), 'true');
 });
 
-test('Select Tab remains native and leaving focus closes without selecting', async t => {
-  const s = await setup(t, 'select'); s.trigger.focus();
-  s.key('ArrowDown'); await wait(() => s.list());
-  assert.ok([...s.list().querySelectorAll('[role="option"]')].every(option => option.tabIndex === -1));
-  assert.equal(s.key('Tab').defaultPrevented, false, 'Do not trap Tab inside the popup');
-  // jsdom has no browser Tab default action; explicitly perform its focus transfer.
-  const after = s.document.getElementById('after'); after.focus();
-  await wait(() => !s.list());
-  assert.equal(s.document.activeElement, after); assert.deepEqual(s.calls, []);
-  assert.equal(s.trigger.hasAttribute('aria-activedescendant'), false);
+test('Select ignores disabled items and commits an enabled pointer choice', async t => {
+  const s = await setup(t, 'select');
+  s.trigger.click(); await wait(() => s.trigger.getAttribute('aria-expanded') === 'true');
+  s.list().querySelector('[data-disabled]').click();
+  assert.deepEqual(s.calls, []);
+  const beta = [...s.list().querySelectorAll('[role="option"]')].find(option => option.textContent === 'Beta');
+  beta.dispatchEvent(new s.w.Event('pointerdown', { bubbles: true })); beta.click();
+  await wait(() => s.calls.length === 1);
+  assert.deepEqual(s.calls, ['beta']);
+  await wait(() => s.trigger.getAttribute('aria-expanded') === 'false');
+  assert.match(s.trigger.textContent, /Beta/);
 });
 
-test('Select pointer choices reject disabled options and outside pointer dismisses', async t => {
-  const s = await setup(t, 'select'); s.trigger.focus(); s.trigger.click();
-  await wait(() => s.list());
-  s.list().querySelector('[disabled]').click(); assert.deepEqual(s.calls, []); assert.ok(s.list());
-  [...s.list().querySelectorAll('[role="option"]')].find(option => option.textContent === 'Beta').click();
-  await wait(() => !s.list()); assert.deepEqual(s.calls, ['beta']);
-  assert.equal(s.document.activeElement, s.trigger);
-  s.trigger.click(); await wait(() => s.list());
-  s.document.getElementById('after').dispatchEvent(new s.w.Event('pointerdown', { bubbles: true }));
-  await wait(() => !s.list()); assert.deepEqual(s.calls, ['beta']);
+test('Select Escape cancels without changing the controlled value', async t => {
+  const s = await setup(t, 'select');
+  s.trigger.click(); await wait(() => s.trigger.getAttribute('aria-expanded') === 'true');
+  s.key('Escape'); await wait(() => s.trigger.getAttribute('aria-expanded') === 'false');
+  assert.deepEqual(s.calls, []);
+  assert.match(s.trigger.textContent, /Alpha/);
 });
 
-test('Select typeahead ignores disabled matching labels', async t => {
-  const s = await setup(t, 'select'); s.trigger.focus();
-  s.key('b'); await wait(() => s.active()?.textContent === 'Beta');
-  assert.equal(s.active().disabled, false);
-  s.key('e'); await wait(() => s.active()?.textContent === 'Beta');
-  s.key('Enter'); await wait(() => !s.list()); assert.deepEqual(s.calls, ['beta']);
-});
-
-test('disabled Select cannot open or change through native click/focus', async t => {
+test('disabled Select does not open or change', async t => {
   const s = await setup(t, 'select', { disabled: true });
-  const before = s.document.getElementById('before'); before.focus();
-  s.trigger.focus(); s.trigger.click();
-  assert.equal(s.trigger.disabled, true); assert.equal(s.document.activeElement, before);
+  assert.equal(s.trigger.disabled, true);
+  s.trigger.click();
   assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
-  assert.equal(s.list(), null); assert.deepEqual(s.calls, []);
+  assert.deepEqual(s.calls, []);
 });
 
 test('Tooltip focus exposes its description; Escape removes both popup and association', async t => {

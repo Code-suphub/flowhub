@@ -43,6 +43,7 @@
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "clsx": "^2.1.1",
+    "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sql.js": "^1.14.2",
