@@ -13,20 +13,18 @@
   --color-popover-foreground: var(--fh-text);
   --color-accent: var(--fh-surface-soft);
   --color-accent-foreground: var(--fh-text);
+  --color-muted: var(--fh-surface-soft);
   --color-muted-foreground: var(--fh-muted);
+  --color-destructive: var(--fh-danger);
   --color-border: var(--fh-border);
 }
 .fh-root { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--fh-text); }
 .fh-root *, .fh-dialog * { box-sizing:border-box; }
-.fh-button,.fh-input { font:inherit; color:var(--fh-text); border:1px solid var(--fh-border); border-radius:7px; background:var(--fh-surface); padding:7px 11px; min-height:36px; }
+.fh-input { font:inherit; color:var(--fh-text); border:1px solid var(--fh-border); border-radius:7px; background:var(--fh-surface); padding:7px 11px; min-height:36px; }
 .fh-button { cursor:pointer; white-space:nowrap; }
-.fh-button:hover:not(:disabled) { background:var(--fh-surface-soft); }
-.fh-button:disabled { opacity:.5; cursor:default; }
 .fh-input { min-width:0; width:100%; }
 .fh-input:focus { outline:none; border-color:var(--fh-accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--fh-accent) 15%,transparent); }
-.fh-button:focus-visible,.fh-tabs button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
-.fh-button.primary { background:var(--fh-accent); color:var(--fh-on-accent); }
-.fh-button.danger { color:var(--fh-danger); }
+.fh-tabs button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
 .fh-tabs { display:flex; gap:20px; overflow-x:auto; border-bottom:1px solid var(--fh-border); margin-bottom:16px; }
 .fh-tabs button { font:inherit; cursor:pointer; flex-shrink:0; color:var(--fh-muted); background:none; border:0; border-bottom:2px solid transparent; padding:10px 2px; }
 .fh-tabs [aria-selected=true] { color:var(--fh-accent); border-bottom-color:var(--fh-accent); font-weight:600; }

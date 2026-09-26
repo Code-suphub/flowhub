@@ -1,9 +1,15 @@
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Tooltip } from './controls';
+import { Button as ShadcnButton } from '../components/ui/button';
 import { Input as ShadcnInput } from '../components/ui/input';
+import { cn } from '../lib/utils';
 
-export function Button({ className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button type="button" className={`fh-button ${className}`} {...props} />;
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
+export function Button({ className = '', variant, size = 'lg', type = 'button', ...props }: ButtonProps) {
+  const classes = className.split(/\s+/);
+  const legacyVariant = classes.includes('primary') ? 'default' : classes.includes('danger') ? 'destructive' : 'outline';
+  return <ShadcnButton type={type} variant={variant ?? legacyVariant} size={size}
+    className={cn('fh-button', classes.filter(name => name !== 'primary' && name !== 'danger').join(' '))} {...props} />;
 }
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <ShadcnInput {...props} />;

@@ -22,9 +22,11 @@ before(async () => {
           import {createElement as h, useState} from 'react';
           import {createRoot} from 'react-dom/client';
           import {Select, Tooltip, Switch} from './shared/controls.tsx';
+          import {Button} from './shared/ui.tsx';
           function Harness({kind, initial, onChange, content, ...props}) {
             const [value, setValue] = useState(initial);
             const change = next => {onChange(next);setValue(next);};
+            if (kind === 'button') return h(Button, {className: props.className, disabled: props.disabled, type: props.type, variant: props.variant, onClick: () => onChange('clicked')}, 'Action');
             if (kind === 'select') return h(Select, {...props, value, onChange: change});
             if (kind === 'switch') return h(Switch, {...props, checked: value, onChange: change});
             return h(Tooltip, {content}, h('button', {type:'button'}, 'Tooltip trigger'));
@@ -85,6 +87,27 @@ async function setup(t, kind, overrides = {}) {
   const tooltip = () => document.querySelector('[role="tooltip"]');
   return { w, document, trigger, calls, key, active, list, tooltip, unmount };
 }
+
+test('Button preserves native click and disabled behavior with shadcn variants', async t => {
+  const normal = await setup(t, 'button', { className: 'tool-action' });
+  assert.equal(normal.trigger.type, 'button');
+  assert.ok(normal.trigger.classList.contains('fh-button'));
+  assert.ok(normal.trigger.classList.contains('tool-action'));
+  assert.ok(normal.trigger.classList.contains('border-border'));
+  normal.trigger.click();
+  assert.deepEqual(normal.calls, ['clicked']);
+
+  const primary = await setup(t, 'button', { className: 'primary', type: 'submit' });
+  assert.equal(primary.trigger.type, 'submit');
+  assert.ok(primary.trigger.classList.contains('bg-primary'));
+  assert.equal(primary.trigger.classList.contains('primary'), false);
+
+  const danger = await setup(t, 'button', { className: 'danger', disabled: true });
+  assert.ok(danger.trigger.classList.contains('text-destructive'));
+  assert.equal(danger.trigger.disabled, true);
+  danger.trigger.click();
+  assert.deepEqual(danger.calls, []);
+});
 
 test('Select renders its controlled value, label, options and disabled items', async t => {
   const s = await setup(t, 'select');
