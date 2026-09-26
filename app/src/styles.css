@@ -46,5 +46,4 @@
 .fh-row-copy { min-width:0; flex:1; }
 .fh-row-copy p { font-size:12px; overflow-wrap:anywhere; }
 .fh-actions { display:flex; flex-wrap:wrap; gap:6px; }
-.fh-warning { color:var(--fh-warning); background:var(--fh-warning-soft); padding:12px; border-radius:8px; }
 @media(max-width:520px) { .fh-market {padding:12px;} .fh-row {align-items:flex-start; flex-direction:column; gap:8px;} }

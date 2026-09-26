@@ -45,6 +45,7 @@ test('scan and install require an explicit confirmation; cancel makes no install
   button('刷新来源').click(); await wait(() => button('重新安装'));
   button('重新安装').click(); await wait(() => w.document.querySelector('dialog[open]'));
   assert.match(w.document.querySelector('dialog').textContent, /可访问当前用户文件和网络/);
+  assert.equal(w.document.querySelector('dialog [data-slot="alert-title"]')?.textContent, '运行权限提醒');
   button('取消').click(); await wait(() => !w.document.querySelector('dialog'));
   assert.equal(mock.calls.some(c => c.action === 'installCandidate'), false);
   button('重新安装').click(); await wait(() => button('确认'));

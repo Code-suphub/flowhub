@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { api, available, getInvoke, refreshNavigation, type Candidate, type Installed, type Manifest, type Source } from './api';
 
@@ -77,6 +78,6 @@ export function Market() {
       </FieldGroup>
       <div className="flex justify-end gap-2"><Button disabled={busy} onClick={() => setEditing(null)}>取消</Button><Button className="primary" type="submit" disabled={busy}>保存来源</Button></div>
     </form></Dialog> : null}
-    {confirmation ? <Dialog notice={notice} title={confirmation.title} busy={busy} onClose={() => setConfirmation(null)}><p>{confirmation.detail}</p>{confirmation.warning ? <p className="fh-warning">{confirmation.warning}</p> : null}<div className="flex justify-end gap-2 mt-4"><Button disabled={busy} onClick={() => setConfirmation(null)}>取消</Button><Button className="primary" disabled={busy} onClick={() => void run(async () => { await confirmation.action(); setConfirmation(null); })}>确认</Button></div></Dialog> : null}
+    {confirmation ? <Dialog notice={notice} title={confirmation.title} busy={busy} onClose={() => setConfirmation(null)}><p>{confirmation.detail}</p>{confirmation.warning ? <Alert variant="warning"><AlertTitle>运行权限提醒</AlertTitle><AlertDescription>{confirmation.warning}</AlertDescription></Alert> : null}<div className="flex justify-end gap-2 mt-4"><Button disabled={busy} onClick={() => setConfirmation(null)}>取消</Button><Button className="primary" disabled={busy} onClick={() => void run(async () => { await confirmation.action(); setConfirmation(null); })}>确认</Button></div></Dialog> : null}
   </main>;
 }
