@@ -13,11 +13,15 @@ test('React status saves zero or multiple favorites and does not submit twice',a
     const calls=[];let finish;
     const data={preferences:{tray:true,pinned:true,favorites:[]},snapshot:{rows:[{id:'a',name:'A',status:'healthy'},{id:'b',name:'B',status:'unknown'}]}};
     const {dom,w,button}=setup(async(command,args)=>{calls.push(args);if(args.action==='save')return new Promise(resolve=>{finish=()=>resolve({...data,preferences:args.payload});});return data;});t.after(()=>dom.window.close());
-    await settle(()=>w.document.querySelectorAll('input[type=checkbox]').length===2);
-    for(const [index,id] of ['a','b'].entries())if(favorites.includes(id))w.document.querySelectorAll('input[type=checkbox]')[index].click();
+    await settle(()=>w.document.querySelectorAll('.fh-status-favorites input[type=checkbox]').length===2);
+    await settle(()=>w.document.body.textContent.includes('后台采集未开启') && w.document.querySelector('[aria-label="窗口始终置顶"]')?.getAttribute('aria-checked')==='true');
+    for(const [index,id] of ['a','b'].entries())if(favorites.includes(id)){
+      w.document.querySelectorAll('.fh-status-favorites input[type=checkbox]')[index].click();
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
     button('保存设置').click();button('保存设置')?.click();await settle(()=>finish);
     const saved=calls.filter(c=>c.action==='save');assert.equal(saved.length,1);assert.deepEqual(Array.from(saved[0].payload.favorites),favorites);assert.equal(saved[0].payload.pinned,true);
-    finish();await settle(()=>w.document.body.textContent.includes('显示设置已保存'));assert.equal(button('保存设置').disabled,false);
+    finish();await settle(()=>w.document.body.textContent.includes('显示设置已保存') && !button('保存设置').disabled);
   }
 });
 test('status preview is readonly; backend failures remain visible',async t=>{
