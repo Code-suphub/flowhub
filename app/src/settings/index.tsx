@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button, Dialog } from '../shared/ui';
+import { Textarea } from '../components/ui/textarea';
 import { EmptyState, Help } from '../shared/controls';
 import { Core, Clipboard, Tools } from './Core';
 import { WebCatalog, Memos } from './Collections';
@@ -39,7 +40,7 @@ export function Settings({ store }: { store: SettingsStore }) {
       <main className="settings-main min-w-0 p-4 md:p-6">
         {!s.config ? <EmptyState>{s.busy ? '正在读取配置…' : '配置未能加载'}<Button disabled={s.busy} onClick={() => void store.run(() => store.load())}>重试</Button></EmptyState> : <>
           <div className="flex justify-end mb-3 gap-2"><Help label="草稿与保存">修改只进入草稿；保存后生效。源数据库与配置路径分别隔离草稿。撤销支持最近 40 次修改。</Help>{module !== 'extensions' && !module.startsWith('plugin:') ? <Button disabled={s.busy} onClick={() => { try { if (json) store.applyJson(); setJson(!json); } catch (e) { store.notice(String(e), true); } }}>{json ? '返回表单' : '编辑 JSON'}</Button> : null}</div>
-          {module === 'extensions' || module.startsWith('plugin:') ? <PluginFrame module={module} /> : json ? <label className="grid gap-2">完整配置 JSON<textarea aria-label="完整配置 JSON" className="fh-input settings-code" rows={26} spellCheck={false} readOnly={readonly() || s.busy || s.conflict} value={s.jsonText ?? JSON.stringify(s.config, null, 2)} onChange={e => store.setJson(e.target.value)} /></label> : <>
+          {module === 'extensions' || module.startsWith('plugin:') ? <PluginFrame module={module} /> : json ? <label className="grid gap-2">完整配置 JSON<Textarea aria-label="完整配置 JSON" className="fh-input settings-code" rows={26} spellCheck={false} readOnly={readonly() || s.busy || s.conflict} value={s.jsonText ?? JSON.stringify(s.config, null, 2)} onChange={e => store.setJson(e.target.value)} /></label> : <>
             {module === 'core' ? <div><div className="settings-core-navigation" /> <Core store={store} section={section} onSection={setSection} /></div> : <fieldset disabled={s.busy || readonly() || s.conflict} className="settings-fieldset">{module === 'web' ? <WebCatalog store={store} /> : module === 'memo' ? <Memos store={store} /> : module === 'clipboard' ? <Clipboard store={store} /> : module === 'tools' ? <Tools store={store} /> : <><Toggle label="启用应用搜索" checked={s.config.plugins.app.enabled !== false} onChange={v => store.edit(c => { c.plugins.app.enabled = v; })} help="扫描 macOS 应用目录，提供原生图标、搜索和快速启动。" /><Button onClick={() => void store.run(async () => { await write('openAccessibilitySettings'); })}>打开辅助功能设置</Button></>}</fieldset>}
           </>}
         </>}
