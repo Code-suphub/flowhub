@@ -20,7 +20,7 @@ function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
   const handle = useRef<FrameHandle | null>(null), saving = useRef(false), alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const source = sources.find(source => source.id === plugin && source.widget);
-  return <Dialog title={editor.card ? '编辑组件' : '添加组件'} onClose={onClose} busy={busy} notice={error}>
+  return <Dialog title={editor.card ? '编辑组件' : '添加组件'} onClose={onClose} busy={busy} notice={error} className="canvas-editor-dialog">
     <form id="widgetForm" className="grid gap-3" onSubmit={async event => {
       event.preventDefault(); const current = handle.current;
       if (!current || !ready || saving.current) return;
@@ -128,8 +128,12 @@ export function Canvas() {
       } catch (error) { if (!stopped) setNotice(String(error)); }
     }
     void load(true);
-    const interval = window.setInterval(() => { if (!document.hidden) void load(); }, 15000);
-    return () => { stopped = true; alive.current = false; clearInterval(interval); document.body.classList.remove('preview'); };
+    // The desktop canvas may remain on screen while its WebView is considered
+    // hidden. Keep snapshots fresh, and catch up immediately after a suspension.
+    const interval = window.setInterval(() => { void load(); }, 15000);
+    const onVisibilityChange = () => { if (!document.hidden) void load(); };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => { stopped = true; alive.current = false; clearInterval(interval); document.removeEventListener('visibilitychange', onVisibilityChange); document.body.classList.remove('preview'); };
   }, [invoke, preview]);
   useEffect(() => { fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded]);
 

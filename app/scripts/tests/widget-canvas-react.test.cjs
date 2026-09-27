@@ -72,6 +72,10 @@ test('empty canvas explains how to add a component and opens the editor', async 
   assert.match(s.w.document.querySelector('.canvas-blank').textContent, /从已安装的插件中添加组件/);
   s.button('＋ 添加第一个组件').click();
   await wait(() => s.w.document.getElementById('widgetForm'));
+  assert.ok(s.w.document.querySelector('.fh-dialog.canvas-editor-dialog'));
+  const css = fs.readFileSync(path.join(app, 'src/canvas/canvas.css'), 'utf8');
+  assert.match(css, /\.fh-dialog\.canvas-editor-dialog\s*\{[^}]*height:\s*min\(/);
+  assert.match(css, /\.canvas-editor-dialog #widgetForm\s*\{[^}]*overflow-y:\s*auto/);
 });
 
 test('pin, board create/rename/switch/delete and native drag/close persist correctly', async t => {
@@ -105,6 +109,21 @@ test('snapshots refresh in place and stale refreshes preserve newly saved geomet
   await wait(() => s.calls.some(call => call.action === 'save'));
   resolveGet(structuredClone(s.data)); await new Promise(resolve => setTimeout(resolve, 25));
   assert.equal(s.w.document.querySelector('.canvas-card').style.width, '394px'); assert.equal(s.w.document.querySelector('.widget-content'), frame);
+});
+
+test('desktop snapshots keep refreshing while hidden and refresh on return', async t => {
+  const s = setup(t); await ready(s);
+  const frame = s.w.document.querySelector('.widget-content'); s.frameMessages(frame);
+  let hidden = true;
+  Object.defineProperty(s.w.document, 'hidden', { configurable: true, get: () => hidden });
+  s.data.sources[0].snapshot.count = 2;
+  s.intervals.find(timer => timer.ms === 15000).callback();
+  await wait(() => s.responses.some(message => message.context?.snapshot.count === 2));
+  hidden = false;
+  s.data.sources[0].snapshot.count = 3;
+  s.w.document.dispatchEvent(new s.w.Event('visibilitychange'));
+  await wait(() => s.responses.some(message => message.context?.snapshot.count === 3));
+  assert.equal(s.w.document.querySelector('.widget-content'), frame);
 });
 
 test('pointer drag, cancellation, resize minimum and keyboard resize keep frames mounted', async t => {

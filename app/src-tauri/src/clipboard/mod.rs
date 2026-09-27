@@ -1101,36 +1101,51 @@ pub fn delete_clipboard(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<Value, String> {
-    let connection = database(&state)?;
-    let file_name: Option<String> = connection
+    let mut connection = database(&state)?;
+    let (removed, image) = delete_record_transaction(&mut connection, id, |tx, name| {
+        tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM clipboard_records WHERE file_name=?)",
+            [name],
+            |row| row.get(0),
+        )
+    })
+    .map_err(|error| error.to_string())?;
+    if !removed {
+        return Ok(json!({ "ok": false, "reason": "剪贴板记录不存在或已删除" }));
+    }
+    // Filesystem cleanup is best effort and only runs after the database commit.
+    // Keep the storage lease held so a path migration cannot redirect cleanup.
+    if let Some(name) = image {
+        remove_managed_image(&connection.storage_dir, &name);
+    }
+    let _ = app.emit("flowhub:clipboard-updated", ());
+    Ok(json!({ "ok": true }))
+}
+
+fn delete_record_transaction(
+    connection: &mut rusqlite::Connection,
+    id: i64,
+    referenced: impl FnOnce(&rusqlite::Transaction<'_>, &str) -> rusqlite::Result<bool>,
+) -> rusqlite::Result<(bool, Option<String>)> {
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let file_name: Option<String> = tx
         .query_row(
             "SELECT file_name FROM clipboard_records WHERE id = ? AND kind = 'image'",
             [id],
             |row| row.get(0),
         )
-        .optional()
-        .map_err(|error| error.to_string())?
+        .optional()?
         .flatten();
-    let removed = connection
-        .execute("DELETE FROM clipboard_records WHERE id = ?", [id])
-        .map_err(|error| error.to_string())?;
+    let removed = tx.execute("DELETE FROM clipboard_records WHERE id = ?", [id])?;
     if removed == 0 {
-        return Ok(json!({ "ok": false, "reason": "剪贴板记录不存在或已删除" }));
+        return Ok((false, None));
     }
-    if let Some(file_name) = file_name {
-        let referenced: bool = connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM clipboard_records WHERE file_name=?)",
-                [&file_name],
-                |r| r.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        if !referenced {
-            remove_managed_image(&connection.storage_dir, &file_name);
-        }
-    }
-    let _ = app.emit("flowhub:clipboard-updated", ());
-    Ok(json!({ "ok": true }))
+    let image = match file_name {
+        Some(name) if !referenced(&tx, &name)? => Some(name),
+        _ => None,
+    };
+    tx.commit()?;
+    Ok((true, image))
 }
 
 // 置顶只改 pinned_at：清理时按 pinned_at IS NULL 过滤，收藏内容不会被过期、
@@ -1810,6 +1825,45 @@ mod cleanup_tests {
 mod record_tests {
     use super::*;
     use crate::storage::tests::Fixture;
+
+    #[test]
+    fn deletion_reference_query_failure_rolls_back_record() {
+        let mut db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE clipboard_records(id INTEGER PRIMARY KEY,kind TEXT,file_name TEXT);
+            INSERT INTO clipboard_records VALUES(1,'image','shared.png');").unwrap();
+        let result = delete_record_transaction(&mut db, 1, |tx, _| {
+            tx.query_row("SELECT missing_column FROM clipboard_records", [], |row| row.get(0))
+        });
+        assert!(result.is_err());
+        assert_eq!(db.query_row("SELECT count(*) FROM clipboard_records WHERE id=1", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert!(db.is_autocommit());
+    }
+
+    #[test]
+    fn deletion_preserves_shared_images_and_returns_only_committed_orphans() {
+        let mut db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE clipboard_records(id INTEGER PRIMARY KEY,kind TEXT,file_name TEXT);
+            INSERT INTO clipboard_records VALUES(1,'image','shared.png'),(2,'image','shared.png'),(3,'text',NULL);").unwrap();
+        let check = |tx: &rusqlite::Transaction<'_>, name: &str| tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM clipboard_records WHERE file_name=?)", [name], |row| row.get(0));
+        assert_eq!(delete_record_transaction(&mut db, 1, check).unwrap(), (true, None));
+        assert_eq!(delete_record_transaction(&mut db, 2, check).unwrap(), (true, Some("shared.png".into())));
+        assert_eq!(delete_record_transaction(&mut db, 3, |_, _| panic!("text needs no image lookup")).unwrap(), (true, None));
+        assert_eq!(delete_record_transaction(&mut db, 2, |_, _| panic!("missing row needs no lookup")).unwrap(), (false, None));
+    }
+
+    #[test]
+    fn deletion_commit_failure_rolls_back_without_returning_image_for_cleanup() {
+        let mut db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("PRAGMA foreign_keys=ON;
+            CREATE TABLE clipboard_records(id INTEGER PRIMARY KEY,kind TEXT,file_name TEXT);
+            CREATE TABLE refs(record_id INTEGER REFERENCES clipboard_records(id) DEFERRABLE INITIALLY DEFERRED);
+            INSERT INTO clipboard_records VALUES(1,'image','kept.png');
+            INSERT INTO refs VALUES(1);").unwrap();
+        assert!(delete_record_transaction(&mut db, 1, |_, _| Ok(false)).is_err());
+        assert_eq!(db.query_row("SELECT count(*) FROM clipboard_records WHERE id=1", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert!(db.is_autocommit());
+    }
 
     fn now() -> chrono::DateTime<Utc> {
         "2026-09-09T00:00:00Z".parse().unwrap()

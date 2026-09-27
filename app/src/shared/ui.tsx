@@ -24,14 +24,14 @@ export function Tabs({ items, value, onChange, label }: { items: readonly Tab[];
     </TabsList>
   </ShadcnTabs>;
 }
-export function Dialog({ title, onClose, busy, children, notice }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string }) {
+export function Dialog({ title, onClose, busy, children, notice, className }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string }) {
   const previousFocus = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   useEffect(() => () => {
     const previous = previousFocus.current;
     if (previous?.isConnected) requestAnimationFrame(() => { if (previous.isConnected) previous.focus(); });
   }, []);
   return <ShadcnDialog open onOpenChange={open => { if (!open && !busy) onClose(); }} disablePointerDismissal>
-    <DialogContent className="fh-dialog gap-0" showCloseButton={false} aria-busy={busy}>
+    <DialogContent className={cn('fh-dialog gap-0', className)} showCloseButton={false} aria-busy={busy}>
       <DialogHeader className="mb-4 flex-row items-center justify-between gap-4">
         <DialogTitle>{title}</DialogTitle>
         <DialogClose render={<Button disabled={busy} aria-label="关闭" />}>×</DialogClose>

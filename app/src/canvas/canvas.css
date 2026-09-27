@@ -25,6 +25,8 @@ body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface
 .canvas-card.swap-target::after { content: "松开交换位置"; position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--fh-surface) 70%, transparent); color: var(--fh-text); pointer-events: none; z-index: 5; }
 .canvas-blank { padding: 24px; text-align: center; border: 1px dashed var(--fh-border); border-radius: 16px; background: var(--fh-surface); }
 body:has(.fh-canvas-app) .fh-dialog { width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; background: var(--fh-surface); color: var(--fh-text); border: 1px solid var(--fh-border); border-radius: 16px; padding: 18px; }
+body:has(.fh-canvas-app) .fh-dialog.canvas-editor-dialog { height: min(600px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+body:has(.fh-canvas-app) .canvas-editor-dialog #widgetForm { min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 body:has(.fh-canvas-app) [data-slot="dialog-overlay"] { background: transparent; backdrop-filter: none; }
 body:has(.fh-canvas-app) .fh-dialog h2 { font-size: 17px; margin: 0; }
 .canvas-editor { display: block; width: 100%; height: 230px; border: 0; }

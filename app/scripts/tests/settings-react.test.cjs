@@ -1,6 +1,25 @@
 const { test } = require('node:test'), assert = require('node:assert/strict');
 const h = require('./settings-harness.test.cjs');
 const { Settings } = require('../../src/settings/index.tsx');
+test('compact settings groups sources and data; unsupported updates have no progress bar', async () => {
+  const { store } = await h.loaded({ getUpdateState: async () => ({ status:'unsupported', currentVersion:'0.1.0', percent:0 }) }, true);
+  const view = await h.mount(Settings, { store });
+  const select = async id => h.click(view.container.querySelector(`#tab-${id}`));
+  await select('search');
+  const sources = [...view.container.querySelectorAll('.settings-source-row')];
+  assert.equal(sources.length, store.snapshot().plugins.length);
+  for (const source of sources) assert.equal(source.querySelectorAll('[role=switch]').length,1);
+  await select('data');
+  assert.equal(view.container.querySelectorAll('.settings-data-panel > .settings-group').length,4);
+  const path = view.container.querySelector('[aria-label="路径"]');
+  assert.ok(path); assert.equal(path.closest('.settings-row').querySelectorAll('.settings-row').length,0);
+  await select('updates');
+  assert.match(view.container.querySelector('[role=tabpanel]').textContent,/当前环境不支持更新/);
+  assert.equal(view.container.querySelector('progress'),null);
+  await h.act(async () => store.patch({update:{status:'downloading',percent:42}}));
+  assert.equal(view.container.querySelector('progress').value,42);
+  await view.unmount(); store.dispose();
+});
 test('all settings sections mount, tabs switch with Arrow keys/Home/End in read-only preview', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
   const tabs = [...view.container.querySelectorAll('[role=tab]')]; assert.equal(tabs.length, 7);
@@ -10,6 +29,21 @@ test('all settings sections mount, tabs switch with Arrow keys/Home/End in read-
   await h.key(tabs[0], 'ArrowLeft'); assert.equal(tabs[6].getAttribute('aria-selected'), 'true');
   for (const tab of tabs) { await h.click(tab); assert.ok(view.container.querySelector(`#panel-${tab.id.slice(4)}`)); }
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
+  await view.unmount(); store.dispose();
+});
+test('read-only network adapter can inspect options without changing its value', async () => {
+  const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
+  await h.click(view.container.querySelector('#tab-network'));
+  const before = store.snapshot().config.plugins.tools.settings.proxyAdapter;
+  const select = view.container.querySelector('[aria-label="代理检测适配器"]');
+  assert.equal(select.disabled, false);
+  await h.click(select);
+  const options = [...document.querySelectorAll('[role=option]')];
+  assert.equal(options.length, 4);
+  const mihomo = options.find(option => option.textContent === 'Mihomo');
+  await h.act(async () => { mihomo.dispatchEvent(new window.Event('pointerdown', { bubbles: true })); mihomo.click(); });
+  assert.equal(store.snapshot().config.plugins.tools.settings.proxyAdapter, before);
+  assert.equal(writes.length, 0);
   await view.unmount(); store.dispose();
 });
 test('native entrypoints queue addUrl until loading, deduplicate URLs, reject protocols and clean subscriptions', async () => {
