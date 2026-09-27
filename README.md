@@ -5,7 +5,7 @@ FlowHub 是 macOS 本地启动器：全局快捷键呼出浮窗，搜索并打�
 ## 目录结构
 
 ```text
-web_organization/
+flowhub/
   app/              Tauri 桌面应用（宿主）：ui/、src-tauri/、scripts/
   extension/        Chrome 扩展：side panel、popup、new tab、页面内浮窗
   legacy/           旧 Web 管理台：index.html + 本机 server.mjs（只支持 schema 1 目录）
