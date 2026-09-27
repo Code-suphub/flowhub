@@ -18,6 +18,9 @@ html:has(#search-root),body:has(#search-root),#search-root { height:100%; margin
 .search-icon img {width:32px;height:32px;object-fit:contain;border-radius:6px;}
 .search-shell .search-meta {font-size:11px;line-height:1.5;color:var(--fh-muted);overflow-wrap:anywhere;margin-top:3px;}
 .search-actions {display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.search-context-menu {position:fixed;z-index:60;display:grid;gap:2px;min-width:190px;padding:5px;border:1px solid var(--fh-border);border-radius:9px;background:var(--fh-surface);box-shadow:0 14px 32px #0003;}
+.search-shell .search-context-menu .fh-button {width:100%;justify-content:flex-start;text-align:left;border:0;background:transparent;font-size:12px;}
+.search-shell .search-context-menu .fh-button:hover,.search-shell .search-context-menu .fh-button:focus-visible {background:var(--fh-surface-soft);color:var(--fh-accent);}
 .search-shell .tool-action {font-size:10px;}
 .clipboard-title {font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:7em;overflow:hidden;}
 .clipboard-title.is-expanded {max-height:240px;overflow:auto;}

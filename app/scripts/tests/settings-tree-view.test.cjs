@@ -39,8 +39,13 @@ test('browser preview reorders only its in-memory tree and keeps editing unavail
  target.getBoundingClientRect=()=>({top:0,height:100});
  await h.act(async()=>{
   const start=new window.Event('dragstart',{bubbles:true,cancelable:true});Object.defineProperty(start,'dataTransfer',{value:{setData(){}}});source.dispatchEvent(start);
+  const over=new window.Event('dragover',{bubbles:true,cancelable:true});Object.defineProperty(over,'clientY',{value:10});target.dispatchEvent(over);
+ });
+ assert.equal(target.dataset.dropPosition,'before');
+ await h.act(async()=>{
   const drop=new window.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'clientY',{value:10});target.dispatchEvent(drop);
  });
+ assert.equal(view.container.querySelector('[data-drop-position]'),null);
  assert.deepEqual(roots(),['b','a','c','d','p']);
  assert.deepEqual(store.snapshot().config.plugins.web.settings.items.map(node=>node.id),['a','b','c','d','p']);
  assert.equal(store.dirty,false);assert.equal(writes.length,0);

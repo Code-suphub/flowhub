@@ -1690,6 +1690,7 @@ bind(resultsEl, "click", (e) => {
     if (clipAction.dataset.clipboardAction === "pin") void toggleClipboardPin(item);
     if (clipAction.dataset.clipboardAction === "plain") void pasteClipboardPlain(item);
     if (clipAction.dataset.clipboardAction === "edit") startClipboardEdit(item);
+    if (clipAction.dataset.clipboardAction === "delete") requestClipboardDelete(item);
     if (clipAction.dataset.clipboardAction === "edit-save") void saveClipboardEdit();
     if (clipAction.dataset.clipboardAction === "edit-cancel") cancelClipboardEdit();
     return;

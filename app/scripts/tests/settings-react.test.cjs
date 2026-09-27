@@ -31,6 +31,15 @@ test('all settings sections mount, tabs switch with Arrow keys/Home/End in read-
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
   await view.unmount(); store.dispose();
 });
+test('tools use a compact grid and memos keep navigation separate from details', async () => {
+  const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
+  await h.click(h.button(view.container,'工具'));
+  assert.equal(view.container.querySelectorAll('.settings-tools-grid .settings-row').length,Object.keys(h.model.tools).length);
+  await h.click(h.button(view.container,'备忘录'));
+  assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-nav .settings-memo-tree'));
+  assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-detail'));
+  await view.unmount();store.dispose();
+});
 test('read-only network adapter can inspect options without changing its value', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
   await h.click(view.container.querySelector('#tab-network'));

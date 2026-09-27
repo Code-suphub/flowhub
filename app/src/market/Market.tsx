@@ -12,8 +12,8 @@ type Confirmation = { title: string; detail: string; warning?: string; action: (
 function Row({ title, children, actions }: { title: string; children: ReactNode; actions: ReactNode }) {
   return <article className="fh-row"><div className="fh-row-copy"><h2>{title}</h2><div className="fh-muted">{children}</div></div><div className="fh-actions">{actions}</div></article>;
 }
-function MarketEmpty({ title, description }: { title: string; description: string }) {
-  return <Empty className="py-8"><EmptyHeader><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader></Empty>;
+function MarketEmpty({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
+  return <Empty className="mx-auto my-6 max-w-lg rounded-xl border border-[var(--fh-border)] bg-[var(--fh-surface)] px-5 py-8 text-center"><EmptyHeader><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{action}</Empty>;
 }
 export function Market() {
   const [tab, setTab] = useState('discover'), [installed, setInstalled] = useState<Installed[]>([]), [sources, setSources] = useState<Source[]>([]);
@@ -48,26 +48,26 @@ export function Market() {
     setNotice(messages.join('\n')); setTab('discover');
   }
   return <main className="fh-root fh-market" aria-busy={busy}>
-    <header className="flex flex-wrap items-center justify-between gap-3 mb-3"><h1>插件市场</h1><div className="fh-actions">
+    <header className="flex flex-wrap items-center justify-between gap-3 mb-3"><h1>插件市场</h1>{available ? <div className="fh-actions">
       <Button disabled={disabled} onClick={() => void run(async () => { await getInvoke()!('plugin_canvas_api', { action: 'open', payload: {} }); }, false)}>桌面组件</Button>
       <Button disabled={disabled} onClick={() => void run(async () => { const selected = await api<{ manifest: Manifest; directory: string } | null>('choose'); if (selected) install(selected.manifest, () => api('install', { directory: selected.directory })); }, false)}>安装开发目录</Button>
-    </div></header>
+    </div> : null}</header>
     <Tabs items={tabs} value={tab} onChange={setTab} label="插件市场" />
     {notice ? <p role="status" className="fh-muted whitespace-pre-wrap text-sm mb-3">{notice}</p> : null}
     <section id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-      {tab === 'discover' ? <><div className="flex flex-wrap gap-2 mb-2"><div className="w-full sm:w-64"><Input type="search" aria-label="搜索插件" placeholder="搜索插件名称或描述" value={query} onChange={e => setQuery(e.target.value)} /></div><Button disabled={disabled || !sources.length} onClick={() => void run(() => scan(sources), false)}>刷新来源</Button><Button onClick={() => setTab('sources')}>配置来源</Button></div>
+      {tab === 'discover' ? <>{sources.length ? <div className="flex flex-wrap gap-2 mb-2"><div className="w-full sm:w-64"><Input type="search" aria-label="搜索插件" placeholder="搜索插件名称或描述" value={query} onChange={e => setQuery(e.target.value)} /></div><Button disabled={disabled} onClick={() => void run(() => scan(sources), false)}>刷新来源</Button><Button onClick={() => setTab('sources')}>管理来源</Button></div> : null}
         {found.filter(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())).map(item => <Row key={`${item.source}:${item.manifest.id}`} title={`${item.manifest.name} · ${item.manifest.version}`} actions={<Button disabled={disabled} onClick={() => install(item.manifest, () => api('installCandidate', { token: item.token }))}>{installed.some(p => p.manifest.id === item.manifest.id) ? '重新安装' : '安装'}</Button>}><p>{item.manifest.description}</p><p>来源：{sources.find(s => s.id === item.source)?.name}</p></Row>)}
-        {!found.some(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())) ? <MarketEmpty title={query ? '没有匹配的插件' : !sources.length ? '还没有插件来源' : '尚未发现插件'} description={query ? '试试其他关键词。' : !sources.length ? '请先配置来源。' : '点击“刷新来源”查找可安装插件。'} /> : null}
+        {!found.some(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())) ? <MarketEmpty title={query ? '没有匹配的插件' : !sources.length ? '还没有插件来源' : '尚未发现插件'} description={query ? '试试其他关键词。' : !sources.length ? available ? '添加本地目录或 HTTPS 仓库，然后扫描插件。' : '浏览器预览只读；请在桌面 App 中添加来源。' : '点击“刷新来源”查找可安装插件。'} action={!sources.length?<Button className="primary" onClick={() => setTab('sources')}>查看来源设置</Button>:null} /> : null}
       </> : null}
       {tab === 'installed' ? <>{installed.map(item => <Row key={item.manifest.id} title={`${item.manifest.name} · ${item.manifest.version}${item.enabled ? '' : ' · 已停用'}`} actions={<>
         <Button disabled={disabled} onClick={() => void run(async () => { await api('reload', { id: item.manifest.id }); setNotice('重新加载完成'); })}>重新加载</Button>
         <Button disabled={disabled} onClick={() => void run(async () => { await api('enable', { id: item.manifest.id, enabled: !item.enabled }); })}>{item.enabled ? '停用' : '启用'}</Button>
         <Button className="danger" disabled={disabled} onClick={() => setConfirmation({ title: '卸载插件', detail: `确认卸载 ${item.manifest.name}？`, action: async () => { await api('uninstall', { id: item.manifest.id }); } })}>卸载</Button>
       </>}><p>{item.directory}</p><p>最近加载：{item.lastLoadedAt ? new Date(item.lastLoadedAt).toLocaleString() : '暂无记录'}</p></Row>)}{!installed.length ? <MarketEmpty title="尚未安装插件" description="从“发现”页面安装插件。" /> : null}</> : null}
-      {tab === 'sources' ? <><div className="flex justify-end"><Button disabled={disabled} onClick={() => setEditing(blankSource())}>添加来源</Button></div>{sources.map(source => <Row key={source.id} title={source.name} actions={<>
+      {tab === 'sources' ? <><div className="flex justify-end">{available ? <Button className="primary" disabled={disabled} onClick={() => setEditing(blankSource())}>添加来源</Button> : null}</div>{sources.map(source => <Row key={source.id} title={source.name} actions={<>
         <Button disabled={disabled} onClick={() => void run(() => scan([source]), false)}>扫描</Button><Button disabled={disabled} onClick={() => setEditing({ ...source })}>编辑</Button>
         <Button className="danger" disabled={disabled} onClick={() => setConfirmation({ title: '移除来源', detail: `移除 ${source.name}？不会卸载已安装的插件。`, action: async () => { await api('removeSource', { id: source.id }); setFound(old => old.filter(item => item.source !== source.id)); } })}>移除</Button>
-      </>}><p>{source.kind === 'local' ? '本地目录' : 'HTTPS 仓库'} · {source.location}</p></Row>)}{!sources.length ? <MarketEmpty title="还没有插件来源" description="添加来源后即可扫描插件。" /> : null}</> : null}
+      </>}><p>{source.kind === 'local' ? '本地目录' : 'HTTPS 仓库'} · {source.location}</p></Row>)}{!sources.length ? <MarketEmpty title="还没有插件来源" description={available ? '添加本地目录或 HTTPS 仓库后，即可在发现页扫描插件。' : '浏览器预览只读；请在桌面 App 中添加来源。'} action={available?<Button className="primary" onClick={() => setEditing(blankSource())}>添加来源</Button>:null} /> : null}</> : null}
     </section>
     {editing ? <Dialog notice={notice} title={editing.id ? '编辑来源' : '添加来源'} busy={busy} onClose={() => setEditing(null)}><form className="grid gap-4" onSubmit={event => { event.preventDefault(); void run(async () => { await api('saveSource', { ...editing, name: editing.name.trim(), location: editing.location.trim(), key: editing.kind === 'https' ? editing.key.trim() : '' }); setFound([]); setEditing(null); setNotice('来源已保存，可扫描插件。'); }); }}>
       <FieldGroup className="gap-4">

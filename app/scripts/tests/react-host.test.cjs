@@ -32,10 +32,10 @@ function backend(extra = {}) {
 }
 test('browser preview disables mutation but leaves navigation usable', async t => {
   const { dom, w, button } = setup(); t.after(() => dom.window.close());
-  await wait(() => button('配置来源'));
-  assert.equal(button('安装开发目录').disabled, true);
-  button('配置来源').click(); await wait(() => button('添加来源'));
-  assert.equal(button('添加来源').disabled, true);
+  await wait(() => button('查看来源设置'));
+  assert.equal(button('安装开发目录'), undefined);
+  button('查看来源设置').click(); await wait(() => button('来源')?.getAttribute('aria-selected') === 'true');
+  assert.equal(button('添加来源'), undefined);
   assert.equal(w.document.querySelector('[data-slot="empty-title"]')?.textContent, '还没有插件来源');
   assert.match(w.document.body.textContent, /浏览器预览只读/);
 });

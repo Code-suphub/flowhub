@@ -31,6 +31,7 @@ test('search migration contains no HTML proxy or legacy result markup renderer',
 test('clipboard copy editor uses shared Textarea and keeps cancel behavior',async t=>{
   const {w,scope}=await setup(t);
   await scope('clipboard');
+  w.document.querySelector('.clipboard-result').dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
   await wait(()=>w.document.querySelector('[data-clipboard-action="edit"]'));
   w.document.querySelector('[data-clipboard-action="edit"]').click();
   await wait(()=>w.document.querySelector('[data-clipboard-editor]'));

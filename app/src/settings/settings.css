@@ -12,6 +12,10 @@
 .settings-core-toolbar .fh-tabs { flex:1; min-width:0; border:0; margin:0; }
 .settings-core-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; padding-bottom:7px; }
 .settings-fieldset { border:0; margin:0; padding:0; min-width:0; }
+.settings-tools-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 20px; }
+.settings-tools-grid .settings-row { grid-template-columns:minmax(0,1fr) auto; }
+.settings-tools-grid .settings-row > :last-child { width:auto; }
+@media(max-width:900px) { .settings-tools-grid { grid-template-columns:minmax(0,1fr); } }
 .settings-row { padding:10px 0; border-bottom:1px solid var(--fh-border); grid-template-columns:minmax(140px,1fr) minmax(0,1fr); }
 .settings-row > :last-child { justify-self:end; width:100%; text-align:right; }
 .settings-row > :last-child > .fh-input,.settings-row > :last-child > .fh-select-react { text-align:left; }
@@ -42,6 +46,21 @@
 .settings-order { border:1px solid var(--fh-border); border-radius:6px; padding:8px; cursor:grab; }
 .settings-memo-row { display:block; width:100%; text-align:left; margin:4px 0; overflow:hidden; text-overflow:ellipsis; }
 .settings-memo-branch { padding-inline-start:10px; margin-top:6px; }
+.settings-memo-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.settings-memo-toolbar > div:first-child { display:grid; gap:2px; }
+.settings-memo-toolbar span { color:var(--fh-muted); font-size:12px; }
+.settings-memo-workspace { display:grid; grid-template-columns:minmax(230px,32%) minmax(0,1fr); min-height:480px; border:1px solid var(--fh-border); border-radius:10px; overflow:hidden; background:var(--fh-surface); }
+.settings-memo-nav { min-width:0; padding:12px; border-right:1px solid var(--fh-border); background:var(--fh-canvas); }
+.settings-memo-search { display:flex; gap:4px; align-items:center; }
+.settings-memo-search .fh-input { min-width:0; flex:1; }
+.settings-memo-search .fh-button { padding-inline:6px; }
+.settings-memo-tree { max-height:65vh; overflow:auto; margin-top:10px; }
+.settings-memo-detail { padding:18px; }
+.settings-memo-tree .settings-memo-branch { margin-top:2px; }
+.settings-memo-tree .fh-button { min-height:30px; border-color:transparent; background:transparent; }
+.settings-memo-tree .settings-memo-row { margin:1px 0; }
+.settings-memo-tree .settings-memo-row[aria-pressed=true] { background:var(--fh-accent-soft,var(--fh-surface-soft)); }
+@media(max-width:700px) { .settings-memo-workspace { grid-template-columns:minmax(0,1fr); } .settings-memo-nav { border-right:0; border-bottom:1px solid var(--fh-border); } .settings-memo-tree { max-height:240px; } }
 .settings-plugin-frame { width:100%; min-height:70vh; border:0; background:var(--fh-surface); }
 .settings-error { color:var(--fh-danger); }
 .settings-divider { display:none; background:var(--fh-border); cursor:col-resize; touch-action:none; }
@@ -61,11 +80,16 @@
 .settings-catalog .settings-tree-row { min-height:34px; gap:6px; margin:1px 0; padding-block:3px; padding-inline-end:6px; border-radius:6px; color:var(--fh-text); line-height:1.35; cursor:pointer; }
 .settings-catalog .settings-tree-row:hover { background:var(--fh-surface-soft); }
 .settings-catalog .settings-tree-row[aria-selected=true] { background:var(--fh-accent-soft,var(--fh-surface-soft)); color:var(--fh-accent); }
+.settings-catalog .settings-tree-row[data-drop-position="inside"] { background:var(--fh-accent-soft,var(--fh-surface-soft)); outline:2px solid var(--fh-accent); outline-offset:-2px; }
+.settings-catalog .settings-tree-row[data-drop-position="before"] { box-shadow:inset 0 3px var(--fh-accent); }
+.settings-catalog .settings-tree-row[data-drop-position="after"] { box-shadow:inset 0 -3px var(--fh-accent); }
 .settings-catalog .settings-tree-root { margin-top:5px; font-weight:650; }
 .settings-catalog .settings-tree-root:first-child { margin-top:0; }
 .settings-tree-title { flex:1; min-width:0; }
 .settings-catalog .settings-tree-toggle,.settings-tree-leaf { display:grid; place-items:center; flex:none; width:20px; height:22px; color:var(--fh-muted); font-size:16px; }
 .settings-catalog .settings-tree-toggle.fh-button { min-height:22px; padding:0; border:0; background:transparent; box-shadow:none; }
+.settings-catalog .settings-tree-toggle svg { transition:transform .15s ease; }
+.settings-catalog .settings-tree-toggle[aria-label^="收起"] svg { transform:rotate(90deg); }
 .settings-catalog .settings-tree-toggle:hover { color:var(--fh-accent); }
 .settings-tree-leaf { font-size:14px; }
 .settings-catalog .settings-drag-handle.fh-button { flex:none; min-height:22px; width:22px; padding:0; border:0; background:transparent; color:var(--fh-muted); opacity:.65; }

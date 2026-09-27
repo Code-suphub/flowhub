@@ -8,7 +8,7 @@ test('clipboard deletion uses shared dialog; cancel/Escape send no delete, confi
   assert.equal(calls.filter(c=>c[0]==='action').length,0);
   const find=text=>[...w.document.querySelectorAll('[role="dialog"] button')].find(b=>b.textContent===text);
   find('取消').click();await wait(()=>!w.document.querySelector('[role="dialog"]'));await wait(()=>w.document.activeElement?.id==='q');
-  w.document.querySelector('.clipboard-result').dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>find('确认删除'));
+  w.document.querySelector('.clipboard-result').dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[data-clipboard-action="delete"]'));w.document.querySelector('[data-clipboard-action="delete"]').click();await wait(()=>find('确认删除'));
   w.document.querySelector('[role="dialog"]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait(()=>!w.document.querySelector('[role="dialog"]'));assert.equal(calls.filter(c=>c[0]==='action').length,0);
   let complete;w.weborg.pluginAction=async(...args)=>{calls.push(['action',...args]);return new Promise(resolve=>{complete=resolve;});};
   key('Delete',{altKey:true});await wait(()=>find('确认删除'));const confirm=find('确认删除');confirm.click();confirm.click();await wait(()=>complete);
