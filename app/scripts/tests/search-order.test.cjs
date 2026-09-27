@@ -51,7 +51,7 @@ assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:'
 const settings = fs.readFileSync(require('node:path').join(__dirname, '../../src/settings/Core.tsx'), 'utf8');
 const settingsContext = vm.createContext({});
 // Keep the cross-entry ordering contract against the migrated settings logic.
-const ordering = settings.slice(settings.indexOf('const savedOrder ='), settings.indexOf('const moveOrder ='));
+const ordering = settings.slice(settings.indexOf('const savedOrder ='), settings.indexOf('const searchPlugins ='));
 assert.ok(ordering.includes('searchResultOrder'));
 const settingsOrder = require('typescript').transpile(`function configuredSearchOrder(config) { const core = config.core || {}; ${ordering} return order; }`, {target:99});
 vm.runInContext(settingsOrder, settingsContext);

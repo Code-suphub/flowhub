@@ -6,9 +6,13 @@ test('compact settings groups sources and data; unsupported updates have no prog
   const view = await h.mount(Settings, { store });
   const select = async id => h.click(view.container.querySelector(`#tab-${id}`));
   await select('search');
-  const sources = [...view.container.querySelectorAll('.settings-source-row')];
+  const sources = [...view.container.querySelectorAll('.settings-search-item')];
   assert.equal(sources.length, store.snapshot().plugins.length);
   for (const source of sources) assert.equal(source.querySelectorAll('[role=switch]').length,1);
+  assert.deepEqual(sources.slice(0, 4).map(source => source.dataset.source), ['app', 'web', 'clipboard', 'memo']);
+  assert.equal(view.container.querySelectorAll('.settings-search-item .settings-search-grip').length, 4);
+  assert.equal(view.container.querySelectorAll('.settings-search-item .fh-help').length, 0);
+  assert.ok(view.container.querySelector('.settings-search-item[data-source=app] [aria-label="应用范围键"]'));
   await select('data');
   assert.equal(view.container.querySelectorAll('.settings-data-panel > .settings-group').length,4);
   const path = view.container.querySelector('[aria-label="路径"]');
@@ -18,6 +22,46 @@ test('compact settings groups sources and data; unsupported updates have no prog
   assert.equal(view.container.querySelector('progress'),null);
   await h.act(async () => store.patch({update:{status:'downloading',percent:42}}));
   assert.equal(view.container.querySelector('progress').value,42);
+  await view.unmount(); store.dispose();
+});
+test('search source row keeps priority, toggle, and shortcut together; keyboard reorder updates config', async () => {
+  const { store } = await h.loaded(), view = await h.mount(Settings, { store });
+  await h.click(view.container.querySelector('#tab-search'));
+  const rows = () => [...view.container.querySelectorAll('.settings-search-item')];
+  const initial = ['app', 'web', 'clipboard', 'memo'];
+  assert.deepEqual(rows().slice(0, 4).map(row => row.dataset.source), initial);
+  await h.key(rows()[0].querySelector('.settings-search-grip'), 'ArrowDown', { altKey: true });
+  assert.deepEqual(store.snapshot().config.core.searchResultOrder.slice(0, 2), [initial[1], initial[0]]);
+  assert.deepEqual(rows().slice(0, 2).map(row => row.dataset.source), [initial[1], initial[0]]);
+  const transfer = { setData() {}, effectAllowed: '' };
+  const drag = new window.Event('dragstart', { bubbles: true, cancelable: true });
+  Object.defineProperty(drag, 'dataTransfer', { value: transfer });
+  await h.act(async () => rows()[1].querySelector('.settings-search-grip').dispatchEvent(drag));
+  await h.act(async () => rows()[0].dispatchEvent(new window.Event('dragover', { bubbles: true, cancelable: true })));
+  assert.equal(rows()[0].dataset.dropTarget, 'true');
+  await h.act(async () => rows()[0].dispatchEvent(new window.Event('drop', { bubbles: true, cancelable: true })));
+  assert.deepEqual(store.snapshot().config.core.searchResultOrder, initial);
+  const app = view.container.querySelector('.settings-search-item[data-source=app]');
+  assert.ok(app.querySelector('[role=switch]'));
+  assert.ok(app.querySelector('[aria-label="应用范围键"]'));
+  await h.click(app.querySelector('[role=switch]'));
+  assert.equal(store.snapshot().config.plugins.app.enabled, false);
+  await h.click(app.querySelector('[aria-label="应用范围键"]'));
+  await h.key(app.querySelector('[aria-label="应用范围键"]'), '9', { code: 'Digit9' });
+  assert.equal(store.snapshot().config.core.scopeShortcuts.app, '9');
+  await view.unmount(); store.dispose();
+});
+test('unavailable search source shows its reason inline without a redundant help popup', async () => {
+  const { store } = await h.loaded({ listPlugins: async () => [
+    { id: 'app', name: '应用', settingsHint: '启动设置', available: false, reason: '当前系统不支持应用扫描' },
+    { id: 'web', name: '网页', available: true }
+  ] }), view = await h.mount(Settings, { store });
+  await h.click(view.container.querySelector('#tab-search'));
+  const row = view.container.querySelector('.settings-search-item[data-source=app]');
+  assert.match(row.textContent, /当前系统不支持应用扫描/);
+  assert.doesNotMatch(row.textContent, /启动设置/);
+  assert.equal(row.querySelector('.fh-help'), null);
+  assert.equal(row.querySelector('[role=switch]').getAttribute('aria-disabled'), 'true');
   await view.unmount(); store.dispose();
 });
 test('all settings sections mount, tabs switch with Arrow keys/Home/End in read-only preview', async () => {
@@ -38,6 +82,38 @@ test('tools use a compact grid and memos keep navigation separate from details',
   await h.click(h.button(view.container,'备忘录'));
   assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-nav .settings-memo-tree'));
   assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-detail'));
+  await view.unmount();store.dispose();
+});
+test('settings sidebar separates built-ins from plugins and preview keeps canvas control read-only', async () => {
+  const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
+  const groups=[...view.container.querySelectorAll('.settings-nav-group')];
+  assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['内置功能','插件']);
+  assert.ok(h.button(groups[0],'通用设置'));
+  assert.ok(h.button(groups[1],'插件市场'));
+  await h.click(h.button(groups[1],'桌面组件'));
+  assert.equal(view.container.querySelector('.settings-canvas [role=switch]').getAttribute('aria-disabled'),'true');
+  assert.equal(h.button(view.container,'打开桌面组件').disabled,true);
+  await view.unmount();store.dispose();
+});
+test('native canvas setting saves view-only immediately and opens the widget surface', async () => {
+  const {store}=await h.loaded();
+  const calls=[];
+  window.__TAURI__.core.invoke=async (command,args)=>{
+    calls.push({command,...args});
+    if(args.action==='get') return {layout:{viewOnly:false}};
+    return {};
+  };
+  const view=await h.mount(Settings,{store});
+  await h.click(h.button(view.container,'桌面组件'));
+  const toggle=view.container.querySelector('.settings-canvas [role=switch]');
+  assert.equal(toggle.getAttribute('aria-checked'),'false');
+  await h.click(toggle);
+  assert.deepEqual(calls.find(call=>call.action==='setViewOnly').payload,{enabled:true});
+  assert.equal(toggle.getAttribute('aria-checked'),'true');
+  await h.act(async () => window.dispatchEvent(new window.CustomEvent('flowhub:canvas-view-only',{detail:false})));
+  assert.equal(toggle.getAttribute('aria-checked'),'false');
+  await h.click(h.button(view.container,'打开桌面组件'));
+  assert.ok(calls.some(call=>call.action==='open'));
   await view.unmount();store.dispose();
 });
 test('read-only network adapter can inspect options without changing its value', async () => {
@@ -84,15 +160,15 @@ test('settings rendering has no legacy DOM renderer, and HTML uses the file-comp
   assert.match(html, /id="settings-root"/); assert.match(html, /react\/host.js/); assert.match(html, /react\/host.css/); assert.doesNotMatch(html, /settings\/settings.js|collection-layout|settings-appearance/);
   for (const name of h.fs.readdirSync(h.path.join(__dirname, '../../src/settings'))) if (/\.(tsx?|css)$/.test(name)) assert.doesNotMatch(h.fs.readFileSync(h.path.join(__dirname, '../../src/settings', name), 'utf8'), /innerHTML|dangerouslySetInnerHTML/);
 });
-test('all core tabs use shared tooltip triggers', async () => {
+test('core tabs do not repeat their labels in hover descriptions', async () => {
   const { store } = await h.loaded(), view = await h.mount(Settings, { store });
   const tabs = [...view.container.querySelectorAll('[role=tab]')];
-  assert.ok(tabs.every(tab => tab.hasAttribute('data-base-ui-tooltip-trigger')));
+  assert.ok(tabs.every(tab => !tab.hasAttribute('data-base-ui-tooltip-trigger')));
   await view.unmount(); store.dispose();
 });
 test('module queries select requested section and reject unknown module values', async () => {
   const { bindNativeSettings } = require('../../src/settings/native.ts');
-  for (const [query, expected] of [['clipboard','clipboard'], ['not-a-module','core']]) { const { store } = await h.loaded(); window.history.replaceState({}, '', '/settings.html?module='+query); let module; const dispose = bindNativeSettings(store, v => { module=v; }, () => {}); assert.equal(module, expected); dispose(); store.dispose(); }
+  for (const [query, expected] of [['clipboard','clipboard'], ['canvas','canvas'], ['not-a-module','core']]) { const { store } = await h.loaded(); window.history.replaceState({}, '', '/settings.html?module='+query); let module; const dispose = bindNativeSettings(store, v => { module=v; }, () => {}); assert.equal(module, expected); dispose(); store.dispose(); }
 });
 test('theme Select writes shared theme preference and follows host theme events', async () => {
   h.environment(); let theme = 'system'; window.FlowHubTheme = { get: () => theme, set: value => { theme = value; } };

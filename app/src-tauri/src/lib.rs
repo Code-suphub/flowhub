@@ -864,6 +864,14 @@ fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<V
 }
 
 pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<String>, update: bool) -> Result<Value, String> {
+    open_settings_window_target(app, initial_url, update, false)
+}
+
+pub(crate) fn open_canvas_settings(app: tauri::AppHandle) -> Result<Value, String> {
+    open_settings_window_target(app, None, false, true)
+}
+
+fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String>, update: bool, canvas: bool) -> Result<Value, String> {
     // Opening settings from the launcher is an in-app navigation. Workspace
     // activation notifications do not fire because both windows belong to
     // FlowHub, so explicitly dismiss the launcher before bringing settings up.
@@ -880,6 +888,10 @@ pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<St
         window.set_focus().map_err(|error| error.to_string())?;
         if update {
             window.eval("(() => { let attempts = 0; const run = () => { if (window.runMenuUpdate) { window.runMenuUpdate(); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
+                .map_err(|error| error.to_string())?;
+        }
+        if canvas {
+            window.eval("(() => { let attempts = 0; const run = () => { if (window.switchModule) { window.switchModule('canvas'); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
                 .map_err(|error| error.to_string())?;
         }
         if let Some(url) = initial_url {
@@ -899,7 +911,7 @@ pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<St
             query.append_pair("addUrl", url);
             format!("settings.html?{}", query.finish())
         })
-        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else { "settings.html".to_string() });
+        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if canvas { "settings.html?module=canvas".to_string() } else { "settings.html".to_string() });
     WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
         .inner_size(980.0, 720.0)

@@ -104,11 +104,50 @@ export function renameCategory(items: Memo[], before: string, after: string, exc
   for (const item of items) { const path = segments(item.category || ''); if (item.id !== exceptId && path.length > from.length && from.every((part, i) => part === path[i])) item.category = [...to, ...path.slice(from.length)].join(' / '); }
 }
 export interface MemoBranch { name: string; path: string; count: number; children: MemoBranch[]; items: Memo[] }
+export interface MemoMoveRef { kind: 'category' | 'item'; id: string }
+export type MemoDropPosition = 'before' | 'inside' | 'after';
+const memoParts = (value: string) => String(value || '其他').split(/\s*(?:\/|›|>)\s*/).map(part => part.trim()).filter(Boolean);
+const memoStartsWith = (parts: string[], prefix: string[]) => prefix.length <= parts.length && prefix.every((part, index) => parts[index] === part);
+export function moveMemo(items: Memo[], source: MemoMoveRef, target: MemoMoveRef, position: MemoDropPosition): Memo[] {
+  if (source.kind === target.kind && source.id === target.id) return items;
+  if (source.kind === 'category' && target.kind === 'item') return items;
+  if (source.kind === 'item' && target.kind === 'category' && position !== 'inside') return items;
+  if (target.kind === 'item' && position === 'inside') return items;
+  const sourceParts = source.kind === 'category' ? memoParts(source.id) : [];
+  const targetParts = target.kind === 'category' ? memoParts(target.id) : [];
+  if (source.kind === 'category' && memoStartsWith(targetParts, sourceParts)) return items;
+  const next = clone(items);
+  const moving = next.filter(item => source.kind === 'item' ? item.id === source.id : memoStartsWith(memoParts(item.category || ''), sourceParts));
+  if (!moving.length) return items;
+  const movingIds = new Set(moving.map(item => item.id));
+  const remaining = next.filter(item => !movingIds.has(item.id));
+  let destinationParts: string[];
+  let index: number;
+  if (target.kind === 'item') {
+    index = remaining.findIndex(item => item.id === target.id);
+    if (index < 0) return items;
+    destinationParts = memoParts(remaining[index].category || '');
+    if (position === 'after') index++;
+  } else {
+    const indexes = remaining.flatMap((item, i) => memoStartsWith(memoParts(item.category || ''), targetParts) ? [i] : []);
+    if (!indexes.length) return items;
+    if (source.kind === 'category') {
+      destinationParts = [...(position === 'inside' ? targetParts : targetParts.slice(0, -1)), sourceParts.at(-1)!];
+      if (remaining.some(item => memoStartsWith(memoParts(item.category || ''), destinationParts))) return items;
+    } else destinationParts = targetParts;
+    index = position === 'before' ? indexes[0] : indexes.at(-1)! + 1;
+  }
+  if (source.kind === 'category') {
+    for (const item of moving) item.category = [...destinationParts, ...memoParts(item.category || '').slice(sourceParts.length)].join(' / ');
+  } else moving[0].category = destinationParts.join(' / ');
+  const result = [...remaining.slice(0, index), ...moving, ...remaining.slice(index)];
+  return same(items, result) ? items : result;
+}
 export function memoTree(items: Memo[]): MemoBranch {
   const root: MemoBranch = { name: '', path: '', count: 0, children: [], items: [] };
   for (const item of items) {
     let branch = root; branch.count++;
-    const parts = String(item.category || '其他').split(/\s*(?:\/|›|>)\s*/).map(v => v.trim()).filter(Boolean);
+    const parts = memoParts(item.category || '');
     for (const name of parts) { let child = branch.children.find(c => c.name === name); if (!child) { child = { name, path: branch.path ? `${branch.path} / ${name}` : name, count: 0, children: [], items: [] }; branch.children.push(child); } child.count++; branch = child; }
     branch.items.push(item);
   } return root;

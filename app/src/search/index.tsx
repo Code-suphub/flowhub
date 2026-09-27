@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Button, Dialog } from '../shared/ui';
-import { Results } from './Results';
+import { Results, resultActions } from './Results';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
 
@@ -9,21 +9,33 @@ function KeyboardHint({selected,scope}: {selected?:SearchItem;scope?:string}) {
   const hints=['↑↓ 选择结果',`⏎ ${selected?.type==='memo' || selected?.type==='clipboard'?'粘贴':selected?.type==='twofa'?'复制验证码':'打开'}`];
   if(scope==='all') hints.unshift('←→ 常用/最近');
   if(selected?.type==='clipboard') {
-    hints.push('右键 更多操作');
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
     hints.push('⌘D 置顶');
     if(selected.kind==='text')hints.push('⌘E 编辑副本');
     if(document.documentElement.dataset.weborgReadonly!=='true')hints.push('⌥⌫ 删除');
   }
-  if(selected && !selected.usageSection && (selected.toolId || ['page','web','app','memo','twofa','web-add','calculation','timestamp','jwt','dns','ip'].includes(selected.type)))hints.push('F6 操作按钮');
+  if(selected && !selected.usageSection && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 / F6 更多操作');
+  else if(selected?.toolId)hints.push('F6 操作按钮');
   hints.push('Tab 范围','⌘K 回到搜索框');
   return <span id="keyboardHint">{hints.join(' · ')}</span>;
+}
+
+function ActionMenu({item,index,x,y,onDismiss}: {item:SearchItem;index:number;x:number;y:number;onDismiss:()=>void}) {
+  return <div className="search-context-menu" role="menu" aria-label="搜索结果操作" style={{left:x,top:y}} onClickCapture={onDismiss}>
+    {item.type==='clipboard' ? <>
+      <Button className="tool-action" role="menuitem" data-clipboard-action="pin" data-clipboard-id={item.id}>{item.pinnedAt?'取消置顶（⌘D）':'置顶（⌘D）'}</Button>
+      {['text','file'].includes(item.kind)?<Button className="tool-action" role="menuitem" data-clipboard-action="plain" data-clipboard-id={item.id}>纯文本粘贴（⇧↩）</Button>:null}
+      {item.kind==='text'?<Button className="tool-action" role="menuitem" data-clipboard-action="edit" data-clipboard-id={item.id}>编辑副本（⌘E）</Button>:null}
+      {document.documentElement.dataset.weborgReadonly!=='true'?<Button className="tool-action" role="menuitem" data-clipboard-action="delete" data-clipboard-id={item.id}>删除记录（⌥⌫）</Button>:null}
+    </> : resultActions(item).map(([action,label])=><Button key={action} className="tool-action" role="menuitem" data-result-action={action} data-result-index={index}>{label}</Button>)}
+  </div>;
 }
 
 function Search() {
   const root=useRef<HTMLDivElement>(null), controller=useRef<SearchController | null>(null);
   const [snapshot,setSnapshot]=useState<SearchSnapshot | null>(null), [pinBusy,setPinBusy]=useState(false);
-  const [clipboardMenu,setClipboardMenu]=useState<{id:number;x:number;y:number}|null>(null);
+  const [actionMenu,setActionMenu]=useState<{index:number;key:string;x:number;y:number}|null>(null);
+  const menuKey=(item:SearchItem)=>`${item.type}:${item.id ?? ''}:${item.path ?? ''}:${item.url ?? ''}`;
   useEffect(()=>{
     const c=host.createFlowHubSearchController(root.current!,setSnapshot); controller.current=c;
     return ()=>{controller.current=null;c.dispose();};
@@ -51,23 +63,38 @@ function Search() {
   },[snapshot?.plan]);
   const dispatch=(name:string)=>(event:React.SyntheticEvent)=>controller.current?.handlers[name]?.(event);
   useEffect(()=>{
-    if(!clipboardMenu)return;
-    const close=(event?:PointerEvent)=>{if(event?.target instanceof Element && event.target.closest('.search-context-menu'))return;setClipboardMenu(null);};
+    if(!actionMenu)return;
+    const close=(event?:PointerEvent)=>{if(event?.target instanceof Element && event.target.closest('.search-context-menu'))return;setActionMenu(null);};
     const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')close();};
     document.addEventListener('pointerdown',close);
     document.addEventListener('keydown',escape);
     return ()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',escape);};
-  },[clipboardMenu]);
+  },[actionMenu]);
+  useLayoutEffect(()=>{if(actionMenu)root.current?.querySelector<HTMLElement>('.search-context-menu .tool-action')?.focus();},[actionMenu]);
+  useEffect(()=>{
+    const results=root.current?.querySelector('#results');
+    const open=(event:Event)=>{
+      const index=(event as CustomEvent<{index:number}>).detail?.index;
+      const item=snapshot?.items[index];
+      if(!item || (item.type!=='clipboard' && !resultActions(item).length))return;
+      const row=results?.querySelector<HTMLElement>(`.result[data-i="${index}"]`),rect=row?.getBoundingClientRect();
+      setActionMenu({index,key:menuKey(item),x:Math.max(8,Math.min(rect?.left ?? 8,window.innerWidth-220)),y:Math.max(8,Math.min(rect?.bottom ?? 8,window.innerHeight-176))});
+    };
+    results?.addEventListener('flowhub:open-action-menu',open);
+    return ()=>results?.removeEventListener('flowhub:open-action-menu',open);
+  },[snapshot?.items]);
   function contextMenu(event:React.MouseEvent<HTMLDivElement>) {
+    if((event.target as HTMLElement).closest('.search-context-menu,[data-clipboard-editor]'))return;
     const row=(event.target as HTMLElement).closest<HTMLElement>('.result');
     const item=row && snapshot?.items[Number(row.dataset.i)];
-    if(item?.type!=='clipboard') {setClipboardMenu(null);controller.current?.handlers['results:contextmenu']?.(event);return;}
+    if(!item || (item.type!=='clipboard' && !resultActions(item).length)) {setActionMenu(null);controller.current?.handlers['results:contextmenu']?.(event);return;}
     event.preventDefault();
-    setClipboardMenu({id:Number(item.id),x:Math.max(8,Math.min(event.clientX,window.innerWidth-220)),y:Math.max(8,Math.min(event.clientY,window.innerHeight-176))});
+    setActionMenu({index:Number(row!.dataset.i),key:menuKey(item),x:Math.max(8,Math.min(event.clientX,window.innerWidth-220)),y:Math.max(8,Math.min(event.clientY,window.innerHeight-176))});
   }
   const activate=(event:React.MouseEvent<HTMLButtonElement>)=>controller.current?.activateScopeControl(event.currentTarget);
   const press=(event:React.MouseEvent)=>controller.current?.preserveSearchFocus(event);
   const state=snapshot?.state, selected=snapshot?.items[state?.index || 0];
+  const menuItem=actionMenu && snapshot?.items[actionMenu.index];
   const version=String(snapshot?.updateState?.currentVersion || ''), hasUpdate=['available','downloaded'].includes(snapshot?.updateState?.status || '');
   return <div ref={root} className="fh-root search-shell flex flex-col h-full">
     {state?.deletingClipboard?<Dialog title="删除剪贴板记录" busy={state.deletingClipboard.busy} notice={state.deletingClipboard.error} onClose={()=>controller.current?.cancelClipboardDelete()}>
@@ -80,7 +107,7 @@ function Search() {
     </div>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
-    <div id="results" role="listbox" aria-label="搜索结果" aria-busy={snapshot?.paging.loading || false} className="flex-1 min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onMouseUp={dispatch('results:mouseup')} onContextMenu={contextMenu} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>{snapshot?<Results snapshot={snapshot}/>:<p className="search-empty">配置加载中…</p>}{clipboardMenu && snapshot?.items.some(item=>item.type==='clipboard' && Number(item.id)===clipboardMenu.id) ? <div className="search-context-menu" role="menu" aria-label="剪贴板操作" style={{left:clipboardMenu.x,top:clipboardMenu.y}} onClickCapture={()=>setClipboardMenu(null)}>{(()=>{const item=snapshot.items.find(item=>item.type==='clipboard' && Number(item.id)===clipboardMenu.id)!;return <><Button role="menuitem" data-clipboard-action="pin" data-clipboard-id={item.id}>{item.pinnedAt?'取消置顶（⌘D）':'置顶（⌘D）'}</Button>{['text','file'].includes(item.kind)?<Button role="menuitem" data-clipboard-action="plain" data-clipboard-id={item.id}>纯文本粘贴（⇧↩）</Button>:null}{item.kind==='text'?<Button role="menuitem" data-clipboard-action="edit" data-clipboard-id={item.id}>编辑副本（⌘E）</Button>:null}{document.documentElement.dataset.weborgReadonly!=='true'?<Button role="menuitem" data-clipboard-action="delete" data-clipboard-id={item.id}>删除记录（⌥⌫）</Button>:null}</>;})()}</div> : null}</div>
+    <div id="results" role="listbox" aria-label="搜索结果" aria-busy={snapshot?.paging.loading || false} className="flex-1 min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onMouseUp={dispatch('results:mouseup')} onContextMenu={contextMenu} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>{snapshot?<Results snapshot={snapshot}/>:<p className="search-empty">配置加载中…</p>}{menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onDismiss={()=>{root.current?.querySelector<HTMLElement>('#q')?.focus({preventScroll:true});setActionMenu(null);}}/>:null}</div>
     <footer className="search-footer flex flex-wrap justify-between gap-2"><KeyboardHint selected={selected} scope={state?.scope}/><span id="actionStatus" role="status">{snapshot?.statusText}</span><span id="runtimeMode">{document.documentElement.dataset.weborgReadonly==='true'?'只读预览':'FlowHub'}</span></footer>
   </div>;
 }

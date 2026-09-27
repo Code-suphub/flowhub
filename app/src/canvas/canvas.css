@@ -4,12 +4,16 @@ body:has(#canvas-root) { margin: 0; padding: 16px; }
 body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface); }
 .fh-canvas-app { color: var(--fh-text); font: 14px/1.5 "SF Pro Display", "PingFang SC", sans-serif; }
 .fh-canvas-app *, .fh-canvas-app *::after { box-sizing: border-box; }
-.canvas-toolbar { width: max-content; max-width: 100%; min-height: 42px; margin-bottom: 12px; padding: 6px 8px; border-radius: 12px; background: var(--fh-surface); backdrop-filter: blur(20px); font-size: 12px; }
+.canvas-toolbar { position: relative; z-index: 1; width: max-content; max-width: 100%; min-height: 42px; margin-bottom: 12px; padding: 6px 8px; border-radius: 12px; background: var(--fh-surface); backdrop-filter: blur(20px); font-size: 12px; }
 .canvas-toolbar .fh-button, .canvas-toolbar .fh-input { padding: 5px 9px; font-size: 12px; }
 .canvas-toolbar .brand { cursor: move; }
 .canvas-toolbar.surface-inactive { opacity: 0; visibility: hidden; pointer-events: none; }
+.fh-canvas-app[data-view-only="true"] .canvas-toolbar { display: none; }
+.fh-canvas-app[data-view-only="true"] .canvas-card { pointer-events: none; cursor: default; touch-action: auto; }
+.fh-canvas-app[data-view-only="true"] .canvas-card .widget-content { pointer-events: none; }
 .fh-canvas-app #notice { margin: 0 8px 10px; font-size: 12px; }
 .fh-canvas-app #notice:empty { display: none; }
+.fh-canvas-app #canvas { z-index: 0; isolation: isolate; }
 .fh-canvas-app .primary { background: var(--fh-accent); color: var(--fh-on-accent); }
 .canvas-card { min-width: 160px; min-height: 120px; border: 1px solid var(--fh-border); border-radius: 22px; background: var(--fh-surface); box-shadow: 0 7px 18px color-mix(in srgb, var(--fh-text) 10%, transparent); cursor: pointer; touch-action: none; }
 .canvas-card:focus-visible { outline: 2px solid var(--fh-accent); outline-offset: 3px; }

@@ -1,17 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
+import { Help, Switch } from '../shared/controls';
 import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
 import { call, host, readonly, write } from './api';
 import { diff, imported, tools, clipboardLimit, hasExclusions, type Bag } from './model';
 import { SettingsStore, useSettings } from './store';
 export const sections = [
-  { id: 'general', label: '基础', help: '修改快捷键或登录启动设置，保存后立即生效。' },
-  { id: 'search', label: '搜索入口', help: '集中管理搜索来源、启停状态和范围快捷键。' },
-  { id: 'network', label: '网络', help: '选择 FlowHub 读取本机代理状态的方式。' },
-  { id: 'menubar', label: '菜单栏', help: '设置 FlowHub 菜单内容，以及菜单栏图标的显示与整理。' },
-  { id: 'notifications', label: '通知', help: '选择需要接收的应用通知，并检查系统通知权限。' },
-  { id: 'data', label: '数据与诊断', help: '查看配置文件位置、导入导出与历史，或采样本机性能数据以排查问题。' },
-  { id: 'updates', label: '更新', help: '查看版本和安装进度，设置自动检查与安装策略。' },
+  { id: 'general', label: '基础' },
+  { id: 'search', label: '搜索入口' },
+  { id: 'network', label: '网络' },
+  { id: 'menubar', label: '菜单栏' },
+  { id: 'notifications', label: '通知' },
+  { id: 'data', label: '数据与诊断' },
+  { id: 'updates', label: '更新' },
 ];
 const names: Record<string, string> = { all: '全部', app: '应用', web: '网页目录', clipboard: '剪贴板', memo: '备忘录', tools: '工具' };
 export function PathControl({ store, storage = false }: { store: SettingsStore; storage?: boolean }) {
@@ -47,13 +48,31 @@ export function Core({ store, section, onSection, actions }: { store: SettingsSt
   const setNested = (key: string, field: string, value: boolean) => store.edit(c => { c.core[key][field] = value; });
   const savedOrder = Array.isArray(core.searchResultOrder) ? core.searchResultOrder as string[] : [];
   const order = [...new Set([...savedOrder, ...(core.webBeforeClipboard === false ? ['app', 'clipboard', 'web', 'memo'] : ['app', 'web', 'clipboard', 'memo'])])].filter(id => ['app', 'web', 'clipboard', 'memo'].includes(id));
+  const searchPlugins = [...order.flatMap(id => s.plugins.filter(plugin => plugin.id === id)), ...s.plugins.filter(plugin => !order.includes(plugin.id))];
+  const [draggingSource, setDraggingSource] = useState('');
+  const [dropSource, setDropSource] = useState('');
   const moveOrder = (id: string, index: number) => { if (index < 0 || index >= order.length || !order.includes(id)) return; const next = order.filter(v => v !== id); next.splice(index, 0, id); setCore('searchResultOrder', next); };
   useEffect(() => { if (section !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [section, store]);
   const previewInspect = readonly() && section === 'network';
   return <><div className="settings-core-toolbar"><Tabs label="通用设置分类" items={sections} value={section} onChange={onSection} />{actions ? <div className="settings-core-actions">{actions}</div> : null}</div><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section role="tabpanel" id={`panel-${section}`} aria-labelledby={`tab-${section}`}>
     {section === 'general' ? <><Shortcut label="唤出 FlowHub" value={core.hotkey || 'Alt+Space'} taken={Object.values(core.scopeShortcuts)} onChange={v => setCore('hotkey', v)} /><Toggle label="登录后自动启动" checked={core.launchAtLogin === true} onChange={v => setCore('launchAtLogin', v)} /></> : null}
-    {section === 'search' ? <><Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />{s.plugins.map(plugin => <div className="settings-source-row" key={plugin.id}><Toggle label={plugin.settingsName || plugin.name || names[plugin.id] || plugin.id} checked={c.plugins[plugin.id]?.enabled !== false} disabled={plugin.available === false} help={plugin.settingsHint || plugin.reason} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} />{plugin.id in core.scopeShortcuts ? <Shortcut label={`${names[plugin.id] || plugin.name}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : null}</div>)}<Row label="全部结果顺序" help="拖动排序，或选中项目按 Alt + 方向键调整。"><ol className="grid gap-2 list-none p-0" aria-label="结果优先级">{order.map((id, index) => <li key={id} tabIndex={0} draggable={!readonly()} className="settings-order" onDragStart={e => e.dataTransfer.setData('text/flowhub-search', id)} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); moveOrder(e.dataTransfer.getData('text/flowhub-search'), index); }} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); moveOrder(id, index + (['ArrowUp', 'ArrowLeft'].includes(e.key) ? -1 : 1)); } }}>{index + 1}. {names[id]}</li>)}</ol></Row><Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" /></> : null}
-    {section === 'network' ? <Choice label="代理检测适配器" value={c.plugins.tools.settings.proxyAdapter} options={[{ value: 'auto', label: '自动' }, { value: 'mihomo', label: 'Mihomo' }, { value: 'clash-rest', label: 'Clash REST' }, { value: 'system', label: '系统代理' }]} onChange={v => store.edit(c => { c.plugins.tools.settings.proxyAdapter = v; })} help={previewInspect ? '浏览器预览可查看选项，但不会修改配置。' : undefined} /> : null}
+    {section === 'search' ? <>
+      <Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
+      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">拖动顺序把手，或聚焦把手后按 Alt + 上下方向键调整。点击范围键可重新录入，按 Delete 可清空。顺序只影响有关键词时的「全部」结果；2FA 和工具不参与排序。</Help></div>
+      <div className="settings-search-columns" aria-hidden="true"><span>顺序</span><span>来源</span><span>启用</span><span>范围键</span></div>
+      <div className="settings-search-list" role="list" aria-label="搜索来源与顺序">{searchPlugins.map(plugin => {
+        const index = order.indexOf(plugin.id), sortable = index >= 0;
+        const label = plugin.settingsName || plugin.name || names[plugin.id] || plugin.id;
+        return <div role="listitem" className="settings-search-item" data-source={plugin.id} data-drop-target={dropSource === plugin.id && draggingSource !== plugin.id ? 'true' : undefined} key={plugin.id} onDragOver={e => { if (sortable && draggingSource) { e.preventDefault(); setDropSource(plugin.id); } }} onDrop={e => { e.preventDefault(); if (sortable && draggingSource) moveOrder(draggingSource, index); setDraggingSource(''); setDropSource(''); }}>
+          <div className="settings-search-rank">{sortable ? <button type="button" className="settings-search-grip" draggable={!readonly() && !s.busy && !s.conflict} aria-label={`调整${label}顺序，当前第 ${index + 1} 位`} title="拖动排序；Alt + 上下方向键调整" onDragStart={e => { e.dataTransfer.setData('text/flowhub-search', plugin.id); e.dataTransfer.effectAllowed = 'move'; setDraggingSource(plugin.id); }} onDragEnd={() => { setDraggingSource(''); setDropSource(''); }} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); moveOrder(plugin.id, index + (['ArrowUp', 'ArrowLeft'].includes(e.key) ? -1 : 1)); } }}><span aria-hidden="true">⠿</span><span>{index + 1}</span></button> : <span className="settings-search-not-ranked" aria-label="不参与排序">—</span>}</div>
+          <div className="settings-search-name"><span>{label}</span>{plugin.available === false ? <small>{plugin.reason || (readonly() ? '浏览器预览不可用' : '当前环境不可用')}</small> : null}</div>
+          <div className="settings-search-toggle"><Switch label={`启用${label}`} checked={c.plugins[plugin.id]?.enabled !== false} disabled={plugin.available === false} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} /></div>
+          <div className="settings-search-shortcut">{plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none" aria-label="无范围快捷键">—</span>}</div>
+        </div>;
+      })}</div>
+      <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
+    </> : null}
+    {section === 'network' ? <Choice label="代理检测适配器" value={c.plugins.tools.settings.proxyAdapter} options={[{ value: 'auto', label: '自动' }, { value: 'mihomo', label: 'Mihomo' }, { value: 'clash-rest', label: 'Clash REST' }, { value: 'system', label: '系统代理' }]} onChange={v => store.edit(c => { c.plugins.tools.settings.proxyAdapter = v; })} /> : null}
     {section === 'menubar' ? <>{Object.entries({ enabled: '显示 FlowHub 图标', showOpenLauncher: '打开启动器', showOpenSettings: '打开设置', showVersion: '显示版本', showQuit: '退出菜单', organizerEnabled: '启用菜单栏隐藏分区', collapseOnLaunch: '启动时收起隐藏分区' }).map(([key, label]) => <Toggle key={key} label={label} checked={core.menuBar[key] === true} disabled={key === 'collapseOnLaunch' ? !core.menuBar.organizerEnabled : ['showOpenLauncher', 'showOpenSettings', 'showVersion', 'showQuit'].includes(key) && !core.menuBar.enabled} onChange={v => setNested('menuBar', key, v)} />)}<Row label="菜单栏图标整理" help="展开后按住 ⌘，把待隐藏图标拖到箭头左侧；位置由 macOS 记忆。"><div className="flex flex-wrap gap-2"><Button disabled={!core.menuBar.organizerEnabled} onClick={() => void store.run(async () => { await write('toggleMenuBarItems'); })}>展开 / 收起</Button><Button onClick={() => void store.run(async () => { await write('requestMenuBarManagementPermission'); await store.refreshMenu(); })}>授权辅助功能</Button><Button onClick={() => void store.run(() => store.refreshMenu())}>扫描图标</Button></div></Row><p>{s.management.trusted ? '已授权 · 组合模式' : '未授权 · 原生模式'}</p>{s.menuItems.map(item => <Row key={item.windowId ?? item.window_id} label={item.name || item.ownerName || item.owner_name || item.title || '菜单栏图标'}><Button disabled={!item.hideable || !core.menuBar.organizerEnabled || !s.management.trusted} onClick={() => void store.run(async () => { await write('setMenuBarItemHidden', Number(item.windowId ?? item.window_id), item.section !== 'alwaysHidden'); await store.refreshMenu(); })}>{item.section === 'alwaysHidden' ? '移到常显区' : '始终隐藏'}</Button></Row>)}</> : null}
     {section === 'notifications' ? <><Toggle label="允许通知" checked={core.notifications.enabled} onChange={v => setNested('notifications', 'enabled', v)} /><Toggle label="更新通知" checked={core.notifications.updates} disabled={!core.notifications.enabled} onChange={v => setNested('notifications', 'updates', v)} /><Row label="系统通知权限" help="权限由 macOS 系统设置 → 通知管理。"><Button disabled={!core.notifications.enabled} onClick={() => void store.run(async () => { await write('sendTestNotification'); store.notice('测试通知已发送'); })}>发送测试通知</Button></Row></> : null}
     {section === 'data' ? <DataPanel store={store} /> : null}

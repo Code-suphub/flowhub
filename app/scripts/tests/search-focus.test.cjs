@@ -7,7 +7,8 @@ test('scope primary press deduplicates click, F6/Escape, IME and bare cursor arr
   const button=w.document.querySelector('[data-scope="app"]');
   const before=calls.length;button.dispatchEvent(new w.MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true}));button.click();
   await wait(()=>button.getAttribute('aria-pressed')==='true');assert.equal(w.document.activeElement,q);assert.equal(q.value,'preserve');assert.equal(calls.length,before);
-  key('F6');assert.ok(w.document.activeElement.classList.contains('tool-action'));
+  key('F6');await wait(()=>w.document.activeElement.classList.contains('tool-action'));
+  assert.ok(w.document.activeElement.closest('[role="menu"]'));
   w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert.equal(w.document.activeElement,q);
   q.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));key('F6');assert.equal(w.document.activeElement,q);q.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true}));
   await scope('clipboard');assert.equal(key('ArrowLeft'),true);assert.equal(key('ArrowRight'),true);

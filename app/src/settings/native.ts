@@ -42,7 +42,7 @@ export function bindNativeSettings(store: SettingsStore, navigate: (id: string) 
   });
   const params = new URLSearchParams(window.location.search);
   const requestedModule = params.get('module');
-  if (requestedModule) switchModule(['core', 'web', 'app', 'clipboard', 'memo', 'tools', 'extensions'].includes(requestedModule) ? requestedModule : 'core');
+  if (requestedModule) switchModule(['core', 'web', 'app', 'clipboard', 'memo', 'tools', 'extensions', 'canvas'].includes(requestedModule) ? requestedModule : 'core');
   if (params.get('addUrl')) prepareAddWebUrl(params.get('addUrl')!);
   if (params.get('update') === '1') void runMenuUpdate();
   if (params.has('addUrl') || params.has('update')) window.history.replaceState({}, '', window.location.pathname);

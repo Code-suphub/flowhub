@@ -1,7 +1,7 @@
 export type Config = Record<string, unknown>;
 export type Card = { id: string; plugin: string; title?: string; config?: Config; view?: string; row?: unknown; metrics?: unknown; size?: 'small' | 'medium' | 'large'; width?: number; height?: number; x?: number; y?: number; break_before?: boolean };
 export type Board = { id: string; title: string; cards: Card[] };
-export type Layout = { boards: Board[]; active: string; pinned: boolean };
+export type Layout = { boards: Board[]; active: string; pinned: boolean; viewOnly?: boolean };
 export type Source = { id: string; title: string; snapshot?: unknown; lastLoadedAt?: unknown; widget?: { card: string; editor: string; interactive?: boolean; minWidth?: number; minHeight?: number } };
 export type Point = { x: number; y: number };
 export type Position = Point & { id: string; w: number; h: number };
@@ -14,7 +14,7 @@ export type CanvasHost = Window & {
   WidgetLayout: { arrange(cards: Card[], moving?: string | null, wanted?: Point | null, target?: string | null): Position[]; swapTarget(cards: Card[], moving: string, point: Point): string | null };
 };
 export const host = () => window as unknown as CanvasHost;
-export const initialLayout = (): Layout => ({ boards: [{ id: 'default', title: '默认布局', cards: [] }], active: 'default', pinned: false });
+export const initialLayout = (): Layout => ({ boards: [{ id: 'default', title: '默认布局', cards: [] }], active: 'default', pinned: false, viewOnly: false });
 export const cardConfig = (card?: Card): Config => card?.config || { view: card?.view, row: card?.row, metrics: card?.metrics };
 export function minimum(card: Card, sources: Source[]) {
   const widget = sources.find(source => source.id === card.plugin)?.widget;

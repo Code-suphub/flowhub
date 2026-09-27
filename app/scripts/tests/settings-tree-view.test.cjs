@@ -34,17 +34,15 @@ test('browser preview reorders only its in-memory tree and keeps editing unavail
  assert.deepEqual(roots(),['a','b','c','d','p']);
  assert.equal(h.button(view.container,'＋ 添加节点').disabled,true);
  assert.equal(view.container.querySelector('[aria-label="筛选网页目录"]').disabled,false);
- assert.equal(view.container.querySelector('[data-node-id="b"]').draggable,true);
+ assert.equal(view.container.querySelector('[data-node-id="b"]').draggable,false);
+ assert.ok(view.container.querySelector('[data-node-id="p"] .settings-tree-leaf svg'));
  const source=view.container.querySelector('[data-node-id="b"]'),target=view.container.querySelector('[data-node-id="a"]');
  target.getBoundingClientRect=()=>({top:0,height:100});
- await h.act(async()=>{
-  const start=new window.Event('dragstart',{bubbles:true,cancelable:true});Object.defineProperty(start,'dataTransfer',{value:{setData(){}}});source.dispatchEvent(start);
-  const over=new window.Event('dragover',{bubbles:true,cancelable:true});Object.defineProperty(over,'clientY',{value:10});target.dispatchEvent(over);
- });
+ document.elementFromPoint=()=>target;
+ const pointer=(type,element,y)=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{pointerId:1,pointerType:'mouse',button:0,clientX:10,clientY:y});element.dispatchEvent(event);};
+ await h.act(async()=>{pointer('pointerdown',source.querySelector('.settings-drag-handle'),40);pointer('pointermove',window,10);});
  assert.equal(target.dataset.dropPosition,'before');
- await h.act(async()=>{
-  const drop=new window.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(drop,'clientY',{value:10});target.dispatchEvent(drop);
- });
+ await h.act(async()=>pointer('pointerup',window,10));
  assert.equal(view.container.querySelector('[data-drop-position]'),null);
  assert.deepEqual(roots(),['b','a','c','d','p']);
  assert.deepEqual(store.snapshot().config.plugins.web.settings.items.map(node=>node.id),['a','b','c','d','p']);
@@ -52,4 +50,17 @@ test('browser preview reorders only its in-memory tree and keeps editing unavail
  await view.unmount();
  const again=await h.mount(WebCatalog,{store});assert.deepEqual([...again.container.querySelectorAll('[role=treeitem][aria-level="1"]')].map(row=>row.dataset.nodeId),['a','b','c','d','p']);
  await again.unmount();store.dispose();
+});
+test('desktop web tree pointer drag updates draft, while a click-sized motion does not reorder',async()=>{
+ const {store}=await h.loaded(),{WebCatalog}=require('../../src/settings/Collections.tsx'),view=await h.mount(WebCatalog,{store});
+ const source=view.container.querySelector('[data-node-id="b"]'),target=view.container.querySelector('[data-node-id="a"]');
+ target.getBoundingClientRect=()=>({top:0,height:100});
+ document.elementFromPoint=()=>target;
+ const pointer=(type,element,y)=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{pointerId:2,pointerType:'mouse',button:0,clientX:10,clientY:y});element.dispatchEvent(event);};
+ await h.act(async()=>{pointer('pointerdown',source,40);pointer('pointermove',window,38);pointer('pointerup',window,38);});
+ assert.deepEqual(store.snapshot().config.plugins.web.settings.items.map(node=>node.id),['a','b','c','d','p']);
+ await h.act(async()=>{pointer('pointerdown',source,40);pointer('pointermove',window,10);pointer('pointerup',window,10);});
+ assert.deepEqual(store.snapshot().config.plugins.web.settings.items.map(node=>node.id),['b','a','c','d','p']);
+ assert.equal(store.dirty,true);
+ await view.unmount();store.dispose();
 });

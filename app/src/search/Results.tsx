@@ -12,17 +12,18 @@ function Icon({item,snapshot}: {item:SearchItem;snapshot:SearchSnapshot}) {
   if(web && (snapshot.failedWebIcons.has(url) || (!snapshot.showUncachedWebIcons && !snapshot.loadedWebIcons.has(url)))) url='';
   return <span className="search-icon" aria-hidden="true">{url?<img src={url} {...(web?{'data-web-icon':url}:{})} loading="lazy" decoding="async" alt=""/>:item.type==='app'?'▣':item.type==='memo'?'›_':item.kind==='file'?(item.fileType==='folder'?'▱':'▤'):item.type==='clipboard'?'▤':item.type==='web-add'?'＋':!imageUrl(item.icon) && item.icon?String(item.icon):'⌁'}</span>;
 }
-function ResultActions({item,index}: {item:SearchItem;index:number}) {
+export function resultActions(item:SearchItem): [string,string][] {
   const actions: [string,string][]=[];
   if(['page','web','web-add','app'].includes(item.type)) {
-    actions.push(['open','打开']);
+    actions.push(['open',item.type==='web-add'?'添加到网页目录':'打开']);
     if(item.type==='app'?item.path:/^(https?:\/\/|[a-z0-9.-]+\.[a-z]{2,})/i.test(item.url || '')) actions.push(['copy',item.type==='app'?'复制路径':'复制链接']);
+    if(item.type==='page') actions.push(['edit','编辑网页']);
   }
   if(item.type==='memo') {if(item.content?.trim()) actions.push(['copy','复制命令']);actions.push(['open','粘贴']);}
   if(item.type==='twofa') actions.push(['copy','复制验证码']);
   if(['calculation','timestamp','jwt'].includes(item.type)) actions.push(['copy','复制结果']);
   if(['dns','ip'].includes(item.type)) actions.push(['copy-query','复制查询命令']);
-  return actions.length?<div className="search-actions">{actions.map(([action,label])=><Button key={action} className="tool-action" data-result-action={action} data-result-index={index}>{label}</Button>)}</div>:null;
+  return actions;
 }
 function ClipButton({item,action,children}: {item:SearchItem;action:string;children:React.ReactNode}) {
   return <Button className="tool-action" data-clipboard-action={action} data-clipboard-id={item.id}>{children}</Button>;
@@ -41,7 +42,6 @@ const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:numb
   return <div id={`search-result-${index}`} role="option" aria-selected={index===snapshot.state.index} className={`result ${item.type}-result ${usage?'usage-tile':''} ${index===snapshot.state.index?'active':''}`} data-i={index}>
     {!isTool && (item.type!=='clipboard'||item.kind!=='text')?<Icon item={item} snapshot={snapshot}/>:null}
     <div className="min-w-0 flex-1">{usage?<h3 className="search-tile-title">{item.title || '未命名'}</h3>:item.type==='clipboard'?<Clipboard item={item} snapshot={snapshot}/>:isTool?<ToolContent item={item} snapshot={snapshot}/>:item.type==='memo'?<><p className="search-meta">{host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category}</p><h3>{item.title || '未命名备忘'}</h3><code className="search-command">{String(item.content||'').split('\n').slice(0,2).join('\n')}</code>{item.description?<p className="search-meta">{item.description}</p>:null}</>:item.type==='twofa'?<><h3>{item.title || item.id || '2FA'}</h3><p className="search-meta">2FA 验证码{item.issuer?' · '+item.issuer:''}</p></>:item.type==='app'?<><h3>{item.title || '未命名应用'}</h3><p className="search-meta">应用 · {item.fileName} · {item.path}</p></>:item.type==='web-add'?<><h3>添加到网页配置</h3><p className="search-meta">未找到匹配网页 · {item.url} · 右键新建</p></>:<><h3>{item.title || item.id}</h3><p className="search-meta">{typeof item.path==='string'?item.path:item.breadcrumb || (item.path as unknown as {title:string}[] || []).map(x=>x.title).join(' / ')}{item.note?' · '+item.note:''} · {item.url} · 右键编辑</p></>}
-      {!usage?<ResultActions item={item} index={index}/>:null}
     </div>
   </div>;
 }, (before,after)=>{

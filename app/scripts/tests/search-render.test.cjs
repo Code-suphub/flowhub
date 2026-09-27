@@ -28,9 +28,25 @@ test('React renders type-specific clipboard and result actions, preserves editor
   w.document.querySelector('[data-clipboard-action="edit-save"]').click();await wait(()=>calls.some(c=>c[0]==='action'&&c[2]==='edit'));
   assert.equal(calls.find(c=>c[2]==='edit')[3].content,'new copy');
   for(const [scopeId,label] of [['app','复制路径'],['web','复制链接'],['memo','复制命令'],['twofa','复制验证码']]) {
-    await scope(scopeId);const row=w.document.querySelector('.result');assert.ok(row.textContent.includes(label),scopeId);
-    row.querySelector('[data-result-action="copy"]').click();await delay(20);
+    await scope(scopeId);const row=w.document.querySelector('.result');
+    assert.equal(row.querySelector('[data-result-action]'),null,scopeId);
+    row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
+    await wait(()=>w.document.querySelector('[data-result-action="copy"]'));
+    assert.ok(w.document.querySelector('[role="menu"]').textContent.includes(label),scopeId);
+    w.document.querySelector('[data-result-action="copy"]').click();await delay(20);
   }
   assert.ok(calls.some(c=>c[0]==='copy'&&c[1]==='https://example.com'));
   assert.ok(calls.some(c=>c[0]==='copy'&&c[1]==='123456'));
+});
+test('web result context menu waits for an explicit edit choice',async t=>{
+  const {w,scope,calls}=await setup(t);
+  await scope('web');
+  const row=w.document.querySelector('.page-result');
+  assert.ok(row);
+  assert.equal(row.querySelector('[data-result-action]'),null);
+  row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
+  await wait(()=>w.document.querySelector('[data-result-action="edit"]'));
+  assert.equal(calls.some(call=>call[0]==='settings'),false);
+  w.document.querySelector('[data-result-action="edit"]').click();
+  await wait(()=>calls.some(call=>call[0]==='settings'));
 });

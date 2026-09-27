@@ -7,7 +7,6 @@
     "defaultEnabled": true,
     "searchable": true,
     "settingsPanel": "clipboard",
-    "settingsHint": "记录设置",
     "settingsOrder": 30,
     "order": 10
   },
@@ -19,7 +18,6 @@
     "defaultEnabled": true,
     "searchable": true,
     "settingsPanel": "app",
-    "settingsHint": "启动设置",
     "settingsOrder": 20,
     "order": 20
   },
@@ -32,7 +30,6 @@
     "defaultEnabled": true,
     "searchable": true,
     "settingsPanel": "web",
-    "settingsHint": "网页入口",
     "settingsOrder": 10,
     "order": 30
   },
@@ -44,7 +41,6 @@
     "defaultEnabled": true,
     "searchable": true,
     "settingsPanel": "memo",
-    "settingsHint": "命令速查",
     "settingsOrder": 40,
     "order": 40
   },
@@ -66,7 +62,6 @@
     "defaultEnabled": true,
     "searchable": false,
     "settingsPanel": "tools",
-    "settingsHint": "识别设置",
     "settingsOrder": 50,
     "order": 50
   }

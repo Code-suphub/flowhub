@@ -78,6 +78,85 @@ test('empty canvas explains how to add a component and opens the editor', async 
   assert.match(css, /\.canvas-editor-dialog #widgetForm\s*\{[^}]*overflow-y:\s*auto/);
 });
 
+test('layout dropdown stays outside the isolated widget iframe layer', async t => {
+  const s = setup(t); await ready(s);
+  s.w.document.getElementById('boards').click();
+  await wait(() => s.w.document.querySelector('[data-slot="select-content"]'));
+  const popup = s.w.document.querySelector('[data-slot="select-content"]');
+  assert.equal(s.w.document.getElementById('canvas').contains(popup), false);
+  assert.ok(popup.closest('.z-50'));
+  const css = fs.readFileSync(path.join(app, 'src/canvas/canvas.css'), 'utf8');
+  assert.match(css, /\.fh-canvas-app #canvas\s*\{[^}]*z-index:\s*0;[^}]*isolation:\s*isolate/);
+  assert.match(css, /\.canvas-toolbar\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1/);
+});
+
+test('icon-only drag and widget settings entry remain accessible in interactive mode', async t => {
+  const s = setup(t); await ready(s);
+  const drag = s.w.document.getElementById('dragSurface');
+  assert.equal(drag.textContent.trim(), '');
+  assert.equal(drag.getAttribute('aria-label'), '拖动桌面组件区域');
+  s.w.document.getElementById('canvasSettings').click();
+  await wait(() => s.calls.some(call => call.action === 'settings'));
+  s.w.document.querySelector('.canvas-card').dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+  await wait(() => s.button('桌面组件设置'));
+  s.button('桌面组件设置').click();
+  await wait(() => s.calls.filter(call => call.action === 'settings').length === 2);
+});
+
+test('toolbar view-only switch persists immediately, locks the canvas, and settings can unlock it', async t => {
+  const s = setup(t); await ready(s);
+  const toggle = s.w.document.querySelector('[role=switch][aria-label="仅查看桌面组件"]');
+  assert.ok(toggle);
+  assert.equal(toggle.getAttribute('aria-checked'), 'false');
+  toggle.click();
+  await wait(() => s.calls.some(call => call.action === 'setViewOnly'));
+  assert.deepEqual(s.calls.find(call => call.action === 'setViewOnly').payload, { enabled: true });
+  await wait(() => s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly === 'true');
+  assert.equal(toggle.getAttribute('aria-checked'), 'true');
+  assert.equal(s.w.document.querySelector('.canvas-toolbar').hasAttribute('inert'), true);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-view-only', { detail: false }));
+  await wait(() => s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly === 'false');
+  assert.equal(toggle.getAttribute('aria-checked'), 'false');
+});
+
+test('failed toolbar lock leaves the canvas interactive and reports the error', async t => {
+  const s = setup(t, { invoke: (command, args) => args.action === 'setViewOnly' ? Promise.reject(Error('disk unavailable')) : undefined });
+  await ready(s);
+  s.w.document.querySelector('[role=switch][aria-label="仅查看桌面组件"]').click();
+  await wait(() => s.w.document.getElementById('notice').textContent.includes('disk unavailable'));
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'false');
+});
+
+test('view-only canvas blocks card actions, iframe input and hover toolbar until settings unlock it', async t => {
+  const locked = { ...layout(), viewOnly: true };
+  const s = setup(t, { layout: locked }); await ready(s);
+  const node = s.w.document.querySelector('.canvas-card');
+  const frame = node.querySelector('iframe');
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'true');
+  assert.equal(s.w.document.querySelector('.canvas-toolbar').hasAttribute('inert'), true);
+  const css = fs.readFileSync(path.join(app, 'src/canvas/canvas.css'), 'utf8');
+  assert.match(css, /\[data-view-only="true"\] \.canvas-toolbar\s*\{[^}]*display:\s*none/);
+  assert.match(css, /\[data-view-only="true"\] \.canvas-card\s*\{[^}]*pointer-events:\s*none/);
+  assert.equal(node.tabIndex, -1);
+  assert.equal(frame.tabIndex, -1);
+  s.pointer(node.querySelector('.widget-hit'), 'pointerdown', 10, 10);
+  s.pointer(node, 'pointermove', 200, 100);
+  s.pointer(node, 'pointerup', 200, 100);
+  node.click();
+  node.dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+  assert.equal(node.style.left, '0px');
+  assert.equal(s.calls.some(call => call.action === 'detail' || call.action === 'save'), false);
+  assert.equal(s.button('编辑组件'), undefined);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'true');
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-view-only', { detail: false }));
+  await wait(() => s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly === 'false');
+  assert.equal(node.tabIndex, 0);
+  assert.equal(frame.tabIndex, 0);
+  node.click();
+  await wait(() => s.calls.some(call => call.action === 'detail'));
+});
+
 test('pin, board create/rename/switch/delete and native drag/close persist correctly', async t => {
   const s = setup(t); await ready(s);
   s.w.document.querySelector('[role=switch]').click(); await wait(() => s.calls.some(call => call.action === 'save' && call.payload.pinned));

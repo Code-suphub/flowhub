@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { cardConfig, host, surfaceUrl, type Card, type Config, type FrameHandle, type Invoke, type Source } from './model';
 
-export function WidgetSurface({ source, card, kind, invoke, preview, onNavigate, onEditor }: {
+export function WidgetSurface({ source, card, kind, invoke, preview, inactive = false, onNavigate, onEditor }: {
   source: Source; card?: Card; kind: 'card' | 'editor'; invoke?: Invoke; preview: string | null;
+  inactive?: boolean;
   onNavigate?: (action: string, selection?: Config) => void;
   onEditor?: (handle: FrameHandle | null, ready: boolean) => void;
 }) {
@@ -34,5 +35,5 @@ export function WidgetSurface({ source, card, kind, invoke, preview, onNavigate,
   }, [source.id, path, revision, kind, invoke, preview]);
   useEffect(() => { bridge.current?.updateContext({ config: cardConfig(card), title: card?.title || '', snapshot: source.snapshot, preview: !invoke }); }, [card, source.snapshot, invoke]);
   return <iframe ref={frame} id={kind === 'editor' ? 'widgetEditor' : undefined} className={kind === 'card' ? 'widget-content' : 'canvas-editor'}
-    title={kind === 'editor' ? '插件组件配置' : card?.title || source.title} sandbox="allow-scripts" tabIndex={kind === 'editor' || source.widget?.interactive ? 0 : -1} />;
+    title={kind === 'editor' ? '插件组件配置' : card?.title || source.title} sandbox="allow-scripts" tabIndex={!inactive && (kind === 'editor' || source.widget?.interactive) ? 0 : -1} />;
 }

@@ -60,8 +60,8 @@ pub struct Card { id:String, plugin:String, title:String, view:String, size:Stri
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Board { id:String, title:String, cards:Vec<Card> }
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default)] desktop:bool, #[serde(default)] version:u32 }
-impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,desktop:false,version:2}}}
+pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default)] desktop:bool, #[serde(default)] version:u32 }
+impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,desktop:false,version:2}}}
 impl Layout {
     fn validate(&self)->Result<(),String>{
         if self.boards.is_empty() || self.boards.len()>12 || !self.boards.iter().any(|b|b.id==self.active){return Err("画布数量或当前画布无效".into());}
@@ -77,7 +77,8 @@ impl Layout {
 pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<std::collections::HashMap<String,(String,Value)>> }
 impl State {
     pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(std::collections::HashMap::new())})}
-    fn save(&self, next:Layout)->Result<(),String>{next.validate()?;let mut layout=self.layout.lock().unwrap();crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
+    fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next);next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
+    fn save(&self, next:Layout)->Result<(),String>{self.update(|layout|*layout=next)}
 }
 pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     let state=app.state::<State>();let mut layout=state.layout.lock().unwrap().clone();let mut added=false;
@@ -105,7 +106,17 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         return canvas_cursor(&window).await;
     }
     let state=app.state::<State>();
-    if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save(next)?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}
+    if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.update(|layout|{let view_only=layout.view_only;*layout=next;layout.view_only=view_only;})?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}
+    else if action=="setViewOnly" {
+        let enabled=payload["enabled"].as_bool().ok_or("交互模式无效")?;
+        state.update(|layout|layout.view_only=enabled)?;
+        for label in ["plugin-canvas","settings"] {
+            if label!=window.label() {
+                if let Some(w)=app.get_webview_window(label) {let _=w.eval(&format!("window.dispatchEvent(new CustomEvent('flowhub:canvas-view-only',{{detail:{enabled}}}))"));}
+            }
+        }
+    }
+    else if action=="settings" {if window.label()!="plugin-canvas" {return Err("仅可从桌面组件打开设置".into());}crate::open_canvas_settings(app.clone())?;}
     else if action=="detail" {
         let id=payload["plugin"].as_str().ok_or("缺少插件")?;
         app.state::<crate::plugin::runtime::Runtime>().widget(id)?;
@@ -143,4 +154,22 @@ fn legacy_cards_and_plugin_defined_config_survive_roundtrip(){
     let card=&restored.boards[0].cards[0];
     assert_eq!((card.width,card.height,card.x),(Some(201),Some(139),Some(211)));
     assert_eq!(card.config["customPluginField"]["nested"][0],"arbitrary-metric");
+}
+#[cfg(test)]
+#[test]
+fn view_only_defaults_off_and_survives_canvas_layout_saves(){
+    let old=json!({"boards":[{"id":"default","title":"我的工作台","cards":[]}],"active":"default","pinned":false});
+    let legacy:Layout=serde_json::from_value(old).unwrap();
+    assert!(!legacy.view_only);
+    let root=std::env::temp_dir().join(format!("canvas-view-only-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();
+    let state=State::new(&root).unwrap();
+    state.update(|layout|layout.view_only=true).unwrap();
+    state.update(|layout|{let locked=layout.view_only;*layout=legacy;layout.view_only=locked;}).unwrap();
+    let persisted=State::new(&root).unwrap();
+    let saved=persisted.layout.lock().unwrap();
+    assert!(saved.view_only);
+    assert_eq!(serde_json::to_value(&*saved).unwrap()["viewOnly"],true);
+    drop(saved);
+    std::fs::remove_dir_all(root).unwrap();
 }

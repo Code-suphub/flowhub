@@ -32,12 +32,26 @@ function backend(extra = {}) {
 }
 test('browser preview disables mutation but leaves navigation usable', async t => {
   const { dom, w, button } = setup(); t.after(() => dom.window.close());
-  await wait(() => button('查看来源设置'));
+  await wait(() => w.document.querySelector('[data-slot="empty-title"]'));
   assert.equal(button('安装开发目录'), undefined);
-  button('查看来源设置').click(); await wait(() => button('来源')?.getAttribute('aria-selected') === 'true');
+  assert.equal(button('添加来源'), undefined);
+  assert.equal(w.document.querySelector('[role="status"]'), null);
+  button('来源').click(); await wait(() => button('来源')?.getAttribute('aria-selected') === 'true');
   assert.equal(button('添加来源'), undefined);
   assert.equal(w.document.querySelector('[data-slot="empty-title"]')?.textContent, '还没有插件来源');
-  assert.match(w.document.body.textContent, /浏览器预览只读/);
+  assert.match(w.document.body.textContent, /请在桌面 App 添加来源/);
+});
+test('native empty market offers one working add-source action', async t => {
+  const mock = backend({ sources: () => [] });
+  const { dom, w, button } = setup(mock.invoke); t.after(() => dom.window.close());
+  await wait(() => button('添加来源'));
+  assert.equal([...w.document.querySelectorAll('button')].filter(el => el.textContent === '添加来源').length, 1);
+  button('添加来源').click();
+  await wait(() => button('来源')?.getAttribute('aria-selected') === 'true');
+  assert.equal([...w.document.querySelectorAll('button')].filter(el => el.textContent === '添加来源').length, 1);
+  button('添加来源').click();
+  await wait(() => w.document.querySelector('[role="dialog"]'));
+  assert.match(w.document.querySelector('[role="dialog"]').textContent, /添加来源/);
 });
 test('scan and install require an explicit confirmation; cancel makes no install call', async t => {
   const mock = backend(); const { dom, w, button } = setup(mock.invoke); t.after(() => dom.window.close());

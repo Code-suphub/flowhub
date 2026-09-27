@@ -766,6 +766,11 @@ function saveClipboardEdit() {
 
 function runResultAction(action, item) {
   if (action === "open") return choose(item);
+  if (action === "edit" && item.type === "page") {
+    const url = normalizeUrl(item.url);
+    if (url && typeof window.weborg?.openSettings === "function") return window.weborg.openSettings({ initialUrl: url });
+    return;
+  }
   if (action === "copy-query") {
     const text = portableQueryCommand(item);
     if (!text) return showActionStatus("这条结果没有可复制的命令");
@@ -811,9 +816,14 @@ function renderSnapshot(options = {}) {
 // 结果操作焦点顺序：F6 进入当前结果的第一个操作按钮，再按 F6 在按钮之间前进，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
-  const actions = [...resultsEl.querySelectorAll(".result.active .tool-action")].filter((button) => !button.disabled);
+  const actions = [...resultsEl.querySelectorAll(".search-context-menu .tool-action, .result.active .tool-action")].filter((button) => !button.disabled);
   const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
-  if (!actions.length) { returnToSearch(); return; }
+  if (!actions.length) {
+    const row = resultsEl.querySelector(".result.active");
+    if (row) resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
+    else returnToSearch();
+    return;
+  }
   const index = actions.indexOf(current);
   if (index < 0) {
     (direction > 0 ? actions[0] : actions[actions.length - 1]).focus();
@@ -1656,22 +1666,6 @@ bind(resultsEl, "mousedown", (e) => {
     recoveredAppClick = {row,down:e.timeStamp,up:released.stamp};
     choose(item);
   }
-});
-bind(resultsEl, "contextmenu", (e) => {
-  const row = e.target.closest(".result");
-  if (!row) return;
-  const item = matches()[+row.dataset.i];
-  if (item?.type === "page" || item?.type === "web-add") {
-    e.preventDefault();
-    const url = normalizeUrl(item.url);
-    if (!url || typeof window.weborg?.openSettings !== "function") return;
-    void window.weborg.openSettings({ initialUrl: url });
-    return;
-  }
-  if (item?.type !== "clipboard") return;
-  e.preventDefault();
-  if (document.documentElement.dataset.weborgReadonly === "true") return;
-  requestClipboardDelete(item);
 });
 bind(resultsEl, "click", (e) => {
   const resultAction = e.target.closest("[data-result-action]");

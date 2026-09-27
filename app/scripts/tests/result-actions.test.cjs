@@ -119,5 +119,5 @@ const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://e
     assert.equal(h.returned(), 2, '当前结果没有操作按钮时回到搜索框');
   }
 
-  console.log('PASS: results expose one action bar per type and F6/Tab/Escape follow one focus order');
+  console.log('PASS: result actions and F6/Tab/Escape follow one focus order');
 })().catch(error => { console.error(error); process.exitCode = 1; });
