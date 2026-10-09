@@ -29,6 +29,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Check out shared popup utility
+        uses: actions/checkout@v5
+        with:
+          repository: Code-suphub/common-components
+          ref: 9ab6c3d026d9cf44e6c1f0a30e0cb1409fac4fa9
+          path: .shared/common-components
+
+      - name: Link shared workspace dependency
+        working-directory: ${{ github.workspace }}
+        run: ln -s "$GITHUB_WORKSPACE/.shared/common-components" ../common-components
+
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
