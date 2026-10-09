@@ -127,7 +127,7 @@ test('failed toolbar lock leaves the canvas interactive and reports the error', 
   assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'false');
 });
 
-test('view-only canvas blocks card actions, iframe input and hover toolbar until settings unlock it', async t => {
+test('view-only locks dragging and left clicks, while right-click can exit without allowing edits', async t => {
   const locked = { ...layout(), viewOnly: true };
   const s = setup(t, { layout: locked }); await ready(s);
   const node = s.w.document.querySelector('.canvas-card');
@@ -136,8 +136,8 @@ test('view-only canvas blocks card actions, iframe input and hover toolbar until
   assert.equal(s.w.document.querySelector('.canvas-toolbar').hasAttribute('inert'), true);
   const css = fs.readFileSync(path.join(app, 'src/canvas/canvas.css'), 'utf8');
   assert.match(css, /\[data-view-only="true"\] \.canvas-toolbar\s*\{[^}]*display:\s*none/);
-  assert.match(css, /\[data-view-only="true"\] \.canvas-card\s*\{[^}]*pointer-events:\s*none/);
-  assert.equal(node.tabIndex, -1);
+  assert.match(css, /\[data-view-only="true"\] \.canvas-card \.widget-content\s*\{[^}]*pointer-events:\s*none/);
+  assert.equal(node.tabIndex, 0);
   assert.equal(frame.tabIndex, -1);
   s.pointer(node.querySelector('.widget-hit'), 'pointerdown', 10, 10);
   s.pointer(node, 'pointermove', 200, 100);
@@ -146,15 +146,43 @@ test('view-only canvas blocks card actions, iframe input and hover toolbar until
   node.dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
   assert.equal(node.style.left, '0px');
   assert.equal(s.calls.some(call => call.action === 'detail' || call.action === 'save'), false);
-  assert.equal(s.button('编辑组件'), undefined);
+  await wait(() => s.button('退出仅查看状态'));
+  assert.equal(s.button('编辑组件').disabled, true);
+  assert.equal(s.button('移除组件').disabled, true);
+  s.button('编辑组件').click(); s.button('移除组件').click();
+  assert.equal(s.w.document.getElementById('widgetForm'), null);
+  assert.ok(s.w.document.querySelector('.canvas-card'));
   await new Promise(resolve => setTimeout(resolve, 400));
   assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'true');
-  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-view-only', { detail: false }));
+  s.button('退出仅查看状态').click();
+  await wait(() => s.calls.some(call => call.action === 'setViewOnly' && call.payload.enabled === false));
   await wait(() => s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly === 'false');
   assert.equal(node.tabIndex, 0);
   assert.equal(frame.tabIndex, 0);
   node.click();
   await wait(() => s.calls.some(call => call.action === 'detail'));
+});
+
+test('view-only keyboard menus skip disabled edits and allow explicit detail navigation', async t => {
+  const s = setup(t, { layout: { ...layout(), viewOnly: true } }); await ready(s);
+  const node = s.w.document.querySelector('.canvas-card');
+  node.dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'F10', shiftKey: true }));
+  await wait(() => s.button('退出仅查看状态'));
+  s.button('打开详情').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowDown' }));
+  assert.equal(s.w.document.activeElement, s.button('桌面组件设置'));
+  s.button('打开详情').click(); await wait(() => s.calls.some(call => call.action === 'detail'));
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'true');
+});
+
+test('an empty view-only board also exposes exit, and failed exit preserves the lock', async t => {
+  const empty = { ...layout(), viewOnly: true }; empty.boards[0].cards = [];
+  const s = setup(t, { layout: empty, invoke: (command, args) => args.action === 'setViewOnly' ? Promise.reject(Error('disk unavailable')) : undefined });
+  await wait(() => s.w.document.getElementById('add') && !s.w.document.getElementById('add').disabled);
+  s.w.document.getElementById('canvas').dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+  await wait(() => s.button('退出仅查看状态'));
+  s.button('退出仅查看状态').click();
+  await wait(() => s.w.document.getElementById('notice').textContent.includes('disk unavailable'));
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'true');
 });
 
 test('pin, board create/rename/switch/delete and native drag/close persist correctly', async t => {

@@ -40,7 +40,7 @@ export function CanvasSettings() {
   }
 
   return <section className="settings-canvas max-w-2xl" aria-label="桌面组件设置">
-    <Toggle label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || busy || readonly()} onChange={value => { void change(value); }} help="开启后组件不能点击、拖动或右键操作，鼠标悬浮时也不会显示工具栏。可在此关闭。" />
+    <Toggle label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || busy || readonly()} onChange={value => { void change(value); }} help="开启后锁定组件拖动和左键操作，悬浮时不显示工具栏。右键菜单仍可打开详情或退出仅查看状态，也可在此关闭。" />
     {error ? <p role="alert" className="settings-error mt-3">{error}</p> : null}
     <Button className="mt-5" disabled={readonly() || busy} onClick={() => { if (invoke) void invoke('plugin_canvas_api', { action: 'open', payload: {} }).catch(reason => setError(String(reason))); }}>打开桌面组件</Button>
   </section>;

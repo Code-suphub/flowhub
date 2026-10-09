@@ -7,6 +7,12 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 fn viewport_point(x:f64,y:f64,left:f64,bottom:f64,height:f64,flipped:bool)->(f64,f64){
     (x-left,if flipped{y-bottom}else{height-(y-bottom)})
 }
+fn position_is_visible((x,y):(i32,i32),monitors:&[(i32,i32,u32,u32)])->bool {
+    monitors.iter().any(|&(left,top,width,height)| {
+        let (x,y,left,top)=(x as i64,y as i64,left as i64,top as i64);
+        x>=left && y>=top && x+80<=left+width as i64 && y+80<=top+height as i64
+    })
+}
 #[cfg(test)]
 mod cursor_tests {
     use super::viewport_point;
@@ -60,8 +66,8 @@ pub struct Card { id:String, plugin:String, title:String, view:String, size:Stri
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Board { id:String, title:String, cards:Vec<Card> }
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default)] desktop:bool, #[serde(default)] version:u32 }
-impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,desktop:false,version:2}}}
+pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default)] desktop:bool, #[serde(default,rename="windowPosition",skip_serializing_if="Option::is_none")] window_position:Option<(i32,i32)>, #[serde(default)] version:u32 }
+impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,desktop:false,window_position:None,version:2}}}
 impl Layout {
     fn validate(&self)->Result<(),String>{
         if self.boards.is_empty() || self.boards.len()>12 || !self.boards.iter().any(|b|b.id==self.active){return Err("画布数量或当前画布无效".into());}
@@ -79,6 +85,18 @@ impl State {
     pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(std::collections::HashMap::new())})}
     fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next);next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
     fn save(&self, next:Layout)->Result<(),String>{self.update(|layout|*layout=next)}
+    fn save_from_canvas(&self,next:Layout)->Result<(),String>{
+        self.update(|layout|{
+            // Frontend snapshots may predate a native move or mode change.
+            let owned=(layout.view_only,layout.desktop,layout.window_position);
+            *layout=next;
+            layout.view_only=owned.0;layout.desktop=owned.1;layout.window_position=owned.2;
+        })
+    }
+    fn remember_position(&self,position:(i32,i32))->Result<(),String>{
+        if self.layout.lock().unwrap().window_position==Some(position){return Ok(());}
+        self.update(|layout|layout.window_position=Some(position))
+    }
 }
 pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     let state=app.state::<State>();let mut layout=state.layout.lock().unwrap().clone();let mut added=false;
@@ -88,8 +106,21 @@ pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     }
     layout.desktop=true;state.save(layout.clone())?;
     if let Some(w)=app.get_webview_window("plugin-canvas"){if added{w.eval("location.reload()").map_err(|e|e.to_string())?;}w.show().map_err(|e|e.to_string())?;return w.set_focus().map_err(|e|e.to_string());}
-    let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App("plugin-canvas.html".into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
-    let handle=app.clone();w.on_window_event(move|event|{if let tauri::WindowEvent::CloseRequested{..}=event{let state=handle.state::<State>();let mut next=state.layout.lock().unwrap().clone();next.desktop=false;let _=state.save(next);}});
+    let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App("plugin-canvas.html".into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
+    if let Some(position)=layout.window_position {
+        let monitors:Vec<_>=app.available_monitors().map_err(|e|e.to_string())?.iter().map(|m|(m.position().x,m.position().y,m.size().width,m.size().height)).collect();
+        if position_is_visible(position,&monitors){w.set_position(tauri::PhysicalPosition::new(position.0,position.1)).map_err(|e|e.to_string())?;}
+        else {w.center().map_err(|e|e.to_string())?;}
+    }
+    let handle=app.clone();w.on_window_event(move|event|{
+        let state=handle.state::<State>();
+        match event {
+            tauri::WindowEvent::Moved(position)=>{let _=state.remember_position((position.x,position.y));}
+            tauri::WindowEvent::CloseRequested{..}=>{let _=state.update(|layout|layout.desktop=false);}
+            _=>{}
+        }
+    });
+    w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;
     Ok(())
 }
 pub fn restore(app:&tauri::AppHandle){let desktop=app.state::<State>().layout.lock().unwrap().desktop;if desktop{let handle=app.clone();let _=app.run_on_main_thread(move||{let _=open(&handle,"");});}}
@@ -106,7 +137,7 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         return canvas_cursor(&window).await;
     }
     let state=app.state::<State>();
-    if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.update(|layout|{let view_only=layout.view_only;*layout=next;layout.view_only=view_only;})?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}
+    if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save_from_canvas(next)?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}
     else if action=="setViewOnly" {
         let enabled=payload["enabled"].as_bool().ok_or("交互模式无效")?;
         state.update(|layout|layout.view_only=enabled)?;
@@ -165,11 +196,42 @@ fn view_only_defaults_off_and_survives_canvas_layout_saves(){
     std::fs::create_dir_all(&root).unwrap();
     let state=State::new(&root).unwrap();
     state.update(|layout|layout.view_only=true).unwrap();
-    state.update(|layout|{let locked=layout.view_only;*layout=legacy;layout.view_only=locked;}).unwrap();
+    state.save_from_canvas(legacy).unwrap();
     let persisted=State::new(&root).unwrap();
     let saved=persisted.layout.lock().unwrap();
     assert!(saved.view_only);
     assert_eq!(serde_json::to_value(&*saved).unwrap()["viewOnly"],true);
     drop(saved);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(test)]
+#[test]
+fn window_position_survives_restart_and_stale_frontend_saves(){
+    let root=std::env::temp_dir().join(format!("canvas-position-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();
+    let state=State::new(&root).unwrap();
+    state.update(|layout|{layout.desktop=true;layout.view_only=true;}).unwrap();
+    state.remember_position((-600,180)).unwrap();
+    let mut stale=Layout::default();stale.window_position=Some((0,0));
+    state.save_from_canvas(stale).unwrap();
+    let restarted=State::new(&root).unwrap();
+    let saved=restarted.layout.lock().unwrap();
+    assert_eq!(saved.window_position,Some((-600,180)));
+    assert!(saved.desktop);assert!(saved.view_only);
+    assert_eq!(serde_json::to_value(&*saved).unwrap()["windowPosition"],json!([-600,180]));
+    drop(saved);std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(test)]
+#[test]
+fn window_position_accepts_negative_monitor_origins_but_rejects_disconnected_displays(){
+    let monitors=[(-1920,0,1920,1080),(0,0,1920,1080)];
+    assert!(position_is_visible((-600,180),&monitors));
+    assert!(position_is_visible((200,100),&monitors));
+    assert!(position_is_visible((1840,1000),&monitors));
+    assert!(!position_is_visible((3600,200),&monitors));
+    assert!(!position_is_visible((1850,100),&monitors));
+    assert!(!position_is_visible((0,1040),&monitors));
+    assert!(!position_is_visible((i32::MAX,i32::MAX),&monitors));
 }
