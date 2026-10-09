@@ -10,7 +10,7 @@ export type FrameHandle = { updateContext(context: FrameContext): void; save(): 
 export type Invoke = <T = unknown>(command: string, args: Record<string, unknown>) => Promise<T>;
 export type CanvasHost = Window & {
   __TAURI__?: { core?: { invoke?: Invoke } };
-  FlowHubWidgetFrame: { mount(frame: HTMLIFrameElement, options: { url: string; context: FrameContext; rpc: ((params: Config) => Promise<unknown>) | null; navigate: ((action: string, selection?: Config) => void) | null }): FrameHandle };
+  FlowHubWidgetFrame: { mount(frame: HTMLIFrameElement, options: { url: string; context: FrameContext; rpc: ((params: Config) => Promise<unknown>) | null; navigate: ((action: string, selection?: Config) => void) | null; resize?: (height: number) => void }): FrameHandle };
   WidgetLayout: { arrange(cards: Card[], moving?: string | null, wanted?: Point | null, target?: string | null): Position[]; swapTarget(cards: Card[], moving: string, point: Point): string | null };
 };
 export const host = () => window as unknown as CanvasHost;

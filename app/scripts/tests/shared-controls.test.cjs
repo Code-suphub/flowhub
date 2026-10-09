@@ -84,7 +84,7 @@ async function setup(t, kind, overrides = {}) {
     trigger.dispatchEvent(event); return event;
   };
   const active = () => document.getElementById(trigger.getAttribute('aria-activedescendant'));
-  const list = () => document.querySelector('[role="listbox"]');
+  const list = () => [...document.querySelectorAll('[role="listbox"]')].find(node => !node.closest('[hidden]'));
   const tooltip = () => document.querySelector('[role="tooltip"]');
   return { w, document, trigger, calls, key, active, list, tooltip, unmount };
 }
@@ -159,6 +159,27 @@ test('disabled Select does not open or change', async t => {
   assert.equal(s.trigger.disabled, true);
   s.trigger.click();
   assert.equal(s.trigger.getAttribute('aria-expanded'), 'false');
+  assert.deepEqual(s.calls, []);
+});
+
+test('Select removes its portal when its owner becomes hidden or inert, or the window leaves view', async t => {
+  const s = await setup(t, 'select');
+  const owner = s.document.getElementById('root');
+  for (const mode of ['inert', 'hidden', 'display', 'visibility']) {
+    s.trigger.click(); await wait(() => s.list());
+    if (mode === 'display') owner.style.display = 'none';
+    else if (mode === 'visibility') owner.style.visibility = 'hidden';
+    else owner.setAttribute(mode, '');
+    await wait(() => !s.list(), `${mode} owner must not leave portal options behind`);
+    owner.removeAttribute('inert'); owner.removeAttribute('hidden'); owner.removeAttribute('style');
+  }
+  for (const event of ['blur', 'pagehide']) {
+    s.trigger.click(); await wait(() => s.list());
+    s.w.dispatchEvent(new s.w.Event(event)); await wait(() => !s.list());
+  }
+  s.trigger.click(); await wait(() => s.list());
+  Object.defineProperty(s.document, 'hidden', { configurable: true, value: true });
+  s.document.dispatchEvent(new s.w.Event('visibilitychange')); await wait(() => !s.list());
   assert.deepEqual(s.calls, []);
 });
 

@@ -1,6 +1,6 @@
 (() => {
   // The frame identity binds RPC to its installed plugin, never to a child-supplied ID.
-  window.FlowHubWidgetFrame={mount(frame,{url,context,rpc,navigate}){
+  window.FlowHubWidgetFrame={mount(frame,{url,context,rpc,navigate,resize}){
     let disposed=false,sequence=0;const pending=new Map();
     const token=crypto.randomUUID(),target=new URL(url,location.href);target.hash=new URLSearchParams({flowhubWidgetToken:token});
     const send=data=>frame.contentWindow?.postMessage({...data,token},'*');
@@ -8,6 +8,7 @@
       if(disposed||!frame.isConnected||event.source!==frame.contentWindow)return;
       const d=event.data;if(!d||typeof d!=='object'||d.token!==token)return;
       if(d.type==='flowhub:widget-ready')send({type:'flowhub:widget-init',context});
+      if(d.type==='flowhub:widget-size'&&typeof d.height==='number'&&Number.isFinite(d.height)&&d.height>0&&d.height<=2000)resize?.(Math.ceil(d.height));
       if(d.type==='flowhub:widget-navigate'&&(d.action==='detail'||d.action==='editor')){
         const selection=d.selection;
         if(selection!==undefined&&(!selection||Array.isArray(selection)||typeof selection!=='object'||JSON.stringify(selection).length>4096))return;

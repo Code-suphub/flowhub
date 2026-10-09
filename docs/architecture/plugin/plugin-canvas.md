@@ -32,6 +32,7 @@ FlowHub 管理透明窗口、卡片位置与尺寸、置顶、右键菜单、插
 `widget-frame.js` 与插件自己的 `widget-bridge.js` 使用 postMessage 通信。每次挂载生成随机 token，通过 URL fragment 传给页面；双方同时验证消息窗口和 token，避免切换来源后旧页面继续调用接口。
 
 - `flowhub:widget-ready` / `flowhub:widget-init`：传递 `{config,title,snapshot,preview}`。
+- `flowhub:widget-size`：编辑页可报告内容 `height`（有限正数，最多 2000 CSS 像素）；宿主验证来源和 token 后调整编辑 iframe，高度变化只影响编辑区。表单使用单层滚动，保存按钮固定在对话框底部。
 - `flowhub:widget-save` / `flowhub:widget-config`：请求校验并保存插件配置，错误显示在宿主编辑器中。配置必须是最多 64 KiB 的对象。
 - `flowhub:widget-rpc` / `flowhub:widget-result`：宿主将请求送至绑定插件的固定 `widget_api` 方法，页面不能指定其他插件或其他 RPC 方法。详情窗口在原生侧也绑定插件身份，关闭后移除绑定。
 

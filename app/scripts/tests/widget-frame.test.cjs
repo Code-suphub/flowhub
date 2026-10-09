@@ -58,3 +58,14 @@ test('snapshot updates retain the iframe and in-flight RPC identity',async()=>{
   h.updateContext({snapshot:{rows:[{id:'fresh'}]}});assert.equal(s.frame.src,src);assert.equal(s.messages.at(-1).context.snapshot.rows[0].id,'fresh');
   finish({ok:true});await pending;assert.equal(s.messages.at(-1).id,'operation');h.dispose();
 });
+test('only authenticated bounded editor measurements can resize a surface',async()=>{
+  const s=setup(),heights=[],h=s.mount({resize:height=>heights.push(height)}),token=s.token();
+  await s.emit({type:'flowhub:widget-size',token,height:384},{});
+  await s.emit({type:'flowhub:widget-size',token:'foreign',height:384});
+  for(const height of [0,-1,2001,Infinity,NaN,'384'])await s.emit({type:'flowhub:widget-size',token,height});
+  assert.deepEqual(heights,[]);
+  await s.emit({type:'flowhub:widget-size',token,height:384.2});
+  assert.deepEqual(heights,[385]);
+  h.dispose();await s.emit({type:'flowhub:widget-size',token,height:400});
+  assert.deepEqual(heights,[385]);
+});

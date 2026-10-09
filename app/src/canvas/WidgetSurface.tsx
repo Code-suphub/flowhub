@@ -19,6 +19,7 @@ export function WidgetSurface({ source, card, kind, invoke, preview, inactive = 
       context: { config: cardConfig(current.card), title: current.card?.title || '', snapshot: current.source.snapshot, preview: !invoke },
       rpc: invoke ? params => invoke('plugin_widget_rpc', { id: source.id, params }) : null,
       navigate: kind === 'card' ? (action, selection) => latest.current.onNavigate?.(action, selection) : null,
+      resize: kind === 'editor' ? height => { node.style.height = `${height}px`; } : undefined,
     });
     bridge.current = handle;
     // Observe readiness only; all business messages and RPC remain in the original bridge.

@@ -219,7 +219,11 @@ test('pointer drag, cancellation, resize minimum and keyboard resize keep frames
 
 test('editor waits for authenticated readiness and save; double submits and foreign replies are ignored', async t => {
   const s = setup(t); await ready(s); const frame = await edit(s); s.frameMessages(frame);
-  const submit = () => s.w.document.querySelector('#widgetForm button[type=submit]');
+  const submit = () => s.w.document.querySelector('button[form="widgetForm"]');
+  assert.equal(submit().form, s.w.document.getElementById('widgetForm'));
+  assert.equal(s.w.document.getElementById('widgetForm').contains(submit()), false);
+  s.message(frame, { type: 'flowhub:widget-size', height: 398 });
+  assert.equal(frame.style.height, '398px');
   assert.equal(s.w.document.querySelectorAll('#widgetForm [data-slot="field"]').length, 2);
   assert.equal(s.w.document.getElementById('cardTitle').labels[0].textContent, '卡片名称');
   assert.equal(submit().disabled, true);
@@ -237,9 +241,24 @@ test('editor waits for authenticated readiness and save; double submits and fore
   assert.equal(s.calls.find(call => call.action === 'save').payload.boards[0].cards[0].config.filter, 'saved');
 });
 
+test('editor plugin title does not activate the select, while the trigger keeps its accessible name and keyboard behavior', async t => {
+  const s = setup(t); await ready(s); await edit(s);
+  const title = s.w.document.getElementById('sourceLabel');
+  const trigger = s.w.document.getElementById('source');
+  assert.equal(trigger.getAttribute('aria-labelledby'), title.id);
+  title.click();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  trigger.click();
+  await wait(() => s.w.document.querySelector('.canvas-editor-select-popup'));
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  trigger.dispatchEvent(new s.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  await wait(() => trigger.getAttribute('aria-expanded') === 'false');
+});
+
 test('native pointer exit disposes a pending editor and ignores late save replies', async t => {
   const s = setup(t); await ready(s); const frame = await edit(s); s.frameMessages(frame);
-  s.message(frame, { type: 'flowhub:widget-ready' }); await wait(() => !s.w.document.querySelector('#widgetForm button[type=submit]').disabled);
+  s.message(frame, { type: 'flowhub:widget-ready' }); await wait(() => !s.w.document.querySelector('button[form="widgetForm"]').disabled);
   s.submit('widgetForm'); await wait(() => s.responses.some(message => message.type === 'flowhub:widget-save'));
   const save = s.responses.find(message => message.type === 'flowhub:widget-save');
   s.setCursor({ x: -20, y: -20 }); await wait(() => !s.w.document.querySelector('[role="dialog"]'));

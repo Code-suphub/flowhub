@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { GripVerticalIcon, Settings2Icon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
-import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
+import { Field, FieldGroup, FieldLabel, FieldTitle } from '../components/ui/field';
 import { EmptyState, Help, Select, Switch } from '../shared/controls';
 import { nativeHost } from '../shared/native';
 import { WidgetSurface } from './WidgetSurface';
@@ -33,8 +33,8 @@ function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
       } catch (error) { if (alive.current && current === handle.current) setError(String(error)); }
       finally { saving.current = false; if (alive.current) setBusy(false); }
     }}>
-      <FieldGroup className="gap-3">
-        <Field data-disabled={busy}><FieldLabel htmlFor="source">插件</FieldLabel><Select id="source" label="插件" value={plugin} disabled={busy} options={[{ value: '', label: '请选择插件', disabled: true }, ...sources.filter(source => source.widget).map(source => ({ value: source.id, label: source.title }))]}
+      <FieldGroup className="canvas-editor-fields gap-3">
+        <Field data-disabled={busy}><FieldTitle id="sourceLabel">插件</FieldTitle><Select id="source" label="插件" labelledBy="sourceLabel" popupClassName="canvas-editor-select-popup" value={plugin} disabled={busy} options={[{ value: '', label: '请选择插件', disabled: true }, ...sources.filter(source => source.widget).map(source => ({ value: source.id, label: source.title }))]}
           onChange={value => { handle.current = null; setReady(false); setError(''); setPlugin(value); }} /></Field>
         {source ? <Field data-disabled={busy}><FieldLabel htmlFor="cardTitle">卡片名称</FieldLabel><Input id="cardTitle" value={title} maxLength={60} disabled={busy} placeholder="默认使用插件名称" onChange={event => setTitle(event.target.value)} /></Field> : null}
       </FieldGroup>
@@ -42,9 +42,9 @@ function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
         <WidgetSurface key={plugin} kind="editor" source={source} card={editor.card?.plugin === plugin ? editor.card : undefined} invoke={invoke} preview={preview}
           onEditor={(value, isReady) => { handle.current = value; setReady(isReady); }} />
         {!ready ? <p role="status">等待插件编辑器就绪…</p> : null}
-        <Button type="submit" className="primary" disabled={!ready || busy}>{busy ? '保存中…' : editor.card ? '保存修改' : '添加到画布'}</Button>
       </> : null}
     </form>
+    {source ? <div className="canvas-editor-actions"><Button type="submit" form="widgetForm" className="primary w-full" disabled={!ready || busy}>{busy ? '保存中…' : editor.card ? '保存修改' : '添加到画布'}</Button></div> : null}
   </Dialog>;
 }
 
@@ -184,7 +184,11 @@ export function Canvas() {
       else if (!leaveTimer) leaveTimer = setTimeout(() => { leaveTimer = undefined; if (current.current.menu === active) close(); }, 180);
     }
     function track(x: number, y: number, frontmost = true) {
-      const inside = frontmost && x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+      // macOS can deliver a right-click without activating the application.
+      // An explicitly opened pointer menu owns the interaction until cursor
+      // exit, outside input or blur dismisses it; app activation is not required.
+      const interacting = current.current.menu?.pointer === true;
+      const inside = (frontmost || interacting) && x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
       setInactive(!inside);
       if (!inside) { close(); setEditor(null); setNaming(null); setDeleting(false); }
       trackMenu(x, y);
@@ -205,6 +209,7 @@ export function Canvas() {
     const focus = (event: FocusEvent) => { const node = event.target as Element; if (!menuNode.current?.contains(node) && node.closest?.('[data-id]')?.getAttribute('data-id') !== current.current.menu?.card.id) close(); };
     const scroll = (event: Event) => { if (!menuNode.current?.contains(event.target as Node)) close(); };
     document.addEventListener('pointermove', move, true); document.addEventListener('mousemove', move, true);
+    document.addEventListener('contextmenu', move, true);
     document.addEventListener('pointerdown', down, true); document.addEventListener('keydown', key);
     document.documentElement.addEventListener('pointerleave', leave);
     document.addEventListener('visibilitychange', visibility); document.addEventListener('focusin', focus); document.addEventListener('scroll', scroll, true);
@@ -213,6 +218,7 @@ export function Canvas() {
     return () => {
       stopped = true; clearTimeout(timer); cancelLeave();
       document.removeEventListener('pointermove', move, true); document.removeEventListener('mousemove', move, true);
+      document.removeEventListener('contextmenu', move, true);
       document.removeEventListener('pointerdown', down, true); document.removeEventListener('keydown', key);
       document.documentElement.removeEventListener('pointerleave', leave);
       document.removeEventListener('visibilitychange', visibility); document.removeEventListener('focusin', focus); document.removeEventListener('scroll', scroll, true);
