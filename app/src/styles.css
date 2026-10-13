@@ -1,4 +1,5 @@
 @layer theme, utilities;
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "./";
@@ -7,6 +8,8 @@
   --color-foreground: var(--fh-text);
   --color-primary: var(--fh-accent);
   --color-primary-foreground: var(--fh-on-accent);
+  --color-secondary: var(--fh-surface-soft);
+  --color-secondary-foreground: var(--fh-text);
   --color-input: var(--fh-border);
   --color-ring: var(--fh-accent);
   --color-popover: var(--fh-surface);
@@ -19,21 +22,41 @@
   --color-success: var(--fh-positive);
   --color-warning: var(--fh-warning);
   --color-border: var(--fh-border);
+  --radius-sm: var(--fh-radius-sm);
+  --radius-md: var(--fh-radius-md);
+  --radius-lg: var(--fh-radius-lg);
+  --radius-xl: var(--fh-radius-xl);
 }
 .fh-root { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--fh-text); }
 .fh-root *, .fh-dialog * { box-sizing:border-box; }
-.fh-input { font:inherit; color:var(--fh-text); border:1px solid var(--fh-border); border-radius:7px; background:var(--fh-surface); padding:7px 11px; min-height:36px; }
+.fh-input { font:inherit; color:var(--fh-text); border:1px solid var(--fh-border); border-radius:var(--fh-radius-md); background:var(--fh-surface); padding:7px 11px; min-height:36px; }
 .fh-button { cursor:pointer; white-space:nowrap; }
 .fh-input { min-width:0; width:100%; }
-.fh-input:focus { outline:none; border-color:var(--fh-accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--fh-accent) 15%,transparent); }
+.fh-input:focus { outline:none; border-color:var(--fh-accent); box-shadow:0 0 0 2px var(--fh-focus-ring); }
+.fh-root :is([data-slot="button"],[data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]),
+.fh-dialog :is([data-slot="button"],[data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]) { border-radius:var(--fh-radius-md); }
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):not([aria-invalid="true"]) { border-color:var(--fh-border); background-color:var(--fh-surface); color:var(--fh-text); }
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):hover:not(:disabled):not([aria-disabled="true"]):not([aria-invalid="true"]) { border-color:color-mix(in srgb,var(--fh-accent) 46%,var(--fh-border)); }
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):focus-visible:not([aria-invalid="true"]),
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[data-popup-open]:not([aria-invalid="true"]) { border-color:var(--fh-accent); box-shadow:0 0 0 3px var(--fh-focus-ring); }
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):disabled { background:var(--fh-surface-soft); color:var(--fh-muted); }
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[aria-invalid="true"] { border-color:var(--fh-danger); }
+:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[aria-invalid="true"]:is(:focus-visible,[data-popup-open]) { border-color:var(--fh-danger); box-shadow:0 0 0 3px color-mix(in srgb,var(--fh-danger) 22%,transparent); }
+.fh-root [data-slot="button"] { transition:background-color .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease; }
+.fh-root [data-slot="button"]:focus-visible { box-shadow:0 0 0 3px var(--fh-focus-ring); }
+.fh-dialog [data-slot="button"] { transition:background-color .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease; }
+.fh-dialog [data-slot="button"]:focus-visible { box-shadow:0 0 0 3px var(--fh-focus-ring); }
+.fh-root [data-slot="button"]:disabled { cursor:not-allowed; }
 .fh-select-popup { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+.fh-select-popup,[data-slot="dialog-content"],[data-slot="dropdown-menu-content"],[data-slot="tooltip-content"] { border-color:var(--fh-border); box-shadow:var(--fh-shadow-popover); }
 .fh-select-popup [data-slot="select-item-text"] { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fh-select-popup [data-slot="select-item"][data-highlighted] { background:var(--fh-accent-soft); color:var(--fh-text); }
 .fh-tabs button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
 .fh-tabs { display:flex; gap:20px; overflow-x:auto; border-bottom:1px solid var(--fh-border); margin-bottom:16px; }
 .fh-tabs button { font:inherit; cursor:pointer; flex-shrink:0; color:var(--fh-muted); background:none; border:0; border-bottom:2px solid transparent; padding:10px 2px; }
 .fh-tabs [aria-selected=true] { color:var(--fh-accent); border-bottom-color:var(--fh-accent); font-weight:600; }
-.fh-dialog { box-sizing:border-box; width:min(520px,calc(100vw - 32px)); max-width:none; max-height:calc(100vh - 32px); overflow:auto; padding:20px; background:var(--fh-surface); color:var(--fh-text); border:1px solid var(--fh-border); border-radius:12px; font:14px/1.5 -apple-system,sans-serif; }
-[data-slot="dialog-overlay"] { background:rgb(0 0 0 / .35); }
+.fh-dialog { box-sizing:border-box; width:min(520px,calc(100vw - 32px)); max-width:none; max-height:calc(100vh - 32px); overflow:auto; padding:20px; background:var(--fh-surface); color:var(--fh-text); border:1px solid var(--fh-border); border-radius:var(--fh-radius-lg); font:14px/1.5 -apple-system,sans-serif; box-shadow:var(--fh-shadow-popover); }
+[data-slot="dialog-overlay"] { background:rgb(10 15 13 / .38); }
 .fh-dialog h2 { font-size:17px; margin:0; }
 .fh-market { padding:16px 20px; }
 .fh-market h1 { font-size:20px; margin:0; }
@@ -43,6 +66,8 @@
 .fh-help button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
 .fh-help { position:relative; display:inline-flex; vertical-align:middle; }
 .fh-help button { border:0; background:none; color:var(--fh-muted); width:28px; height:28px; font:600 14px/1 system-ui; cursor:help; }
+.fh-help button:hover { color:var(--fh-accent); background:var(--fh-accent-soft); }
+.fh-help button:disabled { opacity:.5; cursor:not-allowed; }
 .fh-empty { color:var(--fh-muted); padding:12px 0; }
 .fh-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--fh-border); }
 .fh-row-copy { min-width:0; flex:1; }

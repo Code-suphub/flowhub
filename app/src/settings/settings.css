@@ -8,8 +8,10 @@
 .settings-nav-group { display:flex; flex:none; align-items:center; gap:4px; }
 .settings-nav-heading { display:none; }
 @media (min-width:768px) { .settings-nav-group { flex-direction:column; align-items:stretch; margin-bottom:10px; } .settings-nav-group + .settings-nav-group { border-top:1px solid var(--fh-border); padding-top:10px; } .settings-nav-heading { display:block; padding:4px 10px; color:var(--fh-muted); font-size:11px; font-weight:600; } .settings-nav-group .fh-button { width:100%; } }
-.settings-sidebar .fh-button { text-align:left; border-color:transparent; }
-.settings-sidebar [aria-pressed=true] { color:var(--fh-accent); background:var(--fh-surface-soft); }
+.settings-sidebar .fh-button { text-align:left; border-color:transparent; background:transparent; color:var(--fh-muted); }
+.settings-sidebar .fh-button:hover:not([aria-pressed=true]) { background:var(--fh-surface-soft); color:var(--fh-text); }
+.settings-sidebar .fh-button[aria-pressed=true],.settings-sidebar .fh-button[aria-pressed=true]:hover { color:var(--fh-accent); background:var(--fh-accent-soft); border-color:color-mix(in srgb,var(--fh-accent) 34%,var(--fh-border)); }
+.settings-sidebar .fh-button:focus-visible { position:relative; z-index:1; outline:2px solid var(--fh-accent); outline-offset:1px; }
 .settings-editor-actions { display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-bottom:12px; }
 .settings-core-toolbar { display:flex; align-items:flex-end; gap:16px; min-width:0; border-bottom:1px solid var(--fh-border); margin-bottom:16px; }
 .settings-core-toolbar .fh-tabs { flex:1; min-width:0; border:0; margin:0; }
