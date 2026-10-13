@@ -52,7 +52,7 @@ export function PluginStatus() {
   return <main className="fh-root fh-status-page">
     <header><h1>{data?.snapshot?.title || '插件状态'} <Help>每 15 秒读取采集缓存。关闭窗口可从菜单栏重新打开。</Help></h1><Button disabled={!available} onClick={() => void api('plugin').catch(error => setMessage(String(error)))}>打开插件 ↗</Button></header>
     <p role="status">{message}</p>
-    <div className="fh-status-summary">{Object.entries(labels).map(([key, label]) => <Badge key={key} variant={statusVariant(key)}>{label} {visible.filter(row => row.status === key).length}</Badge>)}</div>
+    {data?.snapshot ? <div className="fh-status-summary">{Object.entries(labels).map(([key, label]) => <Badge key={key} variant={statusVariant(key)}>{label} {visible.filter(row => row.status === key).length}</Badge>)}</div> : null}
     <section aria-label="机器状态">{visible.map(row => <article className="fh-status-row" key={row.id}><header><strong>{row.name}</strong><Badge variant={statusVariant(row.status)}>{Object.hasOwn(labels,row.status) ? labels[row.status] : labels.unknown}</Badge></header>
       {row.values ? <dl>{(['cpu', 'memory', 'disk'] as const).map((key, index) => <div key={key}><dt>{['CPU', '内存', '磁盘'][index]}</dt><dd>{Number.isFinite(row.values?.[key]) ? row.values![key]!.toFixed(1) + '%' : '—'}</dd></div>)}</dl> : null}
       <small>{row.at ? '采集于 ' + new Date(row.at).toLocaleString() : '尚无采集数据'}</small></article>)}
