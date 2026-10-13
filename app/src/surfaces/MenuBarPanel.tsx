@@ -63,6 +63,6 @@ export function MenuBarPanel() {
       const name = item.displayName || item.accessibilityLabel || item.title || item.ownerName || '未命名图标';
       return <div className="fh-row" key={item.windowId}><span className="fh-row-copy"><strong>{name}</strong><small>{!item.hideable ? '系统固定' : item.section === 'alwaysHidden' ? '始终隐藏' : item.section === 'hidden' ? '随箭头展开／收起' : '显示'}</small></span><Switch label={name + '显示'} checked={item.section !== 'alwaysHidden'} disabled={busy || !trusted || !item.hideable} onChange={shown => void change(item, !shown)} /></div>;
     })}</main>
-    <footer><span>{items.length} 个图标 · {items.filter(item => item.section === 'alwaysHidden').length} 个隐藏</span><Button disabled={busy || !available} onClick={open}>刷新顺序</Button></footer>
+    <footer>{items.length ? <span>{items.length} 个图标 · {items.filter(item => item.section === 'alwaysHidden').length} 个隐藏</span> : <span /> }<Button disabled={busy || !available} onClick={open}>刷新顺序</Button></footer>
   </div>;
 }

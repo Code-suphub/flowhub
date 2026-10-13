@@ -3,9 +3,12 @@ html:has(#canvas-root), body:has(#canvas-root) { background: transparent; }
 body:has(#canvas-root) { margin: 0; padding: 16px; }
 body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface); }
 .fh-canvas-app { color: var(--fh-text); font: 14px/1.5 "SF Pro Display", "PingFang SC", sans-serif; }
+.fh-canvas-app :is(button,input,select) { font-family:inherit; }
+.fh-canvas-app :is(button,[data-slot="button"]) { font-size:13px; }
+.fh-canvas-app :is(input,select,[data-slot="input"],[data-slot="select-trigger"]) { font-size:14px; }
 .fh-canvas-app *, .fh-canvas-app *::after { box-sizing: border-box; }
-.canvas-toolbar { position: relative; z-index: 1; width: max-content; max-width: 100%; min-height: 42px; margin-bottom: 12px; padding: 6px 8px; border-radius: 12px; background: var(--fh-surface); backdrop-filter: blur(20px); font-size: 12px; }
-.canvas-toolbar .fh-button, .canvas-toolbar .fh-input { padding: 5px 9px; font-size: 12px; }
+.canvas-toolbar { position: relative; z-index: 1; width: max-content; max-width: 100%; min-height: 42px; margin-bottom: 12px; padding: 6px 8px; border-radius: var(--fh-radius-lg); background: var(--fh-surface); backdrop-filter: blur(20px); font-size: 13px; }
+.canvas-toolbar .fh-button, .canvas-toolbar .fh-input, .canvas-toolbar [data-slot="select-trigger"] { padding: 5px 9px; font-size: 13px; }
 .canvas-toolbar .brand { cursor: move; }
 .canvas-toolbar.surface-inactive { opacity: 0; visibility: hidden; pointer-events: none; }
 .fh-canvas-app[data-view-only="true"] .canvas-toolbar { display: none; }
@@ -28,22 +31,23 @@ body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface
 .canvas-card.moving { z-index: 10; opacity: .7; cursor: grabbing; }
 .canvas-card.swap-target { outline: 2px solid var(--fh-accent); outline-offset: 2px; }
 .canvas-card.swap-target::after { content: "松开交换位置"; position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--fh-surface) 70%, transparent); color: var(--fh-text); pointer-events: none; z-index: 5; }
-.canvas-blank { padding: 24px; text-align: center; border: 1px dashed var(--fh-border); border-radius: 16px; background: var(--fh-surface); }
-body:has(.fh-canvas-app) .fh-dialog { width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; background: var(--fh-surface); color: var(--fh-text); border: 1px solid var(--fh-border); border-radius: 16px; padding: 18px; }
+.canvas-blank { padding: 24px; text-align: center; border: 1px dashed var(--fh-border); border-radius: var(--fh-radius-xl); background: var(--fh-surface); }
+body:has(.fh-canvas-app) .fh-dialog { width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; background: var(--fh-surface); color: var(--fh-text); border: 1px solid var(--fh-border); border-radius: var(--fh-radius-lg); padding: 18px; }
 body:has(.fh-canvas-app) .fh-dialog.canvas-editor-dialog { width: min(360px, calc(100vw - 24px)); height: min(600px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; font-size: 13px; }
 body:has(.fh-canvas-app) .canvas-editor-dialog #widgetForm { min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
 body:has(.fh-canvas-app) .canvas-editor-dialog [data-slot="field-label"] { font-size: 13px; line-height: 20px; }
 .canvas-editor-dialog .canvas-editor-fields { display: grid; grid-template-columns: minmax(112px, .85fr) minmax(0, 1fr); gap: 12px; }
 .canvas-editor-fields > [data-slot="field"]:only-child { grid-column: 1 / -1; }
-.canvas-editor-dialog :is([data-slot="input"], [data-slot="select-trigger"]) { height: 34px; font: inherit; line-height: 20px; border-radius: 8px; }
-.canvas-editor-dialog :is([data-slot="input"]:focus, [data-slot="select-trigger"]:focus, [data-slot="select-trigger"][data-popup-open]) { outline: none; border-color: var(--fh-accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fh-accent) 25%, transparent); }
+.canvas-editor-dialog :is([data-slot="input"], [data-slot="select-trigger"]) { height: 34px; font: inherit; line-height: 20px; border-radius: var(--fh-radius-md); }
+.canvas-editor-dialog :is([data-slot="input"], [data-slot="select-trigger"]):is(:focus-visible,[data-popup-open]) { outline: 2px solid var(--fh-accent); outline-offset: 1px; border-color: var(--fh-accent); box-shadow: none; }
 .canvas-editor-select-popup { font-size: 13px; }
 .canvas-editor-select-popup [data-slot="select-item"] { font-size: 13px; line-height: 20px; min-height: 30px; }
 .canvas-editor-actions { padding-top: 14px; }
 body:has(.fh-canvas-app) [data-slot="dialog-overlay"] { background: transparent; backdrop-filter: none; }
 body:has(.fh-canvas-app) .fh-dialog h2 { font-size: 17px; margin: 0; }
 .canvas-editor { display: block; width: 100%; height: 230px; border: 0; }
-.canvas-menu { z-index: 1000; width: 168px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--fh-border); border-radius: 10px; background: var(--fh-surface); box-shadow: 0 8px 28px color-mix(in srgb, var(--fh-text) 20%, transparent); }
+.canvas-menu { z-index: 1000; width: 168px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--fh-border); border-radius: var(--fh-radius-md); background: var(--fh-surface); box-shadow: 0 8px 28px color-mix(in srgb, var(--fh-text) 20%, transparent); }
 .canvas-menu .fh-button { width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 10px; font-size: 12px; }
 .canvas-menu .fh-button:hover, .canvas-menu .fh-button:focus-visible { background: var(--fh-surface-soft); }
+.canvas-menu .fh-button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:1px; }
 @media (max-width: 600px) { .canvas-toolbar .brand span { display: none; } .canvas-toolbar { gap: 4px; } }

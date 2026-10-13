@@ -810,7 +810,7 @@ fn search_clipboard_records(
                  || COALESCE(file_paths, '') || ' ' || hash
                ), ?2) > 0
              )
-             AND (?5 = 0 OR julianday(last_seen_at) >= julianday(?6))
+             AND (?5 = 0 OR pinned_at IS NOT NULL OR julianday(last_seen_at) >= julianday(?6))
              ORDER BY CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, last_seen_at DESC
              LIMIT ?3 OFFSET ?4",
         )
@@ -1826,6 +1826,20 @@ mod record_tests {
     use super::*;
     use crate::storage::tests::Fixture;
 
+    fn fixture() -> Fixture {
+        fixture_with_retention(0)
+    }
+
+    fn fixture_with_retention(days: i64) -> Fixture {
+        let f = Fixture::new();
+        crate::storage::write_json_atomic(
+            &f.state.paths().config_path,
+            &json!({ "plugins": { "clipboard": { "settings": { "retentionDays": days } } } }),
+        )
+        .unwrap();
+        f
+    }
+
     #[test]
     fn deletion_reference_query_failure_rolls_back_record() {
         let mut db = rusqlite::Connection::open_in_memory().unwrap();
@@ -1902,7 +1916,7 @@ mod record_tests {
 
     #[test]
     fn pinned_records_sort_first_and_survive_cleanup_until_unpinned() {
-        let f = Fixture::new();
+        let f = fixture();
         let old = insert_text(&f, "old", "旧", "2026-09-01T00:00:00Z");
         let mid = insert_text(&f, "mid", "中", "2026-09-05T00:00:00Z");
         let fresh = insert_text(&f, "fresh", "新", "2026-09-09T00:00:00Z");
@@ -1940,8 +1954,39 @@ mod record_tests {
     }
 
     #[test]
+    fn pinned_expired_records_remain_searchable_until_unpinned() {
+        let f = fixture_with_retention(30);
+        let expired_at = (Utc::now() - chrono::Duration::days(60)).to_rfc3339();
+        let recent_at = (Utc::now() - chrono::Duration::days(1)).to_rfc3339();
+        let expired_pinned = insert_text(&f, "expired-pinned", "needle pinned", &expired_at);
+        let expired_unpinned = insert_text(&f, "expired-unpinned", "needle expired", &expired_at);
+        let recent = insert_text(&f, "recent", "needle recent", &recent_at);
+        insert_text(&f, "unmatched", "other text", &recent_at);
+        set_pinned(&f.state, expired_pinned, true).unwrap();
+
+        let listed = search_clipboard_records(&f.state, "needle", "text", 20, 0).unwrap();
+        assert_eq!(
+            listed.iter().map(|record| record["id"].as_i64().unwrap()).collect::<Vec<_>>(),
+            vec![expired_pinned, recent],
+            "过期置顶记录仍可搜到并排在较新的未置顶记录之前，过期未置顶及不匹配关键词的记录不出现"
+        );
+        assert!(search_clipboard_records(&f.state, "needle", "image", 20, 0)
+            .unwrap()
+            .is_empty());
+
+        set_pinned(&f.state, expired_pinned, false).unwrap();
+        let listed = search_clipboard_records(&f.state, "needle", "text", 20, 0).unwrap();
+        assert_eq!(
+            listed.iter().map(|record| record["id"].as_i64().unwrap()).collect::<Vec<_>>(),
+            vec![recent],
+            "取消置顶后，过期记录重新受查询保留期限制"
+        );
+        assert!(!listed.iter().any(|record| record["id"] == json!(expired_unpinned)));
+    }
+
+    #[test]
     fn edited_copy_keeps_the_original_and_rejects_empty_or_non_text() {
-        let f = Fixture::new();
+        let f = fixture();
         let original = insert_text(&f, "original", "原文", "2026-09-01T00:00:00Z");
         let result = edited_copy(&f.state, original, "改过的文本  ").unwrap();
         assert_eq!(result["ok"], json!(true));
@@ -2028,7 +2073,7 @@ mod record_tests {
 
     #[test]
     fn startup_migrates_an_existing_store_so_clipboard_queries_keep_working() {
-        let f = Fixture::new();
+        let f = fixture();
         let path = f.state.paths().db_path;
         // 造一个没有 pinned_at 的旧库（真实用户升级前的状态）。
         {

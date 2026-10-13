@@ -16,6 +16,11 @@ const mock = `(()=>{
     {id:'preview-machine-b',name:'构建节点',status:'stale',at:Date.now()-900000,values:{cpu:4.2,memory:38.7,disk:73.0}},
     {id:'preview-machine-c',name:'测试环境',status:'error',at:Date.now()-120000,values:{cpu:0,memory:0,disk:0}}
   ]};
+  let menuItems=[
+    {windowId:1001,displayName:'示例应用',ownerName:'Preview',section:'shown',hideable:true},
+    {windowId:1002,displayName:'系统状态',ownerName:'Preview',section:'hidden',hideable:true},
+    {windowId:1003,displayName:'系统时钟',ownerName:'Preview',section:'shown',hideable:false}
+  ];
   if(location.pathname.endsWith('/plugin-status.html')&&!location.search)history.replaceState(null,'',location.pathname+'?id=preview-status');
   window.__TAURI__={core:{invoke:async(command,args={})=>{
     const action=args.action,payload=args.payload||{};
@@ -41,13 +46,17 @@ const mock = `(()=>{
       case 'plugin': case 'menu': return null;
       default: throw Error('示例预览不支持此状态操作');
     }
-    throw Error('示例预览仅支持插件市场与状态页面');
+    if(command==='list_menu_bar_items') return {ok:true,items:menuItems.map(item=>({...item})),trusted:true,organizerEnabled:true};
+    if(command==='set_menu_bar_item_hidden') {menuItems=menuItems.map(item=>item.windowId===args.windowId?{...item,section:args.hidden?'alwaysHidden':'shown'}:item);return {ok:true};}
+    if(command==='toggle_menu_bar_panel') return null;
+    throw Error('示例预览仅支持插件市场、状态与菜单栏面板');
   }}};
 })();`;
 
 const allowed = new Map([
   ['plugin-market.html', ['plugin-market.html', 'text/html; charset=utf-8']],
   ['plugin-status.html', ['plugin-status.html', 'text/html; charset=utf-8']],
+  ['menu-bar-panel.html', ['menu-bar-panel.html', 'text/html; charset=utf-8']],
   ['react/host.js', ['react/host.js', 'text/javascript; charset=utf-8']],
   ['react/host.css', ['react/host.css', 'text/css; charset=utf-8']],
   ['shared/palette.css', ['shared/palette.css', 'text/css; charset=utf-8']],
@@ -63,8 +72,7 @@ http.createServer(async (req, res) => {
     let body = await readFile(new URL('../../ui/' + file[0], import.meta.url), 'utf8');
     if (name.endsWith('.html')) {
       body = body.replace(/(<body[^>]*>)/, `$1${banner}`);
-      const hostScript = name === 'plugin-status.html' ? '<script defer src="react/host.js"></script>' : '<script src="react/host.js"></script>';
-      body = body.replace(hostScript, `<script>${mock}</script>${hostScript}`);
+      body = body.replace(/<script\b[^>]*\bsrc="react\/host\.js"[^>]*><\/script>/, script => `<script>${mock}</script>${script}`);
     }
     res.writeHead(200, { 'Content-Type': file[1], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     res.end(body);
