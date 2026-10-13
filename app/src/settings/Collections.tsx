@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSPropert
 import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
-import { Select, Help } from '../shared/controls';
+import { Help } from '../shared/controls';
 import { Choice, TextField } from './fields';
 import { host, readonly, write } from './api';
 import { clone, entries, importWeb, moveNodes, moveMemo, removeNodes, renameCategory, memoTree, type MemoBranch, type MemoMoveRef, type MemoDropPosition, type Bag, type Memo, type WebNode } from './model';
@@ -13,7 +13,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), sourceNodes: WebNode[] = s.config!.plugins.web.settings.items;
   const [previewNodes, setPreviewNodes] = useState<WebNode[] | null>(null);
   const nodes = preview && previewNodes ? previewNodes : sourceNodes;
-  const [selected, setSelected] = useState<string[]>([]), [expanded, setExpanded] = useState<Set<string>>(() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useState(''), [target, setTarget] = useState(''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [deleteOpen, setDeleteOpen] = useState(false), [pendingAdd, setPendingAdd] = useState('');
+  const [selected, setSelected] = useState<string[]>([]), [expanded, setExpanded] = useState<Set<string>>(() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useState(''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [deleteOpen, setDeleteOpen] = useState(false), [pendingAdd, setPendingAdd] = useState('');
   const deferred = useDeferredValue(filter).trim().toLowerCase(), all = useMemo(() => entries(nodes), [nodes]);
   const node = all.find(e => e.node.id === selected[0])?.node;
   const stopPointerDrag = useRef<(() => void) | null>(null);
@@ -101,18 +101,11 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     else next.push(added);
     editNodes(next); setSelected([id]); setPendingAdd(id);
   }
-  function move(boundary: 'top' | 'up' | 'down' | 'bottom') {
-    const context = all.find(e => e.node.id === node?.id); if (!context) return;
-    const siblings = context.parent?.children || nodes, index = siblings.indexOf(context.node);
-    const nextIndex = boundary === 'top' ? 0 : boundary === 'bottom' ? siblings.length - 1 : index + (boundary === 'up' ? -1 : 1);
-    if (nextIndex < 0 || nextIndex >= siblings.length || nextIndex === index) return;
-    editNodes(moveNodes(nodes, [context.node.id], siblings[nextIndex].id, nextIndex < index ? 'before' : 'after'));
-  }
   function select(id: string, multi: boolean) { setSelected(prev => multi ? prev.includes(id) ? prev.filter(v => v !== id) : [id, ...prev] : [id]); }
   return <div className="settings-catalog">
     <div className="settings-catalog-toolbar">
       <div className="settings-catalog-toolbar-main"><Button className="primary settings-catalog-primary" disabled={preview} onClick={() => add('root')}>＋ 添加节点</Button><Button disabled={preview || !node} onClick={() => add('child')}>添加子节点</Button><Button disabled={preview || !node} onClick={() => add('sibling')}>添加同级</Button>{pendingAdd ? <Button disabled={preview} onClick={() => { editNodes(removeNodes(nodes, [pendingAdd])); setPendingAdd(''); setSelected([]); }}>取消添加</Button> : null}<Button disabled={preview} onClick={() => void store.run(async () => { const result = await write('pickWebImport'); if (!result.canceled) { if (!result.items?.length) throw new Error('导入文件里没有网页节点'); setPending(result); } })}>导入…</Button></div>
-      <div className="settings-catalog-toolbar-view"><Button onClick={() => setExpanded(new Set(all.map(e => e.node.id)))}>全部展开</Button><Button onClick={() => setExpanded(new Set())}>全部收起</Button></div>
+      <div className="settings-catalog-toolbar-view"><Button onClick={() => setExpanded(new Set(all.map(e => e.node.id)))}>全部展开</Button><Button onClick={() => setExpanded(new Set())}>全部收起</Button><Help label="网页目录拖拽与多选">⌘ / Ctrl / Shift 点击多选。拖到目标行上方或下方调整顺序，拖到行中央可移入对应目录。</Help></div>
     </div>
     <div className="settings-collection grid" style={{ '--settings-tree-width': `${width}px` } as CSSProperties}>
       <aside className="settings-catalog-nav min-w-0">
@@ -125,10 +118,9 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
       </aside>
       <div className="settings-divider" role="separator" tabIndex={0} aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={380} aria-valuenow={width} onPointerDown={e => { resizing.current = { x: e.clientX, width }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (resizing.current) resize(resizing.current.width + e.clientX - resizing.current.x); }} onPointerUp={() => { resizing.current = null; }} onPointerCancel={() => { resizing.current = null; }} onDoubleClick={() => resize(260)} onKeyDown={e => { const value = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: 220, End: 380 }[e.key]; if (value !== undefined) { e.preventDefault(); resize(value); } }} />
       <div className="settings-catalog-detail min-w-0">
-        {node ? <><header className="settings-catalog-detail-head"><div><span>节点详情</span><h2>{selected.length > 1 ? `已选择 ${selected.length} 项` : node.title || node.id}</h2></div><Help label="目录排序与多选">⌘ / Ctrl / Shift 点击多选。拖到行上方或下方排序，中央作为子节点；也可使用移动目标和排序按钮。</Help></header>
-          <div className="settings-catalog-actions"><div className="settings-catalog-order">{(['top', 'up', 'down', 'bottom'] as const).map((id, i) => <Button key={id} onClick={() => move(id)}>{['置顶', '上移', '下移', '置底'][i]}</Button>)}</div><Button className="danger settings-catalog-delete" disabled={preview} onClick={() => setDeleteOpen(true)}>删除{selected.length > 1 ? ` ${selected.length} 项` : ''}</Button></div>
-          <div className="settings-catalog-move"><Select label="移动目标" value={target} options={[{ value: '', label: '根目录' }, ...all.filter(e => !selected.includes(e.node.id)).map(e => ({ value: e.node.id, label: `${'　'.repeat(e.depth)}${e.node.title || e.node.id}` }))]} onChange={setTarget} /><Button onClick={() => editNodes(moveNodes(nodes, selected, target))}>移动所选</Button></div>
-          <div className="settings-catalog-fields">{(['title', 'id', 'url', 'icon', 'accent', 'note'] as const).map((key, i) => <TextField key={key} label={['标题', '节点 ID', '页面链接', '图标（Emoji / 图片 URL）', '强调色', '备注'][i]} value={node[key]} readOnly={preview || key === 'id'} onChange={v => store.edit(c => { const target = entries(c.plugins.web.settings.items).find(e => e.node.id === node.id); if (target) target.node[key] = v; })} help={key === 'url' ? '留空作为目录，填写后可直接打开，也可保留子节点。' : undefined} />)}</div>
+        {node ? <>
+          <div className="settings-catalog-fields">{(['title', 'url', 'icon', 'accent', 'note'] as const).map((key, i) => <TextField key={key} label={['标题', '页面链接', '图标（Emoji / 图片 URL）', '强调色', '备注'][i]} value={node[key]} readOnly={preview} onChange={v => store.edit(c => { const target = entries(c.plugins.web.settings.items).find(e => e.node.id === node.id); if (target) target.node[key] = v; })} help={key === 'url' ? '留空作为目录，填写后可直接打开，也可保留子节点。' : undefined} />)}</div>
+          <div className="settings-catalog-actions">{selected.length > 1 ? <span className="settings-catalog-selection-count">已选择 {selected.length} 项</span> : <div className="settings-catalog-metadata"><span>节点 ID</span><code>{node.id}</code><Help label="节点 ID说明">节点的内部唯一标识，用于保存、移动和关联节点。日常使用无需修改，可选择文字复制。</Help></div>}<Button className="danger settings-catalog-delete" disabled={preview} onClick={() => setDeleteOpen(true)}>删除{selected.length > 1 ? ` ${selected.length} 项` : ''}</Button></div>
         </> : <div className="settings-catalog-empty"><span aria-hidden="true">↖</span><strong>选择一个目录或网页</strong><p>在左侧查看结构与节点属性。</p></div>}
       </div>
     </div>
@@ -259,9 +251,9 @@ export function Memos({ store }: { store: SettingsStore }) {
       </aside>
       <div className="settings-memo-detail min-w-0">{current ? <>
         <div className="settings-memo-fields"><TextField label="标题" value={current.title} readOnly={preview} onChange={value => edit(list => { list.find(item => item.id === current.id)!.title = value; })} />
-          <div onBlur={event => { if (preview || event.currentTarget.contains(event.relatedTarget as Node)) return; if (category !== null && category !== current.category) { const before = current.category || ''; edit(list => { const item = list.find(value => value.id === current.id)!; item.category = category; renameCategory(list, before, category, item.id); }); setCollapsed(previous => new Set([...previous].map(path => path === before || path.startsWith(before + ' / ') ? category + path.slice(before.length) : path))); setCategory(null); } }}>
+          {!preview ? <div onBlur={event => { if (preview || event.currentTarget.contains(event.relatedTarget as Node)) return; if (category !== null && category !== current.category) { const before = current.category || ''; edit(list => { const item = list.find(value => value.id === current.id)!; item.category = category; renameCategory(list, before, category, item.id); }); setCollapsed(previous => new Set([...previous].map(path => path === before || path.startsWith(before + ' / ') ? category + path.slice(before.length) : path))); setCategory(null); } }}>
             <TextField label="分类路径" value={category ?? current.category} readOnly={preview} onChange={setCategory} help="使用 / 分层；离开输入框时同步修改后代分类路径。" />
-          </div>
+          </div> : null}
         </div>
         <div className="settings-memo-content-fields"><label className="grid gap-2">命令或备忘内容<Textarea className="settings-code" rows={12} spellCheck={false} readOnly={preview} value={current.content || ''} onChange={event => edit(list => { list.find(item => item.id === current.id)!.content = event.target.value; })} /></label></div>
         <div className="settings-memo-meta-fields"><TextField label="说明" value={current.description} readOnly={preview} onChange={value => edit(list => { list.find(item => item.id === current.id)!.description = value; })} />
