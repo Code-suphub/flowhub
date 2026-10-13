@@ -1,13 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Button, Dialog } from '../shared/ui';
+import { Help, Tooltip } from '../shared/controls';
+import { CornerUpLeft, Pin, PinOff, Settings2 } from 'lucide-react';
 import { Results, resultActions } from './Results';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
 
 function KeyboardHint({selected,scope}: {selected?:SearchItem;scope?:string}) {
-  const hints=['↑↓ 选择结果',`⏎ ${selected?.type==='memo' || selected?.type==='clipboard'?'粘贴':selected?.type==='twofa'?'复制验证码':'打开'}`];
-  if(scope==='all') hints.unshift('←→ 常用/最近');
+  const hints:string[]=[];
+  if(scope==='all') hints.push('←→ 切换常用与最近');
+  hints.push('Tab 切换范围','⌘K 返回搜索框');
   if(selected?.type==='clipboard') {
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
     hints.push('⌘D 置顶');
@@ -16,8 +19,9 @@ function KeyboardHint({selected,scope}: {selected?:SearchItem;scope?:string}) {
   }
   if(selected && !selected.usageSection && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 / F6 更多操作');
   else if(selected?.toolId)hints.push('F6 操作按钮');
-  hints.push('Tab 范围','⌘K 回到搜索框');
-  return <span id="keyboardHint">{hints.join(' · ')}</span>;
+  const toolActions:Record<string,string>={calculation:'复制结果',timestamp:'复制结果',jwt:'复制结果',json:'复制结果','url-tool':'复制结果',ip:'复制信息',proxy:'复制信息',dns:'查询并复制',cloudflare:'检测',port:'复制详情',network:'执行'};
+  const action=!selected?'打开':toolActions[selected.type] || (selected.toolId?'执行':selected.type==='memo' || selected.type==='clipboard'?'粘贴':selected.type==='twofa'?'复制验证码':selected.type==='web-add'?'添加网页':'打开');
+  return <span id="keyboardHint" className="search-keyboard-hint"><span>{selected?'↑↓ 选择 · ↵ '+action:'输入以搜索 · ↑↓ 选择结果'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
 }
 
 function ActionMenu({item,index,x,y,onDismiss}: {item:SearchItem;index:number;x:number;y:number;onDismiss:()=>void}) {
@@ -101,8 +105,8 @@ function Search() {
       <p>确定删除这条剪贴板记录吗？只会删除历史记录和图片副本，不会删除原始文件。</p>
       <div className="flex justify-end gap-2 mt-4"><Button autoFocus disabled={state.deletingClipboard.busy} onClick={()=>controller.current?.cancelClipboardDelete()}>取消</Button><Button className="danger" disabled={state.deletingClipboard.busy} onClick={()=>void controller.current?.confirmClipboardDelete()}>确认删除</Button></div>
     </Dialog>:null}
-    <header className="search-header flex items-center justify-between gap-2"><strong>FlowHub</strong><div className="flex items-center gap-2"><Button id="settingsBtn" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}>设置</Button><Button id="pinBtn" aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?'取消固定':'固定'}</Button><span id="versionBadge" className={hasUpdate?'search-update':''} title={hasUpdate?`发现正式版 v${snapshot?.updateState?.availableVersion || '新版本'}`:`当前应用版本：${version || '浏览器预览'}`}>{version?`v${version.split('-')[0]}${version.includes('-local')?' · 本地版':''}`:'浏览器预览'}</span></div></header>
-    <div className="search-input-wrap grid gap-2"><div className="flex items-center justify-between"><label htmlFor="q">快速检索</label><Button id="returnSearchBtn" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}>返回搜索 ⌘K</Button></div>
+    <header className="search-header flex items-center justify-between gap-2"><strong>FlowHub</strong><div className="search-header-actions flex items-center gap-1"><span id="versionBadge" className={hasUpdate?'search-update':''} title={hasUpdate?`发现正式版 v${snapshot?.updateState?.availableVersion || '新版本'}`:`当前应用版本：${version || '浏览器预览'}`}>{version?`v${version.split('-')[0]}${version.includes('-local')?' · 本地版':''}`:'浏览器预览'}</span><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/><kbd>⌘K</kbd></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content="打开 FlowHub 设置"><Button id="settingsBtn" variant="ghost" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div></header>
+    <div className="search-input-wrap grid gap-2"><label className="sr-only" htmlFor="q">搜索网页、应用、剪贴板或命令备忘</label>
       <input id="q" className="fh-input" autoComplete="off" aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder="搜索网页、应用、剪贴板或命令备忘…" role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="results" aria-activedescendant={selected?`search-result-${state?.index || 0}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
     </div>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>

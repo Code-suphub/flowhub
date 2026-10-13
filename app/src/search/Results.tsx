@@ -1,4 +1,5 @@
 import { Fragment, memo } from 'react';
+import { AppWindow, Clipboard as ClipboardIcon, File, FileText, Folder, Globe, Link2, Plus, ShieldCheck } from 'lucide-react';
 import { Button } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { ToolContent } from './Tools';
@@ -10,7 +11,9 @@ function Icon({item,snapshot}: {item:SearchItem;snapshot:SearchSnapshot}) {
   let url = item.type==='app' ? item.iconUrl || snapshot.state.appResults.find((a:SearchItem)=>a.path===item.path)?.iconUrl : item.type==='clipboard'?item.imageUrl || item.fileIconUrl:imageUrl(item.icon)?item.icon:'';
   const web = ['page','web'].includes(item.type);
   if(web && (snapshot.failedWebIcons.has(url) || (!snapshot.showUncachedWebIcons && !snapshot.loadedWebIcons.has(url)))) url='';
-  return <span className="search-icon" aria-hidden="true">{url?<img src={url} {...(web?{'data-web-icon':url}:{})} loading="lazy" decoding="async" alt=""/>:item.type==='app'?'▣':item.type==='memo'?'›_':item.kind==='file'?(item.fileType==='folder'?'▱':'▤'):item.type==='clipboard'?'▤':item.type==='web-add'?'＋':!imageUrl(item.icon) && item.icon?String(item.icon):'⌁'}</span>;
+  const Glyph=item.type==='app'?AppWindow:item.type==='memo'?FileText:item.type==='clipboard'?(item.kind==='file'?item.fileType==='folder'?Folder:File:ClipboardIcon):item.type==='web-add'?Plus:web?Globe:item.type==='twofa'?ShieldCheck:Link2;
+  const customIcon=!imageUrl(item.icon) && item.icon?String(item.icon):'';
+  return <span className="search-icon" aria-hidden="true">{url?<img src={url} {...(web?{'data-web-icon':url}:{})} loading="lazy" decoding="async" alt=""/>:customIcon || <Glyph size={18} strokeWidth={1.65}/>}</span>;
 }
 export function resultActions(item:SearchItem): [string,string][] {
   const actions: [string,string][]=[];
