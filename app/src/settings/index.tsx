@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AppWindowIcon, ClipboardIcon, Globe2Icon, LayoutDashboardIcon, NotebookPenIcon, PuzzleIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
 import { Button, Dialog } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { EmptyState, Help } from '../shared/controls';
@@ -17,6 +18,7 @@ const emptyPlugins: InstalledPlugin[] = [];
 const builtInModules = [{ id: 'core', label: '通用设置' }, { id: 'web', label: '网页目录' }, { id: 'app', label: '应用' }, { id: 'clipboard', label: '剪贴板' }, { id: 'memo', label: '备忘录' }, { id: 'tools', label: '工具' }];
 const pluginModules = [{ id: 'extensions', label: '插件市场' }, { id: 'canvas', label: '桌面组件' }];
 const modules = [...builtInModules, ...pluginModules];
+const moduleIcons = { core: Settings2Icon, web: Globe2Icon, app: AppWindowIcon, clipboard: ClipboardIcon, memo: NotebookPenIcon, tools: WrenchIcon, extensions: PuzzleIcon, canvas: LayoutDashboardIcon };
 function PluginFrame({ module }: { module: string }) {
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => { if (!frame.current) return; return host().FlowHubPluginIntegration?.attach(frame.current); }, []);
@@ -40,9 +42,9 @@ export function Settings({ store }: { store: SettingsStore }) {
   return <div className="fh-root settings-shell flex flex-col min-h-screen" aria-busy={s.busy}>
     <header className="settings-topbar flex flex-wrap items-center justify-between gap-3"><h1>FlowHub 设置</h1><div className="flex items-center gap-2"><Theme /><span>{s.update.currentVersion || '预览版'}</span><Button onClick={() => { if (store.dirty) setClose(true); else void store.run(async () => { await call('closeSettings'); }); }} disabled={s.busy}>关闭</Button></div></header>
     {readonly() ? <p className="settings-preview" role="status">{module === 'web' || module === 'memo' ? '目录可在本页临时展开、折叠和拖动，刷新后复原；配置保存与编辑仅桌面 App 可用。' : '浏览器预览只读；配置修改、文件操作和原生能力请在桌面 App 中使用。'}</p> : null}
-    <div className="settings-workspace grid md:grid-cols-[160px_minmax(0,1fr)]"><nav aria-label="设置模块" className="settings-sidebar flex md:flex-col gap-1 overflow-auto">
-      <div className="settings-nav-group"><span className="settings-nav-heading">内置功能</span>{builtInModules.map(item => <Button key={item.id} aria-pressed={module === item.id} disabled={s.busy} onClick={() => navigate(item.id)}>{item.label}</Button>)}</div>
-      <div className="settings-nav-group"><span className="settings-nav-heading">插件</span>{[...pluginModules, ...installed.filter(p => p.enabled).map(p => ({ id: `plugin:${p.manifest.id}`, label: p.manifest.name }))].map(item => <Button key={item.id} aria-pressed={module === item.id} disabled={s.busy} onClick={() => navigate(item.id)}>{item.label}</Button>)}</div>
+    <div className="settings-workspace grid md:grid-cols-[184px_minmax(0,1fr)]"><nav aria-label="设置模块" className="settings-sidebar flex md:flex-col gap-1 overflow-auto">
+      <div className="settings-nav-group"><span className="settings-nav-heading">内置功能</span>{builtInModules.map(item => { const Icon = moduleIcons[item.id as keyof typeof moduleIcons]; return <Button key={item.id} aria-pressed={module === item.id} disabled={s.busy} onClick={() => navigate(item.id)}><Icon data-icon="inline-start" aria-hidden="true" />{item.label}</Button>; })}</div>
+      <div className="settings-nav-group"><span className="settings-nav-heading">插件</span>{[...pluginModules, ...installed.filter(p => p.enabled).map(p => ({ id: `plugin:${p.manifest.id}`, label: p.manifest.name }))].map(item => { const Icon = moduleIcons[item.id as keyof typeof moduleIcons] || PuzzleIcon; return <Button key={item.id} aria-pressed={module === item.id} disabled={s.busy} onClick={() => navigate(item.id)}><Icon data-icon="inline-start" aria-hidden="true" />{item.label}</Button>; })}</div>
     </nav>
       <main className="settings-main min-w-0 p-4 md:p-6">
         {!s.config ? <EmptyState>{s.busy ? '正在读取配置…' : '配置未能加载'}<Button disabled={s.busy} onClick={() => void store.run(() => store.load())}>重试</Button></EmptyState> : <>
@@ -52,7 +54,7 @@ export function Settings({ store }: { store: SettingsStore }) {
           </>}
         </>}
       </main></div>
-    <footer className="settings-footer flex flex-wrap items-center justify-between gap-3"><p role={s.error ? 'alert' : 'status'} className={s.error ? 'settings-error' : ''}>{s.notice || (store.dirty ? '有未保存修改' : '已保存')}</p><div className="flex flex-wrap gap-2"><Button disabled={readonly() || s.busy || !s.undo.length || s.conflict} onClick={() => store.travel('undo')}>撤销</Button><Button disabled={readonly() || s.busy || !s.redo.length || s.conflict} onClick={() => store.travel('redo')}>重做</Button><Button disabled={s.busy || !store.dirty} onClick={() => setReset(true)}>重置未保存</Button><Button className="primary" disabled={readonly() || s.busy || !store.dirty || s.conflict} onClick={() => void store.run(() => store.save())}>{s.busy ? '处理中…' : '保存'}</Button></div></footer>
+    <footer className="settings-footer flex flex-wrap items-center justify-between gap-3"><p role={s.error ? 'alert' : 'status'} className={s.error ? 'settings-error' : ''}>{s.notice || (store.dirty ? '有未保存修改' : '已保存')}</p><div className="settings-footer-actions flex flex-wrap gap-2"><Button disabled={readonly() || s.busy || !s.undo.length || s.conflict} onClick={() => store.travel('undo')}>撤销</Button><Button disabled={readonly() || s.busy || !s.redo.length || s.conflict} onClick={() => store.travel('redo')}>重做</Button><Button disabled={s.busy || !store.dirty} onClick={() => setReset(true)}>重置未保存</Button><Button className="primary settings-save-button" disabled={readonly() || s.busy || !store.dirty || s.conflict} onClick={() => void store.run(() => store.save())}>{s.busy ? '处理中…' : '保存'}</Button></div></footer>
     {reset ? <Dialog title="重置未保存修改" busy={s.busy} onClose={() => setReset(false)}><p>{s.conflict ? '保留源草稿并加载当前目标配置？' : '放弃当前编辑，重新加载已保存配置？'}</p><Button onClick={() => void store.run(async () => { await store.reset(); setReset(false); })}>确认重置</Button></Dialog> : null}
     {close ? <Dialog title="关闭设置" busy={s.busy} onClose={() => setClose(false)}><p>尚有未保存修改，可保留本地草稿后关闭。</p><Button onClick={() => void store.run(async () => { store.persist(); await call('closeSettings'); })}>保留草稿并关闭</Button><Button onClick={() => void store.run(async () => { await store.save(); if (!store.dirty) await call('closeSettings'); })}>保存并关闭</Button></Dialog> : null}
     {s.recovery ? <Dialog title="发现本地草稿" busy={false} onClose={() => store.patch({ recovery: null })}><p>{new Date(s.recovery.savedAt).toLocaleString()} 保存的草稿。{s.recovery.baseSignature !== signature(s.saved) ? '磁盘配置已发生变化，请核对后恢复。' : ''}</p><pre className="settings-code">{s.recovery.jsonDirty ? s.recovery.jsonText : JSON.stringify(s.recovery.config, null, 2)}</pre><Button disabled={!s.recovery.origin} onClick={() => void store.run(async () => store.recoverDraft())}>恢复同源草稿</Button><Button onClick={() => store.patch({ recovery: null })}>暂不恢复</Button></Dialog> : null}
