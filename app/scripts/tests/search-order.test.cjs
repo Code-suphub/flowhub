@@ -51,11 +51,11 @@ assert.deepEqual(Array.from(ctx.configuredSearchOrder({core:{searchResultOrder:'
 const settings = fs.readFileSync(require('node:path').join(__dirname, '../../src/settings/Core.tsx'), 'utf8');
 const settingsContext = vm.createContext({});
 // Keep the cross-entry ordering contract against the migrated settings logic.
-const ordering = settings.slice(settings.indexOf('const savedOrder ='), settings.indexOf('const searchPlugins ='));
+const ordering = settings.slice(settings.indexOf('const savedOrder ='), settings.indexOf('const [previewOrder'));
 assert.ok(ordering.includes('searchResultOrder'));
-const settingsOrder = require('typescript').transpile(`function configuredSearchOrder(config) { const core = config.core || {}; ${ordering} return order; }`, {target:99});
+const settingsOrder = require('typescript').transpile(`function configuredSearchOrder(config) { const core = config.core || {}, c = {plugins: config.plugins || {}}, s = {plugins: []}; ${ordering} return order; }`, {target:99});
 vm.runInContext(settingsOrder, settingsContext);
-for (const config of [{}, state.config, {core:{webBeforeClipboard:false}}, {core:{searchResultOrder:['web','web','bad']}}]) {
+for (const config of [{}, state.config, {core:{webBeforeClipboard:false}}, {core:{searchResultOrder:['web','web','bad']}}, {core:{searchResultOrder:['twofa','memo','app']},plugins:{twofa:{enabled:true}}}]) {
   assert.deepEqual(Array.from(settingsContext.configuredSearchOrder(config)), Array.from(ctx.configuredSearchOrder(config)));
 }
 console.log('PASS search order: default, opt-out, pagination, empty query, individual scopes, explicit tools');

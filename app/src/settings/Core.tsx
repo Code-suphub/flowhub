@@ -1,16 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
 import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
 import { call, host, readonly, write } from './api';
 import { diff, imported, tools, clipboardLimit, hasExclusions, type Bag } from './model';
 import { SettingsStore, useSettings } from './store';
+import { useCatalogDragMotion } from './useCatalogDragMotion';
 export const sections = [
-  { id: 'general', label: '基础' },
+  { id: 'general', label: '常规' },
   { id: 'search', label: '搜索入口' },
-  { id: 'network', label: '网络' },
   { id: 'menubar', label: '菜单栏' },
-  { id: 'notifications', label: '通知' },
   { id: 'data', label: '数据与诊断' },
   { id: 'updates', label: '更新' },
 ];
@@ -44,39 +43,121 @@ export function DataPanel({ store }: { store: SettingsStore }) {
 }
 export function Core({ store, section, onSection, actions }: { store: SettingsStore; section: string; onSection: (id: string) => void; actions?: ReactNode }) {
   const s = useSettings(store), c = s.config!, core = c.core;
+  const activeSection = section === 'network' || section === 'notifications' ? 'general' : section;
   const setCore = (key: string, value: unknown) => store.edit(c => { c.core[key] = value; });
   const setNested = (key: string, field: string, value: boolean) => store.edit(c => { c.core[key][field] = value; });
   const savedOrder = Array.isArray(core.searchResultOrder) ? core.searchResultOrder as string[] : [];
-  const order = [...new Set([...savedOrder, ...(core.webBeforeClipboard === false ? ['app', 'clipboard', 'web', 'memo'] : ['app', 'web', 'clipboard', 'memo'])])].filter(id => ['app', 'web', 'clipboard', 'memo'].includes(id));
-  const searchPlugins = [...order.flatMap(id => s.plugins.filter(plugin => plugin.id === id)), ...s.plugins.filter(plugin => !order.includes(plugin.id))];
+  const sortableSources = ['app', 'web', 'clipboard', 'memo', ...(s.plugins.some(plugin => plugin.id === 'twofa') || c.plugins.twofa ? ['twofa'] : [])];
+  const defaultOrder = core.webBeforeClipboard === false ? ['app', 'clipboard', 'web', 'memo'] : ['app', 'web', 'clipboard', 'memo'];
+  const order = [...new Set([...savedOrder, ...defaultOrder, ...sortableSources])].filter(id => sortableSources.includes(id));
+  const [previewOrder, setPreviewOrder] = useState<string[] | null>(null);
+  const displayOrder = readonly() ? previewOrder ?? order : order;
+  const searchPlugins = [...displayOrder.flatMap(id => s.plugins.filter(plugin => plugin.id === id)), ...s.plugins.filter(plugin => !displayOrder.includes(plugin.id))];
   const [draggingSource, setDraggingSource] = useState('');
-  const [dropSource, setDropSource] = useState('');
-  const moveOrder = (id: string, index: number) => { if (index < 0 || index >= order.length || !order.includes(id)) return; const next = order.filter(v => v !== id); next.splice(index, 0, id); setCore('searchResultOrder', next); };
-  useEffect(() => { if (section !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [section, store]);
-  const previewInspect = readonly() && section === 'network';
-  return <><div className="settings-core-toolbar"><Tabs label="通用设置分类" items={sections} value={section} onChange={onSection} />{actions ? <div className="settings-core-actions">{actions}</div> : null}</div><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section role="tabpanel" id={`panel-${section}`} aria-labelledby={`tab-${section}`}>
-    {section === 'general' ? <><Shortcut label="唤出 FlowHub" value={core.hotkey || 'Alt+Space'} taken={Object.values(core.scopeShortcuts)} onChange={v => setCore('hotkey', v)} /><Toggle label="登录后自动启动" checked={core.launchAtLogin === true} onChange={v => setCore('launchAtLogin', v)} /></> : null}
-    {section === 'search' ? <>
-      <Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
-      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">拖动顺序把手，或聚焦把手后按 Alt + 上下方向键调整。点击范围键可重新录入，按 Delete 可清空。顺序只影响有关键词时的「全部」结果；2FA 和工具不参与排序。</Help></div>
-      <div className="settings-search-columns" aria-hidden="true"><span>顺序</span><span>来源</span><span>启用</span><span>范围键</span></div>
+  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
+  const dropTargetRef = useRef<{ id: string; position: 'before' | 'after' } | null>(null);
+  const stopPointerDrag = useRef<(() => void) | null>(null);
+  const dragMotion = useCatalogDragMotion({ rowSelector: '.settings-search-item[data-source]', identityAttribute: 'data-source', previewClassName: 'fh-root settings-search-drag-preview', draggingClassName: 'settings-search-dragging' });
+  const moveOrder = (id: string, index: number) => {
+    if (s.busy || s.conflict || index < 0 || index >= displayOrder.length || !displayOrder.includes(id)) return;
+    const next = displayOrder.filter(v => v !== id); next.splice(index, 0, id);
+    if (readonly()) setPreviewOrder(next); else setCore('searchResultOrder', next);
+  };
+  const updateDropTarget = (next: { id: string; position: 'before' | 'after' } | null) => {
+    const current = dropTargetRef.current;
+    if (current?.id === next?.id && current?.position === next?.position) return;
+    dropTargetRef.current = next; setDropTarget(next);
+  };
+  function beginSearchDrag(source: string, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || s.busy || s.conflict) return;
+    const list = event.currentTarget.closest<HTMLElement>('.settings-search-list');
+    const sourceRow = event.currentTarget.closest<HTMLElement>('.settings-search-item[data-source]');
+    if (!list || !sourceRow) return;
+    stopPointerDrag.current?.();
+    const { pointerId, clientX, clientY } = event;
+    let moved = false;
+    const rowAt = (x: number, y: number) => {
+      const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('.settings-search-item[data-source]');
+      return row && list.contains(row) && row.dataset.source !== source && displayOrder.includes(row.dataset.source!) ? row : null;
+    };
+    const dropAt = (row: HTMLElement, y: number) => {
+      const rect = row.getBoundingClientRect(), position = (y - rect.top) < rect.height / 2 ? 'before' : 'after';
+      const id = row.dataset.source!;
+      updateDropTarget({ id, position });
+      return { id, position } as const;
+    };
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('blur', onCancel);
+      window.removeEventListener('keydown', onKey);
+      dragMotion.end();
+      if (stopPointerDrag.current === cleanup) stopPointerDrag.current = null;
+    };
+    const onMove = (move: PointerEvent) => {
+      if (move.pointerId !== pointerId) return;
+      if (!moved && Math.hypot(move.clientX - clientX, move.clientY - clientY) < 5) return;
+      if (!moved) dragMotion.lift(sourceRow, list, [source], clientX, clientY);
+      moved = true;
+      dragMotion.move(move.clientX, move.clientY);
+      move.preventDefault();
+      const row = rowAt(move.clientX, move.clientY);
+      if (row) dropAt(row, move.clientY);
+      else updateDropTarget(null);
+    };
+    const onUp = (up: PointerEvent) => {
+      if (up.pointerId !== pointerId) return;
+      if (moved) {
+        const row = rowAt(up.clientX, up.clientY);
+        if (row) {
+          const { id, position } = dropAt(row, up.clientY), targetIndex = displayOrder.indexOf(id);
+          let index = targetIndex + (position === 'after' ? 1 : 0);
+          if (displayOrder.indexOf(source) < index) index--;
+          dragMotion.captureDrop();
+          moveOrder(source, index);
+        }
+      }
+      cleanup(); setDraggingSource(''); updateDropTarget(null);
+    };
+    const onCancel = () => { cleanup(); setDraggingSource(''); updateDropTarget(null); };
+    const onKey = (key: KeyboardEvent) => { if (key.key === 'Escape') { key.preventDefault(); onCancel(); } };
+    setDraggingSource(source);
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('blur', onCancel);
+    window.addEventListener('keydown', onKey);
+    stopPointerDrag.current = cleanup;
+  }
+  useEffect(() => { if (activeSection !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [activeSection, store]);
+  const previewInspect = readonly() && ['general', 'search'].includes(activeSection);
+  useEffect(() => () => stopPointerDrag.current?.(), []);
+  useEffect(() => { stopPointerDrag.current?.(); setDraggingSource(''); updateDropTarget(null); }, [activeSection]);
+  return <><div className="settings-core-toolbar"><Tabs label="通用设置分类" items={sections} value={activeSection} onChange={onSection} />{actions ? <div className="settings-core-actions">{actions}</div> : null}</div><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section role="tabpanel" className="settings-core-panel" data-section={activeSection} id={`panel-${activeSection}`} aria-labelledby={`tab-${activeSection}`}>
+    {activeSection === 'general' ? <div className="settings-core-general">
+      <section className="settings-core-group" aria-labelledby="general-launch-heading"><h2 id="general-launch-heading" className="settings-core-group-title">启动与快捷键</h2><fieldset disabled={readonly()} className="settings-core-subgroup"><Shortcut label="唤出 FlowHub" value={core.hotkey || 'Alt+Space'} taken={Object.values(core.scopeShortcuts)} onChange={v => setCore('hotkey', v)} /><Toggle label="开机自动启动" checked={core.launchAtLogin === true} onChange={v => setCore('launchAtLogin', v)} help="登录 macOS 用户账户后自动启动 FlowHub，保存设置后生效。" /></fieldset></section>
+      <section className="settings-core-group" aria-labelledby="general-network-heading"><h2 id="general-network-heading" className="settings-core-group-title">网络</h2><Choice label="代理检测适配器" value={c.plugins.tools.settings.proxyAdapter} options={[{ value: 'auto', label: '自动' }, { value: 'mihomo', label: 'Mihomo' }, { value: 'clash-rest', label: 'Clash REST' }, { value: 'system', label: '系统代理' }]} onChange={v => store.edit(c => { c.plugins.tools.settings.proxyAdapter = v; })} /></section>
+      <section className="settings-core-group" aria-labelledby="general-notifications-heading"><h2 id="general-notifications-heading" className="settings-core-group-title">通知</h2><fieldset disabled={readonly()} className="settings-core-subgroup"><Toggle label="允许通知" checked={core.notifications.enabled} disabled={readonly()} onChange={v => setNested('notifications', 'enabled', v)} /><Toggle label="更新通知" checked={core.notifications.updates} disabled={readonly() || !core.notifications.enabled} onChange={v => setNested('notifications', 'updates', v)} /><Row label="系统通知权限" help="权限由 macOS 系统设置 → 通知管理。"><Button disabled={readonly() || !core.notifications.enabled} onClick={() => void store.run(async () => { await write('sendTestNotification'); store.notice('测试通知已发送'); })}>发送测试通知</Button></Row></fieldset></section>
+    </div> : null}
+    {activeSection === 'search' ? <>
+      <Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
+      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">拖动把手，或聚焦把手后按 Alt + 上下方向键调整。浏览器预览的排序仅暂存于当前页面，刷新后复原；桌面 App 保存后生效。点击范围键可重新录入，按 Delete 可清空。顺序只影响有关键词时的「全部」结果；智能工具按命令匹配规则展示，不参与来源排序。</Help></div>
       <div className="settings-search-list" role="list" aria-label="搜索来源与顺序">{searchPlugins.map(plugin => {
-        const index = order.indexOf(plugin.id), sortable = index >= 0;
+        const index = displayOrder.indexOf(plugin.id), sortable = index >= 0;
         const label = plugin.settingsName || plugin.name || names[plugin.id] || plugin.id;
-        return <div role="listitem" className="settings-search-item" data-source={plugin.id} data-drop-target={dropSource === plugin.id && draggingSource !== plugin.id ? 'true' : undefined} key={plugin.id} onDragOver={e => { if (sortable && draggingSource) { e.preventDefault(); setDropSource(plugin.id); } }} onDrop={e => { e.preventDefault(); if (sortable && draggingSource) moveOrder(draggingSource, index); setDraggingSource(''); setDropSource(''); }}>
-          <div className="settings-search-rank">{sortable ? <button type="button" className="settings-search-grip" draggable={!readonly() && !s.busy && !s.conflict} aria-label={`调整${label}顺序，当前第 ${index + 1} 位`} title="拖动排序；Alt + 上下方向键调整" onDragStart={e => { e.dataTransfer.setData('text/flowhub-search', plugin.id); e.dataTransfer.effectAllowed = 'move'; setDraggingSource(plugin.id); }} onDragEnd={() => { setDraggingSource(''); setDropSource(''); }} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) { e.preventDefault(); moveOrder(plugin.id, index + (['ArrowUp', 'ArrowLeft'].includes(e.key) ? -1 : 1)); } }}><span aria-hidden="true">⠿</span><span>{index + 1}</span></button> : <span className="settings-search-not-ranked" aria-label="不参与排序">—</span>}</div>
+        return <div role="listitem" className="settings-search-item" data-source={plugin.id} data-drop-position={dropTarget && dropTarget.id === plugin.id && draggingSource ? dropTarget.position : undefined} key={plugin.id}>
+          <div className="settings-search-rank">{sortable ? <button type="button" className="settings-search-grip" draggable={false} aria-label={`调整${label}顺序`} title="拖动排序；Alt + 上下方向键调整" onPointerDown={e => beginSearchDrag(plugin.id, e)} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); moveOrder(plugin.id, index + (e.key === 'ArrowUp' ? -1 : 1)); } }}><span aria-hidden="true">⠿</span></button> : null}</div>
           <div className="settings-search-name"><span>{label}</span>{plugin.available === false ? <small>{plugin.reason || (readonly() ? '浏览器预览不可用' : '当前环境不可用')}</small> : null}</div>
-          <div className="settings-search-toggle"><Switch label={`启用${label}`} checked={c.plugins[plugin.id]?.enabled !== false} disabled={plugin.available === false} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} /></div>
-          <div className="settings-search-shortcut">{plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none" aria-label="无范围快捷键">—</span>}</div>
+          <div className="settings-search-toggle"><Switch label={`启用${label}`} checked={c.plugins[plugin.id]?.enabled !== false} disabled={readonly() || plugin.available === false} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} /></div>
+          <div className="settings-search-shortcut">{plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none" aria-label="无范围快捷键">—</span>}</div>
         </div>;
       })}</div>
-      <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
+      <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} disabled={readonly()} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
     </> : null}
-    {section === 'network' ? <Choice label="代理检测适配器" value={c.plugins.tools.settings.proxyAdapter} options={[{ value: 'auto', label: '自动' }, { value: 'mihomo', label: 'Mihomo' }, { value: 'clash-rest', label: 'Clash REST' }, { value: 'system', label: '系统代理' }]} onChange={v => store.edit(c => { c.plugins.tools.settings.proxyAdapter = v; })} /> : null}
-    {section === 'menubar' ? <>{Object.entries({ enabled: '显示 FlowHub 图标', showOpenLauncher: '打开启动器', showOpenSettings: '打开设置', showVersion: '显示版本', showQuit: '退出菜单', organizerEnabled: '启用菜单栏隐藏分区', collapseOnLaunch: '启动时收起隐藏分区' }).map(([key, label]) => <Toggle key={key} label={label} checked={core.menuBar[key] === true} disabled={key === 'collapseOnLaunch' ? !core.menuBar.organizerEnabled : ['showOpenLauncher', 'showOpenSettings', 'showVersion', 'showQuit'].includes(key) && !core.menuBar.enabled} onChange={v => setNested('menuBar', key, v)} />)}<Row label="菜单栏图标整理" help="展开后按住 ⌘，把待隐藏图标拖到箭头左侧；位置由 macOS 记忆。"><div className="flex flex-wrap gap-2"><Button disabled={!core.menuBar.organizerEnabled} onClick={() => void store.run(async () => { await write('toggleMenuBarItems'); })}>展开 / 收起</Button><Button onClick={() => void store.run(async () => { await write('requestMenuBarManagementPermission'); await store.refreshMenu(); })}>授权辅助功能</Button><Button onClick={() => void store.run(() => store.refreshMenu())}>扫描图标</Button></div></Row><p>{s.management.trusted ? '已授权 · 组合模式' : '未授权 · 原生模式'}</p>{s.menuItems.map(item => <Row key={item.windowId ?? item.window_id} label={item.name || item.ownerName || item.owner_name || item.title || '菜单栏图标'}><Button disabled={!item.hideable || !core.menuBar.organizerEnabled || !s.management.trusted} onClick={() => void store.run(async () => { await write('setMenuBarItemHidden', Number(item.windowId ?? item.window_id), item.section !== 'alwaysHidden'); await store.refreshMenu(); })}>{item.section === 'alwaysHidden' ? '移到常显区' : '始终隐藏'}</Button></Row>)}</> : null}
-    {section === 'notifications' ? <><Toggle label="允许通知" checked={core.notifications.enabled} onChange={v => setNested('notifications', 'enabled', v)} /><Toggle label="更新通知" checked={core.notifications.updates} disabled={!core.notifications.enabled} onChange={v => setNested('notifications', 'updates', v)} /><Row label="系统通知权限" help="权限由 macOS 系统设置 → 通知管理。"><Button disabled={!core.notifications.enabled} onClick={() => void store.run(async () => { await write('sendTestNotification'); store.notice('测试通知已发送'); })}>发送测试通知</Button></Row></> : null}
-    {section === 'data' ? <DataPanel store={store} /> : null}
-    {section === 'updates' ? <Updates store={store} /> : null}
+    {activeSection === 'menubar' ? <>{Object.entries({ enabled: '显示 FlowHub 图标', showOpenLauncher: '打开启动器', showOpenSettings: '打开设置', showVersion: '显示版本', showQuit: '退出菜单', organizerEnabled: '启用菜单栏隐藏分区', collapseOnLaunch: '启动时收起隐藏分区' }).map(([key, label]) => <Toggle key={key} label={label} checked={core.menuBar[key] === true} disabled={key === 'collapseOnLaunch' ? !core.menuBar.organizerEnabled : ['showOpenLauncher', 'showOpenSettings', 'showVersion', 'showQuit'].includes(key) && !core.menuBar.enabled} onChange={v => setNested('menuBar', key, v)} />)}<Row label="菜单栏图标整理" help="展开后按住 ⌘，把待隐藏图标拖到箭头左侧；位置由 macOS 记忆。"><div className="flex flex-wrap gap-2"><Button disabled={!core.menuBar.organizerEnabled} onClick={() => void store.run(async () => { await write('toggleMenuBarItems'); })}>展开 / 收起</Button><Button onClick={() => void store.run(async () => { await write('requestMenuBarManagementPermission'); await store.refreshMenu(); })}>授权辅助功能</Button><Button onClick={() => void store.run(() => store.refreshMenu())}>扫描图标</Button></div></Row><p className="settings-menu-permission" role="status">{readonly() ? '浏览器预览无法检测辅助功能权限，请在桌面 App 中查看。' : s.management.supported === false ? '当前系统不支持菜单栏图标管理。' : s.management.trusted ? '辅助功能已授权，可扫描图标并逐项设置隐藏。' : '辅助功能未授权，仍可展开或收起隐藏分区；扫描和逐项管理图标需授权。'}</p>{s.menuItems.map(item => <Row key={item.windowId ?? item.window_id} label={item.name || item.ownerName || item.owner_name || item.title || '菜单栏图标'}><Button disabled={!item.hideable || !core.menuBar.organizerEnabled || !s.management.trusted} onClick={() => void store.run(async () => { await write('setMenuBarItemHidden', Number(item.windowId ?? item.window_id), item.section !== 'alwaysHidden'); await store.refreshMenu(); })}>{item.section === 'alwaysHidden' ? '移到常显区' : '始终隐藏'}</Button></Row>)}</> : null}
+    {activeSection === 'data' ? <DataPanel store={store} /> : null}
+    {activeSection === 'updates' ? <Updates store={store} /> : null}
   </section></fieldset></>;
 }
 export async function primaryUpdate(store: SettingsStore) {

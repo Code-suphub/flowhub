@@ -1,6 +1,25 @@
 const { test } = require('node:test'), assert = require('node:assert/strict');
 const h = require('./settings-harness.test.cjs');
 const { Settings } = require('../../src/settings/index.tsx');
+const { Core } = require('../../src/settings/Core.tsx');
+test('2FA participates in source sorting and preserves its saved position', async () => {
+  const { store } = await h.loaded({ listPlugins: async () => ['app', 'web', 'clipboard', 'memo', 'twofa', 'tools'].map(id => ({ id, name: id, available: true })) });
+  const view = await h.mount(Settings, { store });
+  await h.click(view.container.querySelector('#tab-search'));
+  const grip = view.container.querySelector('[data-source=twofa] .settings-search-grip');
+  assert.ok(grip);
+  for (let i = 0; i < 4; i++) await h.key(grip, 'ArrowUp', { altKey: true });
+  assert.deepEqual(store.snapshot().config.core.searchResultOrder, ['twofa', 'app', 'web', 'clipboard', 'memo']);
+  assert.equal(view.container.querySelector('.settings-search-item').dataset.source, 'twofa');
+  await h.act(async () => store.save());
+  await view.unmount();
+  const remount = await h.mount(Settings, { store });
+  await h.click(remount.container.querySelector('#tab-search'));
+  assert.equal(remount.container.querySelector('.settings-search-item').dataset.source, 'twofa');
+  assert.equal(remount.container.querySelector('[data-source=tools] .settings-search-grip'), null);
+  await remount.unmount(); store.dispose();
+});
+const pointer = (type, element, x, y, pointerId = 1) => { const event = new window.Event(type, { bubbles:true, cancelable:true }); Object.assign(event, { pointerId, pointerType:'mouse', button:0, clientX:x, clientY:y }); element.dispatchEvent(event); };
 test('compact settings groups sources and data; unsupported updates have no progress bar', async () => {
   const { store } = await h.loaded({ getUpdateState: async () => ({ status:'unsupported', currentVersion:'0.1.0', percent:0 }) }, true);
   const view = await h.mount(Settings, { store });
@@ -11,6 +30,9 @@ test('compact settings groups sources and data; unsupported updates have no prog
   for (const source of sources) assert.equal(source.querySelectorAll('[role=switch]').length,1);
   assert.deepEqual(sources.slice(0, 4).map(source => source.dataset.source), ['app', 'web', 'clipboard', 'memo']);
   assert.equal(view.container.querySelectorAll('.settings-search-item .settings-search-grip').length, 4);
+  assert.equal(view.container.querySelector('.settings-search-columns'), null);
+  assert.equal(view.container.querySelector('.settings-search-item[data-source=tools] .settings-search-rank').textContent, '');
+  for (const grip of view.container.querySelectorAll('.settings-search-grip')) assert.equal(grip.textContent.trim(), '⠿');
   assert.equal(view.container.querySelectorAll('.settings-search-item .fh-help').length, 0);
   assert.ok(view.container.querySelector('.settings-search-item[data-source=app] [aria-label="应用范围键"]'));
   await select('data');
@@ -33,13 +55,17 @@ test('search source row keeps priority, toggle, and shortcut together; keyboard 
   await h.key(rows()[0].querySelector('.settings-search-grip'), 'ArrowDown', { altKey: true });
   assert.deepEqual(store.snapshot().config.core.searchResultOrder.slice(0, 2), [initial[1], initial[0]]);
   assert.deepEqual(rows().slice(0, 2).map(row => row.dataset.source), [initial[1], initial[0]]);
-  const transfer = { setData() {}, effectAllowed: '' };
-  const drag = new window.Event('dragstart', { bubbles: true, cancelable: true });
-  Object.defineProperty(drag, 'dataTransfer', { value: transfer });
-  await h.act(async () => rows()[1].querySelector('.settings-search-grip').dispatchEvent(drag));
-  await h.act(async () => rows()[0].dispatchEvent(new window.Event('dragover', { bubbles: true, cancelable: true })));
-  assert.equal(rows()[0].dataset.dropTarget, 'true');
-  await h.act(async () => rows()[0].dispatchEvent(new window.Event('drop', { bubbles: true, cancelable: true })));
+  const source = rows()[1], target = rows()[0], handle = source.querySelector('.settings-search-grip');
+  source.getBoundingClientRect = () => ({ left:10, top:100, width:500, height:62 });
+  target.getBoundingClientRect = () => ({ left:10, top:0, width:500, height:62 });
+  const previousElementFromPoint = document.elementFromPoint; document.elementFromPoint = () => target;
+  await h.act(async () => { pointer('pointerdown', handle, 20, 120); pointer('pointermove', window, 20, 10); });
+  assert.equal(target.dataset.dropPosition, 'before');
+  const ghost = document.querySelector('.settings-search-drag-preview');
+  assert.ok(ghost); assert.equal(ghost.inert, true); assert.equal(ghost.getAttribute('aria-hidden'), 'true');
+  assert.equal(ghost.querySelector('[data-source]'), null); assert.equal(source.getAttribute('data-drag-source'), 'true');
+  await h.act(async () => pointer('pointerup', window, 20, 10));
+  document.elementFromPoint = previousElementFromPoint;
   assert.deepEqual(store.snapshot().config.core.searchResultOrder, initial);
   const app = view.container.querySelector('.settings-search-item[data-source=app]');
   assert.ok(app.querySelector('[role=switch]'));
@@ -50,6 +76,70 @@ test('search source row keeps priority, toggle, and shortcut together; keyboard 
   await h.key(app.querySelector('[aria-label="应用范围键"]'), '9', { code: 'Digit9' });
   assert.equal(store.snapshot().config.core.scopeShortcuts.app, '9');
   await view.unmount(); store.dispose();
+});
+test('read-only search preview allows temporary drag and keyboard sorting without enabling settings', async () => {
+  const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
+  await h.click(view.container.querySelector('#tab-search'));
+  const rows = () => [...view.container.querySelectorAll('.settings-search-item')];
+  const initial = rows().slice(0, 4).map(row => row.dataset.source);
+  const savedConfig = JSON.stringify(store.snapshot().config);
+  const grip = rows()[1].querySelector('.settings-search-grip');
+  assert.equal(grip.disabled, false);
+  assert.equal(grip.draggable, false);
+  const source = rows()[1], target = rows()[0];
+  source.getBoundingClientRect = () => ({ left:10, top:100, width:500, height:62 });
+  target.getBoundingClientRect = () => ({ left:10, top:0, width:500, height:62 });
+  const previousElementFromPoint = document.elementFromPoint; document.elementFromPoint = () => target;
+  await h.act(async () => { pointer('pointerdown', grip, 20, 120, 2); pointer('pointermove', window, 20, 10, 2); });
+  assert.equal(target.dataset.dropPosition, 'before');
+  const ghost = document.querySelector('.settings-search-drag-preview');
+  assert.ok(ghost); assert.equal(ghost.inert, true); assert.equal(ghost.getAttribute('aria-hidden'), 'true');
+  assert.equal(ghost.querySelector('[data-source]'), null);
+  await h.act(async () => pointer('pointerup', window, 20, 10, 2));
+  document.elementFromPoint = previousElementFromPoint;
+  assert.deepEqual(rows().slice(0, 4).map(row => row.dataset.source), [initial[1], initial[0], ...initial.slice(2)]);
+  assert.equal(JSON.stringify(store.snapshot().config), savedConfig);
+  assert.equal(writes.length, 0);
+  const toolsRow = view.container.querySelector('.settings-search-item[data-source=tools]');
+  const beforeInvalidDrop = rows().map(row => row.dataset.source);
+  document.elementFromPoint = () => toolsRow;
+  await h.act(async () => { pointer('pointerdown', rows()[0].querySelector('.settings-search-grip'), 20, 120, 3); pointer('pointermove', window, 20, 10, 3); });
+  assert.equal(toolsRow.dataset.dropPosition, undefined);
+  await h.act(async () => pointer('pointerup', window, 20, 10, 3));
+  document.elementFromPoint = previousElementFromPoint;
+  assert.deepEqual(rows().map(row => row.dataset.source), beforeInvalidDrop);
+  assert.equal(JSON.stringify(store.snapshot().config), savedConfig);
+  assert.equal(writes.length, 0);
+  const app = view.container.querySelector('.settings-search-item[data-source=app]');
+  assert.equal(app.querySelector('[role=switch]').getAttribute('aria-disabled'), 'true');
+  assert.equal(app.querySelector('[aria-label="应用范围键"]').disabled, true);
+  assert.equal(view.container.querySelector('[aria-label="全部结果范围键"]').disabled, true);
+  await h.key(app.querySelector('.settings-search-grip'), 'ArrowDown', { altKey: true });
+  assert.equal(JSON.stringify(store.snapshot().config), savedConfig);
+  assert.equal(writes.length, 0);
+  await view.unmount();
+  const remounted = await h.mount(Settings, { store });
+  await h.click(remounted.container.querySelector('#tab-search'));
+  assert.deepEqual([...remounted.container.querySelectorAll('.settings-search-item')].slice(0, 4).map(row => row.dataset.source), initial);
+  await remounted.unmount(); store.dispose();
+});
+test('search pointer drag clears its overlay on cancel, Escape, tab change, and unmount', async () => {
+  const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
+  await h.click(view.container.querySelector('#tab-search'));
+  const rows = [...view.container.querySelectorAll('.settings-search-item')], source = rows[0], target = rows[1];
+  source.getBoundingClientRect = () => ({ left:10, top:0, width:500, height:62 });
+  target.getBoundingClientRect = () => ({ left:10, top:62, width:500, height:62 });
+  const previousElementFromPoint = document.elementFromPoint; document.elementFromPoint = () => target;
+  const begin = async id => h.act(async () => { pointer('pointerdown', source.querySelector('.settings-search-grip'), 20, 20, id); pointer('pointermove', window, 20, 80, id); });
+  const assertCleared = () => { assert.equal(document.querySelector('.settings-search-drag-preview'), null); assert.equal(view.container.querySelector('[data-drag-source]'), null); assert.equal(view.container.querySelector('[data-drop-position]'), null); assert.equal(document.body.classList.contains('settings-search-dragging'), false); };
+  await begin(4); await h.act(async () => pointer('pointercancel', window, 20, 80, 4)); assertCleared();
+  await begin(5); await h.act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key:'Escape', bubbles:true }))); assertCleared();
+  await begin(6); await h.click(view.container.querySelector('#tab-general')); assertCleared();
+  await h.click(view.container.querySelector('#tab-search')); await begin(7); await view.unmount();
+  assert.equal(document.querySelector('.settings-search-drag-preview'), null);
+  assert.equal(document.body.classList.contains('settings-search-dragging'), false);
+  document.elementFromPoint = previousElementFromPoint;
+  assert.equal(store.dirty, false); assert.equal(writes.length, 0); store.dispose();
 });
 test('unavailable search source shows its reason inline without a redundant help popup', async () => {
   const { store } = await h.loaded({ listPlugins: async () => [
@@ -64,13 +154,14 @@ test('unavailable search source shows its reason inline without a redundant help
   assert.equal(row.querySelector('[role=switch]').getAttribute('aria-disabled'), 'true');
   await view.unmount(); store.dispose();
 });
-test('all settings sections mount, tabs switch with Arrow keys/Home/End in read-only preview', async () => {
+test('five settings sections mount, tabs switch with Arrow keys/Home/End in read-only preview', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  const tabs = [...view.container.querySelectorAll('[role=tab]')]; assert.equal(tabs.length, 7);
+  const tabs = [...view.container.querySelectorAll('[role=tab]')]; assert.deepEqual(tabs.map(tab => tab.id.slice(4)), ['general','search','menubar','data','updates']);
+  assert.equal(tabs.length, 5);
   await h.key(tabs[0], 'ArrowRight'); assert.equal(tabs[1].getAttribute('aria-selected'), 'true'); assert.equal(document.activeElement, tabs[1]);
-  await h.key(tabs[1], 'End'); assert.equal(tabs[6].getAttribute('aria-selected'), 'true');
-  await h.key(tabs[6], 'Home'); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
-  await h.key(tabs[0], 'ArrowLeft'); assert.equal(tabs[6].getAttribute('aria-selected'), 'true');
+  await h.key(tabs[1], 'End'); assert.equal(tabs[4].getAttribute('aria-selected'), 'true');
+  await h.key(tabs[4], 'Home'); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+  await h.key(tabs[0], 'ArrowLeft'); assert.equal(tabs[4].getAttribute('aria-selected'), 'true');
   for (const tab of tabs) { await h.click(tab); assert.ok(view.container.querySelector(`#panel-${tab.id.slice(4)}`)); }
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
   await view.unmount(); store.dispose();
@@ -116,12 +207,15 @@ test('native canvas setting saves view-only immediately and opens the widget sur
   assert.ok(calls.some(call=>call.action==='open'));
   await view.unmount();store.dispose();
 });
-test('read-only network adapter can inspect options without changing its value', async () => {
+test('read-only general keeps adapter options inspectable while shortcuts and notifications stay disabled', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-network'));
+  await h.click(view.container.querySelector('#tab-general'));
   const before = store.snapshot().config.plugins.tools.settings.proxyAdapter;
   const select = view.container.querySelector('[aria-label="代理检测适配器"]');
   assert.equal(select.disabled, false);
+  assert.equal(view.container.querySelector('[aria-label="唤出 FlowHub"]').matches(':disabled'), true);
+  assert.ok([...view.container.querySelectorAll('.settings-core-group[aria-labelledby="general-notifications-heading"] [role=switch]')].every(control => control.getAttribute('aria-disabled') === 'true'));
+  assert.equal(h.button(view.container, '发送测试通知').matches(':disabled'), true);
   await h.click(select);
   const options = [...document.querySelectorAll('[role=option]')];
   assert.equal(options.length, 4);
@@ -130,6 +224,17 @@ test('read-only network adapter can inspect options without changing its value',
   assert.equal(store.snapshot().config.plugins.tools.settings.proxyAdapter, before);
   assert.equal(writes.length, 0);
   await view.unmount(); store.dispose();
+});
+test('legacy network and notifications section names resolve to the general tab', async () => {
+  const { store } = await h.loaded({}, true);
+  for (const section of ['network','notifications']) {
+    const view = await h.mount(Core, { store, section, onSection: () => {} });
+    assert.equal(view.container.querySelector('#tab-general').getAttribute('aria-selected'), 'true');
+    assert.ok(view.container.querySelector('#panel-general [aria-label="代理检测适配器"]'));
+    assert.ok(view.container.querySelector('#panel-general [role=switch]'));
+    await view.unmount();
+  }
+  store.dispose();
 });
 test('native entrypoints queue addUrl until loading, deduplicate URLs, reject protocols and clean subscriptions', async () => {
   const env = h.environment(); window.history.replaceState({}, '', '/settings.html?addUrl=https%3A%2F%2Fnew.example%2F');
