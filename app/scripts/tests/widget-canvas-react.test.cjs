@@ -67,11 +67,12 @@ test('React owns the entry and retains the original isolated bridge, with no leg
 test('empty canvas explains how to add a component and opens the editor', async t => {
   const emptyLayout = layout(); emptyLayout.boards[0].cards = [];
   const s = setup(t, { layout: emptyLayout });
-  await wait(() => s.button('＋ 添加第一个组件') && !s.w.document.getElementById('add').disabled);
+  await wait(() => s.button('添加第一个组件') && !s.w.document.getElementById('add').disabled);
+  assert.equal(s.w.document.getElementById('add').textContent, '添加');
   assert.ok(s.w.document.querySelector('.canvas-blank[data-slot="empty"]'));
   assert.equal(s.w.document.querySelector('.canvas-blank [data-slot="empty-title"]').textContent, '还没有组件');
   assert.match(s.w.document.querySelector('.canvas-blank').textContent, /从已安装的插件中添加组件/);
-  s.button('＋ 添加第一个组件').click();
+  s.button('添加第一个组件').click();
   await wait(() => s.w.document.getElementById('widgetForm'));
   assert.ok(s.w.document.querySelector('.fh-dialog.canvas-editor-dialog'));
   const css = fs.readFileSync(path.join(app, 'src/canvas/canvas.css'), 'utf8');
@@ -84,6 +85,7 @@ test('layout dropdown stays outside the isolated widget iframe layer', async t =
   s.w.document.getElementById('boards').click();
   await wait(() => s.w.document.querySelector('[data-slot="select-content"]'));
   const popup = s.w.document.querySelector('[data-slot="select-content"]');
+  assert.ok(popup.classList.contains('canvas-board-select-popup'));
   assert.equal(s.w.document.getElementById('canvas').contains(popup), false);
   assert.ok(popup.closest('.z-50'));
   const css = fs.readFileSync(path.join(app, 'src/canvas/canvas.css'), 'utf8');

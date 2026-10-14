@@ -300,10 +300,10 @@ export function Canvas() {
   return <div className="fh-canvas-app" data-view-only={viewOnly}>
     <header ref={toolbar} className={`canvas-toolbar flex flex-wrap items-center gap-2 ${inactive ? 'surface-inactive' : ''}`} inert={inactive || viewOnly}>
       <Button id="dragSurface" className="brand" size="icon" aria-label="拖动桌面组件区域" title="拖动桌面组件区域" disabled={!invoke} onMouseDown={event => { if (event.button === 0 && invoke) void api('drag').catch(error => setNotice(String(error))); }}><GripVerticalIcon aria-hidden="true" /></Button>
-      <Select id="boards" label="切换组件布局" value={layout.active} disabled={!loaded} options={layout.boards.map(board => ({ value: board.id, label: board.title }))} onChange={value => commit(draft => { draft.active = value; })} />
+      <Select id="boards" label="切换组件布局" popupClassName="canvas-board-select-popup" value={layout.active} disabled={!loaded} options={layout.boards.map(board => ({ value: board.id, label: board.title }))} onChange={value => commit(draft => { draft.active = value; })} />
       <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded} onChange={value => commit(draft => { draft.pinned = value; })} /><span>置顶</span></div>
       <div className="flex items-center gap-1" title="开启后锁定拖动和左键操作，右键菜单可退出仅查看状态"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
-      <Button id="add" className="primary" disabled={!loaded || board.cards.length >= 32} onClick={() => add()}>＋ 添加组件</Button>
+      <Button id="add" className="primary" disabled={!loaded || board.cards.length >= 32} onClick={() => add()}>添加</Button>
       <Button id="canvasMore" aria-haspopup="menu" aria-expanded={menu?.kind === 'toolbar'} aria-controls={menu?.kind === 'toolbar' ? 'canvasMenu' : undefined} disabled={!loaded} onClick={() => { if (menu?.kind === 'toolbar') closeMenu(true); else openMore(); }} onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openMore(); }
       }}>更多</Button>
@@ -338,7 +338,7 @@ export function Canvas() {
       })}
       {loaded && !board.cards.length ? <Empty className="canvas-blank">
         <EmptyHeader><EmptyTitle>还没有组件</EmptyTitle><EmptyDescription>从已安装的插件中添加组件。</EmptyDescription></EmptyHeader>
-        <EmptyContent><Button className="primary w-full" onClick={() => add()}>＋ 添加第一个组件</Button></EmptyContent>
+        <EmptyContent><Button className="primary w-full" onClick={() => add()}>添加第一个组件</Button></EmptyContent>
       </Empty> : null}
     </main>
     {menu ? <div id="canvasMenu" ref={menuNode} className={`canvas-menu fixed grid ${menu.kind === 'toolbar' ? 'canvas-toolbar-menu' : ''}`} role="menu" aria-label={menu.kind === 'toolbar' ? '布局与桌面组件操作' : '组件操作'} style={{ left: menu.x, top: menu.y }} onKeyDown={event => {
