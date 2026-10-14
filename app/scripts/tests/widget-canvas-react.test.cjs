@@ -54,6 +54,7 @@ function setup(t, options = {}) {
 }
 const ready = s => wait(() => s.w.document.querySelector('.widget-content')?.src.includes('flowhubWidgetToken') && !s.w.document.getElementById('add').disabled);
 async function edit(s) { const node = s.w.document.querySelector('.canvas-card'); node.dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 })); await wait(() => s.button('编辑组件')); s.button('编辑组件').click(); await wait(() => s.w.document.querySelector('#widgetEditor')?.src.includes('flowhubWidgetToken')); return s.w.document.querySelector('#widgetEditor'); }
+async function more(s) { s.w.document.getElementById('canvasMore').click(); await wait(() => s.w.document.getElementById('newBoard')); }
 
 if (require.main === module) {
 test('React owns the entry and retains the original isolated bridge, with no legacy renderer', () => {
@@ -90,11 +91,13 @@ test('layout dropdown stays outside the isolated widget iframe layer', async t =
   assert.match(css, /\.canvas-toolbar\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1/);
 });
 
-test('icon-only drag and widget settings entry remain accessible in interactive mode', async t => {
+test('icon-only drag and widget settings in More remain accessible in interactive mode', async t => {
   const s = setup(t); await ready(s);
   const drag = s.w.document.getElementById('dragSurface');
   assert.equal(drag.textContent.trim(), '');
   assert.equal(drag.getAttribute('aria-label'), '拖动桌面组件区域');
+  assert.equal(s.w.document.getElementById('canvasSettings'), null);
+  await more(s);
   s.w.document.getElementById('canvasSettings').click();
   await wait(() => s.calls.some(call => call.action === 'settings'));
   s.w.document.querySelector('.canvas-card').dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
@@ -117,6 +120,77 @@ test('toolbar view-only switch persists immediately, locks the canvas, and setti
   s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-view-only', { detail: false }));
   await wait(() => s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly === 'false');
   assert.equal(toggle.getAttribute('aria-checked'), 'false');
+});
+
+test('More keyboard navigation skips disabled actions, restores focus and stays separate from card menus', async t => {
+  const s = setup(t); await ready(s);
+  const trigger = s.w.document.getElementById('canvasMore');
+  assert.equal(trigger.getAttribute('aria-haspopup'), 'menu');
+  assert.equal(s.w.document.getElementById('newBoard'), null);
+  trigger.focus();
+  trigger.dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowDown' }));
+  await wait(() => s.w.document.activeElement === s.button('新建布局'));
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  assert.equal(s.w.document.getElementById('canvasMenu').getAttribute('aria-label'), '布局与桌面组件操作');
+  assert.equal(s.w.document.getElementById('removeBoard').disabled, true);
+  s.button('新建布局').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'End' }));
+  assert.equal(s.w.document.activeElement, s.button('桌面组件设置'));
+  s.button('桌面组件设置').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowUp' }));
+  assert.equal(s.w.document.activeElement, s.button('重命名布局'));
+  s.button('重命名布局').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+  assert.equal(s.w.document.activeElement, trigger);
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  await more(s);
+  s.w.document.querySelector('.canvas-card').dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+  await wait(() => s.button('编辑组件'));
+  assert.equal(s.w.document.getElementById('newBoard'), null);
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+});
+
+test('More closes on trigger toggle, outside input, iframe focus, layout switch and native exit', async t => {
+  const s = setup(t); await ready(s);
+  const trigger = s.w.document.getElementById('canvasMore');
+  await more(s); s.pointer(trigger, 'pointerdown', 20, 20); trigger.click();
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+  await more(s); s.pointer(s.w.document.getElementById('canvas'), 'pointerdown', 500, 400);
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+  await more(s); s.w.document.querySelector('iframe').focus();
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+  await more(s); s.w.document.getElementById('boards').click();
+  await wait(() => s.w.document.querySelector('[role=option]'));
+  s.w.document.querySelector('[role=option]').click();
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+  await more(s); s.setCursor({ x: -1, y: -1 });
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+});
+
+test('More anchors within a narrow resized window and dialogs restore the persistent trigger', async t => {
+  const s = setup(t); await ready(s);
+  const trigger = s.w.document.getElementById('canvasMore');
+  trigger.getBoundingClientRect = () => ({ left: 290, top: 180, bottom: 210 });
+  Object.defineProperty(s.w, 'innerWidth', { configurable: true, value: 320 });
+  Object.defineProperty(s.w, 'innerHeight', { configurable: true, value: 240 });
+  await more(s);
+  const popup = s.w.document.getElementById('canvasMenu');
+  assert.equal(popup.style.left, '144px'); assert.equal(popup.style.top, '102px');
+  assert.equal(s.w.document.getElementById('canvas').contains(popup), false);
+  Object.defineProperty(s.w, 'innerWidth', { configurable: true, value: 280 });
+  s.w.dispatchEvent(new s.w.Event('resize')); assert.equal(popup.style.left, '104px');
+  s.button('重命名布局').click();
+  await wait(() => s.w.document.getElementById('boardName'));
+  assert.equal(s.w.document.getElementById('canvasMenu'), null);
+  s.button('取消').click();
+  await wait(() => !s.w.document.getElementById('boardName') && s.w.document.activeElement === trigger);
+});
+
+test('More preserves layout limits and preview native settings restrictions', async t => {
+  const full = layout();
+  full.boards.push(...Array.from({ length: 11 }, (_, i) => ({ id: `board-${i}`, title: `布局 ${i}`, cards: [] })));
+  const s = setup(t, { layout: full, preview: true }); await ready(s); await more(s);
+  assert.equal(s.w.document.getElementById('newBoard').disabled, true);
+  assert.equal(s.w.document.getElementById('removeBoard').disabled, false);
+  assert.equal(s.w.document.getElementById('canvasSettings').disabled, true);
 });
 
 test('failed toolbar lock leaves the canvas interactive and reports the error', async t => {
@@ -191,15 +265,15 @@ test('pin, board create/rename/switch/delete and native drag/close persist corre
   s.w.document.getElementById('dragSurface').dispatchEvent(new s.w.MouseEvent('mousedown', { bubbles: true, button: 0 }));
   s.w.document.getElementById('closeSurface').click();
   assert.ok(s.calls.some(call => call.action === 'drag')); assert.ok(s.calls.some(call => call.action === 'close'));
-  s.button('＋ 布局').click(); await wait(() => s.w.document.getElementById('boardName'));
+  await more(s); s.button('新建布局').click(); await wait(() => s.w.document.getElementById('boardName'));
   s.input(s.w.document.getElementById('boardName'), '工作'); s.submit('nameForm');
   await wait(() => s.calls.filter(call => call.action === 'save').at(-1)?.payload.boards.length === 2);
-  s.button('重命名').click(); await wait(() => s.w.document.getElementById('boardName'));
+  await more(s); s.button('重命名布局').click(); await wait(() => s.w.document.getElementById('boardName'));
   s.input(s.w.document.getElementById('boardName'), '新工作'); s.submit('nameForm');
   await wait(() => s.calls.filter(call => call.action === 'save').at(-1)?.payload.boards.some(board => board.title === '新工作'));
   s.w.document.getElementById('boards').click(); await wait(() => s.w.document.querySelector('[role=option]'));
   [...s.w.document.querySelectorAll('[role=option]')].find(node => node.textContent === '默认布局').click(); await ready(s);
-  s.w.document.getElementById('removeBoard').click(); await wait(() => s.w.document.getElementById('confirmDelete'));
+  await more(s); s.w.document.getElementById('removeBoard').click(); await wait(() => s.w.document.getElementById('confirmDelete'));
   s.w.document.getElementById('confirmDelete').click(); await wait(() => s.calls.filter(call => call.action === 'save').at(-1)?.payload.boards.length === 1);
   assert.equal(s.calls.filter(call => call.action === 'save').at(-1).payload.boards[0].title, '新工作');
 });
@@ -330,6 +404,7 @@ test('first-load failure retries the actual saved layout before enabling changes
   const s = setup(t, { invoke: (command, args) => args.action === 'get' && ++attempts === 1 ? Promise.reject(Error('offline')) : undefined });
   await wait(() => s.w.document.getElementById('notice')?.textContent.includes('offline'));
   assert.equal(s.w.document.getElementById('add').disabled, true);
+  assert.equal(s.w.document.getElementById('canvasMore').disabled, true);
   s.intervals[0].callback(); await ready(s);
   assert.ok(s.w.document.querySelector('[data-id="one"]'));
   s.w.document.querySelector('[role=switch]').click();

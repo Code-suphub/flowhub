@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { GripVerticalIcon, Settings2Icon } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { GripVerticalIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
 import { Field, FieldGroup, FieldLabel, FieldTitle } from '../components/ui/field';
@@ -9,7 +9,7 @@ import { WidgetSurface } from './WidgetSurface';
 import { host, initialLayout, isLayout, minimum, normalize, cardConfig, type Card, type Config, type FrameHandle, type Invoke, type Layout, type Point, type Source } from './model';
 
 type Editor = { boardId: string; card?: Card };
-type Menu = { card?: Card; x: number; y: number; pointer: boolean };
+type Menu = { kind: 'context' | 'toolbar'; card?: Card; x: number; y: number; pointer: boolean };
 type Gesture = { id: string; pointer: number; node: HTMLElement; resize: boolean; origin: Point; left: number; top: number; width: number; height: number; moved: boolean; wanted?: Point; target: string | null; grown: number };
 
 function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
@@ -66,6 +66,14 @@ export function Canvas() {
   const height = Math.max(120, ...board.cards.map(card => (card.y || 0) + (card.height || 184)));
   const current = useRef({ editor, naming, deleting, menu }); current.current = { editor, naming, deleting, menu };
   const modalOpen = () => !!(current.current.editor || current.current.naming || current.current.deleting);
+  const moreButton = () => toolbar.current?.querySelector<HTMLButtonElement>('#canvasMore');
+  function closeMenu(restore = false) {
+    const active = current.current.menu;
+    setMenu(null);
+    if (!restore || !active) return;
+    if (active.kind === 'toolbar') moreButton()?.focus();
+    else if (active.card) [...(canvas.current?.querySelectorAll<HTMLElement>('[data-id]') || [])].find(node => node.dataset.id === active.card?.id)?.focus();
+  }
   const api = <T = unknown,>(action: string, payload: unknown = {}) => invoke!<T>('plugin_canvas_api', { action, payload });
   function fitSurface() {
     if (!invoke || gesture.current || modalOpen() || !canvas.current || !toolbar.current) return;
@@ -199,14 +207,14 @@ export function Canvas() {
       if (!stopped) timer = setTimeout(poll, 150);
     }
     const move = (event: PointerEvent | MouseEvent) => { revision++; track(event.clientX, event.clientY); };
-    const down = (event: PointerEvent) => { if (!menuNode.current?.contains(event.target as Node)) close(); };
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    const down = (event: PointerEvent) => { if (!menuNode.current?.contains(event.target as Node) && !(current.current.menu?.kind === 'toolbar' && moreButton()?.contains(event.target as Node))) close(); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && current.current.menu) { event.preventDefault(); cancelLeave(); closeMenu(true); } };
     const leave = () => { close(); if (!invoke) { revision++; track(-1, -1); } };
     const hide = () => { stopped = true; revision++; clearTimeout(timer); close(); };
     const show = () => { if (stopped) { stopped = false; if (invoke) void poll(); } };
     const visibility = () => { if (document.hidden) close(); };
     const blur = (event: FocusEvent) => { if (!(event.relatedTarget instanceof Node) || !document.contains(event.relatedTarget)) close(); };
-    const focus = (event: FocusEvent) => { const node = event.target as Element, owner = current.current.menu?.card?.id; if (!menuNode.current?.contains(node) && (!owner || node.closest?.('[data-id]')?.getAttribute('data-id') !== owner)) close(); };
+    const focus = (event: FocusEvent) => { const node = event.target as Element, owner = current.current.menu?.card?.id; if (!menuNode.current?.contains(node) && !(current.current.menu?.kind === 'toolbar' && moreButton()?.contains(node)) && (!owner || node.closest?.('[data-id]')?.getAttribute('data-id') !== owner)) close(); };
     const scroll = (event: Event) => { if (!menuNode.current?.contains(event.target as Node)) close(); };
     document.addEventListener('pointermove', move, true); document.addEventListener('mousemove', move, true);
     document.addEventListener('contextmenu', move, true);
@@ -225,7 +233,19 @@ export function Canvas() {
       window.removeEventListener('blur', blur); window.removeEventListener('pagehide', hide); window.removeEventListener('pageshow', show);
     };
   }, [invoke]);
-  useEffect(() => { if (menu) menuNode.current?.querySelector<HTMLButtonElement>('button')?.focus(); }, [menu]);
+  useLayoutEffect(() => {
+    const node = menuNode.current;
+    if (!menu || !node) return;
+    const position = () => {
+      const { width, height } = node.getBoundingClientRect(), anchor = menu.kind === 'toolbar' ? moreButton()?.getBoundingClientRect() : null;
+      node.style.left = `${Math.max(8, Math.min(anchor?.left ?? menu.x, innerWidth - width - 8))}px`;
+      node.style.top = `${Math.max(8, Math.min(anchor ? anchor.bottom + 4 : menu.y, innerHeight - height - 8))}px`;
+    };
+    position();
+    node.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    window.addEventListener('resize', position);
+    return () => window.removeEventListener('resize', position);
+  }, [menu]);
 
   function start(event: ReactPointerEvent<HTMLElement>, card: Card) {
     if (layoutRef.current.viewOnly || event.button !== 0) return;
@@ -272,7 +292,11 @@ export function Canvas() {
     }
     fitted.current = ''; requestAnimationFrame(() => actions.current.fitSurface());
   }
-  const context = (card: Card | undefined, x: number, y: number, pointer = true) => setMenu({ card, x: Math.max(8, Math.min(x, innerWidth - 176)), y: Math.max(8, Math.min(y, innerHeight - (layoutRef.current.viewOnly ? 190 : 150))), pointer });
+  const context = (card: Card | undefined, x: number, y: number, pointer = true) => setMenu({ kind: 'context', card, x, y, pointer });
+  const openMore = () => {
+    const rect = moreButton()?.getBoundingClientRect();
+    if (rect && loaded && !viewOnly) setMenu({ kind: 'toolbar', x: rect.left, y: rect.bottom + 4, pointer: false });
+  };
   return <div className="fh-canvas-app" data-view-only={viewOnly}>
     <header ref={toolbar} className={`canvas-toolbar flex flex-wrap items-center gap-2 ${inactive ? 'surface-inactive' : ''}`} inert={inactive || viewOnly}>
       <Button id="dragSurface" className="brand" size="icon" aria-label="拖动桌面组件区域" title="拖动桌面组件区域" disabled={!invoke} onMouseDown={event => { if (event.button === 0 && invoke) void api('drag').catch(error => setNotice(String(error))); }}><GripVerticalIcon aria-hidden="true" /></Button>
@@ -280,10 +304,9 @@ export function Canvas() {
       <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded} onChange={value => commit(draft => { draft.pinned = value; })} /><span>置顶</span></div>
       <div className="flex items-center gap-1" title="开启后锁定拖动和左键操作，右键菜单可退出仅查看状态"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
       <Button id="add" className="primary" disabled={!loaded || board.cards.length >= 32} onClick={() => add()}>＋ 添加组件</Button>
-      <Button id="newBoard" disabled={!loaded || layout.boards.length >= 12} onClick={() => { setName(''); setNaming('new'); }}>＋ 布局</Button>
-      <Button id="rename" disabled={!loaded} onClick={() => { setName(board.title); setNaming('rename'); }}>重命名</Button>
-      <Button id="removeBoard" disabled={!loaded || layout.boards.length < 2} onClick={() => setDeleting(true)}>删除布局</Button>
-      <Button id="canvasSettings" size="icon" aria-label="打开桌面组件设置" title="打开桌面组件设置" disabled={!invoke} onClick={() => { if (invoke) void api('settings').catch(error => setNotice(String(error))); }}><Settings2Icon aria-hidden="true" /></Button>
+      <Button id="canvasMore" aria-haspopup="menu" aria-expanded={menu?.kind === 'toolbar'} aria-controls={menu?.kind === 'toolbar' ? 'canvasMenu' : undefined} disabled={!loaded} onClick={() => { if (menu?.kind === 'toolbar') closeMenu(true); else openMore(); }} onKeyDown={event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openMore(); }
+      }}>更多</Button>
       <Help label="画布操作说明">拖动卡片调整位置，边角缩放，方向键微调大小，右键编辑。每 15 秒更新插件缓存。</Help>
       <Button id="closeSurface" aria-label="关闭组件区域" disabled={!invoke} onClick={() => { if (invoke) void api('close').catch(error => setNotice(String(error))); }}>×</Button>
     </header>
@@ -318,15 +341,21 @@ export function Canvas() {
         <EmptyContent><Button className="primary w-full" onClick={() => add()}>＋ 添加第一个组件</Button></EmptyContent>
       </Empty> : null}
     </main>
-    {menu ? <div ref={menuNode} className="canvas-menu fixed grid" role="menu" style={{ left: menu.x, top: menu.y }} onKeyDown={event => {
+    {menu ? <div id="canvasMenu" ref={menuNode} className={`canvas-menu fixed grid ${menu.kind === 'toolbar' ? 'canvas-toolbar-menu' : ''}`} role="menu" aria-label={menu.kind === 'toolbar' ? '布局与桌面组件操作' : '组件操作'} style={{ left: menu.x, top: menu.y }} onKeyDown={event => {
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')], index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus(); }
     }}>
+      {menu.kind === 'toolbar' ? <>
+        <Button id="newBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || layout.boards.length >= 12} onClick={() => { closeMenu(true); setName(''); setNaming('new'); }}>新建布局</Button>
+        <Button id="rename" variant="ghost" size="sm" role="menuitem" disabled={!loaded} onClick={() => { closeMenu(true); setName(board.title); setNaming('rename'); }}>重命名布局</Button>
+        <Button id="removeBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || layout.boards.length < 2} onClick={() => { closeMenu(true); setDeleting(true); }}>删除布局</Button>
+        <div className="canvas-menu-separator" role="separator" />
+      </> : null}
       {menuCard ? <>
         <Button role="menuitem" onClick={() => { setMenu(null); openCard(menuCard); }}>打开详情</Button>
         <Button role="menuitem" disabled={viewOnly} onClick={() => add(menuCard)}>编辑组件</Button>
       </> : null}
-      <Button role="menuitem" onClick={() => { setMenu(null); if (invoke) void api('settings').catch(error => setNotice(String(error))); }}>桌面组件设置</Button>
+      <Button id={menu.kind === 'toolbar' ? 'canvasSettings' : undefined} variant={menu.kind === 'toolbar' ? 'ghost' : undefined} size={menu.kind === 'toolbar' ? 'sm' : undefined} role="menuitem" disabled={menu.kind === 'toolbar' && !invoke} onClick={() => { closeMenu(); if (invoke) void api('settings').catch(error => setNotice(String(error))); }}>桌面组件设置</Button>
       {menuCard ? <Button role="menuitem" disabled={viewOnly} onClick={() => commit(draft => { const board = draft.boards.find(board => board.id === draft.active)!; board.cards = board.cards.filter(card => card.id !== menuCard.id); })}>移除组件</Button> : null}
       {viewOnly ? <Button role="menuitem" disabled={!invoke || viewOnlyBusy} onClick={() => { setMenu(null); void changeViewOnly(false); }}>{viewOnlyBusy ? '正在退出…' : '退出仅查看状态'}</Button> : null}
     </div> : null}
