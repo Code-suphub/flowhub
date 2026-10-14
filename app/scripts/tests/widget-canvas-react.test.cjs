@@ -15,7 +15,7 @@ const source = { id: 'test', title: '测试插件', snapshot: { count: 1 }, widg
 const card = { id: 'one', plugin: 'test', title: '卡片', config: { filter: 'first' }, size: 'medium', width: 384, height: 360, x: 0, y: 0 };
 const layout = () => ({ active: 'default', pinned: false, boards: [{ id: 'default', title: '默认布局', cards: [{ ...card }] }] });
 function setup(t, options = {}) {
-  const dom = new JSDOM('<div id="canvas-root"></div>', { url: 'http://localhost/plugin-canvas.html' + (options.preview ? '?preview=http://localhost/demo/' : ''), runScripts: 'outside-only', pretendToBeVisual: true });
+  const dom = new JSDOM('<div id="canvas-root"></div>', { url: 'http://localhost/plugin-canvas.html' + (options.preview ? '?preview=' + encodeURIComponent(typeof options.preview === 'string' ? options.preview : 'http://localhost/demo/') : ''), runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, calls = [], intervals = [], errors = [], responses = [];
   w.structuredClone = structuredClone;
   w.addEventListener('error', event => errors.push(event.error));
@@ -39,7 +39,7 @@ function setup(t, options = {}) {
     if (args.action === 'get') return structuredClone(data);
     return null;
   } } };
-  else { w.fetch = async () => ({ ok: true, json: async () => structuredClone(source) }); w.localStorage.setItem('flowhub-canvas-preview', JSON.stringify(data.layout)); }
+  else { w.fetch = options.fetch || (async () => ({ ok: true, json: async () => structuredClone(source) })); w.localStorage.setItem('flowhub-canvas-preview', JSON.stringify(data.layout)); }
   w.eval(fs.readFileSync(path.join(app, 'ui/plugin/widget-layout.js'), 'utf8'));
   w.eval(fs.readFileSync(path.join(app, 'ui/plugin/widget-frame.js'), 'utf8'));
   w.eval(bundle); const root = w.CanvasTest.mountCanvas(w.document.getElementById('canvas-root'));
@@ -98,6 +98,9 @@ test('icon-only drag and widget settings in More remain accessible in interactiv
   const drag = s.w.document.getElementById('dragSurface');
   assert.equal(drag.textContent.trim(), '');
   assert.equal(drag.getAttribute('aria-label'), '拖动桌面组件区域');
+  assert.equal(drag.hasAttribute('title'), false);
+  assert.equal(s.w.document.querySelector('[aria-label="画布操作说明"]'), null);
+  assert.equal(s.w.document.querySelector('[aria-label="仅查看桌面组件"]').parentElement.hasAttribute('title'), false);
   assert.equal(s.w.document.getElementById('canvasSettings'), null);
   await more(s);
   s.w.document.getElementById('canvasSettings').click();
@@ -389,8 +392,57 @@ test('preview only writes its browser layout and denies plugin RPC despite authe
   await wait(() => s.responses.some(message => message.id === 'rpc'));
   assert.match(s.responses.find(message => message.id === 'rpc').error, /不支持插件调用/);
   s.w.document.querySelector('[role=switch]').click(); await wait(() => JSON.parse(s.w.localStorage.getItem('flowhub-canvas-preview')).pinned);
-  assert.equal(s.calls.length, 0); assert.match(s.w.document.body.textContent, /浏览器预览只读/);
+  assert.equal(s.calls.length, 0); assert.match(s.w.document.body.textContent, /浏览器预览/);
   assert.equal(s.w.document.getElementById('closeSurface').disabled, true);
+});
+
+test('invalid preview addresses offer a return route without fetching or overwriting saved layout', async t => {
+  for (const address of ['插件预览地址', 'javascript:alert(1)', 'file:///tmp/demo']) {
+    await t.test(address, async t => {
+      let fetched = false;
+      const s = setup(t, { preview: address, fetch: async () => { fetched = true; throw Error('must not fetch'); } });
+      await wait(() => s.w.document.getElementById('notice')?.textContent.includes('预览地址无效'));
+      const stored = s.w.localStorage.getItem('flowhub-canvas-preview');
+      assert.equal(fetched, false);
+      assert.equal(s.w.document.getElementById('add').disabled, true);
+      assert.equal(s.w.document.getElementById('canvasMore').disabled, true);
+      assert.equal(s.w.document.querySelector('.canvas-preview-return').getAttribute('href'), 'plugin-canvas.html');
+      assert.doesNotMatch(s.w.document.body.textContent, /TypeError|Invalid base URL/);
+      s.intervals[0].callback();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      assert.equal(s.w.localStorage.getItem('flowhub-canvas-preview'), stored);
+    });
+  }
+});
+
+test('preview directories without a trailing slash load the manifest and report unavailable services clearly', async t => {
+  let requested;
+  const s = setup(t, { preview: 'https://localhost/demo', fetch: async url => { requested = String(url); throw TypeError('Failed to fetch'); } });
+  await wait(() => s.w.document.getElementById('notice')?.textContent.includes('预览服务已启动'));
+  assert.equal(requested, 'https://localhost/demo/widget-preview.json');
+  assert.ok(s.w.document.querySelector('.canvas-preview-return'));
+  assert.equal(s.w.document.getElementById('add').disabled, true);
+  assert.doesNotMatch(s.w.document.body.textContent, /TypeError|Failed to fetch/);
+});
+
+test('preview retry normalizes query and hash, clears the return link and loads the saved layout', async t => {
+  const requests = []; let available = false;
+  const s = setup(t, { preview: 'http://localhost/demo?x=1#section', fetch: async url => {
+    requests.push(String(url));
+    if (!available) throw TypeError('Failed to fetch');
+    return { ok: true, json: async () => structuredClone(source) };
+  } });
+  await wait(() => s.w.document.querySelector('.canvas-preview-return'));
+  const stored = s.w.localStorage.getItem('flowhub-canvas-preview');
+  assert.equal(s.w.document.getElementById('add').disabled, true);
+  available = true; s.intervals[0].callback(); await ready(s);
+  assert.deepEqual(requests, ['http://localhost/demo/widget-preview.json', 'http://localhost/demo/widget-preview.json']);
+  assert.equal(s.w.document.querySelector('.canvas-preview-return'), null);
+  assert.equal(s.w.document.getElementById('notice').textContent, '浏览器预览 · 只读模拟数据');
+  assert.ok(s.w.document.querySelector('[data-id="one"]'));
+  assert.equal(new URL(s.w.document.querySelector('.widget-content').src).pathname, '/demo/card.html');
+  assert.equal(s.w.localStorage.getItem('flowhub-canvas-preview'), stored);
+  assert.equal(s.calls.length, 0);
 });
 
 test('save queue serializes immutable snapshots and recovers after a failure', async t => {

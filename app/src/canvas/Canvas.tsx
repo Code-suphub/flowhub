@@ -3,7 +3,7 @@ import { GripVerticalIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
 import { Field, FieldGroup, FieldLabel, FieldTitle } from '../components/ui/field';
-import { EmptyState, Help, Select, Switch } from '../shared/controls';
+import { EmptyState, Select, Switch } from '../shared/controls';
 import { nativeHost } from '../shared/native';
 import { WidgetSurface } from './WidgetSurface';
 import { host, initialLayout, isLayout, minimum, normalize, cardConfig, type Card, type Config, type FrameHandle, type Invoke, type Layout, type Point, type Source } from './model';
@@ -49,10 +49,20 @@ function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
 }
 
 export function Canvas() {
-  const invoke = nativeHost()?.core?.invoke, preview = new URLSearchParams(location.search).get('preview');
+  const invoke = nativeHost()?.core?.invoke, previewParam = new URLSearchParams(location.search).get('preview');
+  let preview: string | null = null, previewError = '';
+  if (!invoke && previewParam !== null) {
+    try {
+      const url = new URL(previewParam);
+      if (!['http:', 'https:'].includes(url.protocol)) throw Error();
+      if (!url.pathname.endsWith('/')) url.pathname += '/';
+      url.search = ''; url.hash = ''; preview = url.href;
+    } catch { previewError = '预览地址无效，请使用完整的 HTTP 或 HTTPS 插件预览地址，或返回画布预览。'; }
+  }
   const [layout, setLayout] = useState(initialLayout), layoutRef = useRef(layout);
   const [sources, setSources] = useState<Source[]>([]), sourcesRef = useRef(sources);
   const [notice, setNotice] = useState(''), [loaded, setLoaded] = useState(false), [inactive, setInactive] = useState(false);
+  const [previewFailure, setPreviewFailure] = useState(false);
   const [viewOnlyBusy, setViewOnlyBusy] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null), [naming, setNaming] = useState<'new' | 'rename' | null>(null), [name, setName] = useState(''), [deleting, setDeleting] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -83,7 +93,7 @@ export function Canvas() {
     fitted.current = key; void api('fit', { width, height }).catch(() => { fitted.current = ''; });
   }
   function commit(change: (draft: Layout) => void, moving?: string, wanted?: Point, target?: string | null) {
-    if (layoutRef.current.viewOnly) return;
+    if (!loaded || layoutRef.current.viewOnly) return;
     const draft = structuredClone(layoutRef.current); change(draft);
     const next = normalize(draft, sourcesRef.current, moving, wanted, target);
     layoutRef.current = next; setLayout(next); setMenu(null);
@@ -100,7 +110,7 @@ export function Canvas() {
   }
   const changeCards = (change: (cards: Card[]) => void) => commit(draft => change(draft.boards.find(board => board.id === draft.active)!.cards));
   function add(card?: Card) {
-    if (layoutRef.current.viewOnly) return;
+    if (!loaded || layoutRef.current.viewOnly) return;
     if (!sourcesRef.current.some(source => source.widget)) { setNotice('请先安装或升级提供组件页面的插件'); return; }
     const active = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)!;
     if (!card && active.cards.length >= 32) { setNotice('每个布局最多 32 个组件'); return; }
@@ -132,13 +142,20 @@ export function Canvas() {
       if (stopped || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
       const sequence = ++request;
       try {
+        if (previewError) throw Error(previewError);
         let nextSources = sourcesRef.current, nextLayout = layoutRef.current;
         if (invoke) {
           const data = await invoke<{ layout: Layout; sources: Source[] }>('plugin_canvas_api', { action: 'get', payload: {} });
           if (initial) nextLayout = data.layout; nextSources = data.sources;
         } else if (initial) {
           try { const stored: unknown = JSON.parse(localStorage.getItem('flowhub-canvas-preview') || 'null'); if (isLayout(stored)) nextLayout = stored; } catch { /* Preview storage is optional. */ }
-          if (preview) { const response = await fetch(new URL('widget-preview.json', preview)); if (!response.ok) throw Error('插件预览无法加载'); nextSources = [await response.json() as Source]; }
+          if (preview) {
+            try {
+              const response = await fetch(new URL('widget-preview.json', preview));
+              if (!response.ok) throw Error();
+              nextSources = [await response.json() as Source];
+            } catch { throw Error('无法加载插件预览，请确认预览服务已启动且地址可访问，或返回画布预览。'); }
+          }
         }
         if (stopped || sequence !== request || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
         // A user mutation may have finished while the snapshot request was in flight.
@@ -146,10 +163,10 @@ export function Canvas() {
         if (!isLayout(nextLayout)) throw Error('组件布局无效');
         sourcesRef.current = nextSources; setSources(nextSources);
         const normalized = normalize(nextLayout, nextSources); layoutRef.current = normalized; setLayout(normalized);
-        if (!invoke) setNotice(preview ? '浏览器预览只读 · 插件模拟数据；布局仅保存在浏览器' : '浏览器预览只读 · 使用 ?preview=插件预览地址 加载组件');
+        if (!invoke) { setNotice(preview ? '浏览器预览 · 只读模拟数据' : '浏览器预览'); setPreviewFailure(false); }
         else setNotice('');
         initialized = true; setLoaded(true);
-      } catch (error) { if (!stopped) setNotice(String(error)); }
+      } catch (error) { if (!stopped) { setNotice(error instanceof Error ? error.message : String(error)); if (!invoke && previewParam !== null) setPreviewFailure(true); } }
     }
     void load(true);
     // The desktop canvas may remain on screen while its WebView is considered
@@ -158,7 +175,7 @@ export function Canvas() {
     const onVisibilityChange = () => { if (!document.hidden) void load(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => { stopped = true; alive.current = false; clearInterval(interval); document.removeEventListener('visibilitychange', onVisibilityChange); document.body.classList.remove('preview'); };
-  }, [invoke, preview]);
+  }, [invoke, preview, previewError, previewParam]);
   useEffect(() => { fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded, viewOnly]);
   useEffect(() => {
     const change = (event: Event) => {
@@ -299,18 +316,18 @@ export function Canvas() {
   };
   return <div className="fh-canvas-app" data-view-only={viewOnly}>
     <header ref={toolbar} className={`canvas-toolbar flex flex-wrap items-center gap-2 ${inactive ? 'surface-inactive' : ''}`} inert={inactive || viewOnly}>
-      <Button id="dragSurface" className="brand" size="icon" aria-label="拖动桌面组件区域" title="拖动桌面组件区域" disabled={!invoke} onMouseDown={event => { if (event.button === 0 && invoke) void api('drag').catch(error => setNotice(String(error))); }}><GripVerticalIcon aria-hidden="true" /></Button>
+      <Button id="dragSurface" className="brand" size="icon" aria-label="拖动桌面组件区域" disabled={!invoke} onMouseDown={event => { if (event.button === 0 && invoke) void api('drag').catch(error => setNotice(String(error))); }}><GripVerticalIcon aria-hidden="true" /></Button>
       <Select id="boards" label="切换组件布局" popupClassName="canvas-board-select-popup" value={layout.active} disabled={!loaded} options={layout.boards.map(board => ({ value: board.id, label: board.title }))} onChange={value => commit(draft => { draft.active = value; })} />
       <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded} onChange={value => commit(draft => { draft.pinned = value; })} /><span>置顶</span></div>
-      <div className="flex items-center gap-1" title="开启后锁定拖动和左键操作，右键菜单可退出仅查看状态"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
+      <div className="flex items-center gap-1"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
       <Button id="add" className="primary" disabled={!loaded || board.cards.length >= 32} onClick={() => add()}>添加</Button>
       <Button id="canvasMore" aria-haspopup="menu" aria-expanded={menu?.kind === 'toolbar'} aria-controls={menu?.kind === 'toolbar' ? 'canvasMenu' : undefined} disabled={!loaded} onClick={() => { if (menu?.kind === 'toolbar') closeMenu(true); else openMore(); }} onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openMore(); }
       }}>更多</Button>
-      <Help label="画布操作说明">拖动卡片调整位置，边角缩放，方向键微调大小，右键编辑。每 15 秒更新插件缓存。</Help>
       <Button id="closeSurface" aria-label="关闭组件区域" disabled={!invoke} onClick={() => { if (invoke) void api('close').catch(error => setNotice(String(error))); }}>×</Button>
     </header>
     <p id="notice" role="status">{notice}</p>
+    {previewFailure ? <a className="canvas-preview-return" href="plugin-canvas.html">返回画布预览</a> : null}
     <main ref={canvas} id="canvas" aria-label="插件画布" className="relative" style={{ width, height }} onDragStart={event => event.preventDefault()} onContextMenu={event => {
       if (viewOnly && !(event.target as Element).closest('[data-id]')) { event.preventDefault(); context(undefined, event.clientX, event.clientY); }
     }}>
