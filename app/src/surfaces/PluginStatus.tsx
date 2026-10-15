@@ -8,16 +8,16 @@ import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../compone
 import { invoke, nativeHost } from '../shared/native';
 import { collectedAt, demoStatus, initialOrder, keyMetric, labels, metric, refreshOrders, relativeTime, rowStatus, statusVariant, type Orders, type Preferences, type RowStatus, type Scope, type Status } from './status-model';
 
-const scopes: Record<Scope, string> = { overview: '概览', all: '全部', favorites: '关注' };
+const scopes: Record<Scope, string> = { all: '全部', favorites: '关注' };
 export function PluginStatus() {
   const params = new URLSearchParams(location.search), id = params.get('id'), native = Boolean(nativeHost()?.core?.invoke), demo = !native && params.get('preview') === 'demo';
   const [data, setData] = useState<Status | null>(() => demo ? demoStatus(Date.now()) : null);
   const [draft, setDraft] = useState<Preferences>(() => demo ? demoStatus(Date.now()).preferences : { tray: false, pinned: false, favorites: [] });
   const [orders, setOrders] = useState<Orders>(() => {
     const sample = demo ? demoStatus(Date.now()) : null;
-    return refreshOrders({ overview: [], all: [], favorites: [] }, sample?.snapshot?.rows || [], sample?.preferences.favorites || []);
+    return refreshOrders({ all: [], favorites: [] }, sample?.snapshot?.rows || [], sample?.preferences.favorites || []);
   });
-  const [scope, setScope] = useState<Scope>('overview'), [filter, setFilter] = useState<RowStatus | null>(null);
+  const [scope, setScope] = useState<Scope>('all'), [filter, setFilter] = useState<RowStatus | null>(null);
   const [tab, setTab] = useState('status');
   const [expanded, setExpanded] = useState<string[]>([]), [now, setNow] = useState(Date.now);
   const [message, setMessage] = useState(''), [readError, setReadError] = useState(''), [saving, setSaving] = useState(false);
@@ -68,9 +68,10 @@ export function PluginStatus() {
   const byId = new Map(rows.map(row => [row.id, row]));
   const scoped = orders[scope].flatMap(id => byId.has(id) ? [byId.get(id)!] : []);
   const filtered = filter ? scoped.filter(row => rowStatus(row.status) === filter) : scoped;
-  const visible = scope === 'overview' ? filtered.slice(0, 5) : filtered;
+  const visible = filtered;
   const counts = Object.fromEntries(Object.keys(labels).map(status => [status, scoped.filter(row => rowStatus(row.status) === status).length]));
   function changeScope(next: Scope) {
+    if (next === scope) return;
     setOrders(previous => ({ ...previous, [next]: initialOrder(rows, favorites, next) }));
     setScope(next); setFilter(null);
   }
@@ -91,7 +92,7 @@ export function PluginStatus() {
         <Button size="sm" variant="ghost" aria-pressed={filter === null} onClick={() => setFilter(null)}>全部状态 {scoped.length}</Button>
         {(Object.entries(labels) as [RowStatus, string][]).map(([status, label]) => <Button key={status} size="sm" variant="ghost" aria-pressed={filter === status} onClick={() => setFilter(previous => previous === status ? null : status)}><Badge variant={statusVariant(status)}>{label} {counts[status]}</Badge></Button>)}
       </div>
-      <p className="fh-status-scope-note">{scopes[scope]} · {filter ? labels[filter] + ' · ' : ''}{scope === 'overview' ? `显示 ${visible.length} / ${filtered.length} 台，优先异常及关注` : `${visible.length} 台`}</p>
+      <p className="fh-status-scope-note">{scopes[scope]} · {filter ? labels[filter] + ' · ' : ''}{visible.length} 台</p>
       <section aria-label="机器状态">{visible.map(row => {
         const open = expanded.includes(row.id), detailId = `status-details-${encodeURIComponent(row.id)}`, at = collectedAt(row.at), status = rowStatus(row.status);
         return <article className="fh-status-row" key={row.id} data-row-id={row.id}>
@@ -106,13 +107,12 @@ export function PluginStatus() {
       })}
         {!visible.length ? <p className="fh-status-empty">{empty}</p> : null}
       </section>
-      {scope === 'overview' && rows.length > visible.length ? <Button className="fh-status-show-all" variant="ghost" onClick={() => changeScope('all')}>查看全部 {rows.length} 台</Button> : null}
     </> : null}
     </section>
     {available || demo ? <section id="panel-display" role="tabpanel" aria-labelledby="tab-display" tabIndex={0} hidden={tab !== 'display'} className="fh-status-settings"><div className="fh-row"><span>显示菜单栏状态</span><Switch label="显示菜单栏状态" checked={draft.tray} disabled={saving || !canConfigure} onChange={tray => edit({ ...draft, tray })}/></div>
       <Button disabled={!available || saving} onClick={() => void api('menu').catch(error => setMessage(String(error)))}>打开菜单栏下拉</Button>
       <div className="fh-row"><span>窗口始终置顶</span><Switch label="窗口始终置顶" checked={draft.pinned} disabled={saving || !canConfigure} onChange={pinned => edit({ ...draft, pinned })}/></div>
-      <FieldSet><FieldLegend variant="label">关注机器</FieldLegend><p className="fh-status-scope-note">勾选并保存后可在“关注”范围查看，概览优先展示。</p>
+      <FieldSet><FieldLegend variant="label">关注机器</FieldLegend><p className="fh-status-scope-note">勾选并保存后可在“关注”范围查看，全部列表优先展示。</p>
         <FieldGroup className="fh-status-favorites">{rows.map(row => <Field key={row.id} orientation="horizontal" data-disabled={saving || !canConfigure}>
           <Checkbox id={`favorite-${row.id}`} checked={draft.favorites.includes(row.id)} disabled={saving || !canConfigure} onCheckedChange={checked => edit({ ...draft, favorites: checked ? [...new Set([...draft.favorites, row.id])] : draft.favorites.filter(value => value !== row.id) })} />
           <FieldLabel htmlFor={`favorite-${row.id}`}>{row.name}</FieldLabel>

@@ -1,5 +1,5 @@
 export type RowStatus = 'healthy' | 'error' | 'stale' | 'unknown';
-export type Scope = 'overview' | 'all' | 'favorites';
+export type Scope = 'all' | 'favorites';
 export interface Row { id: string; name: string; status: string; at?: number; values?: { cpu?: number; memory?: number; disk?: number } }
 export interface Preferences { tray: boolean; pinned: boolean; favorites: string[] }
 export interface Status { snapshot?: { title?: string; error?: string; monitoring?: boolean; rows?: Row[] }; preferences: Preferences }
@@ -14,7 +14,7 @@ export function initialOrder(rows: Row[], favorites: string[], scope: Scope): st
 }
 export function refreshOrders(previous: Orders, rows: Row[], favorites: string[]): Orders {
   const result = { ...previous };
-  for (const scope of ['overview', 'all', 'favorites'] as const) {
+  for (const scope of ['all', 'favorites'] as const) {
     const next = initialOrder(rows, favorites, scope), valid = new Set(next), kept = previous[scope].filter(id => valid.has(id));
     const existing = new Set(kept);
     result[scope] = [...kept, ...next.filter(id => !existing.has(id))];

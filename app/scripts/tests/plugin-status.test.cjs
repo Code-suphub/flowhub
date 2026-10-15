@@ -74,10 +74,13 @@ const rowIds=w=>[...w.document.querySelectorAll('.fh-status-row')].map(row=>row.
 const summaryButton=(w,label)=>[...w.document.querySelectorAll('.fh-status-summary button')].find(button=>button.textContent.startsWith(label+' '));
 const scopeButton=(w,label)=>[...w.document.querySelectorAll('.fh-status-scopes button')].find(button=>button.textContent===label);
 const favoriteControl=(w,id)=>w.document.querySelector(`label[for="favorite-${id}"]`).closest('[data-slot="field"]').querySelector('[role="checkbox"]');
-test('demo overview summarizes all states, limits to five and provides scopes and toggleable filters',async t=>{
+test('demo defaults to the full prioritized list with two scopes and toggleable status filters',async t=>{
   const {dom,w,button}=setup(undefined,'plugin-status-root',{url:'http://localhost/plugin-status.html?preview=demo'});t.after(()=>dom.window.close());
-  await settle(()=>rowIds(w).length===5);
-  assert.deepEqual(rowIds(w),['gateway','worker','archive','new-node','database']);
+  await settle(()=>rowIds(w).length===8);
+  assert.deepEqual(rowIds(w),['gateway','worker','archive','new-node','database','backup','web','edge']);
+  assert.equal(w.document.querySelectorAll('.fh-status-scopes button').length,2);
+  assert.equal(scopeButton(w,'全部').getAttribute('aria-pressed'),'true');
+  assert.equal(scopeButton(w,'概览'),undefined);assert.equal(button('查看全部 8 台'),undefined);
   assert.equal(summaryButton(w,'正常').textContent,'正常 4');
   assert.equal(summaryButton(w,'异常').textContent,'异常 2');
   assert.equal(summaryButton(w,'过期').textContent,'过期 1');
@@ -89,7 +92,7 @@ test('demo overview summarizes all states, limits to five and provides scopes an
   summaryButton(w,'正常').click();await settle(()=>rowIds(w).length===4);
   assert.equal(summaryButton(w,'正常').getAttribute('aria-pressed'),'true');
   assert.equal(summaryButton(w,'异常').textContent,'异常 2');
-  button('查看全部 8 台').click();await settle(()=>rowIds(w).length===8);
+  summaryButton(w,'全部状态').click();await settle(()=>rowIds(w).length===8);
   assert.equal(scopeButton(w,'全部').getAttribute('aria-pressed'),'true');
   assert.equal(summaryButton(w,'全部状态').getAttribute('aria-pressed'),'true');
   scopeButton(w,'关注').click();await settle(()=>rowIds(w).length===2);
@@ -98,7 +101,7 @@ test('demo overview summarizes all states, limits to five and provides scopes an
   summaryButton(w,'异常').click();await settle(()=>rowIds(w).length===2);
 });
 
-test('overview fills healthy machines and unknown status never becomes healthy from its metrics',async t=>{
+test('all machines prioritize attention and favorites without deriving status from metrics',async t=>{
   const data={preferences:{tray:false,pinned:false,favorites:['b']},snapshot:{monitoring:true,rows:[
     {id:'a',name:'普通机器',status:'healthy',values:{}},
     {id:'b',name:'关注机器',status:'healthy'},
@@ -144,6 +147,7 @@ test('polls preserve row order, expanded DOM and focus while appending and remov
   assert.equal(w.document.querySelector('[data-row-id=b]'),row);assert.equal(w.document.activeElement,toggle);assert.equal(toggle.getAttribute('aria-expanded'),'true');
   state.snapshot.rows=state.snapshot.rows.filter(row=>row.id!=='a');intervals[0].callback();await settle(()=>rowIds(w).length===3);
   assert.deepEqual(rowIds(w),['b','c','d']);assert.equal(w.document.activeElement,toggle);
+  scopeButton(w,'关注').click();await settle(()=>scopeButton(w,'关注').getAttribute('aria-pressed')==='true');
   scopeButton(w,'全部').click();await settle(()=>scopeButton(w,'全部').getAttribute('aria-pressed')==='true');
   assert.deepEqual(rowIds(w),['c','d','b']);
   state.snapshot.rows=state.snapshot.rows.filter(row=>row.id!=='b');intervals[0].callback();await settle(()=>rowIds(w).length===2);
