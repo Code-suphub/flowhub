@@ -209,3 +209,4 @@ test('status and display tabs preserve filters, expansion and dirty settings acr
   statusTab.click();await settle(()=>statusTab.getAttribute('aria-selected')==='true');finish();await settle(()=>w.document.body.textContent.includes('显示设置已保存'));
   await openSettings(w);assert.equal(w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked'),'true');assert.equal(favoriteControl(w,'b').getAttribute('aria-checked'),'true');
 });
+if(require.main===module)require('./plugin-detail.test.cjs');

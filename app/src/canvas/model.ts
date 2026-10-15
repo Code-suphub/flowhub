@@ -2,13 +2,14 @@ export type Config = Record<string, unknown>;
 export type Card = { id: string; plugin: string; title?: string; config?: Config; view?: string; row?: unknown; metrics?: unknown; size?: 'small' | 'medium' | 'large'; width?: number; height?: number; x?: number; y?: number; break_before?: boolean };
 export type Board = { id: string; title: string; cards: Card[] };
 export type Layout = { boards: Board[]; active: string; pinned: boolean; viewOnly?: boolean; layoutLocked?: boolean };
-export type Source = { id: string; title: string; snapshot?: unknown; lastLoadedAt?: unknown; widget?: { card: string; editor: string; interactive?: boolean; minWidth?: number; minHeight?: number } };
+export type Source = { id: string; title: string; snapshot?: unknown; lastLoadedAt?: unknown; widget?: { card: string; editor: string; detail?: string; interactive?: boolean; minWidth?: number; minHeight?: number } };
 export type Point = { x: number; y: number };
 export type Position = Point & { id: string; w: number; h: number };
 export type FrameContext = { config: Config; title: string; snapshot?: unknown; preview: boolean };
 export type FrameHandle = { updateContext(context: FrameContext): void; save(): Promise<Config>; dispose(): void };
 export type Invoke = <T = unknown>(command: string, args: Record<string, unknown>) => Promise<T>;
 export type CanvasHost = Window & {
+  __flowhubCanvasReturn?: { boardId: string; cardId: string; invalid?: boolean; plugin?: string; requestId?: string };
   __TAURI__?: { core?: { invoke?: Invoke } };
   FlowHubWidgetFrame: { mount(frame: HTMLIFrameElement, options: { url: string; context: FrameContext; rpc: ((params: Config) => Promise<unknown>) | null; navigate: ((action: string, selection?: Config) => void) | null; resize?: (height: number) => void }): FrameHandle };
   WidgetLayout: { arrange(cards: Card[], moving?: string | null, wanted?: Point | null, target?: string | null): Position[]; swapTarget(cards: Card[], moving: string, point: Point): string | null };

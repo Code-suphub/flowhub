@@ -11,11 +11,11 @@ before(async () => {
   bundle = (Array.isArray(result) ? result[0] : result).output.find(item => item.type === 'chunk').code;
 });
 const wait = async predicate => { for (let i = 0; i < 150; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.ok(predicate(), 'React state did not settle'); };
-const source = { id: 'test', title: '测试插件', snapshot: { count: 1 }, widget: { card: 'card.html', editor: 'editor.html', interactive: true, minWidth: 330, minHeight: 290 } };
+const source = { id: 'test', title: '测试插件', snapshot: { count: 1 }, widget: { card: 'card.html', editor: 'editor.html', detail: 'detail.html', interactive: true, minWidth: 330, minHeight: 290 } };
 const card = { id: 'one', plugin: 'test', title: '卡片', config: { filter: 'first' }, size: 'medium', width: 384, height: 360, x: 0, y: 0 };
 const layout = () => ({ active: 'default', pinned: false, boards: [{ id: 'default', title: '默认布局', cards: [{ ...card }] }] });
 function setup(t, options = {}) {
-  const dom = new JSDOM('<div id="canvas-root"></div>', { url: 'http://localhost/plugin-canvas.html' + (options.preview ? '?preview=' + encodeURIComponent(typeof options.preview === 'string' ? options.preview : 'http://localhost/demo/') : ''), runScripts: 'outside-only', pretendToBeVisual: true });
+  const dom = new JSDOM('<div id="canvas-root"></div>', { url: options.url || 'http://localhost/plugin-canvas.html' + (options.preview ? '?preview=' + encodeURIComponent(typeof options.preview === 'string' ? options.preview : 'http://localhost/demo/') : ''), runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, calls = [], intervals = [], errors = [], responses = [];
   w.structuredClone = structuredClone;
   w.addEventListener('error', event => errors.push(event.error));
@@ -31,7 +31,8 @@ function setup(t, options = {}) {
   };
   w.setInterval = (callback, ms) => { intervals.push({ callback, ms }); return intervals.length; };
   w.clearInterval = () => {};
-  let cursor = { x: 20, y: 20, frontmost: true }, data = { layout: options.layout || layout(), sources: [structuredClone(source)] };
+  let cursor = { x: 20, y: 20, frontmost: true }, data = { layout: options.layout || layout(), sources: options.sources || [structuredClone(source)] };
+  if (options.returnTarget) w.__flowhubCanvasReturn = options.returnTarget;
   if (!options.preview) w.__TAURI__ = { core: { invoke: async (command, args) => {
     calls.push({ command, ...structuredClone(args) });
     if (options.invoke) { const override = options.invoke(command, args); if (override !== undefined) return override; }
@@ -595,6 +596,84 @@ test('first-load failure retries the actual saved layout before enabling changes
   s.w.document.querySelector('[role=switch]').click();
   await wait(() => s.calls.some(call => call.action === 'save'));
   assert.equal(s.calls.find(call => call.action === 'save').payload.boards[0].cards[0].id, 'one');
+});
+
+test('detail requests wait for pending layout saves, send source identity and expose retry after opening fails', async t => {
+  let finishSave, detailAttempts=0;
+  const s=setup(t,{invoke:(command,args)=>{
+    if(args.action==='save')return new Promise(resolve=>{finishSave=resolve;});
+    if(args.action==='detail'&&++detailAttempts===1)return Promise.reject(Error('window unavailable'));
+  }});await ready(s);
+  const node=s.w.document.querySelector('.canvas-card');
+  node.querySelector('[data-resize]').dispatchEvent(new s.w.KeyboardEvent('keydown',{bubbles:true,key:'ArrowRight'}));await wait(()=>finishSave);
+  node.click();await new Promise(resolve=>setTimeout(resolve,15));assert.equal(s.calls.some(call=>call.action==='detail'),false);
+  finishSave(null);await wait(()=>s.button('重试打开详情'));
+  const detail=s.calls.find(call=>call.action==='detail');assert.equal(detail.payload.boardId,'default');assert.equal(detail.payload.cardId,'one');assert.equal(detail.payload.plugin,'test');
+  s.button('重试打开详情').click();await wait(()=>detailAttempts===2&&!s.button('重试打开详情'));
+  assert.equal(node.dataset.selected,'true');
+});
+
+test('widgets without a declared detail page do not advertise or invoke detail navigation',async t=>{
+  const noDetail={...source,widget:{...source.widget}};delete noDetail.widget.detail;
+  const s=setup(t,{sources:[noDetail]});await ready(s);const node=s.w.document.querySelector('.canvas-card');
+  node.click();node.dispatchEvent(new s.w.KeyboardEvent('keydown',{bubbles:true,key:'Enter'}));
+  node.dispatchEvent(new s.w.MouseEvent('contextmenu',{bubbles:true,clientX:20,clientY:20}));await wait(()=>s.button('编辑组件'));
+  assert.equal(s.button('打开详情'),undefined);assert.doesNotMatch(node.getAttribute('aria-label'),/打开详情/);
+  await new Promise(resolve=>setTimeout(resolve,15));assert.equal(s.calls.some(call=>call.action==='detail'),false);
+});
+
+test('return targets restore board selection and focus without changing layout modes or writing cards',async t=>{
+  const saved={...layout(),active:'other',layoutLocked:true,viewOnly:true};saved.boards.push({id:'other',title:'其他布局',cards:[{...card,id:'two'}]});
+  const s=setup(t,{layout:saved,returnTarget:{boardId:'default',cardId:'one'}});await ready(s);
+  await wait(()=>s.w.document.querySelector('[data-id=one]')?.dataset.selected==='true');
+  assert.equal(s.w.document.activeElement,s.w.document.querySelector('[data-id=one]'));
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.layoutLocked,'true');assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly,'true');
+  assert.equal(s.calls.some(call=>call.action==='save'),false);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-return',{detail:{boardId:'other',cardId:'two'}}));
+  await wait(()=>s.w.document.querySelector('[data-id=two]')?.dataset.selected==='true');
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-return',{detail:{boardId:'default',cardId:'one',invalid:true}}));
+  await wait(()=>s.w.document.getElementById('notice').textContent.includes('原组件已移除或更换'));
+  assert.ok(s.w.document.querySelector('[data-id=two]'));assert.equal(s.w.document.querySelector('[data-selected=true]'),null);
+});
+
+test('cold get and browser return query retain the original board and selected card',async t=>{
+  const saved={...layout(),active:'other'};saved.boards.push({id:'other',title:'其他布局',cards:[{...card,id:'two'}]});
+  const native=setup(t,{layout:saved,invoke:(command,args)=>args.action==='get'?Promise.resolve({layout:saved,sources:[source],returnTarget:{boardId:'default',cardId:'one'}}):undefined});await ready(native);
+  await wait(()=>native.w.document.querySelector('[data-id=one]')?.dataset.selected==='true');
+  const preview=setup(t,{preview:true,layout:saved,url:'http://localhost/plugin-canvas.html?preview=http%3A%2F%2Flocalhost%2Fdemo%2F&board=default&card=one&returnPlugin=test&custom=kept'});await ready(preview);
+  await wait(()=>preview.w.document.querySelector('[data-id=one]')?.dataset.selected==='true');
+  assert.equal(JSON.parse(preview.w.localStorage.getItem('flowhub-canvas-preview')).active,'default');assert.equal(preview.calls.length,0);
+});
+
+test('an already handled warm return is not replayed by the next native get after a user switches boards',async t=>{
+  const saved=layout();saved.boards.push({id:'other',title:'其他布局',cards:[{...card,id:'two'}]});
+  const target={boardId:'default',cardId:'one',plugin:'test',requestId:'return-1'};let duplicate=false;
+  const s=setup(t,{layout:saved,invoke:(command,args)=>args.action==='get'?Promise.resolve({layout:saved,sources:[source],returnTarget:duplicate?target:null}):undefined});await ready(s);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-return',{detail:target}));await wait(()=>s.w.document.querySelector('[data-id=one]')?.dataset.selected==='true');
+  s.w.document.getElementById('boards').click();await wait(()=>s.w.document.querySelector('[role=option]'));
+  [...s.w.document.querySelectorAll('[role=option]')].find(node=>node.textContent==='其他布局').click();await wait(()=>s.w.document.querySelector('[data-id=two]'));
+  duplicate=true;s.intervals[0].callback();await wait(()=>s.calls.filter(call=>call.action==='get').length===2);await new Promise(resolve=>setTimeout(resolve,20));
+  assert.ok(s.w.document.querySelector('[data-id=two]'));assert.equal(s.w.document.querySelector('[data-id=one]'),null);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-return',{detail:{...target,requestId:'return-2'}}));await wait(()=>s.w.document.querySelector('[data-id=one]')?.dataset.selected==='true');
+});
+
+test('return targets reject a locally replaced plugin even when the persisted board and card IDs match',async t=>{
+  const saved=layout();saved.active='other';saved.boards[0].cards[0].plugin='replacement';saved.boards.push({id:'other',title:'其他布局',cards:[{...card,id:'two'}]});
+  const s=setup(t,{layout:saved,sources:[source,{...source,id:'replacement'}]});await ready(s);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-return',{detail:{boardId:'default',cardId:'one',plugin:'test',requestId:'return-replaced'}}));
+  await wait(()=>s.w.document.getElementById('notice').textContent.includes('原组件已移除或更换'));
+  assert.ok(s.w.document.querySelector('[data-id=two]'));assert.equal(s.w.document.querySelector('[data-selected=true]'),null);
+});
+
+test('a new return received during startup wins over an older deferred get fallback',async t=>{
+  const saved=layout();saved.boards.push({id:'other',title:'其他布局',cards:[{...card,id:'two'}]});
+  let resolveGet;
+  const s=setup(t,{layout:saved,invoke:(command,args)=>args.action==='get'?new Promise(resolve=>{resolveGet=resolve;}):undefined});
+  await wait(()=>resolveGet);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-return',{detail:{boardId:'other',cardId:'two',plugin:'test',requestId:'new-return'}}));
+  resolveGet({layout:saved,sources:[source],returnTarget:{boardId:'default',cardId:'one',plugin:'test',requestId:'old-return'}});
+  await ready(s);await wait(()=>s.w.document.querySelector('[data-id=two]')?.dataset.selected==='true');
+  assert.equal(s.w.document.querySelector('[data-id=one]'),null);assert.equal(s.w.document.activeElement,s.w.document.querySelector('[data-id=two]'));
 });
 }
 if (require.main === module) require('./canvas-settings.test.cjs');

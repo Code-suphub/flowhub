@@ -6,9 +6,12 @@ import { Field, FieldGroup, FieldLabel, FieldTitle } from '../components/ui/fiel
 import { EmptyState, Select, Switch } from '../shared/controls';
 import { nativeHost } from '../shared/native';
 import { WidgetSurface } from './WidgetSurface';
+import { browserDetailUrl } from './detail-navigation';
 import { host, initialLayout, isLayout, minimum, normalize, cardConfig, type Card, type Config, type FrameHandle, type Invoke, type Layout, type Point, type Source } from './model';
 
 type Editor = { boardId: string; card?: Card };
+type ReturnTarget = { boardId: string; cardId: string; invalid?: boolean; plugin?: string; requestId?: string };
+type DetailFailure = ReturnTarget & { selection?: Config; message: string };
 type Menu = { kind: 'context' | 'toolbar'; card?: Card; x: number; y: number; pointer: boolean };
 type Gesture = { id: string; pointer: number; node: HTMLElement; resize: boolean; origin: Point; left: number; top: number; width: number; height: number; moved: boolean; wanted?: Point; target: string | null; grown: number };
 
@@ -67,6 +70,11 @@ export function Canvas() {
   const modeRevision = useRef({ viewOnly: 0, layoutLocked: 0 }), modePending = useRef(false);
   const [editor, setEditor] = useState<Editor | null>(null), [naming, setNaming] = useState<'new' | 'rename' | null>(null), [name, setName] = useState(''), [deleting, setDeleting] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [selected, setSelected] = useState<ReturnTarget | null>(null), [detailFailure, setDetailFailure] = useState<DetailFailure | null>(null), [openingDetail, setOpeningDetail] = useState(false);
+  const detailSequence = useRef(0);
+  const returnTarget = useRef<ReturnTarget | null>(null);
+  const returnRevision = useRef(0);
+  const restoredReturns = useRef(new Set<string>());
   const canvas = useRef<HTMLElement>(null), toolbar = useRef<HTMLElement>(null), menuNode = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null), suppressClick = useRef(0), saving = useRef(0), saveTail = useRef(Promise.resolve());
   const fitted = useRef(''), alive = useRef(true);
@@ -143,11 +151,39 @@ export function Canvas() {
     setMenu(null); setEditor({ boardId: active.id, card });
     if (invoke) void api('fit', { width: Math.max(innerWidth, 360), height: Math.max(innerHeight, 560) }).catch(() => {});
   }
-  function openCard(card: Card, selection?: Config) {
+  async function openCard(card: Card, selection?: Config, boardId = layoutRef.current.active) {
+    const source = sourcesRef.current.find(source => source.id === card.plugin);
+    if (!source?.widget?.detail) return;
+    const sequence = ++detailSequence.current;
     const title = card.title || sourcesRef.current.find(source => source.id === card.plugin)?.title || '插件详情';
     const config = { ...cardConfig(card), ...(selection ? { selection } : {}) };
-    if (invoke) void api('detail', { plugin: card.plugin, config, title }).catch(error => setNotice(String(error)));
-    else location.href = 'plugin-detail.html?' + new URLSearchParams({ ...(preview ? { preview } : {}), config: JSON.stringify(config), title });
+    setOpeningDetail(true); setDetailFailure(null); setSelected({ boardId, cardId: card.id });
+    try {
+      // Detail ownership is checked against the persisted layout, including a just-added card.
+      await saveTail.current;
+      if (!alive.current) return;
+      if (invoke) await api('detail', { plugin: card.plugin, boardId, cardId: card.id, config, title });
+      else location.href = browserDetailUrl(location.href, preview, boardId, card.id, config, title, card.plugin);
+    } catch (error) {
+      if (alive.current && sequence === detailSequence.current) setDetailFailure({ boardId, cardId: card.id, selection, message: `无法打开详情：${String(error)}` });
+    } finally { if (alive.current && sequence === detailSequence.current) setOpeningDetail(false); }
+  }
+  function restoreReturn(target: ReturnTarget) {
+    if (target.requestId) {
+      if (restoredReturns.current.has(target.requestId)) return;
+      restoredReturns.current.add(target.requestId);
+    }
+    const owner = layoutRef.current.boards.find(board => board.id === target.boardId);
+    if (target.invalid || !owner?.cards.some(card => card.id === target.cardId && (!target.plugin || card.plugin === target.plugin))) { setSelected(null); setNotice('原组件已移除或更换，已返回当前画布。'); return; }
+    cancelGesture(); setMenu(null); setEditor(null); setNaming(null); setDeleting(false); setDetailFailure(null);
+    const next = normalize({ ...layoutRef.current, active: target.boardId }, sourcesRef.current);
+    layoutRef.current = next; setLayout(next); setSelected(target);
+    if (!invoke) {
+      try {
+        const stored: unknown = JSON.parse(localStorage.getItem('flowhub-canvas-preview') || 'null');
+        if (isLayout(stored)) localStorage.setItem('flowhub-canvas-preview', JSON.stringify({ ...stored, active: target.boardId }));
+      } catch { /* Returning remains possible when optional browser storage is unavailable. */ }
+    }
   }
   async function changeViewOnly(enabled: boolean) {
     if (!invoke || modePending.current || !loaded) return;
@@ -187,13 +223,14 @@ export function Canvas() {
     async function load(initial = false) {
       initial = initial || !initialized;
       if (stopped || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
-      const sequence = ++request, revision = { ...modeRevision.current };
+      const sequence = ++request, revision = { ...modeRevision.current }, returnVersion = returnRevision.current;
       try {
         if (previewError) throw Error(previewError);
-        let nextSources = sourcesRef.current, nextLayout = layoutRef.current;
+        let nextSources = sourcesRef.current, nextLayout = layoutRef.current, nextReturnTarget: ReturnTarget | undefined;
         if (invoke) {
-          const data = await invoke<{ layout: Layout; sources: Source[] }>('plugin_canvas_api', { action: 'get', payload: {} });
+          const data = await invoke<{ layout: Layout; sources: Source[]; returnTarget?: ReturnTarget }>('plugin_canvas_api', { action: 'get', payload: {} });
           if (initial) nextLayout = data.layout; nextSources = data.sources;
+          nextReturnTarget = data.returnTarget;
         } else if (initial) {
           try { const stored: unknown = JSON.parse(localStorage.getItem('flowhub-canvas-preview') || 'null'); if (isLayout(stored)) nextLayout = stored; } catch { /* Preview storage is optional. */ }
           if (preview) {
@@ -205,6 +242,7 @@ export function Canvas() {
           }
         }
         if (stopped || sequence !== request || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
+        if (nextReturnTarget && returnVersion === returnRevision.current) returnTarget.current = nextReturnTarget;
         // A user mutation may have finished while the snapshot request was in flight.
         if (!initial) nextLayout = layoutRef.current;
         else nextLayout = { ...nextLayout,
@@ -214,6 +252,7 @@ export function Canvas() {
         if (!isLayout(nextLayout)) throw Error('组件布局无效');
         sourcesRef.current = nextSources; setSources(nextSources);
         const normalized = normalize(nextLayout, nextSources); layoutRef.current = normalized; setLayout(normalized);
+        if (initialized && returnTarget.current) { const target = returnTarget.current; returnTarget.current = null; restoreReturn(target); }
         if (!invoke) { setNotice(preview ? '浏览器预览 · 只读模拟数据' : '浏览器预览'); setPreviewFailure(false); }
         else setNotice('');
         initialized = true; setLoaded(true);
@@ -228,6 +267,28 @@ export function Canvas() {
     return () => { stopped = true; alive.current = false; clearInterval(interval); document.removeEventListener('visibilitychange', onVisibilityChange); document.body.classList.remove('preview'); };
   }, [invoke, preview, previewError, previewParam]);
   useEffect(() => { fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded, viewOnly, layoutLocked]);
+  useEffect(() => {
+    const receive = (value: unknown, fresh = false) => {
+      if (!value || typeof value !== 'object') return;
+      const target = value as ReturnTarget;
+      if (typeof target.boardId !== 'string' || typeof target.cardId !== 'string') return;
+      if (fresh) returnRevision.current++;
+      returnTarget.current = target;
+      if (loaded) { returnTarget.current = null; restoreReturn(target); }
+    };
+    const returned = (event: Event) => { delete host().__flowhubCanvasReturn; receive((event as CustomEvent<unknown>).detail, true); };
+    window.addEventListener('flowhub:canvas-return', returned);
+    const query = new URLSearchParams(location.search), boardId = query.get('boardId') || query.get('board'), cardId = query.get('cardId') || query.get('card');
+    const globalTarget = host().__flowhubCanvasReturn;
+    const pending = globalTarget || returnTarget.current || (boardId && cardId ? { boardId, cardId, invalid: query.get('returnInvalid') === '1', plugin: query.get('returnPlugin') || undefined, requestId: query.get('returnRequestId') || undefined } : null);
+    delete host().__flowhubCanvasReturn;
+    if (pending) receive(pending, Boolean(globalTarget));
+    return () => window.removeEventListener('flowhub:canvas-return', returned);
+  }, [loaded]);
+  useLayoutEffect(() => {
+    if (!loaded || !selected || selected.boardId !== layout.active) return;
+    [...(canvas.current?.querySelectorAll<HTMLElement>('[data-id]') || [])].find(node => node.dataset.id === selected.cardId)?.focus();
+  }, [loaded, selected, layout.active]);
   useEffect(() => {
     const change = (event: Event) => {
       const enabled = (event as CustomEvent<boolean>).detail;
@@ -374,13 +435,18 @@ export function Canvas() {
       <Button id="closeSurface" aria-label="关闭组件区域" disabled={!invoke} onClick={() => { if (invoke) void api('close').catch(error => setNotice(String(error))); }}>×</Button>
     </header>
     <p id="notice" role="status">{notice}</p>
+    {openingDetail ? <p className="canvas-detail-loading" role="status">正在打开详情…</p> : null}
+    {detailFailure ? <div className="canvas-detail-failure" role="alert"><p>{detailFailure.message}</p><Button disabled={openingDetail} onClick={() => {
+      const card = layoutRef.current.boards.find(board => board.id === detailFailure.boardId)?.cards.find(card => card.id === detailFailure.cardId);
+      if (card) void openCard(card, detailFailure.selection, detailFailure.boardId); else setDetailFailure({ ...detailFailure, message: '原组件已移除，请返回画布选择其他组件。' });
+    }}>重试打开详情</Button><Button onClick={() => { setDetailFailure(null); restoreReturn(detailFailure); }}>返回画布</Button></div> : null}
     {previewFailure ? <a className="canvas-preview-return" href="plugin-canvas.html">返回画布预览</a> : null}
     <main ref={canvas} id="canvas" aria-label="插件画布" className="relative" style={{ width, height }} onDragStart={event => event.preventDefault()} onContextMenu={event => {
       if (viewOnly && !(event.target as Element).closest('[data-id]')) { event.preventDefault(); context(undefined, event.clientX, event.clientY); }
     }}>
       {board.cards.map(card => {
-        const source = sources.find(source => source.id === card.plugin), title = card.title || source?.title || card.plugin, interactive = source?.widget?.interactive === true;
-        return <article key={`${board.id}:${card.id}`} data-id={card.id} tabIndex={0} className={`canvas-card absolute overflow-hidden ${interactive ? 'interactive' : ''}`} aria-label={`${title}，${viewOnly ? '仅查看，右键可退出' : layoutLocked ? '布局已锁定，点击打开详情' : interactive ? '顶部拖动或右键编辑，列表可操作' : '点击打开详情，右键编辑'}`}
+        const source = sources.find(source => source.id === card.plugin), title = card.title || source?.title || card.plugin, interactive = source?.widget?.interactive === true, hasDetail = Boolean(source?.widget?.detail);
+        return <article key={`${board.id}:${card.id}`} data-id={card.id} data-selected={selected?.boardId === board.id && selected.cardId === card.id} tabIndex={0} className={`canvas-card absolute overflow-hidden ${interactive ? 'interactive' : ''} ${hasDetail ? 'has-detail' : ''}`} aria-label={`${title}，${viewOnly ? '仅查看，右键可退出' : hasDetail ? layoutLocked ? '布局已锁定，点击打开详情' : interactive ? '顶部拖动或右键编辑，列表可操作' : '点击打开详情，右键编辑' : '右键编辑组件'}`}
           style={{ left: card.x, top: card.y, width: card.width, height: card.height }}
           onPointerDown={event => start(event, card)} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
           onClick={event => { if (viewOnly || Date.now() < suppressClick.current || (event.target as Element).closest('button')) return; openCard(card); }}
@@ -416,7 +482,7 @@ export function Canvas() {
         <div className="canvas-menu-separator" role="separator" />
       </> : null}
       {menuCard ? <>
-        <Button role="menuitem" onClick={() => { setMenu(null); openCard(menuCard); }}>打开详情</Button>
+        {sources.find(source => source.id === menuCard.plugin)?.widget?.detail ? <Button role="menuitem" onClick={() => { setMenu(null); void openCard(menuCard); }}>打开详情</Button> : null}
         <Button role="menuitem" disabled={editingDisabled} onClick={() => add(menuCard)}>编辑组件</Button>
       </> : null}
       <Button id={menu.kind === 'toolbar' ? 'canvasSettings' : undefined} variant={menu.kind === 'toolbar' ? 'ghost' : undefined} size={menu.kind === 'toolbar' ? 'sm' : undefined} role="menuitem" disabled={menu.kind === 'toolbar' && !invoke} onClick={() => { closeMenu(); if (invoke) void api('settings').catch(error => setNotice(String(error))); }}>桌面组件设置</Button>

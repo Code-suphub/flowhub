@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{path::PathBuf, sync::Mutex};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+#[path = "detail.rs"]
+mod detail;
 
 #[cfg(any(target_os="macos",test))]
 fn viewport_point(x:f64,y:f64,left:f64,bottom:f64,height:f64,flipped:bool)->(f64,f64){
@@ -57,7 +59,7 @@ pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
     if window.label()!="plugin-canvas" {
         let state=app.state::<State>();
         let details=state.details.lock().unwrap();
-        if !details.get(window.label()).is_some_and(|(owner,_)|owner==&id){return Err("组件调用来源无效".into());}
+        if !details.owns(window.label(),&id){return Err("组件调用来源无效".into());}
     }
     app.state::<crate::plugin::runtime::Runtime>().widget_call(&id,params).await
 }
@@ -83,9 +85,9 @@ impl Layout {
         } Ok(())
     }
 }
-pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<std::collections::HashMap<String,(String,Value)>> }
+pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<detail::Registry>, return_target:Mutex<Option<detail::ReturnTarget>> }
 impl State {
-    pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(std::collections::HashMap::new())})}
+    pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(detail::Registry::default()),return_target:Mutex::new(None)})}
     fn try_update(&self, change:impl FnOnce(&mut Layout)->Result<(),String>)->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next)?;next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
     fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{self.try_update(|layout|{change(layout);Ok(())})}
     #[cfg(test)]
@@ -102,6 +104,13 @@ impl State {
     }
     fn save_presentation(&self,presentation:Presentation)->Result<(),String>{
         self.update(|layout|{layout.active=presentation.active;layout.pinned=presentation.pinned;})
+    }
+    fn return_to_source(&self,request:&detail::Request)->Result<(),String>{
+        self.try_update(|layout|{
+            detail::validate_source(layout,&request.board_id,&request.card_id,&request.plugin)?;
+            layout.active=request.board_id.clone();
+            Ok(())
+        })
     }
     fn prepare_open(&self,plugin:&str)->Result<bool,String>{
         let mut added=false;
@@ -120,10 +129,24 @@ impl State {
     }
 }
 pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
+    open_with_source(app,plugin,None)
+}
+fn open_with_source(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>)->Result<(),String>{
     let state=app.state::<State>();let added=state.prepare_open(plugin)?;
+    if let Some(target)=&source {*state.return_target.lock().unwrap()=Some(target.clone());}
     let layout=state.layout.lock().unwrap().clone();
-    if let Some(w)=app.get_webview_window("plugin-canvas"){if added{w.eval("location.reload()").map_err(|e|e.to_string())?;}w.show().map_err(|e|e.to_string())?;return w.set_focus().map_err(|e|e.to_string());}
-    let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App("plugin-canvas.html".into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
+    let source_url=source.as_ref().map(|target|format!("plugin-canvas.html?{}",url::form_urlencoded::Serializer::new(String::new()).append_pair("boardId",&target.board_id).append_pair("cardId",&target.card_id).append_pair("returnPlugin",&target.plugin).append_pair("returnRequestId",&target.request_id).append_pair("returnInvalid",if target.invalid{"1"}else{"0"}).finish()));
+    if let Some(w)=app.get_webview_window("plugin-canvas"){
+        if added{w.eval("location.reload()").map_err(|e|e.to_string())?;}
+        if let Some(target)=&source {
+            let value=json!(target);
+            // Store a pending target before dispatch, so an in-flight page startup
+            // can recover it when its React listener is not attached yet.
+            w.eval(&format!("window.__flowhubCanvasReturn={value};window.dispatchEvent(new CustomEvent('flowhub:canvas-return',{{detail:{value}}}))")).map_err(|e|e.to_string())?;
+        }
+        w.show().map_err(|e|e.to_string())?;return w.set_focus().map_err(|e|e.to_string());
+    }
+    let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App(source_url.unwrap_or_else(||"plugin-canvas.html".into()).into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
     if let Some(position)=layout.window_position {
         let monitors:Vec<_>=app.available_monitors().map_err(|e|e.to_string())?.iter().map(|m|(m.position().x,m.position().y,m.size().width,m.size().height)).collect();
         if position_is_visible(position,&monitors){w.set_position(tauri::PhysicalPosition::new(position.0,position.1)).map_err(|e|e.to_string())?;}
@@ -145,9 +168,23 @@ pub fn restore(app:&tauri::AppHandle){let desktop=app.state::<State>().layout.lo
 pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
     if action=="detailContext" {
         let state=app.state::<State>();
-        let (id,context)=state.details.lock().unwrap().get(window.label()).cloned().ok_or("详情来源无效")?;
+        let entry=state.details.lock().unwrap().get(window.label())?.clone();
+        let id=&entry.request.plugin;
         let definition=app.state::<crate::plugin::runtime::Runtime>().widget(&id)?;
-        return Ok(json!({"plugin":id,"url":format!("flowhub-plugin://{}/{}?v={}",id,definition.detail,chrono::Utc::now().timestamp_millis()),"context":context}));
+        let loaded=app.state::<crate::plugin::runtime::Runtime>().loaded_at(id).unwrap_or_default();
+        return Ok(json!({"plugin":id,"url":format!("flowhub-plugin://{}/{}?v={}",id,definition.detail,loaded),"context":entry.context,"revision":entry.revision,"source":{"boardId":entry.request.board_id,"cardId":entry.request.card_id}}));
+    }
+    if action=="detailReturn" || action=="detailClose" {
+        let state=app.state::<State>();
+        let entry=state.details.lock().unwrap().get(window.label())?.clone();
+        if action=="detailReturn" {
+            let valid=detail::validate_source(&state.layout.lock().unwrap(),&entry.request.board_id,&entry.request.card_id,&entry.request.plugin).is_ok();
+            if valid {state.return_to_source(&entry.request)?;}
+            let target=state.details.lock().unwrap().return_target(&entry.request,!valid);
+            open_with_source(&app,"",Some(target))?;
+        }
+        window.close().map_err(|e|e.to_string())?;
+        return Ok(Value::Null);
     }
     if !["settings","plugin-canvas"].contains(&window.label()){return Err("画布来源无效".into());}
     if action=="cursor" {
@@ -179,18 +216,51 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     }
     else if action=="settings" {if window.label()!="plugin-canvas" {return Err("仅可从桌面组件打开设置".into());}crate::open_canvas_settings(app.clone())?;}
     else if action=="detail" {
-        let id=payload["plugin"].as_str().ok_or("缺少插件")?;
-        app.state::<crate::plugin::runtime::Runtime>().widget(id)?;
-        let config=payload["config"].clone();
-        if !config.is_object()||config.to_string().len()>65536{return Err("详情配置无效".into());}
-        let title=payload["title"].as_str().unwrap_or("插件详情");
-        if title.len()>120{return Err("标题过长".into());}
-        let label=format!("widget-detail-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
-        let context=json!({"config":config,"title":title,"snapshot":app.state::<crate::plugin::status::State>().snapshot(id)});
-        state.details.lock().unwrap().insert(label.clone(),(id.into(),context));
-        let result=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("plugin-detail.html".into())).title(format!("{title} · 详情")).inner_size(860.,650.).min_inner_size(520.,400.).build();
-        match result {Ok(w)=>{let handle=app.clone();let key=label.clone();w.on_window_event(move|event|{if matches!(event,tauri::WindowEvent::Destroyed){handle.state::<State>().details.lock().unwrap().remove(&key);}});},Err(e)=>{state.details.lock().unwrap().remove(&label);return Err(e.to_string());}}
-
+        if window.label()!="plugin-canvas" {return Err("仅可从桌面组件打开详情".into());}
+        let request:detail::Request=serde_json::from_value(payload).map_err(|e|e.to_string())?;
+        request.validate(&state.layout.lock().unwrap())?;
+        let definition=app.state::<crate::plugin::runtime::Runtime>().widget(&request.plugin)?;
+        if definition.detail.trim().is_empty(){return Err("插件不支持详情".into());}
+        let snapshot=app.state::<crate::plugin::status::State>().snapshot(&request.plugin).unwrap_or(Value::Null);
+        let reservation=state.details.lock().unwrap().reserve(request,snapshot);
+        let (label,create)=match reservation {
+            detail::Reservation::Create(label)=>(label,true),
+            detail::Reservation::Existing(label,mut ready)=>{
+                if !*ready.borrow_and_update(){ready.changed().await.map_err(|_|"详情创建失败")?;}
+                (label,false)
+            }
+        };
+        if create {
+            let title=state.details.lock().unwrap().get(&label)?.request.title.clone();
+            let result=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("plugin-detail.html".into())).title(format!("{title} · 详情")).inner_size(860.,650.).min_inner_size(520.,400.).build();
+            match result {
+                Ok(w)=>{
+                    let handle=app.clone();let key=label.clone();
+                    w.on_window_event(move|event|{if matches!(event,tauri::WindowEvent::Destroyed){handle.state::<State>().details.lock().unwrap().remove(&key);}});
+                    state.details.lock().unwrap().complete(&label)?;
+                }
+                Err(e)=>{state.details.lock().unwrap().remove(&label);return Err(e.to_string());}
+            }
+        }
+        // Serialize publication on the UI thread. Read the latest revision inside
+        // that operation, so a delayed older caller cannot overwrite a newer title.
+        let (tx,rx)=tokio::sync::oneshot::channel();
+        let handle=app.clone();
+        app.run_on_main_thread(move||{
+            let result=(||->Result<(),String>{
+                let state=handle.state::<State>();
+                let entry=state.details.lock().unwrap().get(&label)?.clone();
+                let w=handle.get_webview_window(&label).ok_or_else(||{
+                    state.details.lock().unwrap().remove(&label);"详情窗口已关闭".to_string()
+                })?;
+                w.set_title(&format!("{} · 详情",entry.request.title)).map_err(|e|e.to_string())?;
+                w.eval("window.dispatchEvent(new CustomEvent('flowhub:detail-context-changed'))").map_err(|e|e.to_string())?;
+                w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;
+                Ok(())
+            })();
+            let _=tx.send(result);
+        }).map_err(|e|e.to_string())?;
+        rx.await.map_err(|_|"详情窗口更新中断")??;
     }
     else if action=="open" {open(&app,"")?;}
     else if action=="fit" {let width=payload["width"].as_f64().filter(|v|v.is_finite()).ok_or("窗口宽度无效")?;let height=payload["height"].as_f64().filter(|v|v.is_finite()).ok_or("窗口高度无效")?;let monitor=window.current_monitor().map_err(|e|e.to_string())?;let (mw,mh)=monitor.map(|m|{let s=m.size().to_logical::<f64>(m.scale_factor());(s.width,s.height)}).unwrap_or((1600.,1000.));window.set_size(tauri::LogicalSize::new(width.clamp(360.,mw.max(360.)),height.clamp(200.,mh.max(200.)))).map_err(|e|e.to_string())?;}
@@ -198,7 +268,8 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     else if action=="close" {window.close().map_err(|e|e.to_string())?;}
     else if action!="get" {return Err("未知画布操作".into());}
     let sources:Vec<_>=app.state::<crate::plugin::runtime::Runtime>().widget_plugins().into_iter().map(|(id,title)|json!({"lastLoadedAt":app.state::<crate::plugin::runtime::Runtime>().loaded_at(&id),"snapshot":app.state::<crate::plugin::status::State>().snapshot(&id),"widget":app.state::<crate::plugin::runtime::Runtime>().widget(&id).ok(),"id":id,"title":title})).collect();
-    Ok(json!({"layout":state.layout.lock().unwrap().clone(),"sources":sources}))
+    let return_target=if action=="get" && window.label()=="plugin-canvas" {state.return_target.lock().unwrap().take()}else{None};
+    Ok(json!({"layout":state.layout.lock().unwrap().clone(),"sources":sources,"returnTarget":return_target}))
 }
 #[cfg(test)]mod tests{use super::*;#[test]fn layouts_validate_and_persist(){let root=std::env::temp_dir().join(format!("canvas-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&root).unwrap();let s=State::new(&root).unwrap();let mut l=Layout::default();l.boards[0].cards.push(Card{id:"a".into(),plugin:"example".into(),title:"CPU".into(),view:"overview".into(),size:"large".into(),row:None,width:None,height:None,break_before:false,x:None,y:None,metrics:None,config:Value::Null});l.boards[0].cards[0].width=Some(413);l.boards[0].cards[0].height=Some(257);s.save(l.clone()).unwrap();assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].width,Some(413));let mut invalid=l.clone();invalid.boards[0].cards[0].width=Some(0);assert!(s.save(invalid).is_err());assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].size,"large");l.boards.push(l.boards[0].clone());assert!(s.save(l).is_err());std::fs::remove_dir_all(root).unwrap();}}
 #[cfg(test)]
@@ -341,5 +412,34 @@ fn opening_a_plugin_cannot_add_widgets_or_overwrite_modes_while_locked(){
     assert!(state.prepare_open("machines").unwrap());
     assert!(!state.prepare_open("machines").unwrap());
     assert_eq!(state.layout.lock().unwrap().boards[0].cards.len(),1);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(test)]
+#[test]
+fn detail_sources_validate_and_return_without_editing_locked_layouts(){
+    let root=std::env::temp_dir().join(format!("canvas-detail-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();let state=State::new(&root).unwrap();
+    state.prepare_open("machines").unwrap();
+    state.update(|layout|{
+        layout.boards.push(Board{id:"other".into(),title:"其他布局".into(),cards:vec![]});
+        layout.active="other".into();layout.layout_locked=true;layout.view_only=true;layout.pinned=true;
+    }).unwrap();
+    let original=state.layout.lock().unwrap().clone();
+    let request:detail::Request=serde_json::from_value(json!({"plugin":"machines","boardId":"default","cardId":original.boards[0].cards[0].id,"config":{},"title":"服务器"})).unwrap();
+    request.validate(&original).unwrap();
+    let mut invalid=request.clone();invalid.plugin="other".into();assert!(invalid.validate(&original).is_err());
+    invalid=request.clone();invalid.board_id="other".into();assert!(invalid.validate(&original).is_err());
+    invalid=request.clone();invalid.card_id="missing".into();assert!(state.return_to_source(&invalid).is_err());
+    assert_eq!(state.layout.lock().unwrap().active,"other");
+    state.return_to_source(&request).unwrap();
+    let saved=state.layout.lock().unwrap().clone();
+    assert_eq!(saved.active,"default");assert!(saved.boards==original.boards);
+    assert!(saved.layout_locked);assert!(saved.view_only);assert!(saved.pinned);
+    assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().active,"default");
+    state.update(|layout|layout.boards[0].cards[0].plugin="replacement".into()).unwrap();
+    assert!(state.return_to_source(&request).is_err());
+    state.update(|layout|layout.boards[0].cards.clear()).unwrap();
+    assert!(state.return_to_source(&request).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
