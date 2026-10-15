@@ -52,7 +52,7 @@ function setup(t, options = {}) {
   t.after(() => { root.unmount(); dom.window.close(); assert.deepEqual(errors, []); });
   return { w, root, calls, intervals, responses, button, message, frameMessages, pointer, input, submit, setCursor: value => { cursor = value; }, data };
 }
-const ready = s => wait(() => s.w.document.querySelector('.widget-content')?.src.includes('flowhubWidgetToken') && !s.w.document.getElementById('add').disabled);
+const ready = s => wait(() => s.w.document.querySelector('.widget-content')?.src.includes('flowhubWidgetToken') && !s.w.document.getElementById('boards').disabled);
 async function edit(s) { const node = s.w.document.querySelector('.canvas-card'); node.dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 })); await wait(() => s.button('编辑组件')); s.button('编辑组件').click(); await wait(() => s.w.document.querySelector('#widgetEditor')?.src.includes('flowhubWidgetToken')); return s.w.document.querySelector('#widgetEditor'); }
 async function more(s) { s.w.document.getElementById('canvasMore').click(); await wait(() => s.w.document.getElementById('newBoard')); }
 
@@ -206,6 +206,137 @@ test('failed toolbar lock leaves the canvas interactive and reports the error', 
   assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'false');
 });
 
+test('layout lock blocks geometry and editing but retains detail navigation and authenticated plugin RPC', async t => {
+  const s = setup(t, { layout: { ...layout(), layoutLocked: true } }); await ready(s);
+  const node = s.w.document.querySelector('.canvas-card'), frame = node.querySelector('iframe'); s.frameMessages(frame);
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.layoutLocked, 'true');
+  assert.equal(s.w.document.getElementById('add').disabled, true);
+  assert.equal(s.w.document.querySelector('.canvas-toolbar').hasAttribute('inert'), false);
+  assert.equal(frame.tabIndex, 0);
+  s.pointer(node.querySelector('.widget-hit'), 'pointerdown', 10, 10);
+  s.pointer(node, 'pointermove', 210, 110); s.pointer(node, 'pointerup', 210, 110);
+  const resize = node.querySelector('[data-resize]');
+  assert.equal(resize.disabled, true);
+  resize.dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
+  assert.equal(node.style.left, '0px'); assert.equal(node.style.width, '384px');
+  node.dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
+  await wait(() => s.button('编辑组件'));
+  assert.equal(s.button('编辑组件').disabled, true); assert.equal(s.button('移除组件').disabled, true);
+  s.button('编辑组件').click(); s.button('移除组件').click();
+  assert.equal(s.w.document.getElementById('widgetForm'), null);
+  s.button('打开详情').click(); await wait(() => s.calls.some(call => call.action === 'detail'));
+  node.click(); await wait(() => s.calls.filter(call => call.action === 'detail').length === 2);
+  s.message(frame, { type: 'flowhub:widget-navigate', action: 'editor' });
+  await new Promise(resolve => setTimeout(resolve, 15)); assert.equal(s.w.document.getElementById('widgetForm'), null);
+  s.message(frame, { type: 'flowhub:widget-navigate', action: 'detail', selection: { row: 'host-a' } });
+  await wait(() => s.calls.filter(call => call.action === 'detail').length === 3);
+  assert.equal(s.calls.filter(call => call.action === 'detail').at(-1).payload.config.selection.row, 'host-a');
+  s.message(frame, { type: 'flowhub:widget-rpc', id: 'locked-rpc', params: { action: 'list' } });
+  await wait(() => s.responses.some(message => message.id === 'locked-rpc'));
+  assert.ok(s.calls.some(call => call.command === 'plugin_widget_rpc'));
+  assert.equal(s.calls.some(call => call.action === 'save'), false);
+  await more(s);
+  for (const id of ['newBoard', 'rename', 'removeBoard']) assert.equal(s.w.document.getElementById(id).disabled, true);
+  assert.equal(s.w.document.getElementById('canvasSettings').disabled, false);
+});
+
+test('locked legacy geometry can switch layouts and pin with presentation-only native saves', async t => {
+  const saved = layout(); saved.layoutLocked = true;
+  delete saved.boards[0].cards[0].width; delete saved.boards[0].cards[0].height;
+  saved.boards.push({ id: 'second', title: '第二布局', cards: [] });
+  const s = setup(t, { layout: saved }); await ready(s);
+  s.w.document.querySelector('[role=switch][aria-label="置顶"]').click();
+  await wait(() => s.calls.some(call => call.action === 'save'));
+  assert.deepEqual(s.calls.find(call => call.action === 'save').payload, { active: 'default', pinned: true });
+  s.w.document.getElementById('boards').click(); await wait(() => s.w.document.querySelector('[role=option]'));
+  [...s.w.document.querySelectorAll('[role=option]')].find(node => node.textContent === '第二布局').click();
+  await wait(() => s.calls.filter(call => call.action === 'save').length === 2);
+  assert.deepEqual(s.calls.filter(call => call.action === 'save').at(-1).payload, { active: 'second', pinned: true });
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.layoutLocked, 'true');
+});
+
+test('lock requests cancel a gesture immediately and failures preserve the original editable mode', async t => {
+  let rejectLock;
+  const s = setup(t, { invoke: (command, args) => args.action === 'setLayoutLocked' ? new Promise((resolve, reject) => { rejectLock = reject; }) : undefined }); await ready(s);
+  const node = s.w.document.querySelector('.canvas-card');
+  s.pointer(node.querySelector('.widget-hit'), 'pointerdown', 10, 10); s.pointer(node, 'pointermove', 210, 110);
+  assert.equal(node.style.left, '200px');
+  s.w.document.querySelector('[role=switch][aria-label="锁定布局"]').click(); await wait(() => rejectLock);
+  assert.equal(node.style.left, '0px'); assert.equal(node.hasPointerCapture(undefined), true);
+  s.pointer(node, 'pointerup', 210, 110);
+  assert.equal(s.calls.some(call => call.action === 'save'), false);
+  rejectLock(Error('disk unavailable'));
+  await wait(() => s.w.document.getElementById('notice').textContent.includes('disk unavailable'));
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.layoutLocked, 'false');
+  assert.equal(s.w.document.getElementById('add').disabled, false);
+  node.querySelector('[data-resize]').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
+  await wait(() => s.calls.some(call => call.action === 'save'));
+});
+
+test('mode events cancel editors and menus, and initial loads preserve each independently updated mode', async t => {
+  let resolveGet;
+  const s = setup(t, { invoke: (command, args) => args.action === 'get' ? new Promise(resolve => { resolveGet = resolve; }) : undefined });
+  await wait(() => resolveGet);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-layout-locked', { detail: true }));
+  resolveGet({ ...s.data, layout: { ...s.data.layout, viewOnly: true } }); await ready(s);
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.layoutLocked, 'true');
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.viewOnly, 'true');
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-view-only', { detail: false }));
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-layout-locked', { detail: false }));
+  await wait(() => !s.w.document.getElementById('add').disabled);
+  await edit(s);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-layout-locked', { detail: true }));
+  await wait(() => !s.w.document.getElementById('widgetForm'));
+  await more(s);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-layout-locked', { detail: false }));
+  await wait(() => !s.w.document.getElementById('canvasMenu'));
+});
+
+test('browser layout locking persists and restarts without granting native plugin access', async t => {
+  const s = setup(t, { preview: true }); await ready(s);
+  const toggle = () => s.w.document.querySelector('[role=switch][aria-label="锁定布局"]');
+  assert.equal(toggle().getAttribute('aria-checked'), 'false');
+  toggle().click(); await wait(() => toggle().getAttribute('aria-checked') === 'true');
+  assert.equal(JSON.parse(s.w.localStorage.getItem('flowhub-canvas-preview')).layoutLocked, true);
+  const restarted = setup(t, { preview: true, layout: JSON.parse(s.w.localStorage.getItem('flowhub-canvas-preview')) }); await ready(restarted);
+  const restartedToggle = restarted.w.document.querySelector('[role=switch][aria-label="锁定布局"]');
+  assert.equal(restartedToggle.getAttribute('aria-checked'), 'true');
+  assert.equal(restarted.w.document.getElementById('add').disabled, true);
+  restartedToggle.click(); await wait(() => restartedToggle.getAttribute('aria-checked') === 'false');
+  assert.equal(JSON.parse(restarted.w.localStorage.getItem('flowhub-canvas-preview')).layoutLocked, false);
+  assert.equal(s.calls.length, 0);
+});
+
+test('a remotely locked canvas restores board content after an older queued edit is rejected', async t => {
+  let rejectSave;
+  const s = setup(t, { invoke: (command, args) => args.action === 'save' ? new Promise((resolve, reject) => { rejectSave = reject; }) : undefined }); await ready(s);
+  const node = s.w.document.querySelector('.canvas-card');
+  node.querySelector('[data-resize]').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
+  await wait(() => rejectSave); assert.equal(node.style.width, '394px');
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-layout-locked', { detail: true }));
+  rejectSave(Error('布局已锁定'));
+  await wait(() => node.style.width === '384px');
+  assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset.layoutLocked, 'true');
+  assert.equal(s.w.document.getElementById('add').disabled, true);
+});
+
+test('newer mode events win over a delayed local mutation acknowledgement', async t => {
+  for (const [action, event, label, field] of [
+    ['setLayoutLocked', 'flowhub:canvas-layout-locked', '锁定布局', 'layoutLocked'],
+    ['setViewOnly', 'flowhub:canvas-view-only', '仅查看桌面组件', 'viewOnly'],
+  ]) {
+    await t.test(action, async t => {
+      let resolveMode;
+      const s = setup(t, { invoke: (command, args) => args.action === action ? new Promise(resolve => { resolveMode = resolve; }) : undefined }); await ready(s);
+      s.w.document.querySelector(`[role=switch][aria-label="${label}"]`).click(); await wait(() => resolveMode);
+      s.w.dispatchEvent(new s.w.CustomEvent(event, { detail: false }));
+      resolveMode(null);
+      await wait(() => !s.w.document.querySelector(`[role=switch][aria-label="${label}"]`).disabled);
+      assert.equal(s.w.document.querySelector('.fh-canvas-app').dataset[field], 'false');
+    });
+  }
+});
+
 test('view-only locks dragging and left clicks, while right-click can exit without allowing edits', async t => {
   const locked = { ...layout(), viewOnly: true };
   const s = setup(t, { layout: locked }); await ready(s);
@@ -256,7 +387,7 @@ test('view-only keyboard menus skip disabled edits and allow explicit detail nav
 test('an empty view-only board also exposes exit, and failed exit preserves the lock', async t => {
   const empty = { ...layout(), viewOnly: true }; empty.boards[0].cards = [];
   const s = setup(t, { layout: empty, invoke: (command, args) => args.action === 'setViewOnly' ? Promise.reject(Error('disk unavailable')) : undefined });
-  await wait(() => s.w.document.getElementById('add') && !s.w.document.getElementById('add').disabled);
+  await wait(() => s.w.document.getElementById('boards') && !s.w.document.getElementById('boards').disabled);
   s.w.document.getElementById('canvas').dispatchEvent(new s.w.MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }));
   await wait(() => s.button('退出仅查看状态'));
   s.button('退出仅查看状态').click();
@@ -466,4 +597,5 @@ test('first-load failure retries the actual saved layout before enabling changes
   assert.equal(s.calls.find(call => call.action === 'save').payload.boards[0].cards[0].id, 'one');
 });
 }
+if (require.main === module) require('./canvas-settings.test.cjs');
 module.exports = { setup, ready, wait };

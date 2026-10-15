@@ -22,6 +22,9 @@ body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface
 .fh-canvas-app[data-view-only="true"] .canvas-card { cursor: default; touch-action: auto; }
 .fh-canvas-app[data-view-only="true"] .canvas-card .widget-content { pointer-events: none; }
 .fh-canvas-app[data-view-only="true"] .resize-handle { display: none; }
+.fh-canvas-app[data-layout-locked="true"] .resize-handle { display: none; }
+.fh-canvas-app[data-layout-locked="true"] .canvas-card { touch-action: auto; }
+.fh-canvas-app[data-layout-locked="true"] .canvas-card.interactive .widget-hit { cursor: pointer; }
 .fh-canvas-app #notice { margin: 0 8px 10px; font-size: 12px; }
 .fh-canvas-app #notice:empty { display: none; }
 .canvas-preview-return { display: inline-block; margin: 0 8px 10px; color: var(--fh-accent); }

@@ -63,7 +63,8 @@ export function Canvas() {
   const [sources, setSources] = useState<Source[]>([]), sourcesRef = useRef(sources);
   const [notice, setNotice] = useState(''), [loaded, setLoaded] = useState(false), [inactive, setInactive] = useState(false);
   const [previewFailure, setPreviewFailure] = useState(false);
-  const [viewOnlyBusy, setViewOnlyBusy] = useState(false);
+  const [viewOnlyBusy, setViewOnlyBusy] = useState(false), [layoutLockBusy, setLayoutLockBusy] = useState(false);
+  const modeRevision = useRef({ viewOnly: 0, layoutLocked: 0 }), modePending = useRef(false);
   const [editor, setEditor] = useState<Editor | null>(null), [naming, setNaming] = useState<'new' | 'rename' | null>(null), [name, setName] = useState(''), [deleting, setDeleting] = useState(false);
   const [menu, setMenu] = useState<Menu | null>(null);
   const canvas = useRef<HTMLElement>(null), toolbar = useRef<HTMLElement>(null), menuNode = useRef<HTMLDivElement>(null);
@@ -71,6 +72,7 @@ export function Canvas() {
   const fitted = useRef(''), alive = useRef(true);
   const board = layout.boards.find(board => board.id === layout.active)!;
   const viewOnly = layout.viewOnly === true;
+  const layoutLocked = layout.layoutLocked === true, editingDisabled = viewOnly || layoutLocked || layoutLockBusy || viewOnlyBusy;
   const menuCard = menu?.card;
   const width = Math.max(320, ...board.cards.map(card => (card.x || 0) + (card.width || 184)));
   const height = Math.max(120, ...board.cards.map(card => (card.y || 0) + (card.height || 184)));
@@ -85,6 +87,16 @@ export function Canvas() {
     else if (active.card) [...(canvas.current?.querySelectorAll<HTMLElement>('[data-id]') || [])].find(node => node.dataset.id === active.card?.id)?.focus();
   }
   const api = <T = unknown,>(action: string, payload: unknown = {}) => invoke!<T>('plugin_canvas_api', { action, payload });
+  function cancelGesture() {
+    const g = gesture.current;
+    if (!g) return;
+    gesture.current = null;
+    Object.assign(g.node.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
+    g.node.classList.remove('moving');
+    canvas.current?.querySelectorAll('.swap-target').forEach(node => node.classList.remove('swap-target'));
+    if (g.node.hasPointerCapture(g.pointer)) g.node.releasePointerCapture(g.pointer);
+    if (g.moved) suppressClick.current = Date.now() + 150;
+  }
   function fitSurface() {
     if (!invoke || gesture.current || modalOpen() || !canvas.current || !toolbar.current) return;
     const width = Math.max(360, canvas.current.offsetWidth + 32, toolbar.current.scrollWidth + 32);
@@ -92,8 +104,8 @@ export function Canvas() {
     if (key === fitted.current) return;
     fitted.current = key; void api('fit', { width, height }).catch(() => { fitted.current = ''; });
   }
-  function commit(change: (draft: Layout) => void, moving?: string, wanted?: Point, target?: string | null) {
-    if (!loaded || layoutRef.current.viewOnly) return;
+  function commit(change: (draft: Layout) => void, moving?: string, wanted?: Point, target?: string | null, presentation = false) {
+    if (!loaded || modePending.current || layoutRef.current.viewOnly || (layoutRef.current.layoutLocked && !presentation)) return;
     const draft = structuredClone(layoutRef.current); change(draft);
     const next = normalize(draft, sourcesRef.current, moving, wanted, target);
     layoutRef.current = next; setLayout(next); setMenu(null);
@@ -101,16 +113,30 @@ export function Canvas() {
     const snapshot = structuredClone(next); saving.current++;
     saveTail.current = saveTail.current.catch(() => {}).then(async () => {
       try {
-        if (invoke) await api('save', snapshot);
-        else localStorage.setItem('flowhub-canvas-preview', JSON.stringify(snapshot));
+        if (invoke) await api('save', snapshot.layoutLocked && presentation ? { active: snapshot.active, pinned: snapshot.pinned } : snapshot);
+        else localStorage.setItem('flowhub-canvas-preview', JSON.stringify({ ...snapshot, layoutLocked: layoutRef.current.layoutLocked }));
         if (alive.current && invoke) setNotice('');
-      } catch (error) { if (alive.current) setNotice(`保存失败：${error}`); }
+      } catch (error) {
+        if (alive.current) setNotice(`保存失败：${error}`);
+        // A settings window can lock the layout while an old full save is queued.
+        // Restore only board content while locked; presentation changes stay local.
+        if (invoke && layoutRef.current.layoutLocked) {
+          try {
+            const result = await api<{ layout: Layout }>('get');
+            if (alive.current && layoutRef.current.layoutLocked && isLayout(result.layout)) {
+              const next = normalize({ ...layoutRef.current, boards: result.layout.boards }, sourcesRef.current);
+              layoutRef.current = next; setLayout(next);
+            }
+          } catch { /* Preserve the original save error for retry. */ }
+        }
+      }
       finally { saving.current--; }
     });
   }
   const changeCards = (change: (cards: Card[]) => void) => commit(draft => change(draft.boards.find(board => board.id === draft.active)!.cards));
+  const changePresentation = (change: (draft: Layout) => void) => commit(change, undefined, undefined, undefined, true);
   function add(card?: Card) {
-    if (!loaded || layoutRef.current.viewOnly) return;
+    if (!loaded || modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;
     if (!sourcesRef.current.some(source => source.widget)) { setNotice('请先安装或升级提供组件页面的插件'); return; }
     const active = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)!;
     if (!card && active.cards.length >= 32) { setNotice('每个布局最多 32 个组件'); return; }
@@ -124,14 +150,35 @@ export function Canvas() {
     else location.href = 'plugin-detail.html?' + new URLSearchParams({ ...(preview ? { preview } : {}), config: JSON.stringify(config), title });
   }
   async function changeViewOnly(enabled: boolean) {
-    if (!invoke || viewOnlyBusy || !loaded) return;
+    if (!invoke || modePending.current || !loaded) return;
+    modePending.current = true;
+    const revision = modeRevision.current.viewOnly;
+    cancelGesture(); setMenu(null); setEditor(null); setNaming(null); setDeleting(false);
     setViewOnlyBusy(true);
     try {
       await api('setViewOnly', { enabled });
-      window.dispatchEvent(new CustomEvent('flowhub:canvas-view-only', { detail: enabled }));
+      if (alive.current && revision === modeRevision.current.viewOnly) window.dispatchEvent(new CustomEvent('flowhub:canvas-view-only', { detail: enabled }));
       setNotice('');
     } catch (error) { setNotice(`切换仅查看模式失败：${error}`); }
-    finally { setViewOnlyBusy(false); }
+    finally { modePending.current = false; setViewOnlyBusy(false); }
+  }
+  async function changeLayoutLocked(enabled: boolean) {
+    if (modePending.current || !loaded) return;
+    modePending.current = true; setLayoutLockBusy(true);
+    const revision = modeRevision.current.layoutLocked;
+    cancelGesture(); setMenu(null); setEditor(null); setNaming(null); setDeleting(false);
+    try {
+      if (invoke) await api('setLayoutLocked', { enabled });
+      else {
+        await saveTail.current.catch(() => {});
+        localStorage.setItem('flowhub-canvas-preview', JSON.stringify({ ...layoutRef.current, layoutLocked: enabled }));
+      }
+      if (alive.current) {
+        if (revision === modeRevision.current.layoutLocked) window.dispatchEvent(new CustomEvent('flowhub:canvas-layout-locked', { detail: enabled }));
+        if (invoke) setNotice('');
+      }
+    } catch (error) { if (alive.current) setNotice(`切换锁定布局失败：${error}`); }
+    finally { modePending.current = false; if (alive.current) setLayoutLockBusy(false); }
   }
   const actions = useRef({ fitSurface, openCard, add }); actions.current = { fitSurface, openCard, add };
   useEffect(() => {
@@ -140,7 +187,7 @@ export function Canvas() {
     async function load(initial = false) {
       initial = initial || !initialized;
       if (stopped || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
-      const sequence = ++request;
+      const sequence = ++request, revision = { ...modeRevision.current };
       try {
         if (previewError) throw Error(previewError);
         let nextSources = sourcesRef.current, nextLayout = layoutRef.current;
@@ -160,6 +207,10 @@ export function Canvas() {
         if (stopped || sequence !== request || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
         // A user mutation may have finished while the snapshot request was in flight.
         if (!initial) nextLayout = layoutRef.current;
+        else nextLayout = { ...nextLayout,
+          viewOnly: revision.viewOnly === modeRevision.current.viewOnly ? nextLayout.viewOnly : layoutRef.current.viewOnly,
+          layoutLocked: revision.layoutLocked === modeRevision.current.layoutLocked ? nextLayout.layoutLocked : layoutRef.current.layoutLocked,
+        };
         if (!isLayout(nextLayout)) throw Error('组件布局无效');
         sourcesRef.current = nextSources; setSources(nextSources);
         const normalized = normalize(nextLayout, nextSources); layoutRef.current = normalized; setLayout(normalized);
@@ -176,24 +227,19 @@ export function Canvas() {
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => { stopped = true; alive.current = false; clearInterval(interval); document.removeEventListener('visibilitychange', onVisibilityChange); document.body.classList.remove('preview'); };
   }, [invoke, preview, previewError, previewParam]);
-  useEffect(() => { fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded, viewOnly]);
+  useEffect(() => { fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded, viewOnly, layoutLocked]);
   useEffect(() => {
     const change = (event: Event) => {
       const enabled = (event as CustomEvent<boolean>).detail;
       if (typeof enabled !== 'boolean') return;
-      if (enabled && gesture.current) {
-        const g = gesture.current;
-        gesture.current = null;
-        Object.assign(g.node.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px` });
-        g.node.classList.remove('moving');
-        canvas.current?.querySelectorAll('.swap-target').forEach(node => node.classList.remove('swap-target'));
-        if (g.node.hasPointerCapture(g.pointer)) g.node.releasePointerCapture(g.pointer);
-      }
-      const next = { ...layoutRef.current, viewOnly: enabled };
+      const field = event.type === 'flowhub:canvas-layout-locked' ? 'layoutLocked' : 'viewOnly';
+      modeRevision.current[field]++; cancelGesture();
+      const next = { ...layoutRef.current, [field]: enabled };
       layoutRef.current = next; setLayout(next); setMenu(null); setEditor(null); setNaming(null); setDeleting(false);
     };
     window.addEventListener('flowhub:canvas-view-only', change);
-    return () => window.removeEventListener('flowhub:canvas-view-only', change);
+    window.addEventListener('flowhub:canvas-layout-locked', change);
+    return () => { window.removeEventListener('flowhub:canvas-view-only', change); window.removeEventListener('flowhub:canvas-layout-locked', change); };
   }, []);
 
   // One native cursor poll owns surface exit and menu tracking, including iframe crossings.
@@ -265,7 +311,7 @@ export function Canvas() {
   }, [menu]);
 
   function start(event: ReactPointerEvent<HTMLElement>, card: Card) {
-    if (layoutRef.current.viewOnly || event.button !== 0) return;
+    if (modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked || event.button !== 0) return;
     const target = event.target as Element, resize = !!target.closest('[data-resize]');
     if (!resize && target.closest('button,input,select')) return;
     const node = event.currentTarget;
@@ -314,13 +360,14 @@ export function Canvas() {
     const rect = moreButton()?.getBoundingClientRect();
     if (rect && loaded && !viewOnly) setMenu({ kind: 'toolbar', x: rect.left, y: rect.bottom + 4, pointer: false });
   };
-  return <div className="fh-canvas-app" data-view-only={viewOnly}>
+  return <div className="fh-canvas-app" data-view-only={viewOnly} data-layout-locked={layoutLocked}>
     <header ref={toolbar} className={`canvas-toolbar flex flex-wrap items-center gap-2 ${inactive ? 'surface-inactive' : ''}`} inert={inactive || viewOnly}>
       <Button id="dragSurface" className="brand" size="icon" aria-label="拖动桌面组件区域" disabled={!invoke} onMouseDown={event => { if (event.button === 0 && invoke) void api('drag').catch(error => setNotice(String(error))); }}><GripVerticalIcon aria-hidden="true" /></Button>
-      <Select id="boards" label="切换组件布局" popupClassName="canvas-board-select-popup" value={layout.active} disabled={!loaded} options={layout.boards.map(board => ({ value: board.id, label: board.title }))} onChange={value => commit(draft => { draft.active = value; })} />
-      <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded} onChange={value => commit(draft => { draft.pinned = value; })} /><span>置顶</span></div>
-      <div className="flex items-center gap-1"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
-      <Button id="add" className="primary" disabled={!loaded || board.cards.length >= 32} onClick={() => add()}>添加</Button>
+      <Select id="boards" label="切换组件布局" popupClassName="canvas-board-select-popup" value={layout.active} disabled={!loaded || layoutLockBusy || viewOnlyBusy} options={layout.boards.map(board => ({ value: board.id, label: board.title }))} onChange={value => changePresentation(draft => { draft.active = value; })} />
+      <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded || layoutLockBusy || viewOnlyBusy} onChange={value => changePresentation(draft => { draft.pinned = value; })} /><span>置顶</span></div>
+      <div className="flex items-center gap-1"><Switch label="锁定布局" checked={layoutLocked} disabled={!loaded || layoutLockBusy || viewOnlyBusy} onChange={value => { void changeLayoutLocked(value); }} /><span>锁定布局</span></div>
+      <div className="flex items-center gap-1"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy || layoutLockBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
+      <Button id="add" className="primary" disabled={!loaded || editingDisabled || board.cards.length >= 32} onClick={() => add()}>添加</Button>
       <Button id="canvasMore" aria-haspopup="menu" aria-expanded={menu?.kind === 'toolbar'} aria-controls={menu?.kind === 'toolbar' ? 'canvasMenu' : undefined} disabled={!loaded} onClick={() => { if (menu?.kind === 'toolbar') closeMenu(true); else openMore(); }} onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openMore(); }
       }}>更多</Button>
@@ -333,7 +380,7 @@ export function Canvas() {
     }}>
       {board.cards.map(card => {
         const source = sources.find(source => source.id === card.plugin), title = card.title || source?.title || card.plugin, interactive = source?.widget?.interactive === true;
-        return <article key={`${board.id}:${card.id}`} data-id={card.id} tabIndex={0} className={`canvas-card absolute overflow-hidden ${interactive ? 'interactive' : ''}`} aria-label={`${title}，${viewOnly ? '仅查看，右键可退出' : interactive ? '顶部拖动或右键编辑，列表可操作' : '点击打开详情，右键编辑'}`}
+        return <article key={`${board.id}:${card.id}`} data-id={card.id} tabIndex={0} className={`canvas-card absolute overflow-hidden ${interactive ? 'interactive' : ''}`} aria-label={`${title}，${viewOnly ? '仅查看，右键可退出' : layoutLocked ? '布局已锁定，点击打开详情' : interactive ? '顶部拖动或右键编辑，列表可操作' : '点击打开详情，右键编辑'}`}
           style={{ left: card.x, top: card.y, width: card.width, height: card.height }}
           onPointerDown={event => start(event, card)} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}
           onClick={event => { if (viewOnly || Date.now() < suppressClick.current || (event.target as Element).closest('button')) return; openCard(card); }}
@@ -345,8 +392,8 @@ export function Canvas() {
           }}>
           {source?.widget ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
           <div className="widget-hit absolute" aria-hidden="true">{interactive ? '⠿' : ''}</div>
-          <Button className="resize-handle absolute" data-resize aria-label="调整组件大小" disabled={viewOnly} onKeyDown={event => {
-            if (layoutRef.current.viewOnly) return;
+          <Button className="resize-handle absolute" data-resize aria-label="调整组件大小" disabled={editingDisabled} onKeyDown={event => {
+            if (modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;
             if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
             event.preventDefault(); event.stopPropagation(); const min = minimum(card, sources);
             changeCards(cards => { const current = cards.find(item => item.id === card.id)!; current.width = Math.max(min.width, Math.min(1600, current.width! + (event.key === 'ArrowRight' ? 10 : event.key === 'ArrowLeft' ? -10 : 0))); current.height = Math.max(min.height, Math.min(1200, current.height! + (event.key === 'ArrowDown' ? 10 : event.key === 'ArrowUp' ? -10 : 0))); });
@@ -355,7 +402,7 @@ export function Canvas() {
       })}
       {loaded && !board.cards.length ? <Empty className="canvas-blank">
         <EmptyHeader><EmptyTitle>还没有组件</EmptyTitle><EmptyDescription>从已安装的插件中添加组件。</EmptyDescription></EmptyHeader>
-        <EmptyContent><Button className="primary w-full" onClick={() => add()}>添加第一个组件</Button></EmptyContent>
+        <EmptyContent><Button className="primary w-full" disabled={editingDisabled} onClick={() => add()}>添加第一个组件</Button></EmptyContent>
       </Empty> : null}
     </main>
     {menu ? <div id="canvasMenu" ref={menuNode} className={`canvas-menu fixed grid ${menu.kind === 'toolbar' ? 'canvas-toolbar-menu' : ''}`} role="menu" aria-label={menu.kind === 'toolbar' ? '布局与桌面组件操作' : '组件操作'} style={{ left: menu.x, top: menu.y }} onKeyDown={event => {
@@ -363,17 +410,17 @@ export function Canvas() {
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus(); }
     }}>
       {menu.kind === 'toolbar' ? <>
-        <Button id="newBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || layout.boards.length >= 12} onClick={() => { closeMenu(true); setName(''); setNaming('new'); }}>新建布局</Button>
-        <Button id="rename" variant="ghost" size="sm" role="menuitem" disabled={!loaded} onClick={() => { closeMenu(true); setName(board.title); setNaming('rename'); }}>重命名布局</Button>
-        <Button id="removeBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || layout.boards.length < 2} onClick={() => { closeMenu(true); setDeleting(true); }}>删除布局</Button>
+        <Button id="newBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || editingDisabled || layout.boards.length >= 12} onClick={() => { closeMenu(true); setName(''); setNaming('new'); }}>新建布局</Button>
+        <Button id="rename" variant="ghost" size="sm" role="menuitem" disabled={!loaded || editingDisabled} onClick={() => { closeMenu(true); setName(board.title); setNaming('rename'); }}>重命名布局</Button>
+        <Button id="removeBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || editingDisabled || layout.boards.length < 2} onClick={() => { closeMenu(true); setDeleting(true); }}>删除布局</Button>
         <div className="canvas-menu-separator" role="separator" />
       </> : null}
       {menuCard ? <>
         <Button role="menuitem" onClick={() => { setMenu(null); openCard(menuCard); }}>打开详情</Button>
-        <Button role="menuitem" disabled={viewOnly} onClick={() => add(menuCard)}>编辑组件</Button>
+        <Button role="menuitem" disabled={editingDisabled} onClick={() => add(menuCard)}>编辑组件</Button>
       </> : null}
       <Button id={menu.kind === 'toolbar' ? 'canvasSettings' : undefined} variant={menu.kind === 'toolbar' ? 'ghost' : undefined} size={menu.kind === 'toolbar' ? 'sm' : undefined} role="menuitem" disabled={menu.kind === 'toolbar' && !invoke} onClick={() => { closeMenu(); if (invoke) void api('settings').catch(error => setNotice(String(error))); }}>桌面组件设置</Button>
-      {menuCard ? <Button role="menuitem" disabled={viewOnly} onClick={() => commit(draft => { const board = draft.boards.find(board => board.id === draft.active)!; board.cards = board.cards.filter(card => card.id !== menuCard.id); })}>移除组件</Button> : null}
+      {menuCard ? <Button role="menuitem" disabled={editingDisabled} onClick={() => commit(draft => { const board = draft.boards.find(board => board.id === draft.active)!; board.cards = board.cards.filter(card => card.id !== menuCard.id); })}>移除组件</Button> : null}
       {viewOnly ? <Button role="menuitem" disabled={!invoke || viewOnlyBusy} onClick={() => { setMenu(null); void changeViewOnly(false); }}>{viewOnlyBusy ? '正在退出…' : '退出仅查看状态'}</Button> : null}
     </div> : null}
     {editor ? <EditorDialog editor={editor} sources={sources} invoke={invoke} preview={preview} onClose={() => setEditor(null)} onSave={(plugin, title, config) => {

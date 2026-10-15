@@ -196,7 +196,7 @@ test('native canvas setting saves view-only immediately and opens the widget sur
   };
   const view=await h.mount(Settings,{store});
   await h.click(h.button(view.container,'桌面组件'));
-  const toggle=view.container.querySelector('.settings-canvas [role=switch]');
+  const toggle=view.container.querySelector('.settings-canvas [role=switch][aria-label="仅查看桌面组件"]');
   assert.equal(toggle.getAttribute('aria-checked'),'false');
   await h.click(toggle);
   assert.deepEqual(calls.find(call=>call.action==='setViewOnly').payload,{enabled:true});
@@ -278,7 +278,7 @@ test('module queries select requested section and reject unknown module values',
 test('theme Select writes shared theme preference and follows host theme events', async () => {
   h.environment(); let theme = 'system'; window.FlowHubTheme = { get: () => theme, set: value => { theme = value; } };
   const { Theme } = require('../../src/settings/Theme.tsx'), view = await h.mount(Theme, {});
-  await h.click(view.container.querySelector('[aria-label="外观主题"]'));
+  await h.key(view.container.querySelector('[aria-label="外观主题"]'), 'ArrowDown');
   const dark = [...document.querySelectorAll('[role=option]')].find(option => option.textContent === '深色');
   await h.act(async () => { dark.dispatchEvent(new window.Event('pointerdown', { bubbles: true })); dark.click(); });
   assert.equal(theme, 'dark'); theme='light'; await h.act(async () => window.dispatchEvent(new window.Event('flowhub-theme-change'))); assert.match(view.container.textContent,/浅色/);

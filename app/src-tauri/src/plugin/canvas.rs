@@ -61,13 +61,16 @@ pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
     }
     app.state::<crate::plugin::runtime::Runtime>().widget_call(&id,params).await
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Card { id:String, plugin:String, title:String, view:String, size:String, #[serde(default)] row:Option<String>, #[serde(default)] width:Option<u32>, #[serde(default)] height:Option<u32>, #[serde(default)] break_before:bool, #[serde(default)] x:Option<u32>, #[serde(default)] y:Option<u32>, #[serde(default)] metrics:Option<Vec<String>>, #[serde(default)] config:Value }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Board { id:String, title:String, cards:Vec<Card> }
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default)] desktop:bool, #[serde(default,rename="windowPosition",skip_serializing_if="Option::is_none")] window_position:Option<(i32,i32)>, #[serde(default)] version:u32 }
-impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,desktop:false,window_position:None,version:2}}}
+pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default,rename="layoutLocked")] layout_locked:bool, #[serde(default)] desktop:bool, #[serde(default,rename="windowPosition",skip_serializing_if="Option::is_none")] window_position:Option<(i32,i32)>, #[serde(default)] version:u32 }
+impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,layout_locked:false,desktop:false,window_position:None,version:2}}}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Presentation { active:String, pinned:bool }
 impl Layout {
     fn validate(&self)->Result<(),String>{
         if self.boards.is_empty() || self.boards.len()>12 || !self.boards.iter().any(|b|b.id==self.active){return Err("画布数量或当前画布无效".into());}
@@ -83,15 +86,33 @@ impl Layout {
 pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<std::collections::HashMap<String,(String,Value)>> }
 impl State {
     pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(std::collections::HashMap::new())})}
-    fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next);next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
+    fn try_update(&self, change:impl FnOnce(&mut Layout)->Result<(),String>)->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next)?;next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
+    fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{self.try_update(|layout|{change(layout);Ok(())})}
+    #[cfg(test)]
     fn save(&self, next:Layout)->Result<(),String>{self.update(|layout|*layout=next)}
     fn save_from_canvas(&self,next:Layout)->Result<(),String>{
-        self.update(|layout|{
+        self.try_update(|layout|{
+            if (layout.layout_locked || layout.view_only) && layout.boards!=next.boards {return Err("布局已锁定，无法编辑组件或布局".into());}
             // Frontend snapshots may predate a native move or mode change.
-            let owned=(layout.view_only,layout.desktop,layout.window_position);
+            let owned=(layout.view_only,layout.layout_locked,layout.desktop,layout.window_position);
             *layout=next;
-            layout.view_only=owned.0;layout.desktop=owned.1;layout.window_position=owned.2;
+            layout.view_only=owned.0;layout.layout_locked=owned.1;layout.desktop=owned.2;layout.window_position=owned.3;
+            Ok(())
         })
+    }
+    fn save_presentation(&self,presentation:Presentation)->Result<(),String>{
+        self.update(|layout|{layout.active=presentation.active;layout.pinned=presentation.pinned;})
+    }
+    fn prepare_open(&self,plugin:&str)->Result<bool,String>{
+        let mut added=false;
+        self.update(|layout|{
+            if !layout.layout_locked && !layout.view_only && !plugin.is_empty() && !layout.boards.iter().any(|b|b.cards.iter().any(|c|c.plugin==plugin)) {
+                let board=layout.boards.iter_mut().find(|b|b.id==layout.active).unwrap();
+                if board.cards.len()<32{board.cards.push(Card{id:format!("widget-{}",chrono::Utc::now().timestamp_millis()),plugin:plugin.into(),title:String::new(),view:"widget".into(),size:"small".into(),row:None,width:None,height:None,break_before:false,x:None,y:None,metrics:None,config:Value::Null});added=true;}
+            }
+            layout.desktop=true;
+        })?;
+        Ok(added)
     }
     fn remember_position(&self,position:(i32,i32))->Result<(),String>{
         if self.layout.lock().unwrap().window_position==Some(position){return Ok(());}
@@ -99,12 +120,8 @@ impl State {
     }
 }
 pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
-    let state=app.state::<State>();let mut layout=state.layout.lock().unwrap().clone();let mut added=false;
-    if !plugin.is_empty() && !layout.boards.iter().any(|b|b.cards.iter().any(|c|c.plugin==plugin)) {
-        let board=layout.boards.iter_mut().find(|b|b.id==layout.active).unwrap();
-        if board.cards.len()<32{board.cards.push(Card{id:format!("widget-{}",chrono::Utc::now().timestamp_millis()),plugin:plugin.into(),title:String::new(),view:"widget".into(),size:"small".into(),row:None,width:None,height:None,break_before:false,x:None,y:None,metrics:None,config:Value::Null});state.save(layout.clone())?;added=true;}
-    }
-    layout.desktop=true;state.save(layout.clone())?;
+    let state=app.state::<State>();let added=state.prepare_open(plugin)?;
+    let layout=state.layout.lock().unwrap().clone();
     if let Some(w)=app.get_webview_window("plugin-canvas"){if added{w.eval("location.reload()").map_err(|e|e.to_string())?;}w.show().map_err(|e|e.to_string())?;return w.set_focus().map_err(|e|e.to_string());}
     let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App("plugin-canvas.html".into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
     if let Some(position)=layout.window_position {
@@ -137,13 +154,26 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         return canvas_cursor(&window).await;
     }
     let state=app.state::<State>();
-    if action=="save"{let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save_from_canvas(next)?;let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}}
+    if action=="save"{
+        if payload.get("boards").is_some(){let next:Layout=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save_from_canvas(next)?;}
+        else {let presentation:Presentation=serde_json::from_value(payload).map_err(|e|e.to_string())?;state.save_presentation(presentation)?;}
+        let pinned=state.layout.lock().unwrap().pinned;if let Some(w)=app.get_webview_window("plugin-canvas"){w.set_always_on_top(pinned).map_err(|e|e.to_string())?;}
+    }
     else if action=="setViewOnly" {
         let enabled=payload["enabled"].as_bool().ok_or("交互模式无效")?;
         state.update(|layout|layout.view_only=enabled)?;
         for label in ["plugin-canvas","settings"] {
             if label!=window.label() {
                 if let Some(w)=app.get_webview_window(label) {let _=w.eval(&format!("window.dispatchEvent(new CustomEvent('flowhub:canvas-view-only',{{detail:{enabled}}}))"));}
+            }
+        }
+    }
+    else if action=="setLayoutLocked" {
+        let enabled=payload["enabled"].as_bool().ok_or("布局锁定模式无效")?;
+        state.update(|layout|layout.layout_locked=enabled)?;
+        for label in ["plugin-canvas","settings"] {
+            if label!=window.label() {
+                if let Some(w)=app.get_webview_window(label) {let _=w.eval(&format!("window.dispatchEvent(new CustomEvent('flowhub:canvas-layout-locked',{{detail:{enabled}}}))"));}
             }
         }
     }
@@ -234,4 +264,82 @@ fn window_position_accepts_negative_monitor_origins_but_rejects_disconnected_dis
     assert!(!position_is_visible((1850,100),&monitors));
     assert!(!position_is_visible((0,1040),&monitors));
     assert!(!position_is_visible((i32::MAX,i32::MAX),&monitors));
+}
+
+#[cfg(test)]
+#[test]
+fn layout_lock_defaults_off_persists_and_preserves_native_modes(){
+    let old=json!({"boards":[{"id":"default","title":"旧布局","cards":[]}],"active":"default","pinned":false});
+    let legacy:Layout=serde_json::from_value(old).unwrap();
+    assert!(!legacy.layout_locked);
+    let root=std::env::temp_dir().join(format!("canvas-lock-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();
+    let state=State::new(&root).unwrap();state.save(legacy.clone()).unwrap();
+    state.update(|layout|{layout.layout_locked=true;layout.view_only=true;}).unwrap();
+    state.save_from_canvas(legacy).unwrap();
+    let restarted=State::new(&root).unwrap();
+    assert!(restarted.layout.lock().unwrap().layout_locked);
+    assert!(restarted.layout.lock().unwrap().view_only);
+    assert_eq!(json!(&*restarted.layout.lock().unwrap())["layoutLocked"],true);
+    let mut stale=restarted.layout.lock().unwrap().clone();
+    state.update(|layout|{layout.layout_locked=false;layout.view_only=false;}).unwrap();
+    stale.pinned=true;state.save_from_canvas(stale).unwrap();
+    let saved=state.layout.lock().unwrap();
+    assert!(!saved.layout_locked);assert!(!saved.view_only);assert!(saved.pinned);
+    drop(saved);std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(test)]
+#[test]
+fn locked_layout_rejects_stale_board_edits_but_accepts_presentation_changes(){
+    let root=std::env::temp_dir().join(format!("canvas-lock-saves-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();let state=State::new(&root).unwrap();
+    assert!(state.prepare_open("machines").unwrap());
+    state.update(|layout|{
+        layout.boards.push(Board{id:"second".into(),title:"第二布局".into(),cards:vec![]});
+        layout.layout_locked=true;
+    }).unwrap();
+    let original=state.layout.lock().unwrap().clone();
+    let mut edits=vec![];
+    let mut renamed=original.clone();renamed.boards[0].title="改名".into();edits.push(renamed);
+    let mut resized=original.clone();resized.boards[0].cards[0].width=Some(400);edits.push(resized);
+    let mut moved=original.clone();moved.boards[0].cards[0].x=Some(200);edits.push(moved);
+    let mut configured=original.clone();configured.boards[0].cards[0].config=json!({"filter":"changed"});edits.push(configured);
+    let mut removed=original.clone();removed.boards[0].cards.clear();edits.push(removed);
+    let mut removed_board=original.clone();removed_board.boards.pop();edits.push(removed_board);
+    for mut edited in edits {
+        edited.layout_locked=false;
+        assert!(state.save_from_canvas(edited).is_err());
+        assert!(state.layout.lock().unwrap().boards==original.boards);
+    }
+    let partial:Presentation=serde_json::from_value(json!({"active":"second","pinned":true})).unwrap();
+    state.save_presentation(partial).unwrap();
+    let saved=state.layout.lock().unwrap();assert_eq!(saved.active,"second");assert!(saved.pinned);assert!(saved.layout_locked);
+    // Presentation writes never normalize absent dimensions in legacy cards.
+    assert_eq!(saved.boards[0].cards[0].width,None);drop(saved);
+    assert!(serde_json::from_value::<Presentation>(json!({"active":"second","pinned":false,"layoutLocked":false})).is_err());
+    assert!(state.save_presentation(Presentation{active:"missing".into(),pinned:false}).is_err());
+    state.update(|layout|layout.layout_locked=false).unwrap();
+    state.save_presentation(Presentation{active:"default".into(),pinned:false}).unwrap();
+    assert!(!state.layout.lock().unwrap().layout_locked);
+    assert!(State::new(&root).unwrap().layout.lock().unwrap().boards==original.boards);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(test)]
+#[test]
+fn opening_a_plugin_cannot_add_widgets_or_overwrite_modes_while_locked(){
+    let root=std::env::temp_dir().join(format!("canvas-lock-open-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();let state=State::new(&root).unwrap();
+    state.update(|layout|layout.layout_locked=true).unwrap();
+    assert!(!state.prepare_open("machines").unwrap());
+    let saved=state.layout.lock().unwrap();assert!(saved.layout_locked);assert!(saved.desktop);assert!(saved.boards[0].cards.is_empty());drop(saved);
+    state.update(|layout|{layout.layout_locked=false;layout.view_only=true;}).unwrap();
+    assert!(!state.prepare_open("machines").unwrap());
+    assert!(state.layout.lock().unwrap().view_only);
+    state.update(|layout|layout.view_only=false).unwrap();
+    assert!(state.prepare_open("machines").unwrap());
+    assert!(!state.prepare_open("machines").unwrap());
+    assert_eq!(state.layout.lock().unwrap().boards[0].cards.len(),1);
+    std::fs::remove_dir_all(root).unwrap();
 }

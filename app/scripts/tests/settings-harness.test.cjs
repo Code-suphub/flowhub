@@ -33,9 +33,11 @@ function environment(overrides = {}, preview = false) {
   return { events, writes, setConfig: next => { config = next; } };
 }
 async function loaded(overrides, preview = false) { const env = environment(overrides, preview), store = new SettingsStore(); await store.load(); return { ...env, store }; }
-async function mount(Component, props) { const container = document.createElement('div'); document.body.append(container); const root = createRoot(container); await act(async () => root.render(React.createElement(Component, props))); return { container, root, unmount: async () => { await act(async () => root.unmount()); container.remove(); } }; }
+async function mount(Component, props) { const container = document.createElement('div'); document.body.append(container); const root = createRoot(container); await act(async () => root.render(React.createElement(Component, props))); return { container, root, unmount: async () => { await act(async () => root.unmount()); container.remove(); await act(async () => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)))); } }; }
 const button = (container, text) => [...container.querySelectorAll('button')].find(b => b.textContent.trim() === text);
-async function click(element) { if (!element) throw new Error('Missing click target'); await act(async () => element.click()); }
-async function key(element, value, extra = {}) { await act(async () => element.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true, ...extra }))); }
+// JSDOM click/keydown does not move focus as real user input does. Focus first
+// so floating controls receive the same focus transitions as the desktop UI.
+async function click(element) { if (!element) throw new Error('Missing click target'); await act(async () => { element.focus(); element.click(); }); }
+async function key(element, value, extra = {}) { await act(async () => { element.focus(); element.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true, ...extra })); }); }
 async function input(element, value) { await act(async () => { const proto = element.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, value); element.dispatchEvent(new window.Event('input', { bubbles: true })); }); }
 module.exports = { React, act, fs, path, model, SettingsStore, fixture, environment, loaded, mount, button, click, key, input };
