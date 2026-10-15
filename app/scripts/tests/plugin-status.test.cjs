@@ -2,6 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {JSDOM}=require('jsdom');
 const bundle=fs.readFileSync(require('node:path').join(__dirname,'../../ui/react/host.js'),'utf8');
 const settle=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.ok(predicate(),'React state did not settle');};
+const openSettings=async w=>{w.document.getElementById('tab-display').click();await settle(()=>w.document.getElementById('panel-display').hidden===false);};
 function setup(invoke,root='plugin-status-root',options={}){
   const dom=new JSDOM(`<div id="${root}"></div>`,{url:options.url||'http://localhost/?id=machines',runScripts:'outside-only',pretendToBeVisual:true});
   const intervals=[];dom.window.setInterval=(callback,ms)=>{intervals.push({callback,ms});return intervals.length;};dom.window.clearInterval=()=>{};
@@ -20,6 +21,7 @@ test('React status saves zero or multiple favorites and does not submit twice',a
     await settle(()=>w.document.body.textContent.includes('后台采集未开启') && w.document.querySelector('[aria-label="窗口始终置顶"]')?.getAttribute('aria-checked')==='true');
     assert.equal(w.document.querySelectorAll('.fh-status-summary [data-slot=badge]').length,4);
     assert.equal(w.document.querySelectorAll('.fh-status-row [data-slot=badge]').length,2);
+    await openSettings(w);
     for(const [index,id] of ['a','b'].entries())if(favorites.includes(id)){
       w.document.querySelectorAll('.fh-status-favorites [role=checkbox]')[index].click();
       await settle(()=>w.document.querySelectorAll('.fh-status-favorites [role=checkbox]')[index].getAttribute('aria-checked')==='true');
@@ -60,6 +62,7 @@ test('status poll started before save cannot replace saved preferences with stal
     if(args.action==='save')return {...original,preferences:args.payload};
   });t.after(()=>dom.window.close());
   await settle(()=>w.document.body.textContent.includes('后台采集未开启，显示已有缓存'));
+  await openSettings(w);
   w.document.dispatchEvent(new w.Event('visibilitychange'));await settle(()=>finishPoll);
   w.document.querySelector('[aria-label="窗口始终置顶"]').click();
   await settle(()=>w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked')==='true');button('保存设置').click();
@@ -70,6 +73,7 @@ test('status poll started before save cannot replace saved preferences with stal
 const rowIds=w=>[...w.document.querySelectorAll('.fh-status-row')].map(row=>row.dataset.rowId);
 const summaryButton=(w,label)=>[...w.document.querySelectorAll('.fh-status-summary button')].find(button=>button.textContent.startsWith(label+' '));
 const scopeButton=(w,label)=>[...w.document.querySelectorAll('.fh-status-scopes button')].find(button=>button.textContent===label);
+const favoriteControl=(w,id)=>w.document.querySelector(`label[for="favorite-${id}"]`).closest('[data-slot="field"]').querySelector('[role="checkbox"]');
 test('demo overview summarizes all states, limits to five and provides scopes and toggleable filters',async t=>{
   const {dom,w,button}=setup(undefined,'plugin-status-root',{url:'http://localhost/plugin-status.html?preview=demo'});t.after(()=>dom.window.close());
   await settle(()=>rowIds(w).length===5);
@@ -79,7 +83,9 @@ test('demo overview summarizes all states, limits to five and provides scopes an
   assert.equal(summaryButton(w,'过期').textContent,'过期 1');
   assert.equal(summaryButton(w,'未采集').textContent,'未采集 1');
   assert.match(w.document.body.textContent,/演示数据.*只读预览/);
+  await openSettings(w);
   assert.equal(button('打开插件 ↗').disabled,true);assert.equal(button('保存设置').disabled,true);assert.equal(button('打开菜单栏下拉').disabled,true);
+  w.document.getElementById('tab-status').click();await settle(()=>w.document.getElementById('panel-status').hidden===false);
   summaryButton(w,'正常').click();await settle(()=>rowIds(w).length===4);
   assert.equal(summaryButton(w,'正常').getAttribute('aria-pressed'),'true');
   assert.equal(summaryButton(w,'异常').textContent,'异常 2');
@@ -165,8 +171,37 @@ test('dirty preferences survive a poll and native status ignores the browser dem
   const calls=[],data={preferences:{tray:false,pinned:false,favorites:[]},snapshot:{title:'真实机器',rows:[{id:'a',name:'A',status:'healthy'}]}};
   const {dom,w,intervals,button}=setup(async(command,args)=>{calls.push(args);return structuredClone(data);},'plugin-status-root',{url:'http://localhost/plugin-status.html?id=machines&preview=demo'});t.after(()=>dom.window.close());
   await settle(()=>rowIds(w).length===1);assert.equal(w.document.querySelector('h1').textContent,'真实机器');assert.doesNotMatch(w.document.body.textContent,/演示数据/);
+  await openSettings(w);
   w.document.querySelector('[aria-label="窗口始终置顶"]').click();await settle(()=>w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked')==='true');
   intervals[0].callback();await settle(()=>calls.filter(call=>call.action==='get').length===2);await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked'),'true');
   assert.equal(button('保存设置').disabled,false);
+});
+
+test('status and display tabs preserve filters, expansion and dirty settings across keyboard navigation and polling',async t=>{
+  let data={preferences:{tray:false,pinned:false,favorites:[]},snapshot:{monitoring:true,rows:[{id:'a',name:'A',status:'error'},{id:'b',name:'B',status:'healthy'}]}},finish;
+  const {dom,w,intervals,button}=setup(async(command,args)=>{
+    if(args.action==='save')return new Promise(resolve=>{finish=()=>resolve({...data,preferences:args.payload});});
+    return structuredClone(data);
+  });t.after(()=>dom.window.close());await settle(()=>rowIds(w).length===2);
+  const statusTab=w.document.getElementById('tab-status'),settingsTab=w.document.getElementById('tab-display');
+  assert.equal(w.document.querySelector('details'),null);
+  assert.equal(statusTab.getAttribute('role'),'tab');assert.equal(statusTab.getAttribute('aria-selected'),'true');
+  assert.equal(w.document.getElementById(settingsTab.getAttribute('aria-controls')).hidden,true);
+  scopeButton(w,'全部').click();summaryButton(w,'异常').click();await settle(()=>rowIds(w).length===1);
+  const rowToggle=w.document.querySelector('[data-row-id=a] button');rowToggle.click();await settle(()=>rowToggle.getAttribute('aria-expanded')==='true');
+  statusTab.focus();statusTab.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+  await settle(()=>settingsTab.getAttribute('aria-selected')==='true');assert.equal(w.document.activeElement,settingsTab);
+  assert.equal(w.document.getElementById('panel-status').hidden,true);
+  w.document.querySelector('[aria-label="窗口始终置顶"]').click();await settle(()=>w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked')==='true');
+  favoriteControl(w,'b').click();await settle(()=>favoriteControl(w,'b').getAttribute('aria-checked')==='true');
+  data.snapshot.rows[0].name='A 更新';intervals[0].callback();await settle(()=>w.document.querySelector('[data-row-id=a]').textContent.includes('A 更新'));
+  settingsTab.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true}));await settle(()=>statusTab.getAttribute('aria-selected')==='true');
+  assert.equal(scopeButton(w,'全部').getAttribute('aria-pressed'),'true');assert.equal(summaryButton(w,'异常').getAttribute('aria-pressed'),'true');
+  assert.equal(rowToggle.getAttribute('aria-expanded'),'true');
+  statusTab.dispatchEvent(new w.KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}));await settle(()=>settingsTab.getAttribute('aria-selected')==='true');
+  assert.equal(w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked'),'true');assert.equal(favoriteControl(w,'b').getAttribute('aria-checked'),'true');
+  button('保存设置').click();await settle(()=>finish);
+  statusTab.click();await settle(()=>statusTab.getAttribute('aria-selected')==='true');finish();await settle(()=>w.document.body.textContent.includes('显示设置已保存'));
+  await openSettings(w);assert.equal(w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked'),'true');assert.equal(favoriteControl(w,'b').getAttribute('aria-checked'),'true');
 });

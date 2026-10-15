@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
-import { Button } from '../shared/ui';
+import { Button, Tabs } from '../shared/ui';
 import { Switch } from '../shared/controls';
 import { Checkbox } from '../components/ui/checkbox';
 import { Badge } from '../components/ui/badge';
@@ -18,6 +18,7 @@ export function PluginStatus() {
     return refreshOrders({ overview: [], all: [], favorites: [] }, sample?.snapshot?.rows || [], sample?.preferences.favorites || []);
   });
   const [scope, setScope] = useState<Scope>('overview'), [filter, setFilter] = useState<RowStatus | null>(null);
+  const [tab, setTab] = useState('status');
   const [expanded, setExpanded] = useState<string[]>([]), [now, setNow] = useState(Date.now);
   const [message, setMessage] = useState(''), [readError, setReadError] = useState(''), [saving, setSaving] = useState(false);
   const dirty = useRef(false), pending = useRef(false), alive = useRef(true), savingRef = useRef(false), revision = useRef(0);
@@ -78,10 +79,12 @@ export function PluginStatus() {
   const empty = !rows.length ? '暂无机器，请在插件中添加。' : scope === 'favorites' && !scoped.length ? '尚未关注机器，请在显示设置中勾选并保存。' : '当前筛选无结果。';
   return <main className="fh-root fh-status-page">
     <header><h1>{snapshot?.title || '插件状态'}</h1><Button disabled={!available} onClick={() => void api('plugin').catch(error => setMessage(String(error)))}>打开插件 ↗</Button></header>
+    {available || demo ? <Tabs label="插件状态页面" value={tab} onChange={setTab} items={[{ id: 'status', label: '状态' }, { id: 'display', label: '显示设置' }]} /> : null}
     <p role="status" className="fh-status-activity">{activity}</p>
     {readError ? <p role="alert">{readError}{snapshot ? '，继续显示上次缓存。' : ''}</p> : null}
     {snapshot?.error ? <p role="alert">采集异常：{snapshot.error}</p> : null}
     {message ? <p role="status">{message}</p> : null}
+    <section id="panel-status" role={available || demo ? 'tabpanel' : undefined} aria-labelledby={available || demo ? 'tab-status' : undefined} tabIndex={available || demo ? 0 : undefined} hidden={tab !== 'status'}>
     {snapshot ? <>
       <nav className="fh-status-scopes" aria-label="查看范围">{(Object.entries(scopes) as [Scope, string][]).map(([value, label]) => <Button key={value} size="sm" variant={scope === value ? 'secondary' : 'ghost'} aria-pressed={scope === value} onClick={() => changeScope(value)}>{label}</Button>)}</nav>
       <div className="fh-status-summary" role="group" aria-label="状态筛选">
@@ -105,7 +108,8 @@ export function PluginStatus() {
       </section>
       {scope === 'overview' && rows.length > visible.length ? <Button className="fh-status-show-all" variant="ghost" onClick={() => changeScope('all')}>查看全部 {rows.length} 台</Button> : null}
     </> : null}
-    {available || demo ? <details className="fh-status-settings"><summary>显示设置</summary><div className="fh-row"><span>显示菜单栏状态</span><Switch label="显示菜单栏状态" checked={draft.tray} disabled={saving || !canConfigure} onChange={tray => edit({ ...draft, tray })}/></div>
+    </section>
+    {available || demo ? <section id="panel-display" role="tabpanel" aria-labelledby="tab-display" tabIndex={0} hidden={tab !== 'display'} className="fh-status-settings"><div className="fh-row"><span>显示菜单栏状态</span><Switch label="显示菜单栏状态" checked={draft.tray} disabled={saving || !canConfigure} onChange={tray => edit({ ...draft, tray })}/></div>
       <Button disabled={!available || saving} onClick={() => void api('menu').catch(error => setMessage(String(error)))}>打开菜单栏下拉</Button>
       <div className="fh-row"><span>窗口始终置顶</span><Switch label="窗口始终置顶" checked={draft.pinned} disabled={saving || !canConfigure} onChange={pinned => edit({ ...draft, pinned })}/></div>
       <FieldSet><FieldLegend variant="label">关注机器</FieldLegend><p className="fh-status-scope-note">勾选并保存后可在“关注”范围查看，概览优先展示。</p>
@@ -115,6 +119,6 @@ export function PluginStatus() {
         </Field>)}</FieldGroup>
       </FieldSet>
       <Button disabled={saving || !canConfigure} onClick={() => void save()}>{saving ? '保存中…' : '保存设置'}</Button>
-    </details> : null}
+    </section> : null}
   </main>;
 }
