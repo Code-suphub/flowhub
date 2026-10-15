@@ -2,11 +2,13 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {JSDOM}=require('jsdom');
 const bundle=fs.readFileSync(require('node:path').join(__dirname,'../../ui/react/host.js'),'utf8');
 const settle=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.ok(predicate(),'React state did not settle');};
-function setup(invoke,root='plugin-status-root'){
-  const dom=new JSDOM(`<div id="${root}"></div>`,{url:'http://localhost/?id=machines',runScripts:'outside-only',pretendToBeVisual:true});
+function setup(invoke,root='plugin-status-root',options={}){
+  const dom=new JSDOM(`<div id="${root}"></div>`,{url:options.url||'http://localhost/?id=machines',runScripts:'outside-only',pretendToBeVisual:true});
+  const intervals=[];dom.window.setInterval=(callback,ms)=>{intervals.push({callback,ms});return intervals.length;};dom.window.clearInterval=()=>{};
+  if(options.now)dom.window.Date.now=()=>options.now;
   if(invoke)dom.window.__TAURI__={core:{invoke}};
   dom.window.eval(bundle);
-  return {dom,w:dom.window,button:label=>[...dom.window.document.querySelectorAll('button')].find(x=>x.textContent===label)};
+  return {dom,w:dom.window,intervals,button:label=>[...dom.window.document.querySelectorAll('button')].find(x=>x.textContent===label)};
 }
 test('React status saves zero or multiple favorites and does not submit twice',async t=>{
   for(const favorites of [[],['a','b']]){
@@ -63,4 +65,108 @@ test('status poll started before save cannot replace saved preferences with stal
   await settle(()=>w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked')==='true');button('保存设置').click();
   await settle(()=>w.document.body.textContent.includes('显示设置已保存'));finishPoll();await new Promise(resolve=>setTimeout(resolve,20));
   assert.equal(w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked'),'true');
+});
+
+const rowIds=w=>[...w.document.querySelectorAll('.fh-status-row')].map(row=>row.dataset.rowId);
+const summaryButton=(w,label)=>[...w.document.querySelectorAll('.fh-status-summary button')].find(button=>button.textContent.startsWith(label+' '));
+const scopeButton=(w,label)=>[...w.document.querySelectorAll('.fh-status-scopes button')].find(button=>button.textContent===label);
+test('demo overview summarizes all states, limits to five and provides scopes and toggleable filters',async t=>{
+  const {dom,w,button}=setup(undefined,'plugin-status-root',{url:'http://localhost/plugin-status.html?preview=demo'});t.after(()=>dom.window.close());
+  await settle(()=>rowIds(w).length===5);
+  assert.deepEqual(rowIds(w),['gateway','worker','archive','new-node','database']);
+  assert.equal(summaryButton(w,'正常').textContent,'正常 4');
+  assert.equal(summaryButton(w,'异常').textContent,'异常 2');
+  assert.equal(summaryButton(w,'过期').textContent,'过期 1');
+  assert.equal(summaryButton(w,'未采集').textContent,'未采集 1');
+  assert.match(w.document.body.textContent,/演示数据.*只读预览/);
+  assert.equal(button('打开插件 ↗').disabled,true);assert.equal(button('保存设置').disabled,true);assert.equal(button('打开菜单栏下拉').disabled,true);
+  summaryButton(w,'正常').click();await settle(()=>rowIds(w).length===4);
+  assert.equal(summaryButton(w,'正常').getAttribute('aria-pressed'),'true');
+  assert.equal(summaryButton(w,'异常').textContent,'异常 2');
+  button('查看全部 8 台').click();await settle(()=>rowIds(w).length===8);
+  assert.equal(scopeButton(w,'全部').getAttribute('aria-pressed'),'true');
+  assert.equal(summaryButton(w,'全部状态').getAttribute('aria-pressed'),'true');
+  scopeButton(w,'关注').click();await settle(()=>rowIds(w).length===2);
+  assert.deepEqual(rowIds(w),['database','backup']);assert.equal(summaryButton(w,'正常').textContent,'正常 2');
+  summaryButton(w,'异常').click();await settle(()=>w.document.body.textContent.includes('当前筛选无结果'));
+  summaryButton(w,'异常').click();await settle(()=>rowIds(w).length===2);
+});
+
+test('overview fills healthy machines and unknown status never becomes healthy from its metrics',async t=>{
+  const data={preferences:{tray:false,pinned:false,favorites:['b']},snapshot:{monitoring:true,rows:[
+    {id:'a',name:'普通机器',status:'healthy',values:{}},
+    {id:'b',name:'关注机器',status:'healthy'},
+    {id:'c',name:'未知状态',status:'unexpected',values:{cpu:0}},
+  ]}};
+  const {dom,w}=setup(async()=>data);t.after(()=>dom.window.close());await settle(()=>rowIds(w).length===3);
+  assert.deepEqual(rowIds(w),['c','b','a']);
+  assert.equal(summaryButton(w,'正常').textContent,'正常 2');assert.equal(summaryButton(w,'未采集').textContent,'未采集 1');
+  assert.match(w.document.querySelector('[data-row-id=c]').textContent,/未采集.*CPU 0.0%/);
+  assert.match(w.document.querySelector('[data-row-id=a] .fh-status-key-metric').textContent,/—/);
+});
+
+test('row expansion exposes complete metrics and timestamps without turning missing or invalid data into zero',async t=>{
+  const now=1700000000000;
+  const data={preferences:{tray:false,pinned:false,favorites:[]},snapshot:{rows:[
+    {id:'a',name:'有限数据',status:'healthy',at:now-125000,values:{memory:12.5,disk:Infinity}},
+    {id:'b',name:'未来时间',status:'stale',at:now+60000,values:{cpu:NaN}},
+    {id:'c',name:'无效时间',status:'unknown',at:1e40},
+  ]}};
+  const {dom,w}=setup(async()=>data,'plugin-status-root',{now});t.after(()=>dom.window.close());await settle(()=>rowIds(w).length===3);
+  const row=w.document.querySelector('[data-row-id=a]'),toggle=row.querySelector('button');
+  assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  assert.equal(w.document.getElementById(toggle.getAttribute('aria-controls')).hidden,true);
+  assert.equal(row.querySelector('.fh-status-key-metric').textContent,'内存 12.5%');
+  assert.equal(row.querySelector('.fh-status-age').textContent,'更新于 2 分钟前');
+  toggle.click();await settle(()=>toggle.getAttribute('aria-expanded')==='true');
+  assert.deepEqual([...row.querySelectorAll('dd')].map(node=>node.textContent),['—','12.5%','—']);
+  assert.equal(row.querySelector('time').dateTime,new Date(now-125000).toISOString());
+  assert.equal(w.document.querySelector('[data-row-id=b] .fh-status-age').textContent,'采集时间在未来');
+  assert.equal(w.document.querySelector('[data-row-id=c] .fh-status-age').textContent,'尚无有效采集时间');
+});
+
+test('polls preserve row order, expanded DOM and focus while appending and removing machine IDs',async t=>{
+  let state={preferences:{tray:false,pinned:false,favorites:[]},snapshot:{monitoring:true,rows:[
+    {id:'a',name:'A',status:'error'}, {id:'b',name:'B',status:'healthy'}, {id:'c',name:'C',status:'healthy'},
+  ]}};
+  const {dom,w,intervals}=setup(async()=>structuredClone(state));t.after(()=>dom.window.close());await settle(()=>rowIds(w).length===3);
+  const row=w.document.querySelector('[data-row-id=b]'),toggle=row.querySelector('button');toggle.click();toggle.focus();
+  await settle(()=>toggle.getAttribute('aria-expanded')==='true');
+  state.snapshot.rows=[{id:'c',name:'C',status:'error'},{id:'d',name:'D',status:'error'},{id:'b',name:'B',status:'stale'},{id:'a',name:'A',status:'healthy'}];
+  intervals.find(timer=>timer.ms===15000).callback();await settle(()=>rowIds(w).length===4);
+  assert.deepEqual(rowIds(w),['a','b','c','d']);
+  assert.equal(w.document.querySelector('[data-row-id=b]'),row);assert.equal(w.document.activeElement,toggle);assert.equal(toggle.getAttribute('aria-expanded'),'true');
+  state.snapshot.rows=state.snapshot.rows.filter(row=>row.id!=='a');intervals[0].callback();await settle(()=>rowIds(w).length===3);
+  assert.deepEqual(rowIds(w),['b','c','d']);assert.equal(w.document.activeElement,toggle);
+  scopeButton(w,'全部').click();await settle(()=>scopeButton(w,'全部').getAttribute('aria-pressed')==='true');
+  assert.deepEqual(rowIds(w),['c','d','b']);
+  state.snapshot.rows=state.snapshot.rows.filter(row=>row.id!=='b');intervals[0].callback();await settle(()=>rowIds(w).length===2);
+  state.snapshot.rows.push({id:'b',name:'重新接入的 B',status:'healthy'});intervals[0].callback();await settle(()=>rowIds(w).length===3);
+  assert.equal(w.document.querySelector('[data-row-id=b] button').getAttribute('aria-expanded'),'false');
+});
+
+test('empty machines, empty favorites, unmatched filters, waiting and failed reads have distinct messages',async t=>{
+  const base={preferences:{tray:false,pinned:false,favorites:[]},snapshot:{rows:[]}};
+  const empty=setup(async()=>base);t.after(()=>empty.dom.window.close());await settle(()=>empty.w.document.body.textContent.includes('暂无机器'));
+  const waiting=setup(async()=>({preferences:base.preferences}));t.after(()=>waiting.dom.window.close());await settle(()=>waiting.w.document.body.textContent.includes('等待插件状态'));
+  assert.equal(waiting.w.document.querySelector('.fh-status-empty'),null);
+  const normal=setup(async()=>({...base,snapshot:{rows:[{id:'a',name:'A',status:'healthy'}]}}));t.after(()=>normal.dom.window.close());await settle(()=>rowIds(normal.w).length===1);
+  scopeButton(normal.w,'关注').click();await settle(()=>normal.w.document.body.textContent.includes('尚未关注机器'));
+  scopeButton(normal.w,'全部').click();await settle(()=>rowIds(normal.w).length===1);
+  summaryButton(normal.w,'异常').click();await settle(()=>normal.w.document.body.textContent.includes('当前筛选无结果'));
+  let fail=false;
+  const cached=setup(async()=>{if(fail)throw Error('service unavailable');return {...base,snapshot:{monitoring:false,rows:[{id:'s',name:'旧缓存',status:'stale'}]}};});t.after(()=>cached.dom.window.close());await settle(()=>rowIds(cached.w).length===1);
+  fail=true;cached.intervals[0].callback();await settle(()=>cached.w.document.body.textContent.includes('继续显示上次缓存'));
+  assert.match(cached.w.document.body.textContent,/后台采集未开启/);assert.equal(summaryButton(cached.w,'过期').textContent,'过期 1');
+  fail=false;cached.intervals[0].callback();await settle(()=>!cached.w.document.querySelector('[role=alert]'));
+});
+
+test('dirty preferences survive a poll and native status ignores the browser demo flag',async t=>{
+  const calls=[],data={preferences:{tray:false,pinned:false,favorites:[]},snapshot:{title:'真实机器',rows:[{id:'a',name:'A',status:'healthy'}]}};
+  const {dom,w,intervals,button}=setup(async(command,args)=>{calls.push(args);return structuredClone(data);},'plugin-status-root',{url:'http://localhost/plugin-status.html?id=machines&preview=demo'});t.after(()=>dom.window.close());
+  await settle(()=>rowIds(w).length===1);assert.equal(w.document.querySelector('h1').textContent,'真实机器');assert.doesNotMatch(w.document.body.textContent,/演示数据/);
+  w.document.querySelector('[aria-label="窗口始终置顶"]').click();await settle(()=>w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked')==='true');
+  intervals[0].callback();await settle(()=>calls.filter(call=>call.action==='get').length===2);await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(w.document.querySelector('[aria-label="窗口始终置顶"]').getAttribute('aria-checked'),'true');
+  assert.equal(button('保存设置').disabled,false);
 });
