@@ -58,3 +58,37 @@ test('mount/dispose removes subscriptions and the native diagnostic bridge; remo
   unmount();assert.equal(w.FlowHubSearchDiagnostics,undefined);assert.equal(Object.keys(events).length,0);
   const dispose=remount();t.after(dispose);await wait(()=>w.FlowHubSearchDiagnostics?.inspect().initialized);
 });
+
+test('long app titles and paths collapse until selected or explicitly expanded without activating the row',async t=>{
+  const apps=['A','B'].map(id=>({id,title:`${id} ${'长应用名称'.repeat(28)} TITLE-END-${id}`,path:`/Applications/${'Long Directory/'.repeat(25)}${id}-PATH-END.app`}));
+  const {w,scope,key,calls}=await setup(t,{search:(id,args,fixture)=>id==='app'?(args.offset?[]:apps):fixture[id]||[]});await scope('app');
+  const rows=[...w.document.querySelectorAll('.app-result')];assert.equal(rows.length,2);
+  assert.equal(rows[0].querySelector('h3').textContent,apps[0].title);assert.match(rows[0].textContent,/A-PATH-END/);
+  assert.doesNotMatch(rows[1].textContent,/B-PATH-END/);assert.equal(rows[1].dataset.fullContent,'false');
+  key('ArrowDown');await wait(()=>rows[1].getAttribute('aria-selected')==='true');
+  assert.equal(rows[1].querySelector('h3').textContent,apps[1].title);assert.match(rows[1].textContent,/B-PATH-END/);assert.doesNotMatch(rows[0].textContent,/A-PATH-END/);
+  const before=calls.filter(call=>call[0]==='action').length;
+  rows[0].querySelector('.search-content-toggle').click();await wait(()=>rows[0].dataset.fullContent==='true');
+  assert.match(rows[0].textContent,/A-PATH-END/);assert.equal(calls.filter(call=>call[0]==='action').length,before);
+  key('Enter');await wait(()=>calls.some(call=>call[0]==='action'&&call[3].path===apps[1].path));
+});
+
+test('multi-line commands preserve complete selected content and explicit expansion across unrelated renders',async t=>{
+  const command='first line\nsecond line\nthird line\nCOMMAND-END';
+  const memos=['a','b'].map(id=>({id,title:'命令 '+id,category:'测试',content:command}));
+  const {w,scope,calls,input}=await setup(t,{search:(id,args,fixture)=>id==='memo'?(args.offset?[]:memos):fixture[id]||[]});await scope('memo');
+  const rows=[...w.document.querySelectorAll('.memo-result')];assert.equal(rows[0].querySelector('code').textContent,command);assert.doesNotMatch(rows[1].querySelector('code').textContent,/COMMAND-END/);
+  rows[1].querySelector('.search-content-toggle').click();await wait(()=>rows[1].querySelector('code').textContent===command);
+  assert.equal(calls.filter(call=>call[0]==='action').length,0);
+  await input('命令');assert.equal(w.document.querySelectorAll('.memo-result')[1],rows[1]);assert.equal(rows[1].querySelector('code').textContent,command);
+});
+
+test('clipboard previews use two lines before selection and expose the full original only on explicit expansion',async t=>{
+  const contents=['first\nsecond\nthird\nfourth\nfifth\nCLIP-END','other\nsecond\nthird\nfourth\nfifth\nOTHER-END'];
+  const {w,scope,key,calls}=await setup(t,{readonly:true,search:(id,args,fixture)=>id==='clipboard'?(args.offset?[]:contents.map((content,i)=>({id:i+1,kind:'text',content}))):fixture[id]||[]});await scope('clipboard');
+  const rows=[...w.document.querySelectorAll('.clipboard-result')];assert.match(rows[0].querySelector('.clipboard-title').textContent,/fifth/);assert.doesNotMatch(rows[1].querySelector('.clipboard-title').textContent,/third/);
+  key('ArrowDown');await wait(()=>rows[1].getAttribute('aria-selected')==='true');assert.match(rows[1].querySelector('.clipboard-title').textContent,/fifth/);assert.doesNotMatch(rows[0].querySelector('.clipboard-title').textContent,/third/);
+  rows[1].querySelector('[data-clipboard-toggle]').click();await wait(()=>rows[1].querySelector('.clipboard-title').textContent==='other\nsecond\nthird\nfourth\nfifth\nOTHER-END');
+  assert.equal(calls.filter(call=>call[0]==='action').length,0);assert.equal(w.localStorage.length,0);
+  assert.doesNotMatch(rows[1].querySelector('.clipboard-meta').textContent,/·\s*·/);
+});

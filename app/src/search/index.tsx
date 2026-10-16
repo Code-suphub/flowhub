@@ -7,9 +7,8 @@ import { Results, resultActions } from './Results';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
 
-function KeyboardHint({selected,scope}: {selected?:SearchItem;scope?:string}) {
+function KeyboardHint({selected,usageVisible}: {selected?:SearchItem;usageVisible?:boolean}) {
   const hints:string[]=[];
-  if(scope==='all') hints.push('←→ 切换常用与最近');
   hints.push('Tab 切换范围','⌘K 返回搜索框');
   if(selected?.type==='clipboard') {
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
@@ -21,7 +20,7 @@ function KeyboardHint({selected,scope}: {selected?:SearchItem;scope?:string}) {
   else if(selected?.toolId)hints.push('F6 操作按钮');
   const toolActions:Record<string,string>={calculation:'复制结果',timestamp:'复制结果',jwt:'复制结果',json:'复制结果','url-tool':'复制结果',ip:'复制信息',proxy:'复制信息',dns:'查询并复制',cloudflare:'检测',port:'复制详情',network:'执行'};
   const action=!selected?'打开':toolActions[selected.type] || (selected.toolId?'执行':selected.type==='memo' || selected.type==='clipboard'?'粘贴':selected.type==='twofa'?'复制验证码':selected.type==='web-add'?'添加网页':'打开');
-  return <span id="keyboardHint" className="search-keyboard-hint"><span>{selected?'↑↓ 选择 · ↵ '+action:'输入以搜索 · ↑↓ 选择结果'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
+  return <span id="keyboardHint" className="search-keyboard-hint"><span>{selected?'↑↓ 选择 · ↵ '+action:'输入以搜索 · ↑↓ 选择结果'}{usageVisible&&(!selected||selected.usageSection)?' · F6 常用/最近':''}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
 }
 
 function ActionMenu({item,index,x,y,onDismiss}: {item:SearchItem;index:number;x:number;y:number;onDismiss:()=>void}) {
@@ -52,18 +51,22 @@ function Search() {
   useLayoutEffect(()=>{
     const plan=snapshot?.plan, c=controller.current;
     if(!plan || !c || typeof ResizeObserver==='undefined') return;
+    let frame:number|undefined;
     const observer=new ResizeObserver(entries=>{
+      let changed=false;
       for(const entry of entries) {
         const id=(entry.target as HTMLElement).dataset.measureKey;
-        if(id)c.resultWindow.heights.set(id,entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height);
+        const height=entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height;
+        if(id && height>0 && Math.abs((c.resultWindow.heights.get(id) || 0)-height)>.5){c.resultWindow.heights.set(id,height);changed=true;}
       }
+      if(changed && frame===undefined)frame=requestAnimationFrame(()=>{frame=undefined;c.render({preserveScroll:true});});
     });
     for(const group of plan.groups) {
       const row=root.current?.querySelector<HTMLElement>(`.result[data-i="${group.start}"]`);
       const element=row?.closest<HTMLElement>('[data-group]') || row;
       if(element){element.dataset.measureKey=group.id;observer.observe(element);}
     }
-    return ()=>observer.disconnect();
+    return ()=>{observer.disconnect();if(frame!==undefined)cancelAnimationFrame(frame);};
   },[snapshot?.plan]);
   const dispatch=(name:string)=>(event:React.SyntheticEvent)=>controller.current?.handlers[name]?.(event);
   useEffect(()=>{
@@ -75,7 +78,7 @@ function Search() {
     return ()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',escape);};
   },[actionMenu]);
   useLayoutEffect(()=>{if(actionMenu)root.current?.querySelector<HTMLElement>('.search-context-menu .tool-action')?.focus();},[actionMenu]);
-  useEffect(()=>{
+  useLayoutEffect(()=>{
     const results=root.current?.querySelector('#results');
     const open=(event:Event)=>{
       const index=(event as CustomEvent<{index:number}>).detail?.index;
@@ -111,8 +114,9 @@ function Search() {
     </div>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
+    {state?.config && !state.query.trim() && ['all','app','web'].includes(state.scope)?<div className="search-usage-switch" role="group" aria-label="快捷入口">{(['frequent','recent'] as const).map(section=><Button key={section} className="usage-switch-action tool-action" data-usage-section={section} aria-pressed={(state.usageSection || 'frequent')===section} onClick={()=>controller.current?.setUsageSection(section)}>{section==='frequent'?'常用':'最近'}</Button>)}</div>:null}
     <div id="results" role="listbox" aria-label="搜索结果" aria-busy={snapshot?.paging.loading || false} className="flex-1 min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onMouseUp={dispatch('results:mouseup')} onContextMenu={contextMenu} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>{snapshot?<Results snapshot={snapshot}/>:<p className="search-empty">配置加载中…</p>}{menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onDismiss={()=>{root.current?.querySelector<HTMLElement>('#q')?.focus({preventScroll:true});setActionMenu(null);}}/>:null}</div>
-    <footer className="search-footer flex flex-wrap justify-between gap-2"><KeyboardHint selected={selected} scope={state?.scope}/><span id="actionStatus" role="status">{snapshot?.statusText}</span><span id="runtimeMode">{document.documentElement.dataset.weborgReadonly==='true'?'只读预览':'FlowHub'}</span></footer>
+    <footer className="search-footer flex flex-wrap justify-between gap-2"><KeyboardHint selected={selected} usageVisible={Boolean(state?.config&&!state.query.trim()&&['all','app','web'].includes(state.scope))}/><span id="actionStatus" role="status">{snapshot?.statusText}</span><span id="runtimeMode">{document.documentElement.dataset.weborgReadonly==='true'?(new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'):'FlowHub'}</span></footer>
   </div>;
 }
 const mounted = new WeakMap<HTMLElement,Root>();

@@ -1,4 +1,4 @@
-import { Fragment, memo } from 'react';
+import { Fragment, memo, useState } from 'react';
 import { AppWindow, Clipboard as ClipboardIcon, File, FileText, Folder, Globe, Link2, Plus, ShieldCheck } from 'lucide-react';
 import { Button } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
@@ -7,6 +7,12 @@ import { host, type SearchItem, type SearchSnapshot } from './types';
 
 const tools = new Set(['calculation','timestamp','jwt','ip','dns','cloudflare','proxy','port','network','public-ip','json','url-tool']);
 const imageUrl = (value: unknown) => /^(https?:\/\/|data:image\/|(?:\.\/|\/)?assets\/)/i.test(String(value || ''));
+const previewText = (value: unknown, full: boolean, limit = 220) => { const text = String(value || ''); return full || text.length <= limit ? text : text.slice(0, limit) + '…'; };
+function itemMeta(item:SearchItem) {
+  if(item.type==='app')return ['应用',item.fileName,item.path].filter(Boolean).join(' · ');
+  const path=typeof item.path==='string'?item.path:item.breadcrumb || (Array.isArray(item.path)?(item.path as unknown as {title:string}[]).map(entry=>entry.title).join(' / '):'');
+  return [path,item.note,item.url].filter(Boolean).join(' · ');
+}
 function Icon({item,snapshot}: {item:SearchItem;snapshot:SearchSnapshot}) {
   let url = item.type==='app' ? item.iconUrl || snapshot.state.appResults.find((a:SearchItem)=>a.path===item.path)?.iconUrl : item.type==='clipboard'?item.imageUrl || item.fileIconUrl:imageUrl(item.icon)?item.icon:'';
   const web = ['page','web'].includes(item.type);
@@ -31,20 +37,27 @@ export function resultActions(item:SearchItem): [string,string][] {
 function ClipButton({item,action,children}: {item:SearchItem;action:string;children:React.ReactNode}) {
   return <Button className="tool-action" data-clipboard-action={action} data-clipboard-id={item.id}>{children}</Button>;
 }
-function Clipboard({item,snapshot}: {item:SearchItem;snapshot:SearchSnapshot}) {
+function Clipboard({item,snapshot,full,selected}: {item:SearchItem;snapshot:SearchSnapshot;full:boolean;selected:boolean}) {
   const content=String(item.content || ''), expanded=snapshot.state.expandedClipboard.has(Number(item.id));
-  const expandable=item.kind==='text' && (content.length>120 || content.split('\n').length>3);
-  const preview=expanded?content:content.slice(0,300).split('\n').slice(0,5).join('\n');
+  const expandable=item.kind==='text' && (content.length>120 || /\n[^\n]*\n/.test(content));
+  const preview=expanded?content:content.slice(0,selected?600:160).split('\n',selected?6:3).slice(0,selected?5:2).join('\n');
+  const stamp=item.lastSeenAt?new Date(item.lastSeenAt):null;
+  const metadata=['剪贴板',stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString():'',`${item.copyCount || 1} 次`,String(item.hash||'').slice(0,12),item.pinnedAt?'★ 已置顶':''].filter(Boolean).join(' · ');
   if(snapshot.state.editingClipboard?.id===Number(item.id)) return <><h3>编辑文本副本</h3><p className="search-meta">保存后写入一条新记录，原记录保留</p><Textarea className="clipboard-editor" data-clipboard-editor rows={5} spellCheck={false} aria-label="编辑文本副本" defaultValue={snapshot.state.editingClipboard.text} onClick={e=>e.stopPropagation()}/><div className="search-actions"><ClipButton item={item} action="edit-save">保存副本（⌘↩）</ClipButton><ClipButton item={item} action="edit-cancel">取消（Esc）</ClipButton></div></>;
-  return <><div className={`clipboard-title ${expanded?'is-expanded':''}`}>{item.kind==='image'?`图片${item.sourceName?' · '+item.sourceName:''}`:item.kind==='file'?(item.fileNames||[]).join(' · ') || `${item.fileCount || 0} 个文件`:preview+(preview.length<content.length?'…':'') || '空文本'}</div>
-    <div className="flex items-center gap-2"><p className="search-meta flex-1">剪切板 · {item.lastSeenAt?new Date(item.lastSeenAt).toLocaleString():''} · {item.copyCount || 1} 次 · {String(item.hash||'').slice(0,12)}{item.pinnedAt?' · ★ 已置顶':''}</p>{expandable?<Button className="clipboard-toggle" data-clipboard-toggle={item.id} aria-expanded={expanded}>{expanded?'⌃ 收起':'⌄ 展开'}</Button>:null}</div>
+  return <><div className={`clipboard-title ${expanded?'is-expanded':''}`}>{item.kind==='image'?`图片${item.sourceName?' · '+item.sourceName:''}`:item.kind==='file'?previewText((item.fileNames||[]).join(' · ') || `${item.fileCount || 0} 个文件`,full):preview+(preview.length<content.length?'…':'') || '空文本'}</div>
+    <div className="clipboard-meta flex items-center gap-2"><p className="search-meta flex-1">{metadata}</p>{expandable?<Button className="clipboard-toggle tool-action" data-clipboard-toggle={item.id} aria-label={expanded?'收起剪贴板完整内容':'展开剪贴板完整内容'} aria-expanded={expanded}>{expanded?'收起':'展开'}</Button>:null}</div>
   </>;
 }
 const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:number;snapshot:SearchSnapshot}) {
   const isTool=tools.has(item.type), usage=Boolean(item.usageSection);
-  return <div id={`search-result-${index}`} role="option" aria-selected={index===snapshot.state.index} className={`result ${item.type}-result ${usage?'usage-tile':''} ${index===snapshot.state.index?'active':''}`} data-i={index}>
+  const [manual,setManual]=useState<boolean|null>(null), selected=index===snapshot.state.index;
+  const meta=itemMeta(item), title=String(item.title || item.id || ''), content=String(item.content || ''), description=String(item.description || '');
+  const oversized=[title,meta,content,description].some(value=>value.length>8000), full=manual ?? (selected && !oversized);
+  const expandable=!usage&&!isTool&&item.type!=='clipboard'&&(title.length>80||meta.length>180||content.length>180||content.includes('\n')||description.length>180);
+  return <div id={`search-result-${index}`} role="option" aria-selected={selected} className={`result ${item.type}-result ${usage?'usage-tile':''} ${selected?'active':''}`} data-i={index} data-full-content={isTool?undefined:usage?false:full}>
     {!isTool && (item.type!=='clipboard'||item.kind!=='text')?<Icon item={item} snapshot={snapshot}/>:null}
-    <div className="min-w-0 flex-1">{usage?<h3 className="search-tile-title">{item.title || '未命名'}</h3>:item.type==='clipboard'?<Clipboard item={item} snapshot={snapshot}/>:isTool?<ToolContent item={item} snapshot={snapshot}/>:item.type==='memo'?<><p className="search-meta">{host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category}</p><h3>{item.title || '未命名备忘'}</h3><code className="search-command">{String(item.content||'').split('\n').slice(0,2).join('\n')}</code>{item.description?<p className="search-meta">{item.description}</p>:null}</>:item.type==='twofa'?<><h3>{item.title || item.id || '2FA'}</h3><p className="search-meta">2FA 验证码{item.issuer?' · '+item.issuer:''}</p></>:item.type==='app'?<><h3>{item.title || '未命名应用'}</h3><p className="search-meta">应用 · {item.fileName} · {item.path}</p></>:item.type==='web-add'?<><h3>添加到网页配置</h3><p className="search-meta">未找到匹配网页 · {item.url} · 右键新建</p></>:<><h3>{item.title || item.id}</h3><p className="search-meta">{typeof item.path==='string'?item.path:item.breadcrumb || (item.path as unknown as {title:string}[] || []).map(x=>x.title).join(' / ')}{item.note?' · '+item.note:''} · {item.url} · 右键编辑</p></>}
+    <div className="search-row-content min-w-0 flex-1">{usage?<h3 className="search-tile-title">{previewText(item.title || '未命名',false,80)}</h3>:item.type==='clipboard'?<Clipboard item={item} snapshot={snapshot} full={full} selected={selected}/>:isTool?<ToolContent item={item} snapshot={snapshot}/>:item.type==='memo'?<><p className="search-meta">{previewText(host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category,full)}</p><h3>{previewText(item.title || '未命名备忘',full,80)}</h3><code className="search-command">{previewText(full?content:content.split('\n',3).slice(0,2).join('\n'),full)}</code>{item.description?<p className="search-meta">{previewText(item.description,full)}</p>:null}</>:item.type==='twofa'?<><h3>{previewText(item.title || item.id || '2FA',full,80)}</h3><p className="search-meta">2FA 验证码{item.issuer?' · '+previewText(item.issuer,full):''}</p></>:item.type==='app'?<><h3>{previewText(item.title || '未命名应用',full,80)}</h3><p className="search-meta">{previewText(meta,full)}</p></>:item.type==='web-add'?<><h3>添加到网页配置</h3><p className="search-meta">未找到匹配网页 · {previewText(item.url,full)}</p></>:<><h3>{previewText(item.title || item.id,full,80)}</h3><p className="search-meta">{previewText(meta,full)}</p></>}
+      {expandable?<Button className="search-content-toggle tool-action" aria-expanded={full} onMouseDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();setManual(!full);}}>{full?'收起内容':'展开内容'}</Button>:null}
     </div>
   </div>;
 }, (before,after)=>{
@@ -62,15 +75,18 @@ const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:numb
 });
 export function Results({snapshot}: {snapshot:SearchSnapshot}) {
   if(!snapshot.state.config) return <p className="search-empty">{snapshot.statusText || '配置加载中…'}</p>;
-  if(!snapshot.items.length) return <p className="search-empty">{snapshot.paging.loading?'正在加载…':'没有匹配项'}</p>;
+  const showUsage=!snapshot.state.query.trim()&&['all','app','web'].includes(snapshot.state.scope), section=snapshot.state.usageSection || 'frequent';
+  const usageEmpty=showUsage&&!snapshot.items.some(item=>item.usageSection)?<p className="search-usage-empty">{section==='recent'?'暂无最近使用':'暂无常用入口'}</p>:null;
+  if(!snapshot.items.length) return <>{usageEmpty || <p className="search-empty">{snapshot.paging.loading?'正在加载…':'没有匹配项'}</p>}</>;
   const {items,plan}=snapshot, rows:React.ReactNode[]=[];
   for(let i=plan?.from || 0;i<(plan?.to ?? items.length);) {
     const item=items[i];
     if(item.usageSection) {
       const section=item.usageSection, group:React.ReactNode[]=[];
       while(i<(plan?.to ?? items.length) && items[i].usageSection===section) {group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot}/>);i++;}
-      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`}><div className="search-section flex justify-between"><strong>{section==='frequent'?'常用入口':'最近使用'}</strong><small>{section==='frequent'?'按热度':'刚刚打开'}</small></div><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div></section>);
+      const selected=items[snapshot.state.index];
+      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`} aria-label={section==='frequent'?'常用入口':'最近使用'}><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div>{selected?.usageSection===section?<div className="search-usage-detail"><strong>{previewText(selected.title,true)}</strong><span>{previewText(itemMeta(selected),true)}</span></div>:null}</section>);
     } else {rows.push(<Fragment key={`${item.type}:${item.id || item.path || item.url || item.title}`}><Row item={item} index={i} snapshot={snapshot}/></Fragment>);i++;}
   }
-  return <>{plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}{rows}{plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}{snapshot.paging.loading || !snapshot.paging.hasMore?<p className="search-empty">{snapshot.paging.loading?'正在加载更多…':'已经到底了'}</p>:null}</>;
+  return <>{usageEmpty}{plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}{rows}{plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}{snapshot.paging.loading || !snapshot.paging.hasMore?<p className="search-empty">{snapshot.paging.loading?'正在加载更多…':'已经到底了'}</p>:null}</>;
 }

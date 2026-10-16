@@ -11,6 +11,22 @@ if (!window.weborg) {
   const configListeners = new Set();
   const clipboardListeners = new Set();
   const usageListeners = new Set();
+  // Explicit, isolated UI fixture. Native windows and normal browser previews
+  // continue to use their existing adapters and data sources.
+  const demo = !window.__TAURI__ && /(?:^|[?&])preview=demo(?:&|$)/.test(location.search || "");
+  const demoIcon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' rx='8' fill='%236f8eaa'/%3E%3C/svg%3E";
+  const demoApplications = ["FlowHub", "Visual Studio Code · 团队共享项目与开发工具", "Safari", "Terminal", "DataGrip", "Notes", "Figma", "Preview"].map((title, index) => ({
+    id: `demo-app-${index}`, title, path: `/Applications/团队工具与长期维护项目/界面交互体验验证/${title}.app`, hay: `${title} demo 演示 应用`, iconUrl: demoIcon
+  }));
+  const demoPages = ["项目工作台", "设计规范 · 组件交互、可访问性和跨窗口导航完整说明", "代码仓库", "团队知识库", "运行状态", "发布记录", "API 参考", "产品反馈"].map((title, index) => ({
+    id: `demo-web-${index}`, title, url: `https://example.com/teams/flowhub/documentation/interaction-and-layout-review/${index}`, icon: demoIcon
+  }));
+  const demoMemos = Array.from({length:8}, (_, index) => ({id:`demo-memo-${index}`, title:index ? `开发命令 ${index}` : "查看所有服务日志并定位较长的异常上下文", category:"演示 / 开发 / 排查", content:`docker compose --project-name flowhub-preview --file /Users/demo/Projects/FlowHub/deployment/compose.production.yml logs --tail 200 --follow service-${index}`}));
+  const demoClipboard = Array.from({length:8}, (_, index) => ({id:index+1, kind:"text", content:`演示剪贴板 ${index+1}：用于验证长文本展开、键盘选择和滚动保持。\n${"这一段包含较长的工作记录与界面验收说明，展开后应完整呈现且保持选中对象。\n".repeat(8)}`, hash:`demo-clipboard-${index}`, copyCount:index+1, createdAt:"2026-10-16T08:00:00Z", lastSeenAt:"2026-10-16T08:00:00Z"}));
+  const demoConfig = {core:{},plugins:{
+    app:{enabled:true,settings:{}}, web:{enabled:true,settings:{items:[{id:"demo-folder",title:"演示 / 团队资料 / 较长的目录路径",children:demoPages}]}},
+    clipboard:{enabled:true,settings:{}}, memo:{enabled:true,settings:{items:demoMemos}}, tools:{enabled:false,settings:{}}
+  }};
   const fallbackApplications = [
     { title: "Safari", path: "/Applications/Safari.app", hay: "safari browser 浏览器" },
     { title: "Terminal", path: "/System/Applications/Utilities/Terminal.app", hay: "terminal 终端" },
@@ -19,6 +35,10 @@ if (!window.weborg) {
   ];
 
   async function getApplications(query = "", limit = 12, offset = 0, includeIcons = true) {
+    if (demo) {
+      const keyword=String(query).trim().toLowerCase();
+      return demoApplications.filter(item=>!keyword || `${item.title} ${item.hay} ${item.path}`.toLowerCase().includes(keyword)).slice(offset,offset+limit);
+    }
     try {
       const response = await fetch(`/__weborg/apps?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&icons=${includeIcons ? "1" : "0"}`, { cache: "no-store" });
       const result = await response.json();
@@ -34,6 +54,7 @@ if (!window.weborg) {
   }
 
   async function loadAppIcons(paths = []) {
+    if (demo) return Object.fromEntries(paths.filter(path=>demoApplications.some(app=>app.path===path)).map(path=>[path,demoIcon]));
     const uniquePaths = [...new Set((paths || []).filter(Boolean))];
     if (!uniquePaths.length) return {};
     const response = await fetch(`/__weborg/app-icons?paths=${encodeURIComponent(JSON.stringify(uniquePaths))}`, { cache: "no-store" });
@@ -43,6 +64,7 @@ if (!window.weborg) {
   }
 
   async function lookupDns(hostname) {
+    if (demo) throw new Error("演示模式不执行网络查询");
     const queries = await Promise.allSettled(["A", "AAAA"].map(async (type) => {
       const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(hostname)}&type=${type}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`DNS 查询失败：${response.status}`);
@@ -57,10 +79,12 @@ if (!window.weborg) {
   }
 
   async function lookupLocalIp(onProgress, options) {
+    if (demo) throw new Error("演示模式不执行网络查询");
     return window.FlowHubLookupPublicIp(onProgress, options);
   }
 
   async function lookupIp(ip) {
+    if (demo) throw new Error("演示模式不执行网络查询");
     const address = String(ip || "").trim();
     if (!address) throw new Error("IP 地址为空");
     const response = await fetch(`/__weborg/ip?ip=${encodeURIComponent(address)}`, { cache: "no-store" });
@@ -70,6 +94,7 @@ if (!window.weborg) {
   }
 
   async function inspectCloudflare(hostname) {
+    if (demo) throw new Error("演示模式不执行网络查询");
     const value = String(hostname || "").trim();
     if (!value) throw new Error("域名为空");
     const response = await fetch(`/__weborg/cloudflare?hostname=${encodeURIComponent(value)}`, { cache: "no-store" });
@@ -79,6 +104,7 @@ if (!window.weborg) {
   }
 
   async function lookupProxy() {
+    if (demo) throw new Error("演示模式不执行网络查询");
     const config = await getConfig();
     const adapter = config?.plugins?.tools?.settings?.proxyAdapter || "auto";
     const response = await fetch(`/__weborg/proxy?adapter=${encodeURIComponent(adapter)}`, { cache: "no-store" });
@@ -90,6 +116,7 @@ if (!window.weborg) {
   let configCache;
   let webPageIndex;
   function ensureConfig() {
+    if (demo) return Promise.resolve(demoConfig);
     if (!configPromise) {
       configPromise = fetch("/__weborg/config", { cache: "no-store" }).then((response) => {
         if (!response.ok) throw new Error(`读取配置失败：${response.status}`);
@@ -124,6 +151,12 @@ if (!window.weborg) {
   }
 
   async function usageSections(scope = "all") {
+    if (demo) {
+      const appEntry=app=>({...app,type:"app",usageKey:app.path});
+      const pageEntry=page=>({...page,type:"page",usageKey:page.id,breadcrumb:"演示 / 团队资料 / 交互体验验证"});
+      const allowed=item=>scope==="all" || (scope==="app" ? item.type==="app" : scope==="web" && item.type==="page");
+      return {frequent:[...demoApplications.slice(0,4).map(appEntry),...demoPages.slice(0,4).map(pageEntry)].filter(allowed),recent:[...demoPages.slice(4).map(pageEntry),...demoApplications.slice(4).map(appEntry)].filter(allowed)};
+    }
     const [config, frequentApplications, recentApplications] = await Promise.all([
       getConfig(),
       getApplications("QQ", 1),
@@ -151,6 +184,7 @@ if (!window.weborg) {
 
   let pluginsPromise;
   async function listPlugins() {
+    if (demo) return ["app","web","clipboard","memo","tools"].map((id,order)=>({id,name:{app:"应用",web:"网页",clipboard:"剪贴板",memo:"命令备忘录",tools:"工具"}[id],order,available:true,enabled:demoConfig.plugins[id].enabled,searchable:id!=="tools"}));
     if (!pluginsPromise) {
       pluginsPromise = fetch("/plugins.json", { cache: "no-store" }).then((response) => response.json());
     }
@@ -169,6 +203,7 @@ if (!window.weborg) {
     const query = String(request.query || "").trim().toLowerCase();
     const limit = Number(request.limit) || (id === "clipboard" ? 30 : 12);
     if (id === "clipboard") {
+      if (demo) return demoClipboard.filter(item=>(!query || item.content.toLowerCase().includes(query)) && (!request.kind || request.kind==="all" || item.kind===request.kind)).slice(Number(request.offset)||0,(Number(request.offset)||0)+limit).map(record=>({...record,pluginId:id}));
       const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(request.query || "")}&kind=${encodeURIComponent(request.kind || "all")}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(request.offset || 0)}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
@@ -193,6 +228,7 @@ if (!window.weborg) {
   }
 
   async function pluginAction(id, action, payload = {}) {
+    if (demo) return {ok:false,preview:true,readonly:true,reason:"演示模式仅供查看，不能执行操作"};
     if (["clipboard", "memo"].includes(id)) return { ok: false, preview: true, readonly: true, reason: "浏览器预览不能执行粘贴操作" };
     if (id === "web" && action === "activate") {
       window.open(payload.url, "_blank", "noopener,noreferrer");

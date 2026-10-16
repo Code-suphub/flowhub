@@ -2,13 +2,15 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
-test('usage rows/columns in all/app/web preserve Enter targets, modifiers, IME and launch failure feedback',async t=>{
+test('single usage group uses linear vertical navigation and preserves input arrows, Enter, modifiers and IME',async t=>{
   const {w,q,key,scope,calls,input}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
   const active=()=>w.document.querySelector('.result.active h3')?.textContent;
   for(const id of ['all','app']) {
-    await scope(id);key('ArrowRight');await wait(()=>active()==='B');
-    key('ArrowRight');await wait(()=>active()==='C');key('ArrowLeft');await wait(()=>active()==='B');
-    key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='B');
+    await scope(id);assert.equal(active(),'A');
+    assert.equal(key('ArrowRight'),true);assert.equal(active(),'A');
+    key('ArrowDown');await wait(()=>active()==='B');
+    key('ArrowDown');await wait(()=>active()==='C');key('ArrowUp');await wait(()=>active()==='B');
+    assert.ok(![...w.document.querySelectorAll('.usage-tile h3')].some(node=>node.textContent==='D'));
     key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/B.app'));
   }
   for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']) {
@@ -25,8 +27,74 @@ test('usage rows/columns in all/app/web preserve Enter targets, modifiers, IME a
   const previous=w.document.getElementById('actionStatus').textContent;
   w.weborg.pluginAction=async()=>({ok:false,cancelled:true});key('Enter');await delay(20);assert.equal(w.document.getElementById('actionStatus').textContent,previous);
   const web=await setup(t,{usage:{frequent:['A','B','C'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'})),recent:['D','E'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'}))}});
-  await web.scope('web');web.key('ArrowRight');web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='E');
-  web.key('ArrowUp');web.key('Enter');await wait(()=>web.calls.some(c=>c[0]==='action'&&c[1]==='web'&&c[3].id==='B'));
+  await web.scope('web');assert.equal(web.key('ArrowRight'),true);web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='B');
+  web.key('Enter');await wait(()=>web.calls.some(c=>c[0]==='action'&&c[1]==='web'&&c[3].id==='B'));
+});
+
+test('usage section switches reset Enter target, retain explicit empty choice and remain keyboard reachable',async t=>{
+  const {w,q,key,scope,calls}=await setup(t,{usage:{frequent:[appItem('A')],recent:[appItem('D'),{type:'page',id:'recent-web',title:'Recent website',url:'https://example.com'}]}});
+  const button=section=>w.document.querySelector(`[data-usage-section="${section}"]`);
+  await wait(()=>button('recent'));
+  key('F6');assert.equal(w.document.activeElement,button('frequent'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));assert.equal(w.document.activeElement,button('recent'));
+  const searchesBeforeSwitch=calls.filter(c=>c[0]==='search').length;
+  button('recent').focus();button('recent').click();
+  await wait(()=>w.document.querySelector('.result.active h3')?.textContent==='D');
+  assert.equal(calls.filter(c=>c[0]==='search').length,searchesBeforeSwitch,'usage switching uses the cached snapshot');
+  assert.equal(w.document.activeElement,button('recent'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true,cancelable:true}));assert.equal(w.document.activeElement,q);
+  key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/D.app'));
+  await scope('web');button('frequent').click();
+  await wait(()=>button('frequent').getAttribute('aria-pressed')==='true');
+  assert.equal(w.document.querySelectorAll('.usage-tile').length,0,'empty frequent web group does not switch to recent');
+  button('recent').click();await wait(()=>w.document.querySelector('.usage-tile h3')?.textContent==='Recent website');
+  q.focus();key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].id==='recent-web'));
+});
+
+test('initially empty frequent group defaults to recent once and later respects an explicit empty selection',async t=>{
+  const {w,events}=await setup(t,{usage:{frequent:[],recent:[appItem('Recent only')]}});
+  const button=section=>w.document.querySelector(`[data-usage-section="${section}"]`);
+  await wait(()=>button('recent')?.getAttribute('aria-pressed')==='true');
+  button('frequent').click();await wait(()=>button('frequent').getAttribute('aria-pressed')==='true');
+  events.onUsageUpdated?.();await delay(30);
+  assert.equal(button('frequent').getAttribute('aria-pressed'),'true');
+  assert.equal(w.document.querySelectorAll('.usage-tile').length,0);
+});
+
+test('F6 prioritizes the selected regular result before usage controls',async t=>{
+  const {w,q,key}=await setup(t);
+  await wait(()=>w.document.querySelector('.clipboard-result.active [data-clipboard-toggle]'));
+  key('F6');assert.ok(w.document.activeElement.matches('[data-clipboard-toggle]'));
+  const advance=()=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+  advance();await wait(()=>w.document.activeElement.matches('.search-context-menu .tool-action'));
+  assert.equal(w.document.activeElement.dataset.clipboardAction,'pin');
+  advance();assert.equal(w.document.activeElement.dataset.clipboardAction,'plain');
+  advance();assert.equal(w.document.activeElement.dataset.clipboardAction,'edit');
+  advance();assert.equal(w.document.activeElement.dataset.clipboardAction,'delete');
+  advance();assert.equal(w.document.activeElement.dataset.usageSection,'frequent');
+  advance();assert.equal(w.document.activeElement.dataset.usageSection,'recent');
+  advance();assert.equal(w.document.activeElement,q);
+});
+test('F6 opens a regular application menu before the visible usage switches',async t=>{
+  const {w,q,key,scope}=await setup(t);await scope('app');q.focus();
+  assert.ok(w.document.querySelector('[data-usage-section="frequent"]'));
+  key('F6');await wait(()=>w.document.activeElement.matches('.search-context-menu .tool-action'));
+  assert.equal(w.document.activeElement.dataset.resultAction,'open');
+  const advance=()=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+  advance();assert.equal(w.document.activeElement.dataset.resultAction,'copy');
+  advance();assert.equal(w.document.activeElement.dataset.usageSection,'frequent');
+  advance();assert.equal(w.document.activeElement.dataset.usageSection,'recent');
+  advance();assert.equal(w.document.activeElement,q);
+});
+test('F6 reaches long application expansion, menu actions and usage switches in sequence',async t=>{
+  const {w,q,key,scope}=await setup(t,{search:(id,args,fixture)=>id==='app'?[{id:'long',title:'Long app',path:'/Applications/'+('Long Directory/'.repeat(30))+'End.app'}]:fixture[id]||[]});await scope('app');q.focus();
+  key('F6');assert.ok(w.document.activeElement.matches('.search-content-toggle'));
+  const advance=()=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+  advance();await wait(()=>w.document.activeElement.dataset.resultAction==='open');
+  advance();assert.equal(w.document.activeElement.dataset.resultAction,'copy');
+  advance();assert.equal(w.document.activeElement.dataset.usageSection,'frequent');
+  advance();assert.equal(w.document.activeElement.dataset.usageSection,'recent');
+  advance();assert.equal(w.document.activeElement,q);
 });
 test('application metadata updates per query; native icon hydration stays asynchronous and ignores stale replies',async t=>{
   let resolveOld;const iconCalls=[];

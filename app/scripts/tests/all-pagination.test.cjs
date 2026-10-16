@@ -1,6 +1,6 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const s=fs.readFileSync(require('node:path').join(__dirname,'../../ui/search/search.js'),'utf8');
-const block=s.slice(s.indexOf('let allResultKeys'),s.indexOf('function usageIndices'));
+const block=s.slice(s.indexOf('let allResultKeys'),s.indexOf('function moveVertical'));
 const clips=Array.from({length:40},(_,i)=>({type:'clipboard',id:i+1}));
 let rendered=0;
 const state={scope:'all',query:'',clipboardLoadedQuery:'',appLoadedQuery:'',webLoadedQuery:'',memoLoadedQuery:'',clipboardHasMore:false,appHasMore:false,webHasMore:false,memoHasMore:false};

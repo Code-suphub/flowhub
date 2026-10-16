@@ -11,7 +11,7 @@ const ctx = vm.createContext({
   usageMatches: () => [], toolSuggestions: () => [], webAddSuggestion: () => null,
   withoutUsageDuplicates: (items) => items,
 });
-vm.runInContext(source.slice(source.indexOf('let allResultKeys'), source.indexOf('function usageIndices')), ctx);
+vm.runInContext(source.slice(source.indexOf('let allResultKeys'), source.indexOf('function moveVertical')), ctx);
 const types = () => Array.from(ctx.matches(), item => item.type);
 assert.deepEqual(types(), ['app', 'page', 'clipboard']);
 state.config = { core: { webBeforeClipboard: false } };
@@ -37,6 +37,12 @@ vm.runInContext(source.slice(source.indexOf('function usageMatches('), source.in
 state.query = '';
 state.usageSections = { frequent: [{ type: 'page', id: 'p' }, { type: 'app', id: 'a' }], recent: [] };
 assert.deepEqual(Array.from(ctx.usageMatches(), item => item.type), ['page', 'app']);
+state.usageSections.recent=[{type:'page',id:'recent-page'}];
+state.usageSection='recent';
+assert.deepEqual(Array.from(ctx.usageMatches(),item=>item.id),['recent-page']);
+state.scope='app';assert.equal(ctx.usageMatches().length,0,'explicit recent group stays empty after source filtering');
+state.scope='web';assert.deepEqual(Array.from(ctx.usageMatches(),item=>item.id),['recent-page']);
+state.scope='all';state.usageSection='frequent';
 ctx.setConfig({ core: { searchResultOrder: ['memo', 'clipboard', 'web', 'app'] } });
 ctx.memoMatches = () => [{type:'memo', id:'memo'}];
 state.query = 'flow';
@@ -59,3 +65,23 @@ for (const config of [{}, state.config, {core:{webBeforeClipboard:false}}, {core
   assert.deepEqual(Array.from(settingsContext.configuredSearchOrder(config)), Array.from(ctx.configuredSearchOrder(config)));
 }
 console.log('PASS search order: default, opt-out, pagination, empty query, individual scopes, explicit tools');
+
+require('node:test')('late all-scope pages cannot restore an old usage group or clear newer paging',async()=>{
+  const pending=[];
+  const selectedState={scope:'all',query:'',config:{},index:4,usageColumn:2,usageSection:'frequent',usageSections:{frequent:[{type:'app',id:'a'}],recent:[{type:'app',id:'r'}]},appLoadedQuery:'',appHasMore:true};
+  const paging=vm.createContext({state:selectedState,allScopeRefreshToken:0,usageSectionChosen:false,
+    pluginEnabled:id=>id==='app',appMatches:()=>[{type:'app',id:'a'}],pageMatches:()=>[],clipboardMatches:()=>[],memoMatches:()=>[],twofaMatches:()=>[],
+    toolSuggestions:()=>[],webAddSuggestion:()=>null,render:()=>{},
+    refreshApps:()=>new Promise(resolve=>pending.push(resolve))});
+  vm.runInContext(source.slice(source.indexOf('function usageKey('),source.indexOf('function moveVertical')),paging);
+  vm.runInContext(source.slice(source.indexOf('function setUsageSection('),source.indexOf('// 更新配置（主进程每次呼出都会推送）')),paging);
+  const old=paging.loadMoreAll();assert.equal(pending.length,1);
+  paging.setUsageSection('recent');
+  assert.equal(selectedState.index,0);assert.equal(selectedState.usageColumn,0);
+  assert.equal(vm.runInContext('allResultKeys',paging),null);assert.equal(vm.runInContext('allPaging',paging),false);
+  const current=paging.loadMoreAll();assert.equal(pending.length,2);
+  pending[0]();await old;
+  assert.equal(vm.runInContext('allPaging',paging),true,'old completion must not release the newer paging reservation');
+  assert.deepEqual(Array.from(paging.matches().filter(item=>item.usageSection),item=>item.id),['r']);
+  pending[1]();await current;assert.equal(vm.runInContext('allPaging',paging),false);
+});

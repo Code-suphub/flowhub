@@ -31,6 +31,8 @@ let webSearchToken = 0;
 let memoSearchToken = 0;
 let twofaSearchToken = 0;
 let usageSearchToken = 0;
+state.usageSection = "frequent";
+let usageSectionChosen = false;
 let allScopeRefreshToken = 0;
 let dnsSearchToken = 0;
 const dnsIpCache = new Map();
@@ -475,7 +477,7 @@ function usageKey(item) {
 function usageMatches() {
   if (state.query.trim() || state.scope === "clipboard") return [];
   const entries = [];
-  for (const section of ["frequent", "recent"]) {
+  for (const section of [state.usageSection || "frequent"]) {
     const sectionItems = [...(state.usageSections?.[section] || [])];
     for (const item of sectionItems) {
       if (item.type === "app" && !pluginEnabled("app")) continue;
@@ -496,6 +498,7 @@ function withoutUsageDuplicates(items, usedItems) {
 let allResultKeys = null;
 let allInitialResults = [];
 let allPaging = false;
+let allPagingOwner = null;
 const resultKey = (item) => `${item.type || item.kind}:${item.id || item.path || item.url || item.title}`;
 function configuredSearchOrder(config) {
   const hasTwofa = Boolean(config?.plugins?.twofa)
@@ -543,6 +546,8 @@ async function loadMoreAll() {
     || (pluginEnabled("twofa") && state.twofaLoadedQuery !== state.query)) return;
   if (!allResultKeys) { allInitialResults = matches(); allResultKeys = allInitialResults.map(resultKey); }
   const token = allScopeRefreshToken;
+  const owner = {};
+  allPagingOwner = owner;
   const shown = new Set(allResultKeys);
   allPaging = true;
   try {
@@ -563,7 +568,7 @@ async function loadMoreAll() {
       if (!shown.has(key)) { allResultKeys.push(key); shown.add(key); }
     }
   } finally {
-    allPaging = false;
+    if (allPagingOwner === owner) { allPaging = false; allPagingOwner = null; }
     if (token === allScopeRefreshToken && state.scope === "all") render({ preserveScroll: true });
   }
 }
@@ -611,51 +616,8 @@ function matches() {
   })].slice(0, 12);
 }
 
-function usageIndices(items, section) {
-  return items.reduce((indices, item, index) => {
-    if (item.usageSection === section) indices.push(index);
-    return indices;
-  }, []);
-}
-
-function usagePosition(items, index = state.index) {
-  const section = items[index]?.usageSection;
-  if (!section) return null;
-  const indices = usageIndices(items, section);
-  return { section, indices, column: Math.max(0, indices.indexOf(index)) };
-}
-
-function moveUsageHorizontal(items, offset) {
-  const position = usagePosition(items);
-  if (!position) return false;
-  const column = Math.max(0, Math.min(position.indices.length - 1, position.column + offset));
-  state.usageColumn = column;
-  state.index = position.indices[column];
-  return true;
-}
-
 function moveVertical(items, offset) {
   if (!items.length) return;
-  const sections = ["frequent", "recent"].filter((section) => usageIndices(items, section).length);
-  const position = usagePosition(items);
-  const firstRegular = items.findIndex((item) => !item.usageSection);
-  if (position) {
-    state.usageColumn = position.column;
-    const sectionIndex = sections.indexOf(position.section);
-    const targetSection = sections[sectionIndex + offset];
-    if (targetSection) {
-      const targetIndices = usageIndices(items, targetSection);
-      state.index = targetIndices[Math.min(state.usageColumn, targetIndices.length - 1)];
-    } else if (offset > 0 && firstRegular >= 0) {
-      state.index = firstRegular;
-    }
-    return;
-  }
-  if (offset < 0 && state.index === firstRegular && sections.length) {
-    const targetIndices = usageIndices(items, sections.at(-1));
-    state.index = targetIndices[Math.min(state.usageColumn, targetIndices.length - 1)];
-    return;
-  }
   state.index = Math.max(0, Math.min(items.length - 1, state.index + offset));
 }
 
@@ -816,8 +778,22 @@ function renderSnapshot(options = {}) {
 // 结果操作焦点顺序：F6 进入当前结果的第一个操作按钮，再按 F6 在按钮之间前进，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
-  const actions = [...resultsEl.querySelectorAll(".search-context-menu .tool-action, .result.active .tool-action")].filter((button) => !button.disabled);
+  const usageActions = !state.query.trim() && ["all","app","web"].includes(state.scope) ? [...root.querySelectorAll("[data-usage-section]")] : [];
+  const inlineActions = [...resultsEl.querySelectorAll(".result.active .tool-action")].filter(button=>!button.disabled);
+  const menuActions = [...resultsEl.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
+  const resultActions = [...inlineActions,...menuActions];
+  const selected = matches()[state.index];
   const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
+  const hasMenu = selected && !selected.usageSection && ["app","page","web","web-add","memo","twofa","calculation","timestamp","jwt","dns","ip","clipboard"].includes(selected.type);
+  const leavingInline = direction>0 && inlineActions.length>0 && inlineActions.indexOf(current)===inlineActions.length-1;
+  if (hasMenu && !menuActions.length && (!inlineActions.length || leavingInline) && !usageActions.includes(current)) {
+    const row = resultsEl.querySelector(".result.active");
+    if (row) {
+      resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
+      return;
+    }
+  }
+  const actions = (selected && !selected.usageSection ? [...resultActions,...usageActions] : [...usageActions,...resultActions]).filter((button) => !button.disabled);
   if (!actions.length) {
     const row = resultsEl.querySelector(".result.active");
     if (row) resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
@@ -1133,6 +1109,19 @@ function setClipboardKind(kind) {
   q?.focus({ preventScroll: true });
 }
 
+function setUsageSection(section) {
+  if (!["frequent", "recent"].includes(section)) return;
+  allResultKeys = null;
+  allScopeRefreshToken += 1;
+  allPaging = false;
+  allPagingOwner = null;
+  state.usageSection = section;
+  usageSectionChosen = true;
+  state.index = 0;
+  state.usageColumn = 0;
+  render();
+}
+
 // 更新配置（主进程每次呼出都会推送）
 subscribe("onConfig", async (cfg) => {
   setConfig(cfg);
@@ -1196,7 +1185,7 @@ bind(document, "keydown", (e) => {
   if (e.key === "Escape") {
     e.preventDefault();
     // 焦点在结果操作栏里时先回到搜索框，再按一次才隐藏窗口。
-    if (resultsEl.contains(document.activeElement)) { returnToSearch(); return; }
+    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest?.("[data-usage-section]")) { returnToSearch(); return; }
     if (window.weborg?.hideMain) void window.weborg.hideMain();
     else window.close();
     return;
@@ -1209,7 +1198,7 @@ bind(document, "keydown", (e) => {
   }
   if (e.key === "Tab") {
     // 焦点已经在结果操作栏里：交给浏览器的顺序，Tab 不再切换范围。
-    if (resultsEl.contains(document.activeElement)) return;
+    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest?.("[data-usage-section]")) return;
     e.preventDefault();
     if (!scopeTabHeld) {
       scopeTabHeld = true;
@@ -1248,13 +1237,6 @@ bind(document, "keydown", (e) => {
   }
   if (e.key === "ArrowDown") { moveVertical(m, 1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "ArrowUp") { moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
-  else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-    const offset = e.key === "ArrowRight" ? 1 : -1;
-    if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && moveUsageHorizontal(m, offset)) {
-      revealActiveResult();
-      e.preventDefault();
-    }
-  }
   else if (e.key === "Enter") {
     const p = m[state.index];
     if (p) {
@@ -1668,6 +1650,7 @@ bind(resultsEl, "mousedown", (e) => {
   }
 });
 bind(resultsEl, "click", (e) => {
+  if (e.target.closest("[data-usage-section]")) return;
   const resultAction = e.target.closest("[data-result-action]");
   if (resultAction) {
     e.preventDefault(); e.stopPropagation();
@@ -1715,8 +1698,6 @@ bind(resultsEl, "mousemove", (e) => {
   if (!row) return;
   const i = Number(row.dataset.i);
   if (!Number.isFinite(i) || i === state.index) return;
-  const position = usagePosition(matches(), i);
-  if (position) state.usageColumn = position.column;
   state.index = i;
   render({preserveScroll:true});
 });
@@ -1828,6 +1809,7 @@ async function initialize() {
   state.twofaHasMore = state.twofaResults.length === 12;
   state.usageSections = usageSections || { frequent: [], recent: [] };
   state.usageLoadedScope = "all";
+  if (!usageSectionChosen && !state.usageSections.frequent?.length && state.usageSections.recent?.length) state.usageSection = "recent";
   initialized = true;
   render();
   deferUncachedWebIcons(320);
@@ -1914,7 +1896,7 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, setUsageSection, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());

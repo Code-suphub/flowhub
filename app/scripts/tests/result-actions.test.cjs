@@ -13,6 +13,7 @@ function harness() {
   const opened = [];
   const focused = [];
   const actions = [];
+  const menuRequests = [];
   let returned = 0;
   const element = (id) => {
     if (!actions.includes(id)) actions.push(id);
@@ -28,12 +29,16 @@ function harness() {
   ];
   const resultsEl = {
     contains: () => false,
-    querySelectorAll: () => buttons,
-    querySelector: () => null
+    querySelectorAll: (selector) => selector.includes('.result.active') ? buttons : [],
+    querySelector: () => null,
+    dispatchEvent: (event) => { menuRequests.push(event.detail); return true; }
   };
   const ctx = vm.createContext({
     console, URL, JSON, Number, String, Object, Array, Set, Map, Date, Boolean, Math, Promise,
-    state: { index: 0, scope: 'all', clipboardResults: [], expandedClipboard: new Set(), editingClipboard: null },
+    state: { index: 0, query: '', scope: 'all', clipboardResults: [], expandedClipboard: new Set(), editingClipboard: null },
+    root: { querySelectorAll: () => [] },
+    matches: () => [],
+    CustomEvent: class { constructor(type,options) { this.type=type; this.detail=options.detail; } },
     window: { FlowHubTools: { render: () => null }, weborg: {} },
     document: {
       getElementById: element,
@@ -66,7 +71,7 @@ function harness() {
   });
   vm.runInContext(renderSlice, ctx);
   vm.runInContext(focusSlice, ctx);
-  return { ctx, copied, status, opened, focused, buttons, resultsEl, hint: () => element.store.keyboardHint.innerHTML, returned: () => returned };
+  return { ctx, copied, status, opened, focused, buttons, resultsEl, menuRequests, hint: () => element.store.keyboardHint.innerHTML, returned: () => returned };
 }
 
 const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://example.com/', path: '目录 / 示例' });
@@ -117,6 +122,15 @@ const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://e
     h.resultsEl.querySelectorAll = () => [];
     h.ctx.focusResultAction(1);
     assert.equal(h.returned(), 2, '当前结果没有操作按钮时回到搜索框');
+
+    h.ctx.matches = () => [{type:'app',path:'/Applications/App.app'}];
+    h.ctx.root.querySelectorAll = () => [{disabled:false,focus(){h.focused.push('usage');}}];
+    h.resultsEl.querySelector = () => ({dataset:{i:'0'}});
+    h.ctx.document.activeElement = null;
+    h.ctx.focusResultAction(1);
+    assert.equal(h.menuRequests.length,1,'没有行内按钮的应用先请求更多菜单');
+    assert.equal(h.menuRequests[0].index,0);
+    assert.ok(!h.focused.includes('usage'),'菜单入口优先于常用／最近切换');
   }
 
   console.log('PASS: result actions and F6/Tab/Escape follow one focus order');

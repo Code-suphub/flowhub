@@ -171,3 +171,34 @@ test('preview adapters refuse settings and both clipboard copy implementations',
   }
   assert.equal(writes, 2, 'native runtime retains both copy implementations');
 });
+
+test('explicit search demo supplies local searchable fixtures without requests or writes', async () => {
+  const adapterSource=await readFile(join(app,'ui/shared/browser-adapter.js'),'utf8');
+  let requests=0,writes=0;
+  const context=vm.createContext({window:{},location:{pathname:'/search.html',search:'?preview=demo'},
+    document:{documentElement:{dataset:{}},getElementById:()=>null},
+    fetch(){requests++;throw new Error('demo must remain local');},localStorage:{setItem(){writes++;}}});
+  context.globalThis=context.window;
+  for(const file of ['web-search.js','memo-catalog.js']) vm.runInContext(await readFile(join(app,'ui/search',file),'utf8'),context);
+  vm.runInContext(adapterSource,context);
+  const api=context.window.weborg;
+  const config=await api.getConfig();config.plugins.app.enabled=false;
+  assert.equal((await api.getConfig()).plugins.app.enabled,true,'returned config is an isolated copy');
+  assert.ok((await api.listPlugins()).some(plugin=>plugin.id==='memo'));
+  for(const id of ['app','web','memo','clipboard']) {
+    const items=await api.pluginSearch(id,{query:'',limit:30});assert.ok(items.length>5,id);
+    const query={app:'Visual',web:'设计规范',memo:'service-3',clipboard:'剪贴板 3'}[id];
+    assert.ok((await api.pluginSearch(id,{query,limit:30})).length,id+' search');
+  }
+  for(const scope of ['all','app','web']) {
+    const sections=await api.searchUsage(scope);assert.ok(sections.frequent.length&&sections.recent.length);
+    if(scope!=='all')assert.ok([...sections.frequent,...sections.recent].every(item=>item.type===(scope==='app'?'app':'page')));
+  }
+  assert.ok(Object.keys(await api.loadAppIcons([(await api.pluginSearch('app',{}))[0].path])).length);
+  assert.equal((await api.pluginAction('web','activate',{url:'https://example.com'})).readonly,true);
+  for(const method of ['lookupDns','lookupLocalIp','lookupIp','inspectCloudflare','lookupProxy']) await assert.rejects(api[method]('example.com'),/演示模式不执行网络查询/);
+  assert.equal((await api.saveConfig({})).readonly,true);
+  assert.equal(requests,0);assert.equal(writes,0);
+  const native={};const nativeContext=vm.createContext({window:{weborg:native,__TAURI__:{}},location:{search:'?preview=demo'}});
+  vm.runInContext(adapterSource,nativeContext);assert.equal(nativeContext.window.weborg,native);
+});
