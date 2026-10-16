@@ -4,11 +4,14 @@ use std::{path::PathBuf, sync::Mutex};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 #[path = "detail.rs"]
 mod detail;
+#[path = "canvas/compact.rs"]
+mod compact;
 
 #[cfg(any(target_os="macos",test))]
 fn viewport_point(x:f64,y:f64,left:f64,bottom:f64,height:f64,flipped:bool)->(f64,f64){
     (x-left,if flipped{y-bottom}else{height-(y-bottom)})
 }
+#[cfg(test)]
 fn position_is_visible((x,y):(i32,i32),monitors:&[(i32,i32,u32,u32)])->bool {
     monitors.iter().any(|&(left,top,width,height)| {
         let (x,y,left,top)=(x as i64,y as i64,left as i64,top as i64);
@@ -85,9 +88,9 @@ impl Layout {
         } Ok(())
     }
 }
-pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<detail::Registry>, return_target:Mutex<Option<detail::ReturnTarget>> }
+pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<detail::Registry>, return_target:Mutex<Option<detail::ReturnTarget>>, compact:compact::Store }
 impl State {
-    pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(detail::Registry::default()),return_target:Mutex::new(None)})}
+    pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(detail::Registry::default()),return_target:Mutex::new(None),compact:compact::Store::new(root)?})}
     fn try_update(&self, change:impl FnOnce(&mut Layout)->Result<(),String>)->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next)?;next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
     fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{self.try_update(|layout|{change(layout);Ok(())})}
     #[cfg(test)]
@@ -123,6 +126,7 @@ impl State {
         })?;
         Ok(added)
     }
+    #[cfg(test)]
     fn remember_position(&self,position:(i32,i32))->Result<(),String>{
         if self.layout.lock().unwrap().window_position==Some(position){return Ok(());}
         self.update(|layout|layout.window_position=Some(position))
@@ -132,11 +136,20 @@ pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     open_with_source(app,plugin,None)
 }
 fn open_with_source(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>)->Result<(),String>{
+    let plugin=plugin.to_string();
+    compact::on_main(app,move|app|open_on_main(app,&plugin,source))
+}
+fn open_on_main(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>)->Result<(),String>{
     let state=app.state::<State>();let added=state.prepare_open(plugin)?;
+    if source.is_some() && state.compact.presentation(&state.layout.lock().unwrap()).collapsed {
+        compact::action(app,"plugin-canvas","setCompact",json!({"collapsed":false}))?;
+    }
     if let Some(target)=&source {*state.return_target.lock().unwrap()=Some(target.clone());}
     let layout=state.layout.lock().unwrap().clone();
     let source_url=source.as_ref().map(|target|format!("plugin-canvas.html?{}",url::form_urlencoded::Serializer::new(String::new()).append_pair("boardId",&target.board_id).append_pair("cardId",&target.card_id).append_pair("returnPlugin",&target.plugin).append_pair("returnRequestId",&target.request_id).append_pair("returnInvalid",if target.invalid{"1"}else{"0"}).finish()));
     if let Some(w)=app.get_webview_window("plugin-canvas"){
+        compact::record_window(app,&w);
+        compact::restore_window(app,&w,None)?;
         if added{w.eval("location.reload()").map_err(|e|e.to_string())?;}
         if let Some(target)=&source {
             let value=json!(target);
@@ -147,19 +160,18 @@ fn open_with_source(app:&tauri::AppHandle,plugin:&str,source:Option<detail::Retu
         w.show().map_err(|e|e.to_string())?;return w.set_focus().map_err(|e|e.to_string());
     }
     let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App(source_url.unwrap_or_else(||"plugin-canvas.html".into()).into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
-    if let Some(position)=layout.window_position {
-        let monitors:Vec<_>=app.available_monitors().map_err(|e|e.to_string())?.iter().map(|m|(m.position().x,m.position().y,m.size().width,m.size().height)).collect();
-        if position_is_visible(position,&monitors){w.set_position(tauri::PhysicalPosition::new(position.0,position.1)).map_err(|e|e.to_string())?;}
-        else {w.center().map_err(|e|e.to_string())?;}
-    }
-    let handle=app.clone();w.on_window_event(move|event|{
+    if let Err(error)=compact::restore_window(app,&w,layout.window_position) {compact::window_destroyed(app);let _=w.close();return Err(error);}
+    compact::install_menu(&w);
+    let handle=app.clone();let sampled_window=w.clone();w.on_window_event(move|event|{
         let state=handle.state::<State>();
         match event {
-            tauri::WindowEvent::Moved(position)=>{let _=state.remember_position((position.x,position.y));}
+            tauri::WindowEvent::Moved(_)|tauri::WindowEvent::Resized(_)|tauri::WindowEvent::ScaleFactorChanged{..}=>{compact::record_window(&handle,&sampled_window);}
             tauri::WindowEvent::CloseRequested{..}=>{let _=state.update(|layout|layout.desktop=false);}
+            tauri::WindowEvent::Destroyed=>{compact::window_destroyed(&handle);}
             _=>{}
         }
     });
+    if let Err(error)=compact::watch_displays(app) {compact::window_destroyed(app);let _=w.close();return Err(error);}
     w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;
     Ok(())
 }
@@ -187,6 +199,14 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         return Ok(Value::Null);
     }
     if !["settings","plugin-canvas"].contains(&window.label()){return Err("画布来源无效".into());}
+    if ["configureCompact","setCompact","snapCompact"].contains(&action.as_str()) {
+        let origin=window.label().to_string();
+        return compact::on_main(&app,move|app|compact::action(app,&origin,&action,payload).map(|presentation|json!({"presentation":presentation})));
+    }
+    if action=="compactMenu" {
+        let origin=window.label().to_string();
+        return compact::on_main(&app,move|app|compact::popup(app,&origin).map(|presentation|json!({"presentation":presentation})));
+    }
     if action=="cursor" {
         return canvas_cursor(&window).await;
     }
@@ -263,13 +283,15 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         rx.await.map_err(|_|"详情窗口更新中断")??;
     }
     else if action=="open" {open(&app,"")?;}
-    else if action=="fit" {let width=payload["width"].as_f64().filter(|v|v.is_finite()).ok_or("窗口宽度无效")?;let height=payload["height"].as_f64().filter(|v|v.is_finite()).ok_or("窗口高度无效")?;let monitor=window.current_monitor().map_err(|e|e.to_string())?;let (mw,mh)=monitor.map(|m|{let s=m.size().to_logical::<f64>(m.scale_factor());(s.width,s.height)}).unwrap_or((1600.,1000.));window.set_size(tauri::LogicalSize::new(width.clamp(360.,mw.max(360.)),height.clamp(200.,mh.max(200.)))).map_err(|e|e.to_string())?;}
-    else if action=="drag" {window.start_dragging().map_err(|e|e.to_string())?;}
+    else if action=="fit" {let width=payload["width"].as_f64().filter(|v|v.is_finite()).ok_or("窗口宽度无效")?;let height=payload["height"].as_f64().filter(|v|v.is_finite()).ok_or("窗口高度无效")?;let target=window.clone();compact::on_main(&app,move|app|compact::fit_full(app,&target,width,height))?;}
+    else if action=="hide" {if window.label()!="plugin-canvas"{return Err("仅可隐藏桌面组件".into());}let target=window.clone();compact::on_main(&app,move|app|{app.state::<State>().update(|layout|layout.desktop=true)?;target.hide().map_err(|e|e.to_string())})?;}
+    else if action=="drag" {let target=window.clone();compact::on_main(&app,move|app|{if target.label()=="plugin-canvas"{compact::prepare_drag(app,&target)?;}target.start_dragging().map_err(|e|e.to_string())})?;}
     else if action=="close" {window.close().map_err(|e|e.to_string())?;}
     else if action!="get" {return Err("未知画布操作".into());}
     let sources:Vec<_>=app.state::<crate::plugin::runtime::Runtime>().widget_plugins().into_iter().map(|(id,title)|json!({"lastLoadedAt":app.state::<crate::plugin::runtime::Runtime>().loaded_at(&id),"snapshot":app.state::<crate::plugin::status::State>().snapshot(&id),"widget":app.state::<crate::plugin::runtime::Runtime>().widget(&id).ok(),"id":id,"title":title})).collect();
     let return_target=if action=="get" && window.label()=="plugin-canvas" {state.return_target.lock().unwrap().take()}else{None};
-    Ok(json!({"layout":state.layout.lock().unwrap().clone(),"sources":sources,"returnTarget":return_target}))
+    let layout=state.layout.lock().unwrap().clone();let presentation=state.compact.presentation(&layout);
+    Ok(json!({"layout":layout,"sources":sources,"returnTarget":return_target,"presentation":presentation,"windowGeometryRestored":state.compact.window_geometry_restored()}))
 }
 #[cfg(test)]mod tests{use super::*;#[test]fn layouts_validate_and_persist(){let root=std::env::temp_dir().join(format!("canvas-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&root).unwrap();let s=State::new(&root).unwrap();let mut l=Layout::default();l.boards[0].cards.push(Card{id:"a".into(),plugin:"example".into(),title:"CPU".into(),view:"overview".into(),size:"large".into(),row:None,width:None,height:None,break_before:false,x:None,y:None,metrics:None,config:Value::Null});l.boards[0].cards[0].width=Some(413);l.boards[0].cards[0].height=Some(257);s.save(l.clone()).unwrap();assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].width,Some(413));let mut invalid=l.clone();invalid.boards[0].cards[0].width=Some(0);assert!(s.save(invalid).is_err());assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].size,"large");l.boards.push(l.boards[0].clone());assert!(s.save(l).is_err());std::fs::remove_dir_all(root).unwrap();}}
 #[cfg(test)]

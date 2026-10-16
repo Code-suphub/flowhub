@@ -142,6 +142,8 @@ test('More keyboard navigation skips disabled actions, restores focus and stays 
   s.button('新建布局').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'End' }));
   assert.equal(s.w.document.activeElement, s.button('桌面组件设置'));
   s.button('桌面组件设置').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowUp' }));
+  assert.equal(s.w.document.activeElement, s.button('紧凑状态条'));
+  s.button('紧凑状态条').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowUp' }));
   assert.equal(s.w.document.activeElement, s.button('重命名布局'));
   s.button('重命名布局').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
   await wait(() => !s.w.document.getElementById('canvasMenu'));
@@ -676,5 +678,6 @@ test('a new return received during startup wins over an older deferred get fallb
   assert.equal(s.w.document.querySelector('[data-id=one]'),null);assert.equal(s.w.document.activeElement,s.w.document.querySelector('[data-id=two]'));
 });
 }
-if (require.main === module) require('./canvas-settings.test.cjs');
 module.exports = { setup, ready, wait };
+if (require.main === module) require('./canvas-settings.test.cjs');
+if (require.main === module) require('./canvas-compact.test.cjs');

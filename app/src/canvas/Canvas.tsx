@@ -6,6 +6,8 @@ import { Field, FieldGroup, FieldLabel, FieldTitle } from '../components/ui/fiel
 import { EmptyState, Select, Switch } from '../shared/controls';
 import { nativeHost } from '../shared/native';
 import { WidgetSurface } from './WidgetSurface';
+import { CompactBar, CompactSettings } from './CompactBar';
+import { compactDemo, compactStatus, initialPresentation, presentationValue, type Favorite, type Presentation } from './compact-model';
 import { browserDetailUrl } from './detail-navigation';
 import { host, initialLayout, isLayout, minimum, normalize, cardConfig, type Card, type Config, type FrameHandle, type Invoke, type Layout, type Point, type Source } from './model';
 
@@ -53,8 +55,9 @@ function EditorDialog({ editor, sources, invoke, preview, onClose, onSave }: {
 
 export function Canvas() {
   const invoke = nativeHost()?.core?.invoke, previewParam = new URLSearchParams(location.search).get('preview');
+  const demo = !invoke && previewParam === 'demo';
   let preview: string | null = null, previewError = '';
-  if (!invoke && previewParam !== null) {
+  if (!invoke && previewParam !== null && !demo) {
     try {
       const url = new URL(previewParam);
       if (!['http:', 'https:'].includes(url.protocol)) throw Error();
@@ -63,6 +66,8 @@ export function Canvas() {
     } catch { previewError = '预览地址无效，请使用完整的 HTTP 或 HTTPS 插件预览地址，或返回画布预览。'; }
   }
   const [layout, setLayout] = useState(initialLayout), layoutRef = useRef(layout);
+  const [presentation, setPresentation] = useState(initialPresentation), presentationRef = useRef(presentation);
+  const [compactBusy, setCompactBusy] = useState(false), compactPending = useRef(false), [compactSettings, setCompactSettings] = useState(false), [compactError, setCompactError] = useState('');
   const [sources, setSources] = useState<Source[]>([]), sourcesRef = useRef(sources);
   const [notice, setNotice] = useState(''), [loaded, setLoaded] = useState(false), [inactive, setInactive] = useState(false);
   const [previewFailure, setPreviewFailure] = useState(false);
@@ -78,14 +83,15 @@ export function Canvas() {
   const canvas = useRef<HTMLElement>(null), toolbar = useRef<HTMLElement>(null), menuNode = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null), suppressClick = useRef(0), saving = useRef(0), saveTail = useRef(Promise.resolve());
   const fitted = useRef(''), alive = useRef(true);
+  const restoredGeometryFit = useRef(false);
   const board = layout.boards.find(board => board.id === layout.active)!;
   const viewOnly = layout.viewOnly === true;
-  const layoutLocked = layout.layoutLocked === true, editingDisabled = viewOnly || layoutLocked || layoutLockBusy || viewOnlyBusy;
+  const layoutLocked = layout.layoutLocked === true, editingDisabled = demo || viewOnly || layoutLocked || layoutLockBusy || viewOnlyBusy || compactBusy;
   const menuCard = menu?.card;
   const width = Math.max(320, ...board.cards.map(card => (card.x || 0) + (card.width || 184)));
   const height = Math.max(120, ...board.cards.map(card => (card.y || 0) + (card.height || 184)));
-  const current = useRef({ editor, naming, deleting, menu }); current.current = { editor, naming, deleting, menu };
-  const modalOpen = () => !!(current.current.editor || current.current.naming || current.current.deleting);
+  const current = useRef({ editor, naming, deleting, menu, compactSettings }); current.current = { editor, naming, deleting, menu, compactSettings };
+  const modalOpen = () => !!(current.current.editor || current.current.naming || current.current.deleting || current.current.compactSettings);
   const moreButton = () => toolbar.current?.querySelector<HTMLButtonElement>('#canvasMore');
   function closeMenu(restore = false) {
     const active = current.current.menu;
@@ -106,14 +112,40 @@ export function Canvas() {
     if (g.moved) suppressClick.current = Date.now() + 150;
   }
   function fitSurface() {
-    if (!invoke || gesture.current || modalOpen() || !canvas.current || !toolbar.current) return;
+    if (!loaded || !invoke || presentationRef.current.collapsed || compactPending.current || gesture.current || modalOpen() || !canvas.current || !toolbar.current) return;
+    if (restoredGeometryFit.current) { restoredGeometryFit.current = false; return; }
     const width = Math.max(360, canvas.current.offsetWidth + 32, toolbar.current.scrollWidth + 32);
     const height = canvas.current.offsetTop + canvas.current.offsetHeight + 16, key = `${width}:${height}`;
     if (key === fitted.current) return;
     fitted.current = key; void api('fit', { width, height }).catch(() => { fitted.current = ''; });
   }
+  function acceptPresentation(value: unknown) {
+    if (!alive.current) return;
+    const next = presentationValue(value);
+    if (!next || next.revision < presentationRef.current.revision) return;
+    if (next.collapsed !== presentationRef.current.collapsed) { cancelGesture(); setMenu(null); setEditor(null); setNaming(null); setDeleting(false); }
+    presentationRef.current = next; setPresentation(next);
+  }
+  async function changeCompact(action: 'configureCompact' | 'setCompact' | 'snapCompact', payload: Record<string, unknown>): Promise<boolean> {
+    if (!loaded || compactPending.current || modePending.current) return false;
+    compactPending.current = true; setCompactBusy(true); setCompactError('');
+    cancelGesture(); setMenu(null); setEditor(null); setNaming(null); setDeleting(false);
+    try {
+      await saveTail.current;
+      if (invoke) { const result = await api<{ presentation: Presentation }>(action, payload); acceptPresentation(result.presentation); }
+      else {
+        const current = presentationRef.current, next = { ...current, revision: current.revision + 1 };
+        if (action === 'configureCompact') { next.enabled = payload.enabled === true; next.favorites = payload.favorites as Favorite[]; if (!next.enabled) next.collapsed = false; }
+        if (action === 'setCompact') next.collapsed = next.enabled && payload.collapsed === true;
+        acceptPresentation(next);
+      }
+      if (action === 'setCompact') requestAnimationFrame(() => { if (!current.current.menu && !modalOpen() && document.activeElement === document.body) document.getElementById(presentationRef.current.collapsed ? 'expandCanvas' : 'collapseCanvas')?.focus(); });
+      return true;
+    } catch (error) { if (alive.current) { const message = `切换紧凑入口失败：${String(error)}`; setNotice(message); setCompactError(message); } return false; }
+    finally { compactPending.current = false; if (alive.current) setCompactBusy(false); }
+  }
   function commit(change: (draft: Layout) => void, moving?: string, wanted?: Point, target?: string | null, presentation = false) {
-    if (!loaded || modePending.current || layoutRef.current.viewOnly || (layoutRef.current.layoutLocked && !presentation)) return;
+    if (!loaded || modePending.current || compactPending.current || demo || layoutRef.current.viewOnly || (layoutRef.current.layoutLocked && !presentation)) return;
     const draft = structuredClone(layoutRef.current); change(draft);
     const next = normalize(draft, sourcesRef.current, moving, wanted, target);
     layoutRef.current = next; setLayout(next); setMenu(null);
@@ -144,7 +176,7 @@ export function Canvas() {
   const changeCards = (change: (cards: Card[]) => void) => commit(draft => change(draft.boards.find(board => board.id === draft.active)!.cards));
   const changePresentation = (change: (draft: Layout) => void) => commit(change, undefined, undefined, undefined, true);
   function add(card?: Card) {
-    if (!loaded || modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;
+    if (!loaded || modePending.current || compactPending.current || demo || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;
     if (!sourcesRef.current.some(source => source.widget)) { setNotice('请先安装或升级提供组件页面的插件'); return; }
     const active = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)!;
     if (!card && active.cards.length >= 32) { setNotice('每个布局最多 32 个组件'); return; }
@@ -226,11 +258,14 @@ export function Canvas() {
       const sequence = ++request, revision = { ...modeRevision.current }, returnVersion = returnRevision.current;
       try {
         if (previewError) throw Error(previewError);
-        let nextSources = sourcesRef.current, nextLayout = layoutRef.current, nextReturnTarget: ReturnTarget | undefined;
+        let nextSources = sourcesRef.current, nextLayout = layoutRef.current, nextReturnTarget: ReturnTarget | undefined, nextPresentation: unknown, nextGeometryRestored = false;
         if (invoke) {
-          const data = await invoke<{ layout: Layout; sources: Source[]; returnTarget?: ReturnTarget }>('plugin_canvas_api', { action: 'get', payload: {} });
+          const data = await invoke<{ layout: Layout; sources: Source[]; returnTarget?: ReturnTarget; presentation?: Presentation; windowGeometryRestored?: boolean }>('plugin_canvas_api', { action: 'get', payload: {} });
           if (initial) nextLayout = data.layout; nextSources = data.sources;
-          nextReturnTarget = data.returnTarget;
+          nextReturnTarget = data.returnTarget; nextPresentation = data.presentation;
+          nextGeometryRestored = data.windowGeometryRestored === true;
+        } else if (demo) {
+          if (initial) { const data = compactDemo(); nextLayout = data.layout; nextSources = data.sources; nextPresentation = data.presentation; }
         } else if (initial) {
           try { const stored: unknown = JSON.parse(localStorage.getItem('flowhub-canvas-preview') || 'null'); if (isLayout(stored)) nextLayout = stored; } catch { /* Preview storage is optional. */ }
           if (preview) {
@@ -242,6 +277,8 @@ export function Canvas() {
           }
         }
         if (stopped || sequence !== request || saving.current || gesture.current || (!initial && (modalOpen() || current.current.menu))) return;
+        if (nextPresentation) acceptPresentation(nextPresentation);
+        if (initial) restoredGeometryFit.current = nextGeometryRestored && !presentationRef.current.collapsed;
         if (nextReturnTarget && returnVersion === returnRevision.current) returnTarget.current = nextReturnTarget;
         // A user mutation may have finished while the snapshot request was in flight.
         if (!initial) nextLayout = layoutRef.current;
@@ -253,7 +290,7 @@ export function Canvas() {
         sourcesRef.current = nextSources; setSources(nextSources);
         const normalized = normalize(nextLayout, nextSources); layoutRef.current = normalized; setLayout(normalized);
         if (initialized && returnTarget.current) { const target = returnTarget.current; returnTarget.current = null; restoreReturn(target); }
-        if (!invoke) { setNotice(preview ? '浏览器预览 · 只读模拟数据' : '浏览器预览'); setPreviewFailure(false); }
+        if (!invoke) { setNotice(demo ? '只读演示 · 紧凑入口设置仅在本次预览生效' : preview ? '浏览器预览 · 只读模拟数据' : '浏览器预览'); setPreviewFailure(false); }
         else setNotice('');
         initialized = true; setLoaded(true);
       } catch (error) { if (!stopped) { setNotice(error instanceof Error ? error.message : String(error)); if (!invoke && previewParam !== null) setPreviewFailure(true); } }
@@ -265,8 +302,21 @@ export function Canvas() {
     const onVisibilityChange = () => { if (!document.hidden) void load(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => { stopped = true; alive.current = false; clearInterval(interval); document.removeEventListener('visibilitychange', onVisibilityChange); document.body.classList.remove('preview'); };
-  }, [invoke, preview, previewError, previewParam]);
-  useEffect(() => { fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded, viewOnly, layoutLocked]);
+  }, [invoke, preview, previewError, previewParam, demo]);
+  useEffect(() => {
+    const receive = (event: Event) => acceptPresentation((event as CustomEvent<unknown>).detail);
+    const pin = (event: Event) => { const pinned = (event as CustomEvent<unknown>).detail; if (typeof pinned !== 'boolean') return; const next = { ...layoutRef.current, pinned }; layoutRef.current = next; setLayout(next); };
+    const error = (event: Event) => { const message = (event as CustomEvent<unknown>).detail; if (typeof message === 'string') setNotice(message); };
+    window.addEventListener('flowhub:canvas-presentation', receive);
+    window.addEventListener('flowhub:canvas-pinned', pin);
+    window.addEventListener('flowhub:canvas-error', error);
+    return () => { window.removeEventListener('flowhub:canvas-presentation', receive); window.removeEventListener('flowhub:canvas-pinned', pin); window.removeEventListener('flowhub:canvas-error', error); };
+  }, []);
+  useEffect(() => {
+    document.body.classList.toggle('canvas-compact-mode', presentation.collapsed);
+    return () => document.body.classList.remove('canvas-compact-mode');
+  }, [presentation.collapsed]);
+  useEffect(() => { if (!loaded) return; fitted.current = ''; const frame = requestAnimationFrame(() => actions.current.fitSurface()); return () => cancelAnimationFrame(frame); }, [width, height, editor, naming, deleting, loaded, viewOnly, layoutLocked]);
   useEffect(() => {
     const receive = (value: unknown, fresh = false) => {
       if (!value || typeof value !== 'object') return;
@@ -421,19 +471,26 @@ export function Canvas() {
     const rect = moreButton()?.getBoundingClientRect();
     if (rect && loaded && !viewOnly) setMenu({ kind: 'toolbar', x: rect.left, y: rect.bottom + 4, pointer: false });
   };
-  return <div className="fh-canvas-app" data-view-only={viewOnly} data-layout-locked={layoutLocked}>
+  return <div className="fh-canvas-app" data-view-only={viewOnly} data-layout-locked={layoutLocked} data-compact={presentation.collapsed}>
+    {presentation.collapsed ? <><CompactBar layout={layout} sources={sources} presentation={presentation} busy={compactBusy} native={Boolean(invoke)} demo={demo}
+      onExpand={() => { void changeCompact('setCompact', { collapsed: false }); }}
+      onDrag={() => { if (invoke) void api('drag').catch(error => setNotice(String(error))); }}
+      onMore={() => { if (invoke) void api('compactMenu').catch(error => setNotice(`无法打开状态条菜单：${String(error)}`)); }} />
+      {notice && invoke ? <p role="status" className="compact-notice">{notice}</p> : null}</> : <>
     <header ref={toolbar} className={`canvas-toolbar flex flex-wrap items-center gap-2 ${inactive ? 'surface-inactive' : ''}`} inert={inactive || viewOnly}>
       <Button id="dragSurface" className="brand" size="icon" aria-label="拖动桌面组件区域" disabled={!invoke} onMouseDown={event => { if (event.button === 0 && invoke) void api('drag').catch(error => setNotice(String(error))); }}><GripVerticalIcon aria-hidden="true" /></Button>
       <Select id="boards" label="切换组件布局" popupClassName="canvas-board-select-popup" value={layout.active} disabled={!loaded || layoutLockBusy || viewOnlyBusy} options={layout.boards.map(board => ({ value: board.id, label: board.title }))} onChange={value => changePresentation(draft => { draft.active = value; })} />
-      <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded || layoutLockBusy || viewOnlyBusy} onChange={value => changePresentation(draft => { draft.pinned = value; })} /><span>置顶</span></div>
-      <div className="flex items-center gap-1"><Switch label="锁定布局" checked={layoutLocked} disabled={!loaded || layoutLockBusy || viewOnlyBusy} onChange={value => { void changeLayoutLocked(value); }} /><span>锁定布局</span></div>
+      <div className="flex items-center gap-1"><Switch label="置顶" checked={layout.pinned} disabled={!loaded || demo || compactBusy || layoutLockBusy || viewOnlyBusy} onChange={value => changePresentation(draft => { draft.pinned = value; })} /><span>置顶</span></div>
+      <div className="flex items-center gap-1"><Switch label="锁定布局" checked={layoutLocked} disabled={!loaded || demo || compactBusy || layoutLockBusy || viewOnlyBusy} onChange={value => { void changeLayoutLocked(value); }} /><span>锁定布局</span></div>
       <div className="flex items-center gap-1"><Switch label="仅查看桌面组件" checked={viewOnly} disabled={!loaded || !invoke || viewOnlyBusy || layoutLockBusy} onChange={value => { void changeViewOnly(value); }} /><span>仅查看</span></div>
       <Button id="add" className="primary" disabled={!loaded || editingDisabled || board.cards.length >= 32} onClick={() => add()}>添加</Button>
+      {presentation.enabled && !viewOnly ? <Button id="collapseCanvas" disabled={!loaded || compactBusy || layoutLockBusy || viewOnlyBusy} onClick={() => { void changeCompact('setCompact', { collapsed: true }); }}>收起</Button> : null}
       <Button id="canvasMore" aria-haspopup="menu" aria-expanded={menu?.kind === 'toolbar'} aria-controls={menu?.kind === 'toolbar' ? 'canvasMenu' : undefined} disabled={!loaded} onClick={() => { if (menu?.kind === 'toolbar') closeMenu(true); else openMore(); }} onKeyDown={event => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openMore(); }
       }}>更多</Button>
       <Button id="closeSurface" aria-label="关闭组件区域" disabled={!invoke} onClick={() => { if (invoke) void api('close').catch(error => setNotice(String(error))); }}>×</Button>
     </header>
+    {viewOnly && presentation.enabled ? <Button id="collapseCanvas" className="canvas-view-only-compact" disabled={compactBusy || layoutLockBusy || viewOnlyBusy} onClick={() => { void changeCompact('setCompact', { collapsed: true }); }}>收起为状态条</Button> : null}
     <p id="notice" role="status">{notice}</p>
     {openingDetail ? <p className="canvas-detail-loading" role="status">正在打开详情…</p> : null}
     {detailFailure ? <div className="canvas-detail-failure" role="alert"><p>{detailFailure.message}</p><Button disabled={openingDetail} onClick={() => {
@@ -456,7 +513,7 @@ export function Canvas() {
             if (!viewOnly && event.key === 'Enter') { event.preventDefault(); openCard(card); }
             if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); context(card, rect.left + 20, rect.top + 20, false); }
           }}>
-          {source?.widget ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
+          {demo ? <div className="canvas-demo-card"><strong>{compactStatus(card, source).label}</strong><span>{compactStatus(card, source).metric}</span><span>只读演示</span></div> : source?.widget ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
           <div className="widget-hit absolute" aria-hidden="true">{interactive ? '⠿' : ''}</div>
           <Button className="resize-handle absolute" data-resize aria-label="调整组件大小" disabled={editingDisabled} onKeyDown={event => {
             if (modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;
@@ -479,6 +536,7 @@ export function Canvas() {
         <Button id="newBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || editingDisabled || layout.boards.length >= 12} onClick={() => { closeMenu(true); setName(''); setNaming('new'); }}>新建布局</Button>
         <Button id="rename" variant="ghost" size="sm" role="menuitem" disabled={!loaded || editingDisabled} onClick={() => { closeMenu(true); setName(board.title); setNaming('rename'); }}>重命名布局</Button>
         <Button id="removeBoard" variant="ghost" size="sm" role="menuitem" disabled={!loaded || editingDisabled || layout.boards.length < 2} onClick={() => { closeMenu(true); setDeleting(true); }}>删除布局</Button>
+        <Button variant="ghost" size="sm" role="menuitem" disabled={compactBusy} onClick={() => { closeMenu(true); setCompactError(''); setCompactSettings(true); }}>紧凑状态条</Button>
         <div className="canvas-menu-separator" role="separator" />
       </> : null}
       {menuCard ? <>
@@ -502,5 +560,7 @@ export function Canvas() {
       commit(draft => { if (naming === 'new') { const id = crypto.randomUUID(); draft.boards.push({ id, title, cards: [] }); draft.active = id; } else draft.boards.find(board => board.id === draft.active)!.title = title; }); setNaming(null);
     }}><Input id="boardName" aria-label="布局名称" autoFocus required maxLength={40} value={name} onChange={event => setName(event.target.value)} /><div className="flex gap-2"><Button onClick={() => setNaming(null)}>取消</Button><Button type="submit" className="primary">保存</Button></div></form></Dialog> : null}
     {deleting ? <Dialog title="删除此布局？" busy={false} onClose={() => setDeleting(false)}><p>其中的卡片布局会被移除，插件配置不受影响。</p><div className="flex gap-2"><Button onClick={() => setDeleting(false)}>取消</Button><Button id="confirmDelete" onClick={() => { if (layoutRef.current.boards.length > 1) commit(draft => { draft.boards = draft.boards.filter(board => board.id !== draft.active); draft.active = draft.boards[0].id; }); setDeleting(false); }}>删除布局</Button></div></Dialog> : null}
+    </>}
+    {compactSettings ? <CompactSettings layout={layout} presentation={presentation} busy={compactBusy} notice={compactError} onClose={() => setCompactSettings(false)} onSave={(enabled, favorites) => { void changeCompact('configureCompact', { enabled, favorites }).then(saved => { if (saved) setCompactSettings(false); }); }} /> : null}
   </div>;
 }
