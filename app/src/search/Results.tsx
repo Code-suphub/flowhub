@@ -84,8 +84,7 @@ export function Results({snapshot}: {snapshot:SearchSnapshot}) {
     if(item.usageSection) {
       const section=item.usageSection, group:React.ReactNode[]=[];
       while(i<(plan?.to ?? items.length) && items[i].usageSection===section) {group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot}/>);i++;}
-      const selected=items[snapshot.state.index];
-      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`} aria-label={section==='frequent'?'常用入口':'最近使用'}><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div>{selected?.usageSection===section?<div className="search-usage-detail"><strong>{previewText(selected.title,true)}</strong><span>{previewText(itemMeta(selected),true)}</span></div>:null}</section>);
+      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`} aria-label={section==='frequent'?'常用入口':'最近使用'}><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div></section>);
     } else {rows.push(<Fragment key={`${item.type}:${item.id || item.path || item.url || item.title}`}><Row item={item} index={i} snapshot={snapshot}/></Fragment>);i++;}
   }
   return <>{usageEmpty}{plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}{rows}{plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}{snapshot.paging.loading || !snapshot.paging.hasMore?<p className="search-empty">{snapshot.paging.loading?'正在加载更多…':'已经到底了'}</p>:null}</>;

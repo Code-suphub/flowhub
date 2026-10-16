@@ -69,9 +69,6 @@ html:has(#search-root),body:has(#search-root),#search-root { height:100%; margin
 .search-shell .usage-tile .search-row-content {width:100%;min-width:0;overflow:hidden;flex:none;}
 .search-shell .usage-tile .search-tile-title {width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .clipboard-meta>.search-meta {min-width:0;}
-.search-usage-detail {display:grid;gap:2px;max-height:56px;overflow:auto;padding:3px 4px 8px;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere;}
-.search-usage-detail strong {font-weight:500;}
-.search-usage-detail span {color:var(--fh-muted);}
 .search-footer {min-height:34px;padding:5px 12px;border-top:1px solid var(--fh-border);font-size:11px;color:var(--fh-muted);}
 .search-keyboard-hint {display:inline-flex;align-items:center;gap:4px;min-width:0;}
 .search-shortcut-list {display:grid;gap:3px;min-width:150px;}
