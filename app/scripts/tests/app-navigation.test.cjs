@@ -2,6 +2,36 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
+test('keyboard result selection ignores stationary pointer events after reflow and resumes on real movement',async t=>{
+  const clips=[1,2,3].map(id=>({id,kind:'text',content:`clipboard ${id}\n`+'long line\n'.repeat(10)}));
+  const {w,q,key,scope,calls}=await setup(t,{native:true,search:(id,args,fixture)=>id==='clipboard'?clips:fixture[id]||[]});await scope('clipboard');q.focus();
+  const row=index=>w.document.querySelector(`.result[data-i="${index}"]`),active=()=>Number(w.document.querySelector('.result.active').dataset.i),root=w.document.querySelector('.search-shell');
+  const move=(index,x,y)=>row(index).dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));
+  move(0,50,150);key('ArrowDown');await wait(()=>active()===1);
+  move(0,50,150);assert.equal(active(),1);assert.equal(root.dataset.resultInput,'keyboard');
+  w.document.getElementById('results').dispatchEvent(new w.Event('scroll'));await delay(20);move(0,50,150);assert.equal(active(),1,'scroll and reflow cannot revive the old hovered row');
+  q.dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:80,clientY:40}));
+  key('ArrowDown');await wait(()=>active()===2);
+  move(0,80,40);assert.equal(active(),2,'a row reflowing under a pointer last seen outside the list cannot steal keyboard selection');
+  move(2,81,40);await wait(()=>active()===2);assert.equal(root.dataset.resultInput,'pointer');
+  key('ArrowUp');await wait(()=>active()===1);move(2,81,40);assert.equal(active(),1);assert.equal(root.dataset.resultInput,'keyboard');
+  row(0).dispatchEvent(new w.MouseEvent('mousedown',{button:0,bubbles:true,clientX:51,clientY:150}));row(0).click();
+  await wait(()=>calls.some(call=>call[0]==='action'&&call[3].id===1));assert.equal(root.dataset.resultInput,'pointer','explicit click remains available at stationary coordinates');
+  w.prepareForShow();await wait(()=>active()===0);key('ArrowDown');await wait(()=>active()===1);
+  move(0,80,100);assert.equal(active(),1,'first position after reopen only establishes a new baseline');
+  move(0,80,100);assert.equal(active(),1);move(0,81,100);await wait(()=>active()===0);
+});
+test('unknown pointer events cannot undo shortcut navigation or overwrite its preferred column',async t=>{
+  const {w,key,scope,input}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
+  const active=()=>w.document.querySelector('.result.active h3')?.textContent;
+  const move=(title,x)=>[...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent===title).dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:100}));
+  key('ArrowRight');await wait(()=>active()==='B');move('A',50);assert.equal(active(),'B','unknown first pointer event does not undo Right');
+  key('ArrowDown');await wait(()=>active()==='E');move('A',50);assert.equal(active(),'E');key('ArrowUp');await wait(()=>active()==='B');
+  key('ArrowLeft');await wait(()=>active()==='A');move('C',50);assert.equal(active(),'A');move('C',51);await wait(()=>active()==='C');
+  key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='C','real movement updates the preferred usage column');
+  await scope('app');key('ArrowRight');await wait(()=>active()==='B');move('A',51);assert.equal(active(),'B','scope reordering does not revive stationary hover');
+  await input('query');await input('');key('ArrowRight');await wait(()=>active()==='B');move('A',51);assert.equal(active(),'B','query rerender does not revive stationary hover');
+});
 test('empty-input usage horizontal navigation stays in its row and updates vertical preference in every source scope',async t=>{
   for(const id of ['all','app','web']) {
     const item=title=>id==='web'?{type:'page',id:title,title,url:`https://example.com/${title}`} : appItem(title);
@@ -37,12 +67,13 @@ test('usage arrows move between rows at the preferred column and preserve input 
   const active=()=>w.document.querySelector('.result.active h3')?.textContent;
   for(const id of ['all','app']) {
     await scope(id);assert.equal(active(),'A');
+    w.document.querySelector('.usage-tile.active').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:0,clientY:0}));
     assert.deepEqual([...w.document.querySelectorAll('.search-usage-label')].map(node=>node.textContent),['常用','最近']);
     assert.equal(key('ArrowRight'),false);await wait(()=>active()==='B');assert.equal(key('ArrowLeft'),false);await wait(()=>active()==='A');
     key('ArrowUp');assert.equal(active(),'A','first usage row is an upper boundary');
     key('ArrowDown');await wait(()=>active()==='D');
     key('ArrowUp');await wait(()=>active()==='A');
-    [...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true}));
+    [...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:80,clientY:50}));
     await wait(()=>active()==='C');
     key('ArrowDown');await wait(()=>active()==='E');key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/E.app'));
     key('ArrowUp');await wait(()=>active()==='C','clamping the shorter row preserves the original column');
@@ -52,7 +83,7 @@ test('usage arrows move between rows at the preferred column and preserve input 
     assert.ok([...w.document.querySelectorAll('.usage-tile h3')].some(node=>node.textContent==='D'));
     key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/C.app'));
     key('ArrowDown');await wait(()=>active()==='E');
-    w.document.querySelector('.usage-tile.active').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true}));
+    w.document.querySelector('.usage-tile.active').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:90,clientY:100}));
     key('ArrowUp');await wait(()=>active()==='B','mouse selection replaces the preferred column even on the selected tile');
   }
   for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']) {

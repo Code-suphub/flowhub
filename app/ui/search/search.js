@@ -3,6 +3,8 @@ window.createFlowHubSearchController = function(root, publish) {
 let disposed = false;
 const cleanups = [], handlers = {};
 const q = root.querySelector('#q'), resultsEl = root.querySelector('#results');
+let resultPointerPosition = null;
+const resultInputMode = (mode) => { root.dataset.resultInput = mode; };
 const bind = (target, name, callback) => {
   if (target === document || target === window) {
     target.addEventListener(name, callback);
@@ -1256,11 +1258,12 @@ bind(document, "keydown", (e) => {
     const previous=state.index;
     state.index=Math.max(start,Math.min(end-1,state.index+(e.key==="ArrowRight"?1:-1)));
     state.usageColumn=state.index-start;
+    resultInputMode("keyboard");
     if(state.index!==previous)revealActiveResult();
     e.preventDefault();return;
   }
-  if (e.key === "ArrowDown") { moveVertical(m, 1); revealActiveResult(); e.preventDefault(); }
-  else if (e.key === "ArrowUp") { moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
+  if (e.key === "ArrowDown") { resultInputMode("keyboard");moveVertical(m, 1); revealActiveResult(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { resultInputMode("keyboard");moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "Enter") {
     const p = m[state.index];
     if (p) {
@@ -1663,6 +1666,8 @@ bind(resultsEl, "mouseup", (e) => {
     ? { row, path:item.path, stamp:e.timeStamp, received:performance.now() } : null;
 });
 bind(resultsEl, "mousedown", (e) => {
+  resultInputMode("pointer");
+  resultPointerPosition = {x:e.clientX,y:e.clientY};
   const released = releasedAppPress;
   releasedAppPress = null;
   recoveredAppClick = null;
@@ -1721,7 +1726,17 @@ bind(resultsEl, "click", (e) => {
   }
   if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
 });
+// React's result handler runs before this document bubble listener. Tracking
+// outside the list keeps reflow under a stationary pointer distinguishable
+// from a real move back into the list, without changing selection here.
+bind(document, "mousemove", (e) => { resultPointerPosition = {x:e.clientX,y:e.clientY}; });
 bind(resultsEl, "mousemove", (e) => {
+  const moved = resultPointerPosition && (e.clientX!==resultPointerPosition.x || e.clientY!==resultPointerPosition.y);
+  resultPointerPosition = {x:e.clientX,y:e.clientY};
+  // WebKit may send mousemove after scrolling or reflow without moving the
+  // pointer. An unknown first position only establishes the baseline.
+  if (root.dataset.resultInput === "keyboard" && !moved) return;
+  resultInputMode("pointer");
   const row = e.target.closest(".result");
   if (!row) return;
   const i = Number(row.dataset.i);
@@ -1746,6 +1761,8 @@ function focusSearchAfterWindowActivation() {
   }));
 }
 function prepareForShow() {
+  resultPointerPosition = null;
+  resultInputMode("keyboard");
   state.usageColumn = null;
   void window.refreshSearchTiming?.();
   window.flowhubSearchTiming?.reset();

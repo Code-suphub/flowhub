@@ -32,7 +32,7 @@ html:has(#search-root),body:has(#search-root),#search-root { height:100%; margin
 #clipboardKindRow [data-clipboard-kind]:focus-visible {position:relative;z-index:1;outline:2px solid var(--fh-accent);outline-offset:1px;}
 .search-shell #results {padding:0 12px 12px;scrollbar-width:thin;overflow-anchor:none;}
 .search-shell .result {display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid transparent;border-radius:var(--fh-radius-lg);cursor:pointer;}
-.search-shell .result:hover {background:var(--fh-surface-soft);}
+.search-shell:not([data-result-input="keyboard"]) .result:hover {background:var(--fh-surface-soft);}
 .search-shell .result.active,.search-shell .result.active:hover {background:var(--fh-accent-soft);border-color:color-mix(in srgb,var(--fh-accent) 34%,var(--fh-border));}
 .search-icon {display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px;color:var(--fh-accent);}
 .search-icon img {width:24px;height:24px;object-fit:contain;border-radius:6px;}
