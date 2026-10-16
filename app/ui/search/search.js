@@ -23,7 +23,7 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, expandedClipboard: new Set(), editingClipboard: null, usageColumn: 0, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, expandedClipboard: new Set(), editingClipboard: null, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
@@ -31,8 +31,6 @@ let webSearchToken = 0;
 let memoSearchToken = 0;
 let twofaSearchToken = 0;
 let usageSearchToken = 0;
-state.usageSection = "frequent";
-let usageSectionChosen = false;
 let allScopeRefreshToken = 0;
 let dnsSearchToken = 0;
 const dnsIpCache = new Map();
@@ -477,13 +475,17 @@ function usageKey(item) {
 function usageMatches() {
   if (state.query.trim() || state.scope === "clipboard") return [];
   const entries = [];
-  for (const section of [state.usageSection || "frequent"]) {
+  for (const section of ["frequent", "recent"]) {
+    const seen = new Set();
     const sectionItems = [...(state.usageSections?.[section] || [])];
     for (const item of sectionItems) {
       if (item.type === "app" && !pluginEnabled("app")) continue;
       if (item.type === "page" && !pluginEnabled("web")) continue;
       if (state.scope === "app" && item.type !== "app") continue;
       if (state.scope === "web" && item.type !== "page") continue;
+      const key = usageKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
       entries.push({ ...item, usageSection: section });
     }
   }
@@ -500,6 +502,8 @@ let allInitialResults = [];
 let allPaging = false;
 let allPagingOwner = null;
 const resultKey = (item) => `${item.type || item.kind}:${item.id || item.path || item.url || item.title}`;
+const resultSlotKey = (item) => item.usageSection ? `usage:${item.usageSection}:${resultKey(item)}` : resultKey(item);
+const resultObjectKey = (slot) => slot.replace(/^usage:(?:frequent|recent):/, "");
 function configuredSearchOrder(config) {
   const hasTwofa = Boolean(config?.plugins?.twofa)
     || (Array.isArray(state.plugins) && state.plugins.some((plugin) => plugin.id === "twofa"));
@@ -528,7 +532,7 @@ function allCandidates() {
   return state.query.trim() ? orderedSources(groups) : orderedAllSources(groups);
 }
 function allHasMore() {
-  const shown = new Set(allResultKeys || matches().map(resultKey));
+  const shown = new Set(allResultKeys ? allResultKeys.map(resultObjectKey) : matches().map(resultKey));
   return allCandidates().some(item => !shown.has(resultKey(item)))
     || (pluginEnabled("clipboard") && state.clipboardHasMore)
     || (pluginEnabled("app") && state.appHasMore)
@@ -544,11 +548,11 @@ async function loadMoreAll() {
     || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
     || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query)
     || (pluginEnabled("twofa") && state.twofaLoadedQuery !== state.query)) return;
-  if (!allResultKeys) { allInitialResults = matches(); allResultKeys = allInitialResults.map(resultKey); }
+  if (!allResultKeys) { allInitialResults = matches(); allResultKeys = allInitialResults.map(resultSlotKey); }
   const token = allScopeRefreshToken;
   const owner = {};
   allPagingOwner = owner;
-  const shown = new Set(allResultKeys);
+  const shown = new Set(allResultKeys.map(resultObjectKey));
   allPaging = true;
   try {
     let next = allCandidates().filter(item => !shown.has(resultKey(item)));
@@ -575,7 +579,7 @@ async function loadMoreAll() {
 
 function matches() {
   if (state.scope === "all" && allResultKeys) {
-    const pool = new Map([...allInitialResults, ...usageMatches(), ...toolSuggestions(), ...allCandidates()].map(item => [resultKey(item), item]));
+    const pool = new Map([...allInitialResults, ...usageMatches(), ...toolSuggestions(), ...allCandidates()].map(item => [resultSlotKey(item), item]));
     return allResultKeys.map(key => pool.get(key)).filter(Boolean);
   }
   if (state.scope === "clipboard") return pluginEnabled("clipboard") ? clipboardMatches() : [];
@@ -600,12 +604,12 @@ function matches() {
   if (state.scope === "twofa") return typeof twofaMatches === "function" ? twofaMatches() : [];
   if (!state.query.trim()) {
     const regularLimit = usages.length ? 4 : 6;
-    const visibleUsages = usages.slice(0, 8);
+    const visibleUsages = ["frequent", "recent"].flatMap(section => usages.filter(item => item.usageSection === section).slice(0, 4));
     return [...visibleUsages, ...orderedAllSources({
       app: withoutUsageDuplicates(apps, visibleUsages).slice(0, 3),
       web: withoutUsageDuplicates(pages, visibleUsages).slice(0, regularLimit),
       clipboard: clips.slice(0, regularLimit), memo: memos.slice(0, 4), twofa: typeof twofaMatches === "function" ? twofaMatches().slice(0, 4) : []
-    })].slice(0, 12);
+    }).slice(0, Math.max(4, 12-visibleUsages.length))];
   }
   const appResults = state.query.trim() ? apps.slice(0, 3) : [];
   const memoResults = state.query.trim() ? memos.slice(0, 4) : [];
@@ -778,7 +782,6 @@ function renderSnapshot(options = {}) {
 // 结果操作焦点顺序：F6 进入当前结果的第一个操作按钮，再按 F6 在按钮之间前进，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
-  const usageActions = !state.query.trim() && ["all","app","web"].includes(state.scope) ? [...root.querySelectorAll("[data-usage-section]")] : [];
   const inlineActions = [...resultsEl.querySelectorAll(".result.active .tool-action")].filter(button=>!button.disabled);
   const menuActions = [...resultsEl.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
   const resultActions = [...inlineActions,...menuActions];
@@ -786,17 +789,17 @@ function focusResultAction(direction = 1) {
   const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
   const hasMenu = selected && !selected.usageSection && ["app","page","web","web-add","memo","twofa","calculation","timestamp","jwt","dns","ip","clipboard"].includes(selected.type);
   const leavingInline = direction>0 && inlineActions.length>0 && inlineActions.indexOf(current)===inlineActions.length-1;
-  if (hasMenu && !menuActions.length && (!inlineActions.length || leavingInline) && !usageActions.includes(current)) {
+  if (hasMenu && !menuActions.length && (!inlineActions.length || leavingInline)) {
     const row = resultsEl.querySelector(".result.active");
     if (row) {
       resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
       return;
     }
   }
-  const actions = (selected && !selected.usageSection ? [...resultActions,...usageActions] : [...usageActions,...resultActions]).filter((button) => !button.disabled);
+  const actions = resultActions.filter((button) => !button.disabled);
   if (!actions.length) {
     const row = resultsEl.querySelector(".result.active");
-    if (row) resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
+    if (row && hasMenu) resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
     else returnToSearch();
     return;
   }
@@ -1109,19 +1112,6 @@ function setClipboardKind(kind) {
   q?.focus({ preventScroll: true });
 }
 
-function setUsageSection(section) {
-  if (!["frequent", "recent"].includes(section)) return;
-  allResultKeys = null;
-  allScopeRefreshToken += 1;
-  allPaging = false;
-  allPagingOwner = null;
-  state.usageSection = section;
-  usageSectionChosen = true;
-  state.index = 0;
-  state.usageColumn = 0;
-  render();
-}
-
 // 更新配置（主进程每次呼出都会推送）
 subscribe("onConfig", async (cfg) => {
   setConfig(cfg);
@@ -1185,7 +1175,7 @@ bind(document, "keydown", (e) => {
   if (e.key === "Escape") {
     e.preventDefault();
     // 焦点在结果操作栏里时先回到搜索框，再按一次才隐藏窗口。
-    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest?.("[data-usage-section]")) { returnToSearch(); return; }
+    if (resultsEl.contains(document.activeElement)) { returnToSearch(); return; }
     if (window.weborg?.hideMain) void window.weborg.hideMain();
     else window.close();
     return;
@@ -1198,7 +1188,7 @@ bind(document, "keydown", (e) => {
   }
   if (e.key === "Tab") {
     // 焦点已经在结果操作栏里：交给浏览器的顺序，Tab 不再切换范围。
-    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest?.("[data-usage-section]")) return;
+    if (resultsEl.contains(document.activeElement)) return;
     e.preventDefault();
     if (!scopeTabHeld) {
       scopeTabHeld = true;
@@ -1464,6 +1454,10 @@ async function refreshUsage() {
     if (token !== usageSearchToken) return;
     state.usageSections = sections || { frequent: [], recent: [] };
     state.usageLoadedScope = "all";
+    allResultKeys = null;
+    allScopeRefreshToken += 1;
+    allPaging = false;
+    allPagingOwner = null;
     render();
   } catch {}
 }
@@ -1650,7 +1644,6 @@ bind(resultsEl, "mousedown", (e) => {
   }
 });
 bind(resultsEl, "click", (e) => {
-  if (e.target.closest("[data-usage-section]")) return;
   const resultAction = e.target.closest("[data-result-action]");
   if (resultAction) {
     e.preventDefault(); e.stopPropagation();
@@ -1809,7 +1802,6 @@ async function initialize() {
   state.twofaHasMore = state.twofaResults.length === 12;
   state.usageSections = usageSections || { frequent: [], recent: [] };
   state.usageLoadedScope = "all";
-  if (!usageSectionChosen && !state.usageSections.frequent?.length && state.usageSections.recent?.length) state.usageSection = "recent";
   initialized = true;
   render();
   deferUncachedWebIcons(320);
@@ -1896,7 +1888,7 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, setUsageSection, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());

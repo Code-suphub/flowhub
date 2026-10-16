@@ -75,17 +75,18 @@ const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:numb
 });
 export function Results({snapshot}: {snapshot:SearchSnapshot}) {
   if(!snapshot.state.config) return <p className="search-empty">{snapshot.statusText || '配置加载中…'}</p>;
-  const showUsage=!snapshot.state.query.trim()&&['all','app','web'].includes(snapshot.state.scope), section=snapshot.state.usageSection || 'frequent';
-  const usageEmpty=showUsage&&!snapshot.items.some(item=>item.usageSection)?<p className="search-usage-empty">{section==='recent'?'暂无最近使用':'暂无常用入口'}</p>:null;
-  if(!snapshot.items.length) return <>{usageEmpty || <p className="search-empty">{snapshot.paging.loading?'正在加载…':'没有匹配项'}</p>}</>;
+  const showUsage=!snapshot.state.query.trim()&&['all','app','web'].includes(snapshot.state.scope);
+  const hasFrequent=snapshot.items.some(item=>item.usageSection==='frequent'),hasRecent=snapshot.items.some(item=>item.usageSection==='recent');
+  const emptyUsage=(section:string)=><div className="search-usage-group" role="group" aria-label={section==='frequent'?'常用入口':'最近使用'}><h2 className="search-usage-label">{section==='frequent'?'常用':'最近'}</h2><p className="search-usage-empty">{section==='frequent'?'暂无常用入口':'暂无最近使用'}</p></div>;
+  if(!snapshot.items.length) return <>{showUsage?<>{emptyUsage('frequent')}{emptyUsage('recent')}</>:<p className="search-empty">{snapshot.paging.loading?'正在加载…':'没有匹配项'}</p>}</>;
   const {items,plan}=snapshot, rows:React.ReactNode[]=[];
   for(let i=plan?.from || 0;i<(plan?.to ?? items.length);) {
     const item=items[i];
     if(item.usageSection) {
       const section=item.usageSection, group:React.ReactNode[]=[];
       while(i<(plan?.to ?? items.length) && items[i].usageSection===section) {group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot}/>);i++;}
-      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`} aria-label={section==='frequent'?'常用入口':'最近使用'}><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div></section>);
-    } else {rows.push(<Fragment key={`${item.type}:${item.id || item.path || item.url || item.title}`}><Row item={item} index={i} snapshot={snapshot}/></Fragment>);i++;}
+      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`} aria-label={section==='frequent'?'常用入口':'最近使用'}>{section==='recent'&&!hasFrequent?emptyUsage('frequent'):null}<div className="search-usage-group"><h2 className="search-usage-label">{section==='frequent'?'常用':'最近'}</h2><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div></div>{section==='frequent'&&!hasRecent?emptyUsage('recent'):null}</section>);
+    } else {const key=`${item.type}:${item.id || item.path || item.url || item.title}`;rows.push(showUsage&&!hasFrequent&&!hasRecent&&i===0?<div key={key} data-group="empty-usage-and-first-result">{emptyUsage('frequent')}{emptyUsage('recent')}<Row item={item} index={i} snapshot={snapshot}/></div>:<Fragment key={key}><Row item={item} index={i} snapshot={snapshot}/></Fragment>);i++;}
   }
-  return <>{usageEmpty}{plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}{rows}{plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}{snapshot.paging.loading || !snapshot.paging.hasMore?<p className="search-empty">{snapshot.paging.loading?'正在加载更多…':'已经到底了'}</p>:null}</>;
+  return <>{plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}{rows}{plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}{snapshot.paging.loading || !snapshot.paging.hasMore?<p className="search-empty">{snapshot.paging.loading?'正在加载更多…':'已经到底了'}</p>:null}</>;
 }

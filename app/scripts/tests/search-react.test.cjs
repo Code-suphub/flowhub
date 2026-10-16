@@ -7,8 +7,8 @@ test('all tool views are React; JSON precision, URL parts, network output, port 
   const {w,input}=await setup(t);
   for(const [query,text] of [['1+2','3'],['1700000000','时间戳'],['{"large":9007199254740993}','9007199254740993'],['https://example.com/a?x=1','URL 解析'],['port 80','确认'],['ping example.com','Ping 连通性'],['ip','公网 IP'],['8.8.8.8','Fixture city'],['dns example.com','DNS'],['proxy','代理信息']]){
     await input(query);
-    if(query==='port 80'){w.document.querySelector('[data-tool-action="terminate"]').click();await wait(()=>w.document.querySelector('[data-tool-action="confirm"]'));w.document.querySelector('[data-tool-action="cancel"]').click();await wait(()=>!w.document.querySelector('[data-tool-action="confirm"]'));}
-    else assert.ok(w.document.getElementById('results').textContent.includes(text),query);
+    if(query==='port 80'){await wait(()=>w.document.querySelector('[data-tool-action="terminate"]'));w.document.querySelector('[data-tool-action="terminate"]').click();await wait(()=>w.document.querySelector('[data-tool-action="confirm"]'));w.document.querySelector('[data-tool-action="cancel"]').click();await wait(()=>!w.document.querySelector('[data-tool-action="confirm"]'));}
+    else {await wait(()=>w.document.getElementById('results').textContent.includes(text));assert.ok(w.document.getElementById('results').textContent.includes(text),query);}
     if(query.startsWith('ping')){w.document.querySelector('[data-tool-action="run"]').click();await wait(()=>w.document.getElementById('results').textContent.includes('fixture output'));}
   }
 });

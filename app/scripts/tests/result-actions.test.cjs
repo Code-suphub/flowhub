@@ -124,13 +124,15 @@ const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://e
     assert.equal(h.returned(), 2, '当前结果没有操作按钮时回到搜索框');
 
     h.ctx.matches = () => [{type:'app',path:'/Applications/App.app'}];
-    h.ctx.root.querySelectorAll = () => [{disabled:false,focus(){h.focused.push('usage');}}];
     h.resultsEl.querySelector = () => ({dataset:{i:'0'}});
     h.ctx.document.activeElement = null;
     h.ctx.focusResultAction(1);
     assert.equal(h.menuRequests.length,1,'没有行内按钮的应用先请求更多菜单');
     assert.equal(h.menuRequests[0].index,0);
-    assert.ok(!h.focused.includes('usage'),'菜单入口优先于常用／最近切换');
+    h.ctx.matches = () => [{type:'app',path:'/Applications/App.app',usageSection:'recent'}];
+    h.ctx.focusResultAction(1);
+    assert.equal(h.menuRequests.length,1,'usage entry does not request a regular-result menu');
+    assert.equal(h.returned(),3,'usage entry returns directly to search');
   }
 
   console.log('PASS: result actions and F6/Tab/Escape follow one focus order');
