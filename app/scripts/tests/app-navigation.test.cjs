@@ -2,13 +2,43 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
+test('empty-input usage horizontal navigation stays in its row and updates vertical preference in every source scope',async t=>{
+  for(const id of ['all','app','web']) {
+    const item=title=>id==='web'?{type:'page',id:title,title,url:`https://example.com/${title}`} : appItem(title);
+    const {w,key,scope,calls}=await setup(t,{usage:{frequent:['A','B','C'].map(item),recent:['D','E'].map(item)}});await scope(id);
+    const active=()=>w.document.querySelector('.result.active h3')?.textContent;
+    assert.match(w.document.getElementById('keyboardHint').textContent,/↑↓ 跨排 · ←→ 同排/);
+    assert.equal(key('ArrowLeft'),false);assert.equal(active(),'A');
+    key('ArrowRight');await wait(()=>active()==='B');key('ArrowRight');await wait(()=>active()==='C');
+    assert.equal(key('ArrowRight'),false);assert.equal(active(),'C','right boundary does not enter the next row');
+    key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='C');
+    key('ArrowLeft');await wait(()=>active()==='B');key('ArrowDown');await wait(()=>active()==='E');
+    key('ArrowLeft');await wait(()=>active()==='D');key('ArrowUp');await wait(()=>active()==='A');
+    key('Enter');await wait(()=>calls.some(call=>call[0]==='action'&&(call[3].id==='A'||call[3].path==='/Applications/A.app')));
+  }
+});
+test('usage horizontal keys preserve text, spaces, pending input, modifiers, IME, ordinary results and button focus',async t=>{
+  const {w,q,key,input}=await setup(t,{usage:{frequent:['A','B'].map(appItem),recent:[appItem('D')]}});
+  const active=()=>w.document.querySelector('.result.active h3')?.textContent;
+  for(const value of ['text',' ']) {q.value=value;q.setSelectionRange(1,1);assert.equal(key('ArrowRight'),true);assert.equal(key('ArrowLeft'),true);assert.equal(active(),'A');assert.equal(q.selectionStart,1);}
+  q.value='';
+  for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']) {assert.equal(key('ArrowRight',{[modifier]:true}),true);assert.equal(active(),'A');}
+  for(const extra of [{isComposing:true},{keyCode:229}]) {assert.equal(key('ArrowRight',extra),true);assert.equal(active(),'A');}
+  assert.equal(key('Process'),true);
+  q.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));assert.equal(key('ArrowRight'),true);q.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true}));
+  await input(' ');assert.doesNotMatch(w.document.getElementById('keyboardHint').textContent,/←→ 同排/);q.value='';assert.equal(key('ArrowRight'),true,'pending state.query is not empty even after DOM text was cleared');assert.equal(active(),'A');
+  await input('');
+  const button=w.document.getElementById('settingsBtn');button.focus();assert.equal(button.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true})),true);assert.equal(active(),'A');
+  q.focus();key('ArrowDown');await wait(()=>active()==='D');key('ArrowDown');await wait(()=>!w.document.querySelector('.result.active').classList.contains('usage-tile'));
+  assert.equal(key('ArrowRight'),true);assert.equal(key('ArrowLeft'),true);
+});
 test('usage arrows move between rows at the preferred column and preserve input arrows, Enter, modifiers and IME',async t=>{
   const {w,q,key,scope,calls,input}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
   const active=()=>w.document.querySelector('.result.active h3')?.textContent;
   for(const id of ['all','app']) {
     await scope(id);assert.equal(active(),'A');
     assert.deepEqual([...w.document.querySelectorAll('.search-usage-label')].map(node=>node.textContent),['常用','最近']);
-    assert.equal(key('ArrowRight'),true);assert.equal(active(),'A');
+    assert.equal(key('ArrowRight'),false);await wait(()=>active()==='B');assert.equal(key('ArrowLeft'),false);await wait(()=>active()==='A');
     key('ArrowUp');assert.equal(active(),'A','first usage row is an upper boundary');
     key('ArrowDown');await wait(()=>active()==='D');
     key('ArrowUp');await wait(()=>active()==='A');
@@ -39,7 +69,7 @@ test('usage arrows move between rows at the preferred column and preserve input 
   const previous=w.document.getElementById('actionStatus').textContent;
   w.weborg.pluginAction=async()=>({ok:false,cancelled:true});key('Enter');await delay(20);assert.equal(w.document.getElementById('actionStatus').textContent,previous);
   const web=await setup(t,{usage:{frequent:['A','B','C'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'})),recent:['D','E'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'}))}});
-  await web.scope('web');assert.equal(web.key('ArrowRight'),true);web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='D');
+  await web.scope('web');assert.equal(web.key('ArrowRight'),false);await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='B');web.key('ArrowLeft');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='A');web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='D');
   web.key('Enter');await wait(()=>web.calls.some(c=>c[0]==='action'&&c[1]==='web'&&c[3].id==='D'));
 });
 

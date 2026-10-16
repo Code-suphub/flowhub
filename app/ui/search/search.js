@@ -1247,6 +1247,18 @@ bind(document, "keydown", (e) => {
       return;
     }
   }
+  if (["ArrowLeft","ArrowRight"].includes(e.key) && q.value === "" && state.query === ""
+    && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && m[state.index]?.usageSection) {
+    const section=m[state.index].usageSection;
+    let start=state.index,end=state.index+1;
+    while(start>0 && m[start-1].usageSection===section)start--;
+    while(end<m.length && m[end].usageSection===section)end++;
+    const previous=state.index;
+    state.index=Math.max(start,Math.min(end-1,state.index+(e.key==="ArrowRight"?1:-1)));
+    state.usageColumn=state.index-start;
+    if(state.index!==previous)revealActiveResult();
+    e.preventDefault();return;
+  }
   if (e.key === "ArrowDown") { moveVertical(m, 1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "ArrowUp") { moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "Enter") {
