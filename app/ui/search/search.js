@@ -622,6 +622,27 @@ function matches() {
 
 function moveVertical(items, offset) {
   if (!items.length) return;
+  const groups=[];
+  for(let start=0;start<items.length && items[start].usageSection;) {
+    let end=start+1;
+    while(end<items.length && items[end].usageSection===items[start].usageSection)end++;
+    groups.push({start,end});start=end;
+  }
+  const current=groups.findIndex(group=>state.index>=group.start && state.index<group.end);
+  if(current>=0) {
+    const group=groups[current];
+    if(!Number.isInteger(state.usageColumn))state.usageColumn=state.index-group.start;
+    const target=groups[current+offset];
+    if(target)state.index=target.start+Math.min(state.usageColumn,target.end-target.start-1);
+    else if(offset>0 && group.end<items.length)state.index=group.end;
+    return;
+  }
+  const last=groups.at(-1);
+  if(offset<0 && last && state.index===last.end) {
+    const column=Number.isInteger(state.usageColumn)?state.usageColumn:0;
+    state.index=last.start+Math.min(column,last.end-last.start-1);
+    return;
+  }
   state.index = Math.max(0, Math.min(items.length - 1, state.index + offset));
 }
 
@@ -1062,6 +1083,7 @@ function setScope(scope) {
   invalidateClipboardPaging({ resetPaging: false });
   invalidatePluginPaging({ resetPaging: false });
   state.scope = scope;
+  state.usageColumn = null;
   window.FlowHubTools.queryChanged(toolContext());
   state.index = 0;
   renderKeyboardHint();
@@ -1536,6 +1558,7 @@ bind(q, "input", () => {
   invalidateClipboardPaging();
   invalidatePluginPaging();
   state.query = q.value;
+  state.usageColumn = null;
   window.FlowHubTools.queryChanged(toolContext());
   queueDnsLookup();
   queueIpLookup();
@@ -1690,7 +1713,14 @@ bind(resultsEl, "mousemove", (e) => {
   const row = e.target.closest(".result");
   if (!row) return;
   const i = Number(row.dataset.i);
-  if (!Number.isFinite(i) || i === state.index) return;
+  if (!Number.isFinite(i)) return;
+  const items=matches();
+  if(items[i]?.usageSection) {
+    let start=i;
+    while(start>0 && items[start-1].usageSection===items[i].usageSection)start--;
+    state.usageColumn=i-start;
+  }
+  if(i === state.index)return;
   state.index = i;
   render({preserveScroll:true});
 });
@@ -1704,6 +1734,7 @@ function focusSearchAfterWindowActivation() {
   }));
 }
 function prepareForShow() {
+  state.usageColumn = null;
   void window.refreshSearchTiming?.();
   window.flowhubSearchTiming?.reset();
   allResultKeys = null;

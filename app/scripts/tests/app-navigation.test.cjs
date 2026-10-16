@@ -2,26 +2,35 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
-test('both usage rows use linear vertical navigation and preserve input arrows, Enter, modifiers and IME',async t=>{
+test('usage arrows move between rows at the preferred column and preserve input arrows, Enter, modifiers and IME',async t=>{
   const {w,q,key,scope,calls,input}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
   const active=()=>w.document.querySelector('.result.active h3')?.textContent;
   for(const id of ['all','app']) {
     await scope(id);assert.equal(active(),'A');
     assert.deepEqual([...w.document.querySelectorAll('.search-usage-label')].map(node=>node.textContent),['常用','最近']);
     assert.equal(key('ArrowRight'),true);assert.equal(active(),'A');
-    key('ArrowDown');await wait(()=>active()==='B');
-    key('ArrowDown');await wait(()=>active()==='C');
-    key('ArrowDown');await wait(()=>active()==='D');key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/D.app'));
-    key('ArrowUp');await wait(()=>active()==='C');key('ArrowUp');await wait(()=>active()==='B');
+    key('ArrowUp');assert.equal(active(),'A','first usage row is an upper boundary');
+    key('ArrowDown');await wait(()=>active()==='D');
+    key('ArrowUp');await wait(()=>active()==='A');
+    [...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true}));
+    await wait(()=>active()==='C');
+    key('ArrowDown');await wait(()=>active()==='E');key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/E.app'));
+    key('ArrowUp');await wait(()=>active()==='C','clamping the shorter row preserves the original column');
+    key('ArrowDown');await wait(()=>active()==='E');
+    key('ArrowDown');await wait(()=>!w.document.querySelector('.result.active').classList.contains('usage-tile'));
+    key('ArrowUp');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='C');
     assert.ok([...w.document.querySelectorAll('.usage-tile h3')].some(node=>node.textContent==='D'));
-    key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/B.app'));
+    key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/C.app'));
+    key('ArrowDown');await wait(()=>active()==='E');
+    w.document.querySelector('.usage-tile.active').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true}));
+    key('ArrowUp');await wait(()=>active()==='B','mouse selection replaces the preferred column even on the selected tile');
   }
   for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']) {
     assert.equal(key('ArrowRight',{[modifier]:true}),true);assert.equal(active(),'B');
   }
   q.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));const before=calls.length;
   key('Enter');assert.equal(calls.length,before);q.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true}));
-  await input('search');await scope('app');assert.equal(key('ArrowRight'),true,'bare arrows in normal result rows belong to input');
+  await input('search');await scope('app');q.setSelectionRange(3,3);assert.equal(key('ArrowRight'),true,'bare arrows in normal result rows belong to input');assert.equal(key('ArrowLeft'),true);assert.equal(q.selectionStart,3);
   for(const [action,message] of [
     [async()=>({ok:false,reason:'应用路径为空'}),'应用路径为空'],
     [async()=>{throw 'Launch Services refused';},'Launch Services refused'],
@@ -30,8 +39,8 @@ test('both usage rows use linear vertical navigation and preserve input arrows, 
   const previous=w.document.getElementById('actionStatus').textContent;
   w.weborg.pluginAction=async()=>({ok:false,cancelled:true});key('Enter');await delay(20);assert.equal(w.document.getElementById('actionStatus').textContent,previous);
   const web=await setup(t,{usage:{frequent:['A','B','C'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'})),recent:['D','E'].map(title=>({...appItem(title),type:'page',id:title,url:'https://example.com'}))}});
-  await web.scope('web');assert.equal(web.key('ArrowRight'),true);web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='B');
-  web.key('Enter');await wait(()=>web.calls.some(c=>c[0]==='action'&&c[1]==='web'&&c[3].id==='B'));
+  await web.scope('web');assert.equal(web.key('ArrowRight'),true);web.key('ArrowDown');await wait(()=>web.w.document.querySelector('.result.active h3')?.textContent==='D');
+  web.key('Enter');await wait(()=>web.calls.some(c=>c[0]==='action'&&c[1]==='web'&&c[3].id==='D'));
 });
 
 test('both usage rows filter by source and keep recent entries when frequent is empty',async t=>{
@@ -45,9 +54,14 @@ test('both usage rows filter by source and keep recent entries when frequent is 
   assert.equal(w.document.querySelectorAll('.usage-tile').length,1);
   assert.ok(!w.document.querySelector('[data-group="usage:frequent"] .usage-tile'));
   q.focus();key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].id==='recent-web'));
+  key('ArrowUp');assert.equal(w.document.querySelector('.usage-tile.active h3')?.textContent,'Recent website');
+  key('ArrowDown');await wait(()=>!w.document.querySelector('.result.active').classList.contains('usage-tile'));
+  key('ArrowUp');await wait(()=>w.document.querySelector('.usage-tile.active h3')?.textContent==='Recent website');
   const frequentOnly=await setup(t,{usage:{frequent:[appItem('Frequent only')],recent:[]}});
   assert.ok(frequentOnly.w.document.querySelector('#results').textContent.includes('暂无最近使用'));
   assert.equal(frequentOnly.w.document.querySelectorAll('.usage-tile').length,1);
+  frequentOnly.key('ArrowDown');await wait(()=>!frequentOnly.w.document.querySelector('.result.active').classList.contains('usage-tile'));
+  frequentOnly.key('ArrowUp');await wait(()=>frequentOnly.w.document.querySelector('.usage-tile.active h3')?.textContent==='Frequent only');
 });
 
 test('F6 on a usage entry returns to search without opening a result menu',async t=>{
