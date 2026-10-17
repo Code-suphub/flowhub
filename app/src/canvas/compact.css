@@ -20,6 +20,8 @@ body.canvas-compact-mode:has(#canvas-root) { padding: 4px; overflow: hidden; }
 .compact-favorite[data-status="healthy"] .compact-avatar { color: var(--fh-accent); }
 .compact-empty { font-size: 12px; color: var(--fh-muted); min-width: 150px; }
 .compact-demo { font-size: 11px; color: var(--fh-muted); }
+.compact-refresh-error { max-width: 90px; font-size: 11px; line-height: 14px; color: var(--fh-danger); }
+.canvas-compact-bar .compact-retry { height: 28px; flex-shrink: 0; padding: 3px 6px; font-size: 12px; }
 .compact-notice { margin: 0; font-size: 11px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .canvas-compact-settings .compact-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
 .canvas-compact-settings p { font-size: 13px; color: var(--fh-muted); }

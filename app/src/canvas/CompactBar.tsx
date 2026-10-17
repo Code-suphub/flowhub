@@ -7,9 +7,10 @@ import { Checkbox } from '../components/ui/checkbox';
 import type { Layout, Source } from './model';
 import { compactStatus, favoriteCards, favoriteKey, type Favorite, type Presentation } from './compact-model';
 
-export function CompactBar({ layout, sources, presentation, busy, native, demo, onExpand, onDrag, onMore }: {
+export function CompactBar({ layout, sources, presentation, busy, native, demo, onExpand, onDrag, onMore, refreshError, onRetry }: {
   layout: Layout; sources: Source[]; presentation: Presentation; busy: boolean; native: boolean; demo: boolean;
   onExpand(): void; onDrag(): void; onMore(): void;
+  refreshError?: string; onRetry?(): void;
 }) {
   const favorites = favoriteCards(layout, presentation.favorites);
   return <section className="canvas-compact-bar" aria-label="紧凑状态条">
@@ -19,6 +20,7 @@ export function CompactBar({ layout, sources, presentation, busy, native, demo, 
       {!favorites.length ? <span className="compact-empty">尚未关注组件，展开画布后在“更多”中选择</span> : null}
     </div>
     {demo ? <span className="compact-demo">演示</span> : null}
+    {refreshError ? <><span role="alert" className="compact-refresh-error">更新失败 · 上次缓存</span><Button className="compact-retry" onClick={onRetry}>重试</Button></> : null}
     <Button id="expandCanvas" className="compact-icon" aria-label="展开画布" disabled={busy} onClick={onExpand}><Maximize2 aria-hidden="true" /></Button>
     {native ? <Button className="compact-icon" variant="ghost" aria-label="更多状态条操作" aria-haspopup="menu" disabled={busy} onClick={onMore}><MoreHorizontal aria-hidden="true" /></Button> : <ActionMenu label="更多状态条操作" icon={<MoreHorizontal aria-hidden="true" />} triggerClassName="compact-icon" popupClassName="compact-action-menu" items={[{ id: 'pinned', label: '置顶状态条', checked: layout.pinned, disabled: true }, { id: 'left', label: '贴左边', disabled: true }, { id: 'right', label: '贴右边', disabled: true }, { id: 'hide', label: '隐藏 · 从设置恢复', disabled: true }]} />}
   </section>;

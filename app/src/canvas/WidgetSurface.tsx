@@ -34,7 +34,9 @@ export function WidgetSurface({ source, card, kind, invoke, preview, inactive = 
       if (kind === 'editor') latest.current.onEditor?.(null, false);
     };
   }, [source.id, path, revision, kind, invoke, preview]);
-  useEffect(() => { bridge.current?.updateContext({ config: cardConfig(card), title: card?.title || '', snapshot: source.snapshot, preview: !invoke }); }, [card, source.snapshot, invoke]);
+  // An editor owns its in-progress draft. A resume cache refresh must not send
+  // it another init that could replace form state; source/version changes remount.
+  useEffect(() => { if (kind === 'card') bridge.current?.updateContext({ config: cardConfig(card), title: card?.title || '', snapshot: source.snapshot, preview: !invoke }); }, [kind, card, source.snapshot, invoke]);
   return <iframe ref={frame} id={kind === 'editor' ? 'widgetEditor' : undefined} className={kind === 'card' ? 'widget-content' : 'canvas-editor'}
     title={kind === 'editor' ? '插件组件配置' : card?.title || source.title} sandbox="allow-scripts" tabIndex={!inactive && (kind === 'editor' || source.widget?.interactive) ? 0 : -1} />;
 }

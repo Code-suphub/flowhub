@@ -7,6 +7,16 @@ body.preview:has(#canvas-root) { min-height: 100vh; background: var(--fh-surface
 .fh-canvas-app :is(button,[data-slot="button"]) { font-size:13px; }
 .fh-canvas-app :is(input,select,[data-slot="input"],[data-slot="select-trigger"]) { font-size:14px; }
 .fh-canvas-app *, .fh-canvas-app *::after { box-sizing: border-box; }
+.canvas-suspended-card { display: grid; place-items: center; min-height: 120px; padding: 16px; color: var(--fh-muted); font-size: 13px; }
+.canvas-refresh-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; color: var(--fh-danger); font-size: 13px; }
+.fh-canvas-app .canvas-card { transition: border-color 120ms ease, background-color 120ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .fh-canvas-app *, .fh-canvas-app *::before, .fh-canvas-app *::after,
+  body:has(#canvas-root) :is(.fh-dialog, .compact-action-menu),
+  body:has(#canvas-root) :is(.fh-dialog, .compact-action-menu) *,
+  body:has(#canvas-root) :is(.fh-dialog, .compact-action-menu) *::before,
+  body:has(#canvas-root) :is(.fh-dialog, .compact-action-menu) *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
 .canvas-toolbar { position: relative; z-index: 1; width: max-content; max-width: 100%; min-height: 42px; margin-bottom: 12px; padding: 6px 8px; border-radius: var(--fh-radius-lg); background: var(--fh-surface); backdrop-filter: blur(20px); font-size: 13px; }
 .canvas-toolbar .fh-button, .canvas-toolbar .fh-input, .canvas-toolbar [data-slot="select-trigger"] { height: 32px; padding: 5px 9px; font-size: 13px; line-height: 20px; }
 .canvas-toolbar :is(#dragSurface, #closeSurface) { width: 32px; padding: 5px; }
