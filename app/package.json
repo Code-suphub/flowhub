@@ -15,7 +15,7 @@
     "start": "tauri dev",
     "dev": "tauri dev",
     "dev:web": "vite --config vite.config.mjs",
-    "dev:machines": "npm --prefix \"${FLOWHUB_PLUGINS_DIR:-../../flowhub-plugins}/plugins/machines\" run dev --",
+    "dev:machines": "npm --prefix \"${FLOWHUB_PLUGINS_DIR:-../plugins}/plugins/machines\" run dev --",
     "cli": "node scripts/dev/flowhub-cli.mjs",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --check ui/shared/tauri-adapter.js && node --check ui/shared/browser-adapter.js && node --check ui/search/search.js && node --check scripts/build/local-build.mjs && node --check scripts/dev/flowhub-cli.mjs && node --check scripts/build/fix-updater-metadata.mjs && npm run test:ui && npm run test:preview && npm run test:security && node scripts/tests/focus-diagnostics.test.cjs && node scripts/tests/app-navigation.test.cjs",
     "build": "node scripts/build/tauri-build.mjs",

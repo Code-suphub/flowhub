@@ -14,3 +14,8 @@ app/src-tauri/target/
 weborg-*-check.png
 __pycache__/
 *.pyc
+
+# Local checkout of the independent plugin repository (directory or worktree symlink).
+/plugins
+# Local shared UI dependency used by the nested plugin checkout.
+/common-components
