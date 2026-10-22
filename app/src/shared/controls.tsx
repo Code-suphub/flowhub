@@ -6,8 +6,8 @@ import { Switch as ShadcnSwitch } from '../components/ui/switch';
 import { Select as ShadcnSelect, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip as ShadcnTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 
-export function Switch({checked, onChange, disabled, label}: {checked: boolean; onChange: (value: boolean) => void; disabled?: boolean; label: string}) {
-  return <ShadcnSwitch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} />;
+export function Switch({checked, onChange, disabled, label, id}: {checked: boolean; onChange: (value: boolean) => void; disabled?: boolean; label: string; id?: string}) {
+  return <ShadcnSwitch id={id} checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} />;
 }
 
 export function Tooltip({children, content}: {children: ReactElement; content?: ReactNode}) {
@@ -49,4 +49,4 @@ export function Select({value, options, onChange, label, disabled, id, labelledB
   </ShadcnSelect>;
 }
 
-export function EmptyState({children}: {children: ReactNode}) {return <p className="fh-empty" role="status">{children}</p>;}
+export function EmptyState({children, error}: {children: ReactNode; error?: boolean}) {return <p className="fh-empty" role={error ? 'alert' : 'status'}>{children}</p>;}

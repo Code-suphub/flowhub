@@ -109,9 +109,9 @@ export function PluginStatus() {
       </section>
     </> : null}
     </section>
-    {available || demo ? <section id="panel-display" role="tabpanel" aria-labelledby="tab-display" tabIndex={0} hidden={tab !== 'display'} className="fh-status-settings"><div className="fh-row"><span>显示菜单栏状态</span><Switch label="显示菜单栏状态" checked={draft.tray} disabled={saving || !canConfigure} onChange={tray => edit({ ...draft, tray })}/></div>
+    {available || demo ? <section id="panel-display" role="tabpanel" aria-labelledby="tab-display" tabIndex={0} hidden={tab !== 'display'} className="fh-status-settings"><div className="fh-row"><label htmlFor="status-tray">显示菜单栏状态</label><Switch id="status-tray" label="显示菜单栏状态" checked={draft.tray} disabled={saving || !canConfigure} onChange={tray => edit({ ...draft, tray })}/></div>
       <Button disabled={!available || saving} onClick={() => void api('menu').catch(error => setMessage(String(error)))}>打开菜单栏下拉</Button>
-      <div className="fh-row"><span>窗口始终置顶</span><Switch label="窗口始终置顶" checked={draft.pinned} disabled={saving || !canConfigure} onChange={pinned => edit({ ...draft, pinned })}/></div>
+      <div className="fh-row"><label htmlFor="status-pinned">窗口始终置顶</label><Switch id="status-pinned" label="窗口始终置顶" checked={draft.pinned} disabled={saving || !canConfigure} onChange={pinned => edit({ ...draft, pinned })}/></div>
       <FieldSet><FieldLegend variant="label">关注机器</FieldLegend><p className="fh-status-scope-note">勾选并保存后可在“关注”范围查看，全部列表优先展示。</p>
         <FieldGroup className="fh-status-favorites">{rows.map(row => <Field key={row.id} orientation="horizontal" data-disabled={saving || !canConfigure}>
           <Checkbox id={`favorite-${row.id}`} checked={draft.favorites.includes(row.id)} disabled={saving || !canConfigure} onCheckedChange={checked => edit({ ...draft, favorites: checked ? [...new Set([...draft.favorites, row.id])] : draft.favorites.filter(value => value !== row.id) })} />

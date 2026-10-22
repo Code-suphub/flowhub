@@ -27,7 +27,7 @@ test('React navigation keeps selected market/plugin highlighted after refresh an
  window.__TAURI__.core.invoke=async()=>[{enabled,manifest:{id:'example',name:'Example',ui:'ui/index.html'}}];
  vm.runInNewContext(source,{window,console});await window.FlowHubPluginIntegration.refresh();
  const {Settings}=require('../../src/settings/index.tsx'),view=await h.mount(Settings,{store});
- const selected=()=>[...view.container.querySelectorAll('nav[aria-label="设置模块"] [aria-pressed=true]')].map(b=>b.textContent);
+ const selected=()=>[...view.container.querySelectorAll('nav[aria-label="设置模块"] [aria-current=page]')].map(b=>b.textContent);
  await h.click(h.button(view.container,'插件市场'));assert.deepEqual(selected(),['插件市场']);
  await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['插件市场']);
  await h.click(h.button(view.container,'Example'));assert.deepEqual(selected(),['Example']);assert.equal(view.container.querySelector('iframe').getAttribute('sandbox'),'allow-scripts');
