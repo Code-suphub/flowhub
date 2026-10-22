@@ -37,15 +37,19 @@
 .fh-input:focus { outline:none; border-color:var(--fh-accent); box-shadow:0 0 0 2px var(--fh-focus-ring); }
 .fh-root :is([data-slot="button"],[data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]),
 .fh-dialog :is([data-slot="button"],[data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]) { border-radius:var(--fh-radius-md); }
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):not([aria-invalid="true"]) { border-color:var(--fh-border); background-color:var(--fh-surface); color:var(--fh-text); }
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):hover:not(:disabled):not([aria-disabled="true"]):not([aria-invalid="true"]) { border-color:color-mix(in srgb,var(--fh-accent) 46%,var(--fh-border)); }
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):focus-visible:not([aria-invalid="true"]),
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[data-popup-open]:not([aria-invalid="true"]) { border-color:var(--fh-accent); outline:2px solid var(--fh-accent); outline-offset:1px; box-shadow:none; }
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):disabled { background:var(--fh-surface-soft); color:var(--fh-muted); }
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[aria-invalid="true"] { border-color:var(--fh-danger); }
-:is(.fh-root,.fh-dialog) :is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[aria-invalid="true"]:is(:focus-visible,[data-popup-open]) { border-color:var(--fh-danger); outline:2px solid var(--fh-danger); outline-offset:1px; box-shadow:none; }
+/* One focus indicator for every surface: a solid accent outline replaces the
+   translucent ring so the cue carries the same weight in every window. */
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):not([aria-invalid="true"]) { border-color:var(--fh-border); background-color:var(--fh-surface); color:var(--fh-text); }
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):hover:not(:disabled):not([aria-disabled="true"]):not([aria-invalid="true"]) { border-color:color-mix(in srgb,var(--fh-accent) 46%,var(--fh-border)); }
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):focus-visible:not([aria-invalid="true"]),
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[data-popup-open]:not([aria-invalid="true"]) { border-color:var(--fh-accent); outline:2px solid var(--fh-accent); outline-offset:1px; box-shadow:none; }
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"]):disabled { background:var(--fh-surface-soft); color:var(--fh-muted); }
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[aria-invalid="true"] { border-color:var(--fh-danger); }
+:is([data-slot="input"],[data-slot="textarea"],[data-slot="select-trigger"])[aria-invalid="true"]:is(:focus-visible,[data-popup-open]) { border-color:var(--fh-danger); outline:2px solid var(--fh-danger); outline-offset:1px; box-shadow:none; }
+/* Inputs and selects share the 36px control height used by buttons. */
+.fh-root :is([data-slot="input"],[data-slot="select-trigger"]),.fh-dialog :is([data-slot="input"],[data-slot="select-trigger"]) { min-height:36px; }
 .fh-root [data-slot="button"] { transition:background-color .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease; }
-.fh-root :is([data-slot="button"],[role="switch"]):focus-visible,.fh-dialog :is([data-slot="button"],[role="switch"]):focus-visible { outline:2px solid var(--fh-accent); outline-offset:1px; box-shadow:none; }
+:is(button,[data-slot="button"],[role="switch"],[role="checkbox"],[role="radio"]):focus-visible { outline:2px solid var(--fh-accent); outline-offset:1px; box-shadow:none; }
 .fh-dialog [data-slot="button"] { transition:background-color .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease; }
 .fh-root [data-slot="button"]:disabled { cursor:not-allowed; }
 .fh-select-popup { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
@@ -76,3 +80,8 @@
 .fh-row-copy p { font-size:12px; overflow-wrap:anywhere; }
 .fh-actions { display:flex; flex-wrap:wrap; gap:6px; }
 @media(max-width:520px) { .fh-market {padding:12px;} .fh-row {align-items:flex-start; flex-direction:column; gap:8px;} }
+/* Reduced motion applies to every surface, including the Base UI popups that
+   animate their zoom and fade on open and close. */
+@media(prefers-reduced-motion:reduce) {
+  .fh-root *,.fh-dialog *,.fh-canvas-app * { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; }
+}

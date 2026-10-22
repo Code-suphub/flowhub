@@ -29,7 +29,6 @@
 .fh-market-empty [data-slot="empty-title"] { font-size:14px; font-weight:550; }
 .fh-market-empty [data-slot="empty-description"] { font-size:13px; }
 .fh-market [role="status"] { font-size:13px; }
-.fh-market :is(button,input,select,[tabindex]):focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
 .fh-market-dialog { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 .fh-market-dialog :is(button,input,select) { font-family:inherit; }
 .fh-market-dialog :is(button,[data-slot="button"]) { font-size:13px; }
