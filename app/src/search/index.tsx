@@ -24,7 +24,14 @@ function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNav
 }
 
 function ActionMenu({item,index,x,y,onDismiss}: {item:SearchItem;index:number;x:number;y:number;onDismiss:()=>void}) {
-  return <div className="search-context-menu" role="menu" aria-label="搜索结果操作" style={{left:x,top:y}} onClickCapture={onDismiss}>
+  return <div className="search-context-menu" role="menu" aria-label="搜索结果操作" style={{left:x,top:y}} onClickCapture={onDismiss} onKeyDown={event => {
+    const buttons=[...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')], position=buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
+      event.preventDefault();
+      const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(position+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;
+      buttons[next]?.focus();
+    }
+  }}>
     {item.type==='clipboard' ? <>
       <Button className="tool-action" role="menuitem" data-clipboard-action="pin" data-clipboard-id={item.id}>{item.pinnedAt?'取消置顶（⌘D）':'置顶（⌘D）'}</Button>
       {['text','file'].includes(item.kind)?<Button className="tool-action" role="menuitem" data-clipboard-action="plain" data-clipboard-id={item.id}>纯文本粘贴（⇧↩）</Button>:null}
@@ -101,6 +108,10 @@ function Search() {
   const activate=(event:React.MouseEvent<HTMLButtonElement>)=>controller.current?.activateScopeControl(event.currentTarget);
   const press=(event:React.MouseEvent)=>controller.current?.preserveSearchFocus(event);
   const state=snapshot?.state, selected=snapshot?.items[state?.index || 0];
+  const activeIndex=state?.index || 0, plan=snapshot?.plan;
+  // The result list is virtualized: the active option leaves the DOM once the
+  // user scrolls past it. Only reference an option that is actually rendered.
+  const activeRendered=Boolean(selected)&&(!plan||(activeIndex>=plan.from&&activeIndex<plan.to));
   const menuItem=actionMenu && snapshot?.items[actionMenu.index];
   const version=String(snapshot?.updateState?.currentVersion || ''), hasUpdate=['available','downloaded'].includes(snapshot?.updateState?.status || '');
   return <div ref={root} className="fh-root search-shell flex flex-col h-full">
@@ -110,11 +121,12 @@ function Search() {
     </Dialog>:null}
     <header className="search-header flex items-center justify-between gap-2"><strong>FlowHub</strong><div className="search-header-actions flex items-center gap-1"><span id="versionBadge" className={hasUpdate?'search-update':''} title={hasUpdate?`发现正式版 v${snapshot?.updateState?.availableVersion || '新版本'}`:`当前应用版本：${version || '浏览器预览'}`}>{version?`v${version.split('-')[0]}${version.includes('-local')?' · 本地版':''}`:'浏览器预览'}</span><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/><kbd>⌘K</kbd></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content="打开 FlowHub 设置"><Button id="settingsBtn" variant="ghost" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div></header>
     <div className="search-input-wrap grid gap-2"><label className="sr-only" htmlFor="q">搜索网页、应用、剪贴板或命令备忘</label>
-      <input id="q" className="fh-input" autoComplete="off" aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder="搜索网页、应用、剪贴板或命令备忘…" role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="results" aria-activedescendant={selected?`search-result-${state?.index || 0}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
+      <div className="search-input-box"><input id="q" className="fh-input" autoComplete="off" aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder="搜索网页、应用、剪贴板或命令备忘…" role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="search-results" aria-activedescendant={activeRendered?`search-result-${activeIndex}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
+      {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={()=>{const input=root.current?.querySelector<HTMLInputElement>('#q');if(!input)return;input.value='';controller.current?.handlers['input:input']?.();input.focus({preventScroll:true});}}>×</button>:null}</div>
     </div>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
-    <div id="results" role="listbox" aria-label="搜索结果" aria-busy={snapshot?.paging.loading || false} className="flex-1 min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onMouseUp={dispatch('results:mouseup')} onContextMenu={contextMenu} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>{snapshot?<Results snapshot={snapshot}/>:<p className="search-empty">配置加载中…</p>}{menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onDismiss={()=>{root.current?.querySelector<HTMLElement>('#q')?.focus({preventScroll:true});setActionMenu(null);}}/>:null}</div>
+    <div id="results" className="flex-1 min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onMouseUp={dispatch('results:mouseup')} onContextMenu={contextMenu} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>{snapshot?<Results snapshot={snapshot}/>:<p className="search-empty" role="status">配置加载中…</p>}{menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onDismiss={()=>{root.current?.querySelector<HTMLElement>('#q')?.focus({preventScroll:true});setActionMenu(null);}}/>:null}</div>
     <footer className="search-footer flex flex-wrap justify-between gap-2"><KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/><span id="actionStatus" role="status">{snapshot?.statusText}</span><span id="runtimeMode">{document.documentElement.dataset.weborgReadonly==='true'?(new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'):'FlowHub'}</span></footer>
   </div>;
 }

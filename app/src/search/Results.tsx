@@ -54,7 +54,7 @@ const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:numb
   const meta=itemMeta(item), title=String(item.title || item.id || ''), content=String(item.content || ''), description=String(item.description || '');
   const oversized=[title,meta,content,description].some(value=>value.length>8000), full=manual ?? (selected && !oversized);
   const expandable=!usage&&!isTool&&item.type!=='clipboard'&&(title.length>80||meta.length>180||content.length>180||content.includes('\n')||description.length>180);
-  return <div id={`search-result-${index}`} role="option" aria-selected={selected} className={`result ${item.type}-result ${usage?'usage-tile':''} ${selected?'active':''}`} data-i={index} data-full-content={isTool?undefined:usage?false:full}>
+  return <div id={`search-result-${index}`} role="option" aria-selected={selected} aria-setsize={snapshot.items.length} aria-posinset={index + 1} className={`result ${item.type}-result ${usage?'usage-tile':''} ${selected?'active':''}`} data-i={index} data-full-content={isTool?undefined:usage?false:full}>
     {!isTool && (item.type!=='clipboard'||item.kind!=='text')?<Icon item={item} snapshot={snapshot}/>:null}
     <div className="search-row-content min-w-0 flex-1">{usage?<h3 className="search-tile-title">{previewText(item.title || '未命名',false,80)}</h3>:item.type==='clipboard'?<Clipboard item={item} snapshot={snapshot} full={full} selected={selected}/>:isTool?<ToolContent item={item} snapshot={snapshot}/>:item.type==='memo'?<><p className="search-meta">{previewText(host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category,full)}</p><h3>{previewText(item.title || '未命名备忘',full,80)}</h3><code className="search-command">{previewText(full?content:content.split('\n',3).slice(0,2).join('\n'),full)}</code>{item.description?<p className="search-meta">{previewText(item.description,full)}</p>:null}</>:item.type==='twofa'?<><h3>{previewText(item.title || item.id || '2FA',full,80)}</h3><p className="search-meta">2FA 验证码{item.issuer?' · '+previewText(item.issuer,full):''}</p></>:item.type==='app'?<><h3>{previewText(item.title || '未命名应用',full,80)}</h3><p className="search-meta">{previewText(meta,full)}</p></>:item.type==='web-add'?<><h3>添加到网页配置</h3><p className="search-meta">未找到匹配网页 · {previewText(item.url,full)}</p></>:<><h3>{previewText(item.title || item.id,full,80)}</h3><p className="search-meta">{previewText(meta,full)}</p></>}
       {expandable?<Button className="search-content-toggle tool-action" aria-expanded={full} onMouseDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();setManual(!full);}}>{full?'收起内容':'展开内容'}</Button>:null}
@@ -74,19 +74,35 @@ const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:numb
   return true;
 });
 export function Results({snapshot}: {snapshot:SearchSnapshot}) {
-  if(!snapshot.state.config) return <p className="search-empty">{snapshot.statusText || '配置加载中…'}</p>;
-  const showUsage=!snapshot.state.query.trim()&&['all','app','web'].includes(snapshot.state.scope);
+  const ready=Boolean(snapshot.state.config);
+  const showUsage=ready&&!snapshot.state.query.trim()&&['all','app','web'].includes(snapshot.state.scope);
   const hasFrequent=snapshot.items.some(item=>item.usageSection==='frequent'),hasRecent=snapshot.items.some(item=>item.usageSection==='recent');
   const emptyUsage=(section:string)=><div className="search-usage-group" role="group" aria-label={section==='frequent'?'常用入口':'最近使用'}><h2 className="search-usage-label">{section==='frequent'?'常用':'最近'}</h2><p className="search-usage-empty">{section==='frequent'?'暂无常用入口':'暂无最近使用'}</p></div>;
-  if(!snapshot.items.length) return <>{showUsage?<>{emptyUsage('frequent')}{emptyUsage('recent')}</>:<p className="search-empty">{snapshot.paging.loading?'正在加载…':'没有匹配项'}</p>}</>;
   const {items,plan}=snapshot, rows:React.ReactNode[]=[];
-  for(let i=plan?.from || 0;i<(plan?.to ?? items.length);) {
-    const item=items[i];
-    if(item.usageSection) {
-      const section=item.usageSection, group:React.ReactNode[]=[];
-      while(i<(plan?.to ?? items.length) && items[i].usageSection===section) {group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot}/>);i++;}
-      rows.push(<section key={`usage:${section}`} data-group={`usage:${section}`} aria-label={section==='frequent'?'常用入口':'最近使用'}>{section==='recent'&&!hasFrequent?emptyUsage('frequent'):null}<div className="search-usage-group"><h2 className="search-usage-label">{section==='frequent'?'常用':'最近'}</h2><div className="usage-strip flex gap-2 overflow-x-auto">{group}</div></div>{section==='frequent'&&!hasRecent?emptyUsage('recent'):null}</section>);
-    } else {const key=`${item.type}:${item.id || item.path || item.url || item.title}`;rows.push(showUsage&&!hasFrequent&&!hasRecent&&i===0?<div key={key} data-group="empty-usage-and-first-result">{emptyUsage('frequent')}{emptyUsage('recent')}<Row item={item} index={i} snapshot={snapshot}/></div>:<Fragment key={key}><Row item={item} index={i} snapshot={snapshot}/></Fragment>);i++;}
+  let message='';
+  if(!ready) message=snapshot.statusText||'配置加载中…';
+  else if(!items.length) {
+    if(showUsage) rows.push(emptyUsage('frequent'),emptyUsage('recent'));
+    else message=snapshot.paging.loading?'正在加载…':'没有匹配项';
+  } else {
+    for(let i=plan?.from || 0;i<(plan?.to ?? items.length);) {
+      const item=items[i];
+      if(item.usageSection) {
+        const section=item.usageSection, group:React.ReactNode[]=[];
+        while(i<(plan?.to ?? items.length) && items[i].usageSection===section) {group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot}/>);i++;}
+        // The listbox may only own options and groups; every wrapper in between
+        // is presentational so the tiles stay owned by the listbox.
+        rows.push(<div key={`usage:${section}`} data-group={`usage:${section}`} role="group" aria-label={section==='frequent'?'常用入口':'最近使用'}>{section==='recent'&&!hasFrequent?emptyUsage('frequent'):null}<div className="search-usage-group" role="presentation"><h2 className="search-usage-label">{section==='frequent'?'常用':'最近'}</h2><div className="usage-strip flex gap-2 overflow-x-auto" role="presentation">{group}</div></div>{section==='frequent'&&!hasRecent?emptyUsage('recent'):null}</div>);
+      } else {const key=`${item.type}:${item.id || item.path || item.url || item.title}`;rows.push(showUsage&&!hasFrequent&&!hasRecent&&i===0?<div key={key} data-group="empty-usage-and-first-result" role="presentation">{emptyUsage('frequent')}{emptyUsage('recent')}<Row item={item} index={i} snapshot={snapshot}/></div>:<Fragment key={key}><Row item={item} index={i} snapshot={snapshot}/></Fragment>);i++;}
+    }
+    message=snapshot.paging.loading?'正在加载更多…':(!snapshot.paging.hasMore?'已经到底了':'');
   }
-  return <>{plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}{rows}{plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}{snapshot.paging.loading || !snapshot.paging.hasMore?<p className="search-empty">{snapshot.paging.loading?'正在加载更多…':'已经到底了'}</p>:null}</>;
+  return <>
+    <div id="search-results" role="listbox" aria-label="搜索结果" aria-busy={snapshot.paging.loading || false}>
+      {plan?<div aria-hidden="true" style={{height:plan.before}}/>:null}
+      {rows}
+      {plan?<div aria-hidden="true" style={{height:plan.after}}/>:null}
+    </div>
+    {message?<p className="search-empty" role="status">{message}</p>:null}
+  </>;
 }
