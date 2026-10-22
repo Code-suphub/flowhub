@@ -7,6 +7,7 @@ import { Choice, TextField } from './fields';
 import { host, readonly, write } from './api';
 import { clone, entries, importWeb, moveNodes, moveMemo, removeNodes, renameCategory, memoTree, type MemoBranch, type MemoMoveRef, type MemoDropPosition, type Bag, type Memo, type WebNode } from './model';
 import { useTreeView } from './useTreeView';
+import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { SettingsStore, useSettings } from './store';
 
 export function WebCatalog({ store }: { store: SettingsStore }) {
@@ -33,22 +34,33 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     if (!tree) return;
     stopPointerDrag.current?.();
     const { pointerId, clientX, clientY } = event;
+    const sourceRow = event.currentTarget.closest<HTMLElement>('[data-node-id]');
+    if (!sourceRow) return;
+    const movingIds = selected.includes(source) ? selected : [source];
+    const moving = new Set(movingIds.flatMap(id => {
+      const entry = all.find(entry => entry.node.id === id);
+      return [id, ...entries(entry?.node.children || []).map(entry => entry.node.id)];
+    }));
     let moved = false;
     const rowAt = (x: number, y: number) => {
       const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-node-id]');
-      return row && tree.contains(row) && row.dataset.nodeId !== source ? row : null;
+      return row && tree.contains(row) && !moving.has(row.dataset.nodeId!) ? row : null;
     };
     const cleanup = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
       window.removeEventListener('blur', onCancel);
+      window.removeEventListener('keydown', onKey);
+      dragMotion.end();
       if (stopPointerDrag.current === cleanup) stopPointerDrag.current = null;
     };
     const onMove = (move: PointerEvent) => {
       if (move.pointerId !== pointerId) return;
       if (!moved && Math.hypot(move.clientX - clientX, move.clientY - clientY) < 5) return;
+      if (!moved) dragMotion.lift(sourceRow, tree, movingIds, clientX, clientY);
       moved = true;
+      dragMotion.move(move.clientX, move.clientY);
       move.preventDefault();
       const row = rowAt(move.clientX, move.clientY);
       if (row) dropAt(row, move.clientY);
@@ -61,7 +73,8 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
         const row = rowAt(up.clientX, up.clientY);
         if (row) {
           const { id, position } = dropAt(row, up.clientY);
-          editNodes(moveNodes(nodes, selected.includes(source) ? selected : [source], id, position));
+          dragMotion.captureDrop();
+          editNodes(moveNodes(nodes, movingIds, id, position));
           setExpanded(prev => new Set([...prev, id]));
         }
       }
@@ -69,10 +82,12 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
       setDropTarget(null);
     };
     const onCancel = () => { cleanup(); setDropTarget(null); };
+    const onKey = (key: KeyboardEvent) => { if (key.key === 'Escape') { key.preventDefault(); onCancel(); } };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     window.addEventListener('blur', onCancel);
+    window.addEventListener('keydown', onKey);
     stopPointerDrag.current = cleanup;
   }
   useEffect(() => { if (s.webSelection) { setSelected([s.webSelection]); setExpanded(prev => new Set([...prev, ...all.filter(e => entries(e.node.children || []).some(child => child.node.id === s.webSelection)).map(e => e.node.id)])); } }, [s.webSelection]);
@@ -85,6 +100,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     }); visit(nodes, 0, null); return list;
   }, [all, nodes, deferred, expanded]);
   const view = useTreeView(visible.map(e => e.node.id), selected[0] || '', deferred);
+  const dragMotion = useCatalogDragMotion();
   const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem('flowhub:web-tree-width')) || 260; } catch { return 260; } });
   const resizing = useRef<{ x: number; width: number } | null>(null);
   function resize(value: number) { const next = Math.max(220, Math.min(380, value)); setWidth(next); if (!readonly()) try { localStorage.setItem('flowhub:web-tree-width', String(next)); } catch { /* presentation only */ } }

@@ -4,27 +4,27 @@
   "version": "0.1.12",
   "description": "uTools 风格的桌面启动器：全局搜索目录/网页，回车打开；可配置启动本地应用。",
   "scripts": {
-    "build:ui": "npm run typecheck && vite build --config vite.react.config.mjs",
+    "build:ui": "pnpm run typecheck && vite build --config vite.react.config.mjs",
     "typecheck": "tsc --noEmit",
-    "test:react": "node --test scripts/tests/react-host.test.cjs scripts/tests/search-react.test.cjs scripts/tests/clipboard-delete-react.test.cjs scripts/tests/search-native-diagnostics.test.cjs scripts/tests/search-stress-fixture.test.cjs scripts/tests/settings-react.test.cjs scripts/tests/shared-controls.test.cjs",
-    "pretest:ui": "npm run build:ui",
-    "posttest:ui": "npm run test:react",
-    "predev:web": "npm run build:ui",
-    "pretest": "npm run build:ui",
+    "test:react": "node --test --test-concurrency=1 scripts/tests/react-host.test.cjs scripts/tests/search-react.test.cjs scripts/tests/clipboard-delete-react.test.cjs scripts/tests/search-native-diagnostics.test.cjs scripts/tests/search-stress-fixture.test.cjs scripts/tests/settings-react.test.cjs scripts/tests/settings-close.test.cjs scripts/tests/settings-json-react.test.cjs scripts/tests/shared-controls.test.cjs",
+    "pretest:ui": "pnpm run build:ui",
+    "posttest:ui": "pnpm run test:react",
+    "predev:web": "pnpm run build:ui",
+    "pretest": "pnpm run build:ui",
     "dev:ui": "vite build --config vite.react.config.mjs --watch",
     "start": "tauri dev",
     "dev": "tauri dev",
     "dev:web": "vite --config vite.config.mjs",
-    "dev:machines": "npm --prefix \"${FLOWHUB_PLUGINS_DIR:-../../flowhub-plugins}/plugins/machines\" run dev --",
+    "dev:machines": "pnpm --dir \"${FLOWHUB_PLUGINS_DIR:-../plugins}/plugins/machines\" run dev",
     "cli": "node scripts/dev/flowhub-cli.mjs",
-    "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --check ui/shared/tauri-adapter.js && node --check ui/shared/browser-adapter.js && node --check ui/search/search.js && node --check scripts/build/local-build.mjs && node --check scripts/dev/flowhub-cli.mjs && node --check scripts/build/fix-updater-metadata.mjs && npm run test:ui && npm run test:preview && npm run test:security && node scripts/tests/focus-diagnostics.test.cjs && node scripts/tests/app-navigation.test.cjs",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --check ui/shared/tauri-adapter.js && node --check ui/shared/browser-adapter.js && node --check ui/search/search.js && node --check scripts/build/local-build.mjs && node --check scripts/dev/flowhub-cli.mjs && node --check scripts/build/fix-updater-metadata.mjs && pnpm run test:ui && pnpm run test:preview && pnpm run test:security && node scripts/tests/focus-diagnostics.test.cjs && node scripts/tests/app-navigation.test.cjs",
     "build": "node scripts/build/tauri-build.mjs",
     "build:local": "node scripts/build/local-build.mjs",
     "build:local:install": "node scripts/build/local-build.mjs --install",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "node scripts/build/tauri-build.mjs",
-    "test:preview": "node --test scripts/tests/preview-readonly.test.mjs scripts/tests/plugin-runtime.test.cjs scripts/tests/plugin-status.test.cjs scripts/tests/widget-frame.test.cjs scripts/tests/widget-menu.test.cjs scripts/tests/widget-canvas-react.test.cjs scripts/tests/widget-minimum.test.cjs scripts/tests/widget-layout.test.cjs",
+    "test:preview": "node --test --test-concurrency=1 scripts/tests/preview-readonly.test.mjs scripts/tests/plugin-runtime.test.cjs scripts/tests/plugin-status.test.cjs scripts/tests/widget-frame.test.cjs scripts/tests/widget-menu.test.cjs scripts/tests/widget-canvas-react.test.cjs scripts/tests/widget-minimum.test.cjs scripts/tests/widget-layout.test.cjs",
     "test:security": "node scripts/tests/desktop-security.test.cjs && cargo test --manifest-path src-tauri/Cargo.toml --features custom-protocol bundled_desktop_security",
     "test:ui": "node --test scripts/tests/theme.test.cjs scripts/tests/web-search.test.cjs && node scripts/tests/port-tool.test.cjs && node scripts/tests/local-ip-tool.test.cjs && node scripts/tests/search-window.test.cjs && node scripts/tests/search-progressive.test.cjs && node scripts/tests/all-pagination.test.cjs && node scripts/tests/settings-performance.test.cjs && node scripts/tests/settings-storage.test.cjs && node scripts/tests/network-tools.test.cjs && node scripts/tests/search-focus.test.cjs && node scripts/tests/search-timing.test.cjs && node scripts/tests/json-tool.test.cjs && node scripts/tests/all-native-pagination.test.cjs && node scripts/tests/url-tool.test.cjs && node scripts/tests/search-render.test.cjs && node scripts/tests/search-order.test.cjs && node scripts/tests/settings-config-history.test.cjs && node scripts/tests/settings-undo-delete.test.cjs && node scripts/tests/settings-config-transfer.test.cjs && node scripts/tests/settings-batch-actions.test.cjs && node scripts/tests/settings-web-import.test.cjs && node scripts/tests/settings-tree-view.test.cjs && node scripts/tests/command-store.test.cjs && node scripts/tests/command-tools.test.cjs && node scripts/tests/settings-command-history.test.cjs && node scripts/tests/clipboard-actions.test.cjs && node scripts/tests/result-actions.test.cjs && node scripts/tests/ui-assets.test.cjs"
   },
@@ -38,7 +38,8 @@
     "jsdom": "^30.1.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
-    "vite": "^7.1.3"
+    "vite": "^7.1.3",
+    "esbuild": "0.28.2"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -49,5 +50,12 @@
     "react-dom": "^19.3.0",
     "sql.js": "^1.14.2",
     "tailwind-merge": "^3.7.0"
+  },
+  "packageManager": "pnpm@10.15.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "fsevents"
+    ]
   }
 }

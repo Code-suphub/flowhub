@@ -9,10 +9,23 @@ mod detail;
 fn viewport_point(x:f64,y:f64,left:f64,bottom:f64,height:f64,flipped:bool)->(f64,f64){
     (x-left,if flipped{y-bottom}else{height-(y-bottom)})
 }
+#[cfg(any(not(target_os="macos"),test))]
 fn position_is_visible((x,y):(i32,i32),monitors:&[(i32,i32,u32,u32)])->bool {
     monitors.iter().any(|&(left,top,width,height)| {
         let (x,y,left,top)=(x as i64,y as i64,left as i64,top as i64);
         x>=left && y>=top && x+80<=left+width as i64 && y+80<=top+height as i64
+    })
+}
+#[cfg(any(target_os="macos",test))]
+fn appkit_position_is_visible((x,y):(f64,f64),frames:&[(f64,f64,f64,f64)])->bool {
+    x.is_finite() && y.is_finite() && frames.iter().any(|&(left,bottom,width,height)|
+        x>=left && x+80.<=left+width && y-80.>=bottom && y<=bottom+height)
+}
+#[cfg(any(target_os="macos",test))]
+fn legacy_appkit_position((x,y):(i32,i32),primary_height:f64,screens:&[(f64,f64,f64,f64,f64)])->Option<(f64,f64)> {
+    screens.iter().find_map(|&(left,bottom,width,height,scale)|{
+        let point=(x as f64/scale,primary_height-y as f64/scale);
+        appkit_position_is_visible(point,&[(left,bottom,width,height)]).then_some(point)
     })
 }
 #[cfg(test)]
@@ -68,13 +81,14 @@ pub struct Card { id:String, plugin:String, title:String, view:String, size:Stri
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Board { id:String, title:String, cards:Vec<Card> }
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default,rename="layoutLocked")] layout_locked:bool, #[serde(default)] desktop:bool, #[serde(default,rename="windowPosition",skip_serializing_if="Option::is_none")] window_position:Option<(i32,i32)>, #[serde(default)] version:u32 }
-impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,layout_locked:false,desktop:false,window_position:None,version:2}}}
+pub struct Layout { boards:Vec<Board>, active:String, pinned:bool, #[serde(default,rename="viewOnly")] view_only:bool, #[serde(default,rename="layoutLocked")] layout_locked:bool, #[serde(default)] desktop:bool, #[serde(default,rename="windowPosition",skip_serializing_if="Option::is_none")] window_position:Option<(i32,i32)>, #[serde(default,rename="windowPositionAppKit",skip_serializing_if="Option::is_none")] window_position_appkit:Option<(f64,f64)>, #[serde(default)] version:u32 }
+impl Default for Layout {fn default()->Self{Self{boards:vec![Board{id:"default".into(),title:"我的工作台".into(),cards:vec![]}],active:"default".into(),pinned:false,view_only:false,layout_locked:false,desktop:false,window_position:None,window_position_appkit:None,version:2}}}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Presentation { active:String, pinned:bool }
 impl Layout {
     fn validate(&self)->Result<(),String>{
+        if self.window_position_appkit.is_some_and(|(x,y)|!x.is_finite()||!y.is_finite()){return Err("窗口位置无效".into());}
         if self.boards.is_empty() || self.boards.len()>12 || !self.boards.iter().any(|b|b.id==self.active){return Err("画布数量或当前画布无效".into());}
         let mut ids=std::collections::HashSet::new();
         for b in &self.boards {
@@ -96,9 +110,9 @@ impl State {
         self.try_update(|layout|{
             if (layout.layout_locked || layout.view_only) && layout.boards!=next.boards {return Err("布局已锁定，无法编辑组件或布局".into());}
             // Frontend snapshots may predate a native move or mode change.
-            let owned=(layout.view_only,layout.layout_locked,layout.desktop,layout.window_position);
+            let owned=(layout.view_only,layout.layout_locked,layout.desktop,layout.window_position,layout.window_position_appkit);
             *layout=next;
-            layout.view_only=owned.0;layout.layout_locked=owned.1;layout.desktop=owned.2;layout.window_position=owned.3;
+            layout.view_only=owned.0;layout.layout_locked=owned.1;layout.desktop=owned.2;layout.window_position=owned.3;layout.window_position_appkit=owned.4;
             Ok(())
         })
     }
@@ -123,10 +137,50 @@ impl State {
         })?;
         Ok(added)
     }
+    #[cfg(any(not(target_os="macos"),test))]
     fn remember_position(&self,position:(i32,i32))->Result<(),String>{
         if self.layout.lock().unwrap().window_position==Some(position){return Ok(());}
         self.update(|layout|layout.window_position=Some(position))
     }
+    #[cfg(any(target_os="macos",test))]
+    fn remember_appkit_position(&self,position:(f64,f64))->Result<(),String>{
+        if self.layout.lock().unwrap().window_position_appkit==Some(position){return Ok(());}
+        self.update(|layout|layout.window_position_appkit=Some(position))
+    }
+}
+#[cfg(target_os="macos")]
+fn capture_canvas_position(window:&tauri::WebviewWindow) {
+    let app=window.app_handle().clone();
+    let _=window.with_webview(move|webview|{
+        let native=unsafe{&*webview.ns_window().cast::<objc2_app_kit::NSWindow>()};
+        let frame=native.frame();
+        let _=app.state::<State>().remember_appkit_position((frame.origin.x,frame.origin.y+frame.size.height));
+    });
+}
+#[cfg(target_os="macos")]
+fn show_canvas(window:&tauri::WebviewWindow,layout:Layout)->Result<(),String>{
+    let handle=window.clone();
+    window.with_webview(move|webview|{
+        let Some(mtm)=objc2::MainThreadMarker::new() else{return;};
+        let native=unsafe{&*webview.ns_window().cast::<objc2_app_kit::NSWindow>()};
+        let screens=objc2_app_kit::NSScreen::screens(mtm);
+        let frames:Vec<_>=screens.iter().map(|s|{let f=s.frame();(f.origin.x,f.origin.y,f.size.width,f.size.height)}).collect();
+        let legacy_screens:Vec<_>=screens.iter().map(|s|{let f=s.frame();(f.origin.x,f.origin.y,f.size.width,f.size.height,s.backingScaleFactor())}).collect();
+        let restored=layout.window_position_appkit.filter(|p|appkit_position_is_visible(*p,&frames))
+            .or_else(||if layout.window_position_appkit.is_none(){layout.window_position.and_then(|p|legacy_appkit_position(p,core_graphics::display::CGDisplay::main().pixels_high() as f64,&legacy_screens))}else{None});
+        if let Some((x,y))=restored {
+            native.setFrameTopLeftPoint(objc2_foundation::NSPoint::new(x,y));
+        } else if layout.window_position_appkit.is_some()||layout.window_position.is_some() {
+            if let Some(screen)=screens.firstObject(){
+                let bounds=screen.visibleFrame();let size=native.frame().size;
+                native.setFrameTopLeftPoint(objc2_foundation::NSPoint::new(bounds.origin.x+((bounds.size.width-size.width)/2.).max(0.),bounds.origin.y+bounds.size.height-((bounds.size.height-size.height)/2.).max(0.)));
+            }
+        }
+        // Save and show in the same main-thread operation, before DPI/move events.
+        let frame=native.frame();
+        let _=handle.app_handle().state::<State>().remember_appkit_position((frame.origin.x,frame.origin.y+frame.size.height));
+        let _=handle.show();let _=handle.set_focus();
+    }).map_err(|e|e.to_string())
 }
 pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     open_with_source(app,plugin,None)
@@ -147,20 +201,31 @@ fn open_with_source(app:&tauri::AppHandle,plugin:&str,source:Option<detail::Retu
         w.show().map_err(|e|e.to_string())?;return w.set_focus().map_err(|e|e.to_string());
     }
     let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App(source_url.unwrap_or_else(||"plugin-canvas.html".into()).into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
+    #[cfg(not(target_os="macos"))]
     if let Some(position)=layout.window_position {
         let monitors:Vec<_>=app.available_monitors().map_err(|e|e.to_string())?.iter().map(|m|(m.position().x,m.position().y,m.size().width,m.size().height)).collect();
         if position_is_visible(position,&monitors){w.set_position(tauri::PhysicalPosition::new(position.0,position.1)).map_err(|e|e.to_string())?;}
         else {w.center().map_err(|e|e.to_string())?;}
     }
+    #[cfg(target_os="macos")]
+    let moved_window=w.clone();
     let handle=app.clone();w.on_window_event(move|event|{
         let state=handle.state::<State>();
         match event {
-            tauri::WindowEvent::Moved(position)=>{let _=state.remember_position((position.x,position.y));}
+            tauri::WindowEvent::Moved(_position)=>{
+                #[cfg(target_os="macos")]
+                capture_canvas_position(&moved_window);
+                #[cfg(not(target_os="macos"))]
+                {let _=state.remember_position((_position.x,_position.y));}
+            }
             tauri::WindowEvent::CloseRequested{..}=>{let _=state.update(|layout|layout.desktop=false);}
             _=>{}
         }
     });
-    w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;
+    #[cfg(target_os="macos")]
+    show_canvas(&w,layout)?;
+    #[cfg(not(target_os="macos"))]
+    {w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;}
     Ok(())
 }
 pub fn restore(app:&tauri::AppHandle){let desktop=app.state::<State>().layout.lock().unwrap().desktop;if desktop{let handle=app.clone();let _=app.run_on_main_thread(move||{let _=open(&handle,"");});}}
@@ -335,6 +400,37 @@ fn window_position_accepts_negative_monitor_origins_but_rejects_disconnected_dis
     assert!(!position_is_visible((1850,100),&monitors));
     assert!(!position_is_visible((0,1040),&monitors));
     assert!(!position_is_visible((i32::MAX,i32::MAX),&monitors));
+}
+
+#[cfg(test)]
+#[test]
+fn appkit_positions_and_legacy_migration_handle_mixed_scale_screens(){
+    // Actual arrangement: a 2x MacBook and a 1x display above it.
+    let screens=[(0.,0.,1512.,982.,2.),(-202.,982.,1920.,1080.,1.)];
+    let frames:Vec<_>=screens.iter().map(|&(x,y,w,h,_)|(x,y,w,h)).collect();
+    assert_eq!(legacy_appkit_position((472,-920),982.,&screens),Some((472.,1902.)));
+    assert_eq!(legacy_appkit_position((400,200),982.,&screens),Some((200.,882.)));
+    assert!(appkit_position_is_visible((472.,1902.),&frames));
+    assert!(!appkit_position_is_visible((472.,1902.),&frames[..1]));
+    assert!(!appkit_position_is_visible((f64::NAN,1902.),&frames));
+    assert_eq!(legacy_appkit_position((9000,9000),982.,&screens),None);
+    let left=[(0.,0.,1512.,982.,2.),(-1920.,0.,1920.,1080.,1.)];
+    assert_eq!(legacy_appkit_position((-600,182),982.,&left),Some((-600.,800.)));
+}
+
+#[cfg(test)]
+#[test]
+fn appkit_window_position_survives_restart_and_stale_frontend_saves(){
+    let root=std::env::temp_dir().join(format!("canvas-appkit-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
+    std::fs::create_dir_all(&root).unwrap();
+    let state=State::new(&root).unwrap();
+    state.remember_appkit_position((472.5,1902.)).unwrap();
+    let mut stale=Layout::default();stale.window_position_appkit=Some((0.,900.));
+    state.save_from_canvas(stale).unwrap();
+    let restarted=State::new(&root).unwrap();
+    assert_eq!(restarted.layout.lock().unwrap().window_position_appkit,Some((472.5,1902.)));
+    assert_eq!(serde_json::to_value(&*restarted.layout.lock().unwrap()).unwrap()["windowPositionAppKit"],json!([472.5,1902.]));
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(test)]

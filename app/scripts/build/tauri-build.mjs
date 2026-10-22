@@ -21,8 +21,8 @@ if (!environment.TAURI_SIGNING_PRIVATE_KEY && !environment.TAURI_SIGNING_PRIVATE
   process.exit(1);
 }
 
-const command = process.platform === "win32" ? "npx.cmd" : "npx";
-const result = spawnSync(command, ["tauri", "build", ...process.argv.slice(2)], {
+const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const result = spawnSync(command, ["exec", "tauri", "build", ...process.argv.slice(2)], {
   cwd: process.cwd(),
   env: environment,
   stdio: "inherit"

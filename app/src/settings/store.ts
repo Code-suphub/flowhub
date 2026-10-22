@@ -28,6 +28,11 @@ export class SettingsStore {
   }
   replace(config: Config) { this.edit(next => { for (const key of Object.keys(next)) delete next[key]; Object.assign(next, normalize(config)); }); }
   setJson(text: string) { if (readonly() || this.value.busy || this.value.conflict) return; this.patch({ jsonText: text, revision: this.value.revision + 1 }); this.scheduleDraft(); }
+  restoreJson(text: string | null) {
+    if (readonly() || this.value.busy) return;
+    this.patch({ jsonText: text, notice: '', error: false });
+    if (this.dirty) this.scheduleDraft(); else this.clearDraft();
+  }
   applyJson() { if (this.value.jsonText !== null) { const next = normalize(JSON.parse(this.value.jsonText)); this.replace(next); this.patch({ jsonText: null }); this.scheduleDraft(); } }
   travel(direction: 'undo' | 'redo') {
     if (readonly() || this.value.busy || this.value.conflict || !this.value.config) return;

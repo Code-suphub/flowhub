@@ -8,13 +8,13 @@ FlowHub 是基于 Tauri 2 的 macOS 本地启动器。默认按 **Option + Space
 
 ```bash
 cd app
-npm install
-npm start
+pnpm install
+pnpm start
 ```
 
 App 默认不显示 Dock 图标或常驻主窗口。启动后按 **Option + Space** 呼出；搜索结果用方向键选择，按 `Enter` 执行，按 `Esc` 关闭。
 
-只预览前端页面时可运行 `npm run dev:web`，但浏览器不具备全局快捷键、剪贴板监听、打开本机应用等原生能力。
+只预览前端页面时可运行 `pnpm run dev:web`，但浏览器不具备全局快捷键、剪贴板监听、打开本机应用等原生能力。
 
 ## 本地数据
 
@@ -35,8 +35,8 @@ App 默认不显示 Dock 图标或常驻主窗口。启动后按 **Option + Spac
 
 ```bash
 cd app
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 本机构建会从 `~/.tauri/flowhub.key` 读取 Tauri 更新签名私钥，并从 `~/.tauri/flowhub.key.password` 读取密码。也可使用 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PATH` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 指定。私钥和密码都不能提交到仓库；丢失后已安装版本将无法验证后续更新。
@@ -82,7 +82,7 @@ git push origin v0.1.0
 本机开发可以使用本地 Release 构建，不需要修改三个正式版本号文件：
 
 ```bash
-npm run build:local
+pnpm run build:local
 ```
 
 该命令会生成带有 `-local.YYYYMMDDHHmmss` 标记的版本，并复用本机 Tauri 更新签名密钥。安装本地包后，设置页会显示“本地迭代版 · 可回退 GitHub Release”；点击“检查正式版”即可检查并安装 GitHub 最新正式版本。正式版本仍通过 `v*` 标签发布，不会被本地迭代包覆盖。
@@ -90,14 +90,14 @@ npm run build:local
 如果希望构建完成后直接替换 `/Applications/FlowHub.app` 并启动，可使用：
 
 ```bash
-npm run build:local:install
+pnpm run build:local:install
 ```
 
 ## 机器管理插件
 
-机器管理已迁至同级独立 Git 仓库 `flowhub-plugins`，页面、SSH 后端和测试都在插件仓库中维护。FlowHub 只保留通用插件加载器。首次迁移需要更新宿主，然后在「插件市场」选择已构建的插件仓库目录安装。
+机器管理位于宿主根目录 `plugins/` 下的独立 Git 仓库 `flowhub-plugins`（插件源码为 `plugins/plugins/machines/`），页面、SSH 后端和测试都在插件仓库中维护。FlowHub 只保留通用插件加载器。首次迁移需要更新宿主，然后在「插件市场」选择已构建的插件仓库目录安装。
 
-在插件仓库运行 `npm run dev` 使用模拟数据调试，运行 `npm run build` 构建独立后端；之后在插件市场重新加载，无需重编译 FlowHub。宿主的 `npm run dev:machines` 是同级克隆的开发快捷入口，默认查找 `../../flowhub-plugins`，可用 `FLOWHUB_PLUGINS_DIR` 指向其他位置。原机器配置和历史数据沿用，详见[独立插件协议](../docs/architecture/plugin/plugin-runtime.md)。市场支持先配置本地目录或 HTTPS 仓库，再扫描安装。线上独立插件包需要签名、公钥和平台信息，旧声明式线上包需要升级为 schema 2。
+在插件仓库运行 `pnpm run dev` 使用模拟数据调试，运行 `pnpm run build` 构建独立后端；之后在插件市场重新加载，无需重编译 FlowHub。宿主的 `pnpm run dev:machines` 默认查找 `../plugins`，可用 `FLOWHUB_PLUGINS_DIR` 指向其他位置。原机器配置和历史数据沿用，详见[独立插件协议](../docs/architecture/plugin/plugin-runtime.md)。市场支持先配置本地目录或 HTTPS 仓库，再扫描安装。线上独立插件包需要签名、公钥和平台信息，旧声明式线上包需要升级为 schema 2。
 
 ## 核心能力
 
@@ -111,6 +111,6 @@ npm run build:local:install
 
 开发与测试默认关闭 Rust 调试符号和增量编译，测试仍保留断言。需要调试符号时可临时设置 `CARGO_PROFILE_DEV_DEBUG=1`。Release 配置不受影响。
 
-本地安装 `npm run build:local:install` 默认只生成 app 和更新归档，不生成 DMG；正式分发构建保持原流程。不要同时运行完整测试与 Release 构建，避免链接临时文件叠加。
+本地安装 `pnpm run build:local:install` 默认只生成 app 和更新归档，不生成 DMG；正式分发构建保持原流程。不要同时运行完整测试与 Release 构建，避免链接临时文件叠加。
 
 需要回收缓存时，在 app 目录运行 `cargo clean --manifest-path src-tauri/Cargo.toml --profile dev`。它只删除开发/测试构建产物，保留 Release 产物、已安装应用和用户数据；下一次测试会重新编译依赖。

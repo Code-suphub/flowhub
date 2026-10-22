@@ -63,8 +63,9 @@ body:has(.fh-canvas-app) .canvas-editor-dialog [data-slot="field-label"] { font-
 body:has(.fh-canvas-app) [data-slot="dialog-overlay"] { background: transparent; backdrop-filter: none; }
 body:has(.fh-canvas-app) .fh-dialog h2 { font-size: 17px; margin: 0; }
 .canvas-editor { display: block; width: 100%; height: 230px; border: 0; }
-.canvas-menu { z-index: 1000; width: 168px; max-height: calc(100dvh - 16px); overflow-y: auto; padding: 5px; border: 1px solid var(--fh-border); border-radius: var(--fh-radius-md); background: var(--fh-surface); box-shadow: 0 8px 28px color-mix(in srgb, var(--fh-text) 20%, transparent); }
-.canvas-menu .fh-button { width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 10px; font-size: 12px; }
+.canvas-menu { z-index: 1000; width: max-content; min-width: 128px; max-width: calc(100dvw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 4px; border: 1px solid var(--fh-border); border-radius: var(--fh-radius-md); background: var(--fh-surface); box-shadow: 0 4px 16px color-mix(in srgb, var(--fh-text) 14%, transparent); }
+.canvas-menu .fh-button { width: 100%; height: 28px; justify-content: flex-start; text-align: left; border: 0; border-radius: 5px; background: transparent; padding: 4px 10px; font-size: 13px; font-weight: 400; line-height: 20px; box-shadow: none; }
+.canvas-menu .fh-button:disabled { color: var(--fh-muted); opacity: 1; }
 .canvas-menu .fh-button:hover, .canvas-menu .fh-button:focus-visible { background: var(--fh-surface-soft); }
 .canvas-menu .fh-button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:1px; }
 .canvas-menu-separator { height: 1px; margin: 4px 6px; background: var(--fh-border); }

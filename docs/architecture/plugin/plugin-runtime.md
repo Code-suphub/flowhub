@@ -1,8 +1,10 @@
 # 独立插件运行协议
 
-FlowHub 宿主使用 schema 2 原生进程插件。官方插件集中在同级仓库 flowhub-plugins 维护，机器插件位于 plugins/machines，安装时选择该子目录。各插件独立构建和发布，宿主不再编译机器页面、SSH、堡垒机或机器历史数据库模块。
+FlowHub 宿主使用 schema 2 原生进程插件。官方插件在独立仓库 flowhub-plugins 维护，本地检出位于宿主根目录的 plugins/（宿主 Git 忽略该目录），机器插件源码为 plugins/plugins/machines，安装时选择其 build/ 子目录。原同级路径可保留指向新位置的兼容软链接，应用的插件清单及本地来源应使用新的实际路径。各插件独立构建和发布，宿主不再编译机器页面、SSH、堡垒机或机器历史数据库模块。
 
 宿主注册表为数据根目录下的 plugins.json；每个插件的数据位于 数据根目录/插件ID。停用和卸载只移除加载关系，保留数据。
+
+迁移已安装的本地插件目录时，先退出宿主并备份数据根目录的 `plugins.json` 与 `plugin-sources.json`，再将插件目录整体移动，更新清单中的 `directory` 和本地来源的 `location`，最后重新启动宿主。使用新目录的真实路径，避免旧软链接与资源越界检查的规范化路径不一致；插件 ID、配置及历史数据保持原位置。
 
 包入口 flowhub-plugin.json 包含 schema、id、name、version、ui、executable、permissions。所有页面和可执行路径必须在包目录内；ui 的资源限制在页面目录。native-process 权限表示本机进程拥有当前用户权限；安装前展示权限确认。
 

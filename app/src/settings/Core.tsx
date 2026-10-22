@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
 import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
@@ -41,7 +41,7 @@ export function DataPanel({ store }: { store: SettingsStore }) {
     </div>
   </div>;
 }
-export function Core({ store, section, onSection, actions }: { store: SettingsStore; section: string; onSection: (id: string) => void; actions?: ReactNode }) {
+export function Core({ store, section, onSection }: { store: SettingsStore; section: string; onSection: (id: string) => void }) {
   const s = useSettings(store), c = s.config!, core = c.core;
   const activeSection = section === 'network' || section === 'notifications' ? 'general' : section;
   const setCore = (key: string, value: unknown) => store.edit(c => { c.core[key] = value; });
@@ -134,7 +134,7 @@ export function Core({ store, section, onSection, actions }: { store: SettingsSt
   const previewInspect = readonly() && ['general', 'search'].includes(activeSection);
   useEffect(() => () => stopPointerDrag.current?.(), []);
   useEffect(() => { stopPointerDrag.current?.(); setDraggingSource(''); updateDropTarget(null); }, [activeSection]);
-  return <><div className="settings-core-toolbar"><Tabs label="通用设置分类" items={sections} value={activeSection} onChange={onSection} />{actions ? <div className="settings-core-actions">{actions}</div> : null}</div><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section role="tabpanel" className="settings-core-panel" data-section={activeSection} id={`panel-${activeSection}`} aria-labelledby={`tab-${activeSection}`}>
+  return <><div className="settings-core-toolbar"><Tabs label="通用设置分类" items={sections} value={activeSection} onChange={onSection} /></div><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section role="tabpanel" className="settings-core-panel" data-section={activeSection} id={`panel-${activeSection}`} aria-labelledby={`tab-${activeSection}`}>
     {activeSection === 'general' ? <div className="settings-core-general">
       <section className="settings-core-group" aria-labelledby="general-launch-heading"><h2 id="general-launch-heading" className="settings-core-group-title">启动与快捷键</h2><fieldset disabled={readonly()} className="settings-core-subgroup"><Shortcut label="唤出 FlowHub" value={core.hotkey || 'Alt+Space'} taken={Object.values(core.scopeShortcuts)} onChange={v => setCore('hotkey', v)} /><Toggle label="开机自动启动" checked={core.launchAtLogin === true} onChange={v => setCore('launchAtLogin', v)} help="登录 macOS 用户账户后自动启动 FlowHub，保存设置后生效。" /></fieldset></section>
       <section className="settings-core-group" aria-labelledby="general-network-heading"><h2 id="general-network-heading" className="settings-core-group-title">网络</h2><Choice label="代理检测适配器" value={c.plugins.tools.settings.proxyAdapter} options={[{ value: 'auto', label: '自动' }, { value: 'mihomo', label: 'Mihomo' }, { value: 'clash-rest', label: 'Clash REST' }, { value: 'system', label: '系统代理' }]} onChange={v => store.edit(c => { c.plugins.tools.settings.proxyAdapter = v; })} /></section>

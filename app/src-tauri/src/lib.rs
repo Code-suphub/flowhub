@@ -853,7 +853,9 @@ async fn search_usage(app: tauri::AppHandle, scope: String) -> Result<Value, Str
 #[tauri::command]
 fn close_settings(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("settings") {
-        window.close().map_err(|error| error.to_string())?;
+        // The frontend has already resolved the draft/confirmation decision.
+        // Destroy bypasses the title-bar close-request guard below.
+        window.destroy().map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -912,13 +914,21 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             format!("settings.html?{}", query.finish())
         })
         .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if canvas { "settings.html?module=canvas".to_string() } else { "settings.html".to_string() });
-    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
+    let window = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
         .inner_size(980.0, 720.0)
         .min_inner_size(820.0, 600.0)
         .center()
         .build()
         .map_err(|error| error.to_string())?;
+    let close_window = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            // Queue early title-bar clicks until React installs its handler.
+            let _ = close_window.eval("(() => { let attempts = 0; const request = () => { if (window.requestSettingsClose) { window.requestSettingsClose(); } else if (++attempts < 200) { setTimeout(request, 50); } else { window.__TAURI__?.core?.invoke('close_settings'); } }; request(); })();");
+        }
+    });
     Ok(json!({ "ok": true }))
 }
 
@@ -1490,6 +1500,10 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Err(error) = crate::macos::dock_menu::install(app.handle()) {
+                eprintln!("[flowhub-tauri] Dock 菜单安装失败：{error}");
+            }
             let state = initialize_state().map_err(std::io::Error::other)?;
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);

@@ -7,6 +7,7 @@ export type SettingsHost = Window & {
   flowhubPerformance?: { enable: (enabled: boolean) => void; report: () => unknown; reset: () => void };
   FlowHubPluginIntegration?: { refresh: () => Promise<void>; subscribe: (fn: () => void) => () => void; getSnapshot: () => InstalledPlugin[]; attach: (frame: HTMLIFrameElement) => () => void; show: (module: string) => void };
   runMenuUpdate?: () => Promise<void>;
+  requestSettingsClose?: () => void;
   prepareAddWebUrl?: (value: string) => void;
   switchModule?: (value: string) => void;
   FlowHubTheme?: { get: () => string; set: (value: string) => void };

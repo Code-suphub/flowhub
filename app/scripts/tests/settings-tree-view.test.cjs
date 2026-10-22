@@ -62,5 +62,31 @@ test('desktop web tree pointer drag updates draft, while a click-sized motion do
  await h.act(async()=>{pointer('pointerdown',source,40);pointer('pointermove',window,10);pointer('pointerup',window,10);});
  assert.deepEqual(store.snapshot().config.plugins.web.settings.items.map(node=>node.id),['b','a','c','d','p']);
  assert.equal(store.dirty,true);
+  await view.unmount();store.dispose();
+});
+test('catalog drag lifts an inert multi-selection card and clears it on Escape, cancel, blur and unmount',async()=>{
+ const {store}=await h.loaded(),{WebCatalog}=require('../../src/settings/Collections.tsx'),view=await h.mount(WebCatalog,{store});
+ const source=view.container.querySelector('[data-node-id="b"]'),target=view.container.querySelector('[data-node-id="a"]');
+ await h.key(source,'Enter');await h.key(view.container.querySelector('[data-node-id="d"]'),'Enter',{ctrlKey:true});
+ source.getBoundingClientRect=()=>({left:20,top:40,width:240,height:36});target.getBoundingClientRect=()=>({left:20,top:0,width:240,height:36});
+ document.elementFromPoint=()=>target;
+ const pointer=(type,element,y)=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{pointerId:3,pointerType:'mouse',button:0,clientX:40,clientY:y});element.dispatchEvent(event);};
+ const begin=async()=>{await h.act(async()=>{pointer('pointerdown',source.querySelector('.settings-drag-handle'),50);pointer('pointermove',window,4);});const ghost=document.querySelector('.settings-catalog-drag-preview');assert.ok(ghost);assert.equal(ghost.inert,true);assert.equal(ghost.getAttribute('aria-hidden'),'true');assert.equal(ghost.querySelector('[data-node-id]'),null);assert.equal(ghost.querySelector('.settings-catalog-drag-count').textContent,'2 项');assert.equal(view.container.querySelectorAll('[data-drag-source]').length,2);};
+ for(const cancel of [()=>window.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})),()=>pointer('pointercancel',window,4),()=>window.dispatchEvent(new window.Event('blur'))]){
+  await begin();await h.act(async()=>cancel());assert.equal(document.querySelector('.settings-catalog-drag-preview'),null);assert.equal(view.container.querySelector('[data-drag-source]'),null);assert.equal(view.container.querySelector('[data-drop-position]'),null);assert.equal(document.body.classList.contains('settings-catalog-dragging'),false);assert.equal(store.dirty,false);
+ }
+ await begin();await view.unmount();assert.equal(document.querySelector('.settings-catalog-drag-preview'),null);assert.equal(document.body.classList.contains('settings-catalog-dragging'),false);store.dispose();
+});
+test('catalog drop animates the changed row positions and does not accept a dragged folder descendant',async()=>{
+ const {store}=await h.loaded(),{WebCatalog}=require('../../src/settings/Collections.tsx'),view=await h.mount(WebCatalog,{store});
+ const animations=[];view.container.querySelectorAll('[data-node-id]').forEach(row=>{row.getBoundingClientRect=()=>({left:0,top:[...row.parentElement.children].indexOf(row)*36,width:240,height:36});row.animate=frames=>{animations.push({id:row.dataset.nodeId,frames});return {cancel(){}};};});
+ const source=view.container.querySelector('[data-node-id="b"]'),target=view.container.querySelector('[data-node-id="a"]');document.elementFromPoint=()=>target;
+ const pointer=(type,element,y)=>{const event=new window.Event(type,{bubbles:true,cancelable:true});Object.assign(event,{pointerId:4,pointerType:'mouse',button:0,clientX:10,clientY:y});element.dispatchEvent(event);};
+ await h.act(async()=>{pointer('pointerdown',source,115);pointer('pointermove',window,4);pointer('pointerup',window,4);});
+ assert.equal(document.querySelector('.settings-catalog-drag-preview'),null);assert.ok(animations.some(item=>item.id==='b'),'the moved card animates from its old position');assert.ok(animations.some(item=>item.id==='a'),'displaced rows animate into place');assert.equal(store.snapshot().config.plugins.web.settings.items[0].id,'b');
+ document.elementFromPoint=()=>view.container.querySelector('[data-node-id="a1"]');
+ const before=JSON.stringify(store.snapshot().config.plugins.web.settings.items);
+ await h.act(async()=>{pointer('pointerdown',target,40);pointer('pointermove',window,90);});assert.equal(view.container.querySelector('[data-drop-position]'),null);
+ await h.act(async()=>pointer('pointerup',window,90));assert.equal(JSON.stringify(store.snapshot().config.plugins.web.settings.items),before);
  await view.unmount();store.dispose();
 });

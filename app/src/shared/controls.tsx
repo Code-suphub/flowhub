@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { observePopupOwner } from '../../../../common-components/packages/frontend/dom/popup';
 import { cn } from '../lib/utils';
+import { InfoIcon } from 'lucide-react';
 import { Switch as ShadcnSwitch } from '../components/ui/switch';
 import { Select as ShadcnSelect, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip as ShadcnTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -21,7 +22,7 @@ export function Tooltip({children, content}: {children: ReactElement; content?: 
   </TooltipProvider>;
 }
 export function Help({label = '说明', children}: {label?: string; children: ReactNode}) {
-  return <span className="fh-help"><Tooltip content={children}><button type="button" aria-label={label}>?</button></Tooltip></span>;
+  return <span className="fh-help"><Tooltip content={children}><button type="button" aria-label={label}><InfoIcon size={15} strokeWidth={1.6} aria-hidden="true" /></button></Tooltip></span>;
 }
 
 export interface SelectOption {value: string; label: string; disabled?: boolean}

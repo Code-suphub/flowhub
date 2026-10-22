@@ -39,7 +39,17 @@ cd app && npm test         # 桌面应用：Rust + UI + 浏览器预览 + 安全
 
 ## 插件
 
-FlowHub 官方插件在独立仓库维护：<https://github.com/Code-suphub/flowhub-plugins>。宿主的 `npm run dev:machines` 是同級克隆的开发快捷入口，默认查找 `../../flowhub-plugins`，可用 `FLOWHUB_PLUGINS_DIR` 指向其他位置：
+FlowHub 官方插件在独立仓库维护：<https://github.com/Code-suphub/flowhub-plugins>。本地统一放在宿主根目录的 `plugins/` 下，保留独立 Git 历史和发布流程；该目录不提交到宿主仓库。插件源码位于 `plugins/plugins/<id>/`。
+
+首次获取可在宿主根目录运行：
+
+```sh
+git clone https://github.com/Code-suphub/flowhub-plugins.git plugins
+# 插件公共控件目前引用同级 common-components 源码；该仓库需已在 ../common-components。
+ln -s ../common-components common-components
+```
+
+本机已创建共享源码软链接，软链接不提交。宿主 `app/` 下的 `npm run dev:machines` 默认查找 `../plugins`，也可用 `FLOWHUB_PLUGINS_DIR` 指向其他位置：
 
 ```sh
 cd app

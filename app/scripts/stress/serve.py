@@ -34,7 +34,7 @@ def build_fixture(root, ui=UI):
             if not source.is_relative_to(ui.resolve()) or source.suffix not in ('.js', '.css'):
                 raise ValueError(f'Unexpected fixture asset: {relative}')
         if not source.is_file():
-            raise FileNotFoundError(f'Missing {relative}; run npm run build:ui first')
+            raise FileNotFoundError(f'Missing {relative}; run pnpm run build:ui first')
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(source, target)

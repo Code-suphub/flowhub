@@ -482,12 +482,12 @@ export function Canvas() {
         <div className="canvas-menu-separator" role="separator" />
       </> : null}
       {menuCard ? <>
-        {sources.find(source => source.id === menuCard.plugin)?.widget?.detail ? <Button role="menuitem" onClick={() => { setMenu(null); void openCard(menuCard); }}>打开详情</Button> : null}
-        <Button role="menuitem" disabled={editingDisabled} onClick={() => add(menuCard)}>编辑组件</Button>
+        {sources.find(source => source.id === menuCard.plugin)?.widget?.detail ? <Button variant="ghost" size="sm" role="menuitem" onClick={() => { setMenu(null); void openCard(menuCard); }}>打开详情</Button> : null}
+        <Button variant="ghost" size="sm" role="menuitem" disabled={editingDisabled} onClick={() => add(menuCard)}>编辑组件</Button>
       </> : null}
-      <Button id={menu.kind === 'toolbar' ? 'canvasSettings' : undefined} variant={menu.kind === 'toolbar' ? 'ghost' : undefined} size={menu.kind === 'toolbar' ? 'sm' : undefined} role="menuitem" disabled={menu.kind === 'toolbar' && !invoke} onClick={() => { closeMenu(); if (invoke) void api('settings').catch(error => setNotice(String(error))); }}>桌面组件设置</Button>
-      {menuCard ? <Button role="menuitem" disabled={editingDisabled} onClick={() => commit(draft => { const board = draft.boards.find(board => board.id === draft.active)!; board.cards = board.cards.filter(card => card.id !== menuCard.id); })}>移除组件</Button> : null}
-      {viewOnly ? <Button role="menuitem" disabled={!invoke || viewOnlyBusy} onClick={() => { setMenu(null); void changeViewOnly(false); }}>{viewOnlyBusy ? '正在退出…' : '退出仅查看状态'}</Button> : null}
+      <Button id={menu.kind === 'toolbar' ? 'canvasSettings' : undefined} variant="ghost" size="sm" role="menuitem" disabled={menu.kind === 'toolbar' && !invoke} onClick={() => { closeMenu(); if (invoke) void api('settings').catch(error => setNotice(String(error))); }}>桌面组件设置</Button>
+      {menuCard ? <Button variant="ghost" size="sm" role="menuitem" disabled={editingDisabled} onClick={() => commit(draft => { const board = draft.boards.find(board => board.id === draft.active)!; board.cards = board.cards.filter(card => card.id !== menuCard.id); })}>移除组件</Button> : null}
+      {viewOnly ? <Button variant="ghost" size="sm" role="menuitem" disabled={!invoke || viewOnlyBusy} onClick={() => { setMenu(null); void changeViewOnly(false); }}>{viewOnlyBusy ? '正在退出…' : '退出仅查看状态'}</Button> : null}
     </div> : null}
     {editor ? <EditorDialog editor={editor} sources={sources} invoke={invoke} preview={preview} onClose={() => setEditor(null)} onSave={(plugin, title, config) => {
       const target = layoutRef.current.boards.find(board => board.id === editor.boardId);
