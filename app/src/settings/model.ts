@@ -3,7 +3,7 @@ export type Bag = Record<string, any>;
 export interface WebNode extends Bag { id: string; title?: string; url?: string; children?: WebNode[] }
 export interface Memo extends Bag { id: string; title: string; category?: string; content?: string; tags?: string[] }
 export interface Config extends Bag { core: Bag; plugins: Record<string, { enabled?: boolean; settings: Bag }> }
-export const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+export const clone = <T,>(value: T): T => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 export function clipboardLimit(value: unknown, key: string) { const number = Number(value); return Number.isFinite(number) ? Math.min(key === 'retentionDays' ? 3650 : Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(number))) : 0; }
 export function hasExclusions(config: Config | null) { const value = config?.plugins.clipboard?.settings?.excludedApps; return Array.isArray(value) ? value.some(v => typeof v !== 'string' || v.trim()) : value != null; }

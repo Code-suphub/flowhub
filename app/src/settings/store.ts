@@ -7,6 +7,9 @@ export interface Snapshot {
   busy: boolean; notice: string; error: boolean; jsonText: string | null; conflict: boolean;
   recovery: Bag | null; undo: Config[]; redo: Config[]; revision: number; webSelection?: string;
 }
+// Text fields call edit() on every keystroke. Consecutive edits to the same
+// field collapse into one undo step so a word is undone in one press.
+const EDIT_BURST_MS = 700;
 export class SettingsStore {
   private value: Snapshot = { config: null, saved: null, plugins: [], configPath: {}, storage: {}, update: {}, diagnostics: {}, management: {}, history: {}, menuItems: [], busy: false, notice: '', error: false, jsonText: null, conflict: false, recovery: null, undo: [], redo: [], revision: 0 };
   private listeners = new Set<() => void>();
@@ -15,16 +18,35 @@ export class SettingsStore {
   private disposed = false;
   private epoch = 0;
   private menuRequest: Promise<void> | null = null;
+  private configRef: Config | null = null;
+  private configText = '';
+  private savedRef: Config | null = null;
+  private savedText = '';
+  private editKey = '';
+  private editAt = 0;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   snapshot = () => this.value;
-  patch(patch: Partial<Snapshot>) { if (this.disposed) return; this.value = { ...this.value, ...patch }; this.listeners.forEach(fn => fn()); }
-  get dirty() { return this.value.conflict || this.value.jsonText !== null || !same(this.value.config, this.value.saved); }
+  // The serialized config is cached so change detection and the dirty check stay
+  // O(1) instead of re-serializing the whole catalog on every render.
+  patch(patch: Partial<Snapshot>) {
+    if (this.disposed) return;
+    if ('config' in patch && patch.config !== this.configRef) { this.configRef = patch.config ?? null; this.configText = this.configRef ? JSON.stringify(this.configRef) : ''; }
+    if ('saved' in patch && patch.saved !== this.savedRef) { this.savedRef = patch.saved ?? null; this.savedText = this.savedRef ? JSON.stringify(this.savedRef) : ''; }
+    this.value = { ...this.value, ...patch }; this.listeners.forEach(fn => fn());
+  }
+  get dirty() { return this.value.conflict || this.value.jsonText !== null || this.configText !== this.savedText; }
   notice(message: string, error = false) { this.patch({ notice: message, error }); }
   async run(action: () => Promise<void>) { try { await action(); } catch (e) { this.notice(String(e instanceof Error ? e.message : e), true); } }
-  edit(action: (config: Config) => void) {
+  edit(action: (config: Config) => void, key?: string) {
     if (!this.value.config || this.value.busy || this.value.conflict || readonly()) return;
-    const next = clone(this.value.config); action(next); if (same(next, this.value.config)) return;
-    this.patch({ config: next, undo: [...this.value.undo.slice(-39), this.value.config], redo: [], revision: this.value.revision + 1, notice: '有未保存修改', jsonText: null }); this.scheduleDraft();
+    const next = clone(this.value.config); action(next);
+    const text = JSON.stringify(next);
+    if (text === this.configText) return;
+    const now = Date.now();
+    const burst = Boolean(key) && key === this.editKey && now - this.editAt < EDIT_BURST_MS && this.value.undo.length > 0;
+    this.editKey = key || ''; this.editAt = now;
+    this.configRef = next; this.configText = text;
+    this.patch({ config: next, undo: burst ? this.value.undo : [...this.value.undo.slice(-39), this.value.config], redo: [], revision: this.value.revision + 1, notice: '有未保存修改', jsonText: null }); this.scheduleDraft();
   }
   replace(config: Config) { this.edit(next => { for (const key of Object.keys(next)) delete next[key]; Object.assign(next, normalize(config)); }); }
   setJson(text: string) { if (readonly() || this.value.busy || this.value.conflict) return; this.patch({ jsonText: text, revision: this.value.revision + 1 }); this.scheduleDraft(); }
@@ -38,8 +60,10 @@ export class SettingsStore {
     if (readonly() || this.value.busy || this.value.conflict || !this.value.config) return;
     const list = this.value[direction]; if (!list.length) return;
     const other = direction === 'undo' ? 'redo' : 'undo';
+    this.resetEditBurst();
     this.patch({ config: list[list.length - 1], [direction]: list.slice(0, -1), [other]: [...this.value[other], this.value.config], jsonText: null, revision: this.value.revision + 1 }); this.scheduleDraft();
   }
+  private resetEditBurst() { this.editKey = ''; this.editAt = 0; }
   private scheduleDraft() { clearTimeout(this.timer); this.timer = setTimeout(() => this.persist(), 120); }
   persist = () => {
     clearTimeout(this.timer); if (readonly() || !this.dirty || !this.value.config) return;
@@ -60,6 +84,7 @@ export class SettingsStore {
         catch { this.notice('本地草稿损坏，已保留原始记录', true); }
       }
       this.patch({ config: next, saved: clone(next), plugins, configPath, storage, undo: [], redo: [], jsonText: null, conflict: false, recovery });
+      this.resetEditBurst();
       const optional = await Promise.allSettled([call('getUpdateState'), call('getDiagnosticsState'), call('getMenuBarManagementState'), call('listConfigHistory')]);
       if (this.disposed || epoch !== this.epoch) return;
       const keys = ['update', 'diagnostics', 'management', 'history'] as const;
@@ -96,6 +121,7 @@ export class SettingsStore {
       this.clearDraft(); const configPath = metadata[1].value, storage = metadata[2].value;
       this.source = origin(configPath, result.storageState?.activePath ? { ...storage, activePath: result.storageState.activePath } : storage);
       this.patch({ config: clone(committed), saved: committed, configPath, storage, jsonText: null, undo: [], redo: [], plugins: metadata[0].status === 'fulfilled' ? metadata[0].value : this.value.plugins });
+      this.resetEditBurst();
       this.notice(result.pluginFailures?.length ? `配置已保存；${result.pluginFailures.length} 项系统设置未生效：${JSON.stringify(result.pluginFailures)}` : result.storageState?.operation === 'open' ? '已打开目标数据库；源网页草稿未写入目标' : '配置已保存', Boolean(result.pluginFailures?.length));
       await this.refreshHistory();
     } finally { this.patch({ busy: false }); }
@@ -114,6 +140,7 @@ export class SettingsStore {
       const config = normalize(raw);
       this.clearDraft(); this.source = origin(configPath, storage);
       this.patch({ config, saved: clone(config), plugins, configPath, storage, jsonText: null, recovery: null, conflict: false, undo: [], redo: [], revision: this.value.revision + 1 });
+      this.resetEditBurst();
       this.notice([result.unchanged ? '配置相同，未做改动' : '已恢复配置，请重启使系统集成生效', ...(result.warnings || [])].join('；'));
       await this.refreshHistory();
     } catch (error) {

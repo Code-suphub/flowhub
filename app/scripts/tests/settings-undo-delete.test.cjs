@@ -8,3 +8,19 @@ test('web and memo deletion restore exact positions; redo and successful save cl
  store.edit(c=>{c.core.hotkey='F1';});await store.save();assert.equal(store.snapshot().undo.length,0);assert.equal(store.snapshot().redo.length,0);store.travel('undo');assert.equal(store.snapshot().config.core.hotkey,'F1');store.dispose();
 });
 test('invalid or repeated no-op movement does not manufacture an undo snapshot',async()=>{const {store}=await h.loaded();store.edit(c=>{c.plugins.web.settings.items=h.model.moveNodes(c.plugins.web.settings.items,['a'],'a1');});assert.equal(store.snapshot().undo.length,0);store.dispose();});
+test('consecutive edits to one field collapse into a single undo step',async()=>{
+ const {store}=await h.loaded();const original=h.model.clone(store.snapshot().config);
+ const type=(value)=>store.edit(c=>{c.plugins.web.settings.items[0].title=value;},'web:a:title');
+ type('Alpha');type('Alph');type('Alpha Beta');
+ assert.equal(store.snapshot().config.plugins.web.settings.items[0].title,'Alpha Beta');
+ assert.equal(store.snapshot().undo.length,1);
+ store.travel('undo');assert.equal(store.snapshot().config.plugins.web.settings.items[0].title,original.plugins.web.settings.items[0].title);
+ store.dispose();
+});
+test('edits to different fields keep separate undo steps',async()=>{
+ const {store}=await h.loaded();
+ store.edit(c=>{c.plugins.web.settings.items[0].title='Alpha';},'web:a:title');
+ store.edit(c=>{c.plugins.web.settings.items[0].url='https://example.test/';},'web:a:url');
+ assert.equal(store.snapshot().undo.length,2);
+ store.dispose();
+});
