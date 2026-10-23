@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { Canvas } from './Canvas';
 import './canvas.css';
+import './compact.css';
 
 /** Host main mounts this island into #canvas-root. Return the root for teardown. */
 export function mountCanvas(root: HTMLElement) {

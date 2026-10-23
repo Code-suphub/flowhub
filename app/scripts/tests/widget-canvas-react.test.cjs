@@ -7,7 +7,9 @@ const app = path.resolve(__dirname, '../..');
 let bundle;
 before(async () => {
   const { build } = await import('vite');
-  const result = await build({ configFile: false, root: app, logLevel: 'silent', define: { 'process.env.NODE_ENV': JSON.stringify('production') }, build: { write: false, minify: false, lib: { entry: path.join(app, 'src/canvas/index.tsx'), name: 'CanvasTest', formats: ['iife'] } } });
+  const baseline = process.env.FLOWHUB_CANVAS_BASELINE_REF;
+  const plugins = baseline ? [{ name: 'canvas-lifecycle-baseline-fixture', enforce: 'pre', transform(code, id) { const relative = path.relative(app, id); if (['src/canvas/Canvas.tsx', 'src/canvas/WidgetSurface.tsx'].includes(relative)) return require('node:child_process').execFileSync('git', ['show', `${baseline}:app/${relative}`], { cwd: app, encoding: 'utf8' }); } }] : [];
+  const result = await build({ configFile: false, root: app, plugins, logLevel: 'silent', define: { 'process.env.NODE_ENV': JSON.stringify('production') }, build: { write: false, minify: false, lib: { entry: path.join(app, 'src/canvas/index.tsx'), name: 'CanvasTest', formats: ['iife'] } } });
   bundle = (Array.isArray(result) ? result[0] : result).output.find(item => item.type === 'chunk').code;
 });
 const wait = async predicate => { for (let i = 0; i < 150; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.ok(predicate(), 'React state did not settle'); };
@@ -31,6 +33,7 @@ function setup(t, options = {}) {
   };
   w.setInterval = (callback, ms) => { intervals.push({ callback, ms }); return intervals.length; };
   w.clearInterval = () => {};
+  options.installClock?.(w);
   let cursor = { x: 20, y: 20, frontmost: true }, data = { layout: options.layout || layout(), sources: options.sources || [structuredClone(source)] };
   if (options.returnTarget) w.__flowhubCanvasReturn = options.returnTarget;
   if (!options.preview) w.__TAURI__ = { core: { invoke: async (command, args) => {
@@ -142,6 +145,8 @@ test('More keyboard navigation skips disabled actions, restores focus and stays 
   s.button('新建布局').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'End' }));
   assert.equal(s.w.document.activeElement, s.button('桌面组件设置'));
   s.button('桌面组件设置').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowUp' }));
+  assert.equal(s.w.document.activeElement, s.button('紧凑状态条'));
+  s.button('紧凑状态条').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'ArrowUp' }));
   assert.equal(s.w.document.activeElement, s.button('重命名布局'));
   s.button('重命名布局').dispatchEvent(new s.w.KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
   await wait(() => !s.w.document.getElementById('canvasMenu'));
@@ -442,6 +447,13 @@ test('desktop snapshots keep refreshing while hidden and refresh on return', asy
   s.w.document.dispatchEvent(new s.w.Event('visibilitychange'));
   await wait(() => s.responses.some(message => message.context?.snapshot.count === 3));
   assert.equal(s.w.document.querySelector('.widget-content'), frame);
+  assert.equal(s.intervals.filter(timer => timer.ms === 15000).length, 1, 'document return must reuse the existing refresh timer');
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-lifecycle', { detail: { active: false, revision: 1 } }));
+  await wait(() => !s.w.document.querySelector('.widget-content'));
+  const gets = s.calls.filter(call => call.action === 'get').length;
+  s.w.document.dispatchEvent(new s.w.Event('visibilitychange'));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(s.calls.filter(call => call.action === 'get').length, gets, 'document visibility must not restart a native-hidden canvas');
 });
 
 test('pointer drag, cancellation, resize minimum and keyboard resize keep frames mounted', async t => {
@@ -495,12 +507,14 @@ test('editor plugin title does not activate the select, while the trigger keeps 
   await wait(() => trigger.getAttribute('aria-expanded') === 'false');
 });
 
-test('native pointer exit disposes a pending editor and ignores late save replies', async t => {
+test('native pointer exit preserves a pending editor; changing edit mode ignores late save replies', async t => {
   const s = setup(t); await ready(s); const frame = await edit(s); s.frameMessages(frame);
   s.message(frame, { type: 'flowhub:widget-ready' }); await wait(() => !s.w.document.querySelector('button[form="widgetForm"]').disabled);
   s.submit('widgetForm'); await wait(() => s.responses.some(message => message.type === 'flowhub:widget-save'));
   const save = s.responses.find(message => message.type === 'flowhub:widget-save');
-  s.setCursor({ x: -20, y: -20 }); await wait(() => !s.w.document.querySelector('[role="dialog"]'));
+  s.setCursor({ x: -20, y: -20 }); await wait(() => s.w.document.querySelector('.surface-inactive'));
+  assert.equal(s.w.document.getElementById('widgetEditor'), frame);
+  s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-layout-locked', { detail: true })); await wait(() => !s.w.document.querySelector('[role="dialog"]'));
   s.message(frame, { type: 'flowhub:widget-config', id: save.id, config: { late: true } });
   await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(s.calls.filter(call => call.action === 'save').length, 0);
 });
@@ -676,5 +690,7 @@ test('a new return received during startup wins over an older deferred get fallb
   assert.equal(s.w.document.querySelector('[data-id=one]'),null);assert.equal(s.w.document.activeElement,s.w.document.querySelector('[data-id=two]'));
 });
 }
-if (require.main === module) require('./canvas-settings.test.cjs');
 module.exports = { setup, ready, wait };
+if (require.main === module) require('./canvas-settings.test.cjs');
+if (require.main === module) require('./canvas-compact.test.cjs');
+if (require.main === module) require('./canvas-lifecycle.test.cjs');
