@@ -65,6 +65,7 @@ const Row = memo(function Row({item,index,snapshot}: {item:SearchItem;index:numb
   const a=before.item,b=after.item;
   if(Object.keys(a).length!==Object.keys(b).length || Object.keys(a).some(key=>a[key]!==b[key])) return false;
   const previous=before.snapshot,next=after.snapshot;
+  if(previous.items.length!==next.items.length) return false;
   if(previous.showUncachedWebIcons!==next.showUncachedWebIcons || previous.state.config!==next.state.config) return false;
   if(a.type==='clipboard') return previous.state.expandedClipboard.has(Number(a.id))===next.state.expandedClipboard.has(Number(a.id)) && previous.state.editingClipboard===next.state.editingClipboard;
   if(a.type==='dns') return previous.state.dnsResult===next.state.dnsResult && previous.state.dnsIpResults===next.state.dnsIpResults;

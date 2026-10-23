@@ -24,6 +24,57 @@ test('stale queries cannot overwrite newer input; pagination is deduplicated and
   assert.ok(w.document.querySelectorAll('.result').length<80);
   assert.equal(new Set([...w.document.querySelectorAll('.result')].map(el=>el.id)).size,w.document.querySelectorAll('.result').length);
 });
+test('pagination updates the accessible set size on retained and virtualized options',async t=>{
+  const {w,input,scope}=await setup(t,{search:(id,args)=>id==='web'?Array.from({length:30},(_,i)=>({id:`page:${(args.offset||0)+i}`,title:`Page ${(args.offset||0)+i}`,url:'https://example.com'})):[]});
+  await scope('web');await input('page');
+  const results=w.document.getElementById('results'), first=w.document.getElementById('search-result-0');
+  assert.equal(first.getAttribute('aria-setsize'),'30');
+  for(const total of [60,90]) {
+    results.dispatchEvent(new w.Event('scroll',{bubbles:true}));
+    await wait(()=>w.document.querySelector(`[aria-setsize="${total}"]`));
+    assert.equal(w.document.getElementById('search-result-0'),first);
+    const options=[...results.querySelectorAll('[role="option"]')];
+    for(const option of options) {
+      assert.equal(option.getAttribute('aria-setsize'),String(total));
+      assert.equal(Number(option.getAttribute('aria-posinset')),Number(option.dataset.i)+1);
+    }
+    if(total===90)assert.ok(options.length<total,'the assertion also covers a virtualized list');
+  }
+});
+test('clear search participates in the F6 cycle and returns focus without switching scope or activating results',async t=>{
+  const {w,q,input,scope,key,calls}=await setup(t);
+  await scope('web');await input('Website');
+  const clear=w.document.querySelector('.search-clear');
+  const press=(element,value,extra={})=>element.dispatchEvent(new w.KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true,...extra}));
+  key('F6');assert.equal(w.document.activeElement,clear);
+  press(clear,'F6',{shiftKey:true});assert.equal(w.document.activeElement,q);
+  key('F6');press(clear,'Tab');
+  q.dispatchEvent(new w.KeyboardEvent('keyup',{key:'Tab',bubbles:true,cancelable:true}));
+  assert.equal(w.document.activeElement,q);
+  assert.equal(w.document.querySelector('[data-scope="web"]').getAttribute('aria-pressed'),'true');
+  key('F6');press(clear,'F6');
+  await wait(()=>w.document.activeElement.matches('[role="menuitem"]'));
+  press(w.document.activeElement,'F6',{shiftKey:true});assert.equal(w.document.activeElement,clear);
+  press(clear,'Escape');assert.equal(w.document.activeElement,q);
+  assert.equal(calls.filter(call=>call[0]==='hide').length,0);
+  for(const value of ['Enter',' ']) {
+    await input('Website');key('F6');
+    const button=w.document.activeElement;
+    assert.ok(button.matches('.search-clear'));
+    assert.equal(press(button,value),true,'native keyboard activation is not prevented');
+    // JSDOM does not synthesize the native button click from Enter/Space.
+    button.click();await wait(()=>!w.document.querySelector('.search-clear'));
+    assert.equal(q.value,'');assert.equal(w.document.activeElement,q);
+  }
+  assert.equal(calls.filter(call=>call[0]==='action').length,0);
+});
+test('clear search remains reachable with no result actions',async t=>{
+  const {w,q,input,scope,key}=await setup(t,{search:()=>[]});
+  await scope('web');await input('missing');
+  key('F6',{shiftKey:true});assert.ok(w.document.activeElement.matches('.search-clear'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+  assert.equal(w.document.activeElement,q);
+});
 test('search migration contains no HTML proxy or legacy result markup renderer',()=>{
   const files=['ui/search/search.js','ui/search/port-tool.js','ui/search/network-tools.js','ui/search/json-tool.js','ui/search/url-tool.js','ui/search/local-ip-tool.js','src/search/index.tsx','src/search/Results.tsx','src/search/Tools.tsx'];
   for(const file of files)assert.doesNotMatch(fs.readFileSync(path.join(app,file),'utf8'),/innerHTML|dangerouslySetInnerHTML|DOMParser|renderResultBody|panelHtml/);

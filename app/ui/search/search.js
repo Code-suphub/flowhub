@@ -802,7 +802,7 @@ function renderSnapshot(options = {}) {
 }
 
 
-// 结果操作焦点顺序：F6 进入当前结果的第一个操作按钮，再按 F6 在按钮之间前进，
+// 操作焦点顺序：F6 先进入清除按钮（有搜索内容时），再进入当前结果的操作按钮，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
   const inlineActions = [...resultsEl.querySelectorAll(".result.active .tool-action")].filter(button=>!button.disabled);
@@ -810,6 +810,9 @@ function focusResultAction(direction = 1) {
   const resultActions = [...inlineActions,...menuActions];
   const selected = matches()[state.index];
   const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
+  const clear = root.querySelector('.search-clear');
+  if (clear && current === q && direction > 0) { clear.focus(); return; }
+  if (clear && current === clear && direction < 0) { returnToSearch(); return; }
   const hasMenu = selected && !selected.usageSection && ["app","page","web","web-add","memo","twofa","calculation","timestamp","jwt","dns","ip","clipboard"].includes(selected.type);
   const leavingInline = direction>0 && inlineActions.length>0 && inlineActions.indexOf(current)===inlineActions.length-1;
   if (hasMenu && !menuActions.length && (!inlineActions.length || leavingInline)) {
@@ -823,6 +826,7 @@ function focusResultAction(direction = 1) {
   if (!actions.length) {
     const row = resultsEl.querySelector(".result.active");
     if (row && hasMenu) resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
+    else if (clear && current !== clear) clear.focus();
     else returnToSearch();
     return;
   }
@@ -832,6 +836,7 @@ function focusResultAction(direction = 1) {
     return;
   }
   const next = index + direction;
+  if (next < 0 && clear) { clear.focus(); return; }
   if (next < 0 || next >= actions.length) { returnToSearch(); return; }
   actions[next].focus();
 }
@@ -1190,6 +1195,10 @@ bind(document, "keydown", (e) => {
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
   if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
+  // 清除按钮使用原生 Enter/Space 激活；Tab 和 Escape 返回搜索框。
+  if (e.target.closest?.('.search-clear') && ["Tab", "Escape"].includes(e.key)) {
+    e.preventDefault(); returnToSearch(); return;
+  }
   if (e.target.closest?.(".tool-action") && ["Enter"," ","Tab"].includes(e.key)) return;
   if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyK" || e.key.toLowerCase() === "k")) {
     e.preventDefault();

@@ -36,7 +36,7 @@ function harness() {
   const ctx = vm.createContext({
     console, URL, JSON, Number, String, Object, Array, Set, Map, Date, Boolean, Math, Promise,
     state: { index: 0, query: '', scope: 'all', clipboardResults: [], expandedClipboard: new Set(), editingClipboard: null },
-    root: { querySelectorAll: () => [] },
+    root: { querySelector: () => null, querySelectorAll: () => [] },
     matches: () => [],
     CustomEvent: class { constructor(type,options) { this.type=type; this.detail=options.detail; } },
     window: { FlowHubTools: { render: () => null }, weborg: {} },

@@ -9,15 +9,14 @@ import './search.css';
 
 function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNavigation?:boolean}) {
   const hints:string[]=[];
-  hints.push('Tab 切换范围','⌘K 返回搜索框');
+  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮','⌘K 返回搜索框');
   if(selected?.type==='clipboard') {
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
     hints.push('⌘D 置顶');
     if(selected.kind==='text')hints.push('⌘E 编辑副本');
     if(document.documentElement.dataset.weborgReadonly!=='true')hints.push('⌥⌫ 删除');
   }
-  if(selected && !selected.usageSection && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 / F6 更多操作');
-  else if(selected?.toolId)hints.push('F6 操作按钮');
+  if(selected && !selected.usageSection && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 更多操作');
   const toolActions:Record<string,string>={calculation:'复制结果',timestamp:'复制结果',jwt:'复制结果',json:'复制结果','url-tool':'复制结果',ip:'复制信息',proxy:'复制信息',dns:'查询并复制',cloudflare:'检测',port:'复制详情',network:'执行'};
   const action=!selected?'打开':toolActions[selected.type] || (selected.toolId?'执行':selected.type==='memo' || selected.type==='clipboard'?'粘贴':selected.type==='twofa'?'复制验证码':selected.type==='web-add'?'添加网页':'打开');
   return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排 · ↵ 打开':selected?'↑↓ 选择 · ↵ '+action:'输入以搜索 · ↑↓ 选择结果'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
