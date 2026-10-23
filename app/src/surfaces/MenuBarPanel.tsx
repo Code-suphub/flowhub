@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
 import { invoke, nativeHost } from '../shared/native';
+import { isKnownMenuBarSection, menuBarSectionLabel, menuBarVisibilityMatches } from '../shared/menu-bar';
 
 interface Item {windowId: number; displayName?: string; accessibilityLabel?: string; title?: string; ownerName?: string; section: string; hideable: boolean}
 interface Snapshot {ok?: boolean; reason?: string; items?: Item[]; trusted: boolean; organizerEnabled: boolean}
@@ -26,6 +27,11 @@ export function MenuBarPanel() {
         setNotice(!result.organizerEnabled ? '请先启用隐藏分区' : !result.trusted ? '需要辅助功能权限，请在设置中授权' : !next.length ? '没有发现菜单栏图标' : '');
       }
       return next;
+    } catch (error) {
+      // Keep the last inventory visible, but require a successful scan before
+      // operating on window IDs whose placement or permission may have changed.
+      if (alive.current) setTrusted(false);
+      throw error;
     } finally {inFlight.current = false;if (alive.current && !changing.current) setBusy(false);}
   }, []);
   const open = useCallback(() => {
@@ -44,14 +50,14 @@ export function MenuBarPanel() {
     return () => {alive.current = false;disposed = true;unlisten?.();document.removeEventListener('keydown', key);};
   }, [available, close, open]);
   async function change(item: Item, hidden: boolean) {
-    if (!available || !trusted || !item.hideable || changing.current || inFlight.current) return;
+    if (!available || !trusted || !item.hideable || !isKnownMenuBarSection(item.section) || changing.current || inFlight.current) return;
     changing.current = true;setBusy(true);setNotice(hidden ? '正在隐藏…' : '正在显示…');
     try {
       const result = await invoke<{ok: boolean; reason?: string}>('set_menu_bar_item_hidden', {windowId: item.windowId, hidden});
       await new Promise(resolve => setTimeout(resolve, 180));
       const actual = (await refresh())?.find(candidate => candidate.windowId === item.windowId);
       if (!result.ok) throw Error(result.reason || '操作未完成');
-      if (!actual || (actual.section === 'alwaysHidden') !== hidden) throw Error('图标位置尚未更新，请重试');
+      if (!actual || !menuBarVisibilityMatches(actual.section, hidden)) throw Error('图标位置尚未更新，请重试');
       if (alive.current) setNotice('');
     } catch (error) {if (alive.current) setNotice(String(error));}
     finally {changing.current = false;if (alive.current) setBusy(false);}
@@ -61,7 +67,7 @@ export function MenuBarPanel() {
     <p role="status" className="fh-muted">{notice}</p>
     <main aria-label="逐个图标控制">{items.map(item => {
       const name = item.displayName || item.accessibilityLabel || item.title || item.ownerName || '未命名图标';
-      return <div className="fh-row" key={item.windowId}><span className="fh-row-copy"><strong>{name}</strong><small>{!item.hideable ? '系统固定' : item.section === 'alwaysHidden' ? '始终隐藏' : item.section === 'hidden' ? '随箭头展开／收起' : '显示'}</small></span><Switch label={name + '显示'} checked={item.section !== 'alwaysHidden'} disabled={busy || !trusted || !item.hideable} onChange={shown => void change(item, !shown)} /></div>;
+      return <div className="fh-row" key={item.windowId}><span className="fh-row-copy"><strong>{name}</strong><small>{menuBarSectionLabel(item.section)}{!item.hideable ? ' · 系统固定' : ''}</small></span><Switch label={name + '显示'} checked={item.section !== 'alwaysHidden'} disabled={busy || !trusted || !item.hideable || !isKnownMenuBarSection(item.section)} onChange={shown => void change(item, !shown)} /></div>;
     })}</main>
     <footer>{items.length ? <span>{items.length} 个图标 · {items.filter(item => item.section === 'alwaysHidden').length} 个隐藏</span> : <span /> }<Button disabled={busy || !available} onClick={open}>刷新顺序</Button></footer>
   </div>;

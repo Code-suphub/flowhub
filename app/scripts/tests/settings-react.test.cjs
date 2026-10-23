@@ -285,3 +285,34 @@ test('theme Select writes shared theme preference and follows host theme events'
   theme='system'; await h.act(async () => window.dispatchEvent(new window.Event('flowhub:theme'))); assert.match(view.container.textContent,/跟随系统/);
   await view.unmount(); delete window.FlowHubTheme;
 });
+
+test('menu-bar settings expose real sections and names, retain failed scans, and preserve item visibility actions', async () => {
+  let failure=false, rejectMove=true;const moves=[];
+  const items=[
+    {windowId:1,displayName:'主图标',ownerName:'进程',section:'visible',hideable:true},
+    {windowId:2,accessibilityLabel:'隐藏图标',section:'alwaysHidden',hideable:true},
+    {windowId:3,title:'未知图标',section:'future',hideable:true},
+    {windowId:4,title:'固定图标',section:'visible',hideable:false},
+  ];
+  const {store}=await h.loaded({
+    getMenuBarManagementState:async()=>({trusted:true,supported:true}),
+    listMenuBarItems:async()=>failure?{ok:false,reason:'扫描失败'}:{ok:true,items},
+    setMenuBarItemHidden:async(id,hidden)=>{moves.push([id,hidden]);if(rejectMove)return {ok:false,reason:'鼠标正在使用中'};items.find(item=>item.windowId===id).section=hidden?'alwaysHidden':'hidden';return {ok:true};},
+  });
+  store.edit(c=>{c.core.menuBar.organizerEnabled=true;});
+  const view=await h.mount(Core,{store,section:'menubar',onSection:()=>{}});
+  await h.act(async()=>store.refreshMenu());
+  const row=name=>[...view.container.querySelectorAll('.settings-row')].find(node=>node.textContent.includes(name));
+  assert.match(row('主图标').textContent,/常显区/);assert.match(row('隐藏图标').textContent,/始终隐藏区.*恢复显示/);
+  assert.match(row('未知图标').textContent,/分区未知/);assert.equal(row('未知图标').querySelector('button').disabled,true);
+  assert.match(row('固定图标').textContent,/常显区.*系统固定/);assert.equal(row('固定图标').querySelector('button').disabled,true);
+  await h.click(row('主图标').querySelector('button'));
+  assert.match(store.snapshot().notice,/鼠标正在使用中/);assert.equal(store.snapshot().error,true);
+  assert.deepEqual(moves,[[1,true]]);
+  const previous=store.snapshot().menuItems;failure=true;
+  await h.act(async()=>store.run(()=>store.refreshMenu()));
+  assert.equal(store.snapshot().menuItems,previous);assert.match(store.snapshot().notice,/扫描失败/);
+  failure=false;rejectMove=false;await h.click(row('隐藏图标').querySelector('button'));
+  assert.deepEqual(moves,[[1,true],[2,false]]);assert.match(row('隐藏图标').textContent,/随箭头展开／收起/);
+  await view.unmount();store.dispose();
+});
