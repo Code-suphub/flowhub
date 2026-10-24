@@ -146,6 +146,8 @@ fn restore(saved:Option<&Geometry>,display:&Display,compact:bool)->Geometry {
 fn apply(window:&tauri::WebviewWindow,g:&Geometry,d:&Display,compact:bool)->Result<(),String> {
     let (_,_,minw,minh)=bounds(compact);
     #[cfg(target_os="macos")]
+    crate::macos::material::set(window, compact.then_some(crate::macos::material::Surface::Compact))?;
+    #[cfg(target_os="macos")]
     {
         // Tao's macOS position/size setters enqueue GCD work even on the UI
         // thread. Apply a complete frame synchronously before sampling/commit.

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { BlocksIcon, PuzzleIcon, SparklesIcon } from 'lucide-react';
 import { Button, Dialog, Input, Tabs } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
-import { api, available, getInvoke, refreshNavigation, type Candidate, type Installed, type Manifest, type Source } from './api';
+import { api, available, refreshNavigation, type Candidate, type Installed, type Manifest, type Source } from './api';
 import './market.css';
 
 const tabs = [{ id: 'discover', label: '发现' }, { id: 'installed', label: '已安装' }, { id: 'sources', label: '来源' }];
@@ -14,7 +15,7 @@ function Row({ title, version, children, actions }: { title: string; version?: s
   return <article className="fh-market-row"><div className="fh-market-row-copy"><div className="fh-market-title"><span className="fh-market-icon" aria-hidden="true">{title.trim().slice(0, 1)}</span><div className="fh-market-title-copy"><h2 title={title}>{title}</h2>{version ? <span className="fh-market-version">{version}</span> : null}</div></div><div className="fh-market-copy">{children}</div></div><div className="fh-market-actions">{actions}</div></article>;
 }
 function MarketEmpty({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
-  return <Empty className="fh-market-empty"><EmptyHeader className="items-start text-left"><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{action}</Empty>;
+  return <Empty className="fh-market-empty"><div className="fh-market-empty-art" aria-hidden="true"><span><BlocksIcon /></span><span><PuzzleIcon /></span><span><SparklesIcon /></span></div><EmptyHeader><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{action}</Empty>;
 }
 function Location({ value, label }: { value: string; label: string }) {
   return <details className="fh-market-location"><summary>{label}</summary><code>{value}</code></details>;
@@ -39,7 +40,7 @@ export function Market() {
   }
   useEffect(() => { if (available) void run(async () => {}, true); }, []);
   function install(manifest: Manifest, action: () => Promise<unknown>) {
-    setConfirmation({ title: '安装插件', detail: `${manifest.name} · ${manifest.version}`, warning: '将在本机运行插件进程，可访问当前用户文件和网络。仅安装可信来源的插件。', action: async () => { await action(); setTab('installed'); setNotice('安装完成，入口已加入侧栏。'); } });
+    setConfirmation({ title: '安装插件', detail: `${manifest.name} · ${manifest.version}`, warning: '将在本机运行插件进程，可访问当前用户文件和网络。仅安装可信来源的插件。', action: async () => { await action(); setTab('installed'); setNotice('安装完成，入口已加入底部插件栏。'); } });
   }
   async function scan(list: Source[]) {
     const messages: string[] = []; let hasError = false;
@@ -52,14 +53,13 @@ export function Market() {
     }
     setNotice(messages.join('\n')); setNoticeError(hasError); setTab('discover');
   }
-  return <main className="fh-root fh-market" aria-busy={busy}>
+  return <main className={`fh-root fh-market${embedded ? ' fh-market-embedded' : ''}`} aria-busy={busy}>
     {(!embedded || available) ? <header className="fh-market-toolbar" aria-label="插件市场操作">{!embedded ? <h1>插件市场</h1> : null}{available ? <div className="fh-market-toolbar-actions">
-      <Button disabled={disabled} onClick={() => void run(async () => { await getInvoke()!('plugin_canvas_api', { action: 'open', payload: {} }); }, false)}>桌面组件</Button>
       <Button disabled={disabled} onClick={() => void run(async () => { const selected = await api<{ manifest: Manifest; directory: string } | null>('choose'); if (selected) install(selected.manifest, () => api('install', { directory: selected.directory })); }, false)}>安装开发目录</Button>
     </div> : null}</header> : null}
     <Tabs items={tabs} value={tab} onChange={setTab} label="插件市场" />
     {notice ? <p role={noticeError ? 'alert' : 'status'} className="fh-muted whitespace-pre-wrap text-sm mb-3">{notice}</p> : null}
-    <section id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+    <section className="fh-market-panel" id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab === 'discover' ? <>{sources.length ? <div className="flex flex-wrap gap-2 mb-2"><div className="w-full sm:w-64"><Input type="search" aria-label="搜索插件" placeholder="搜索插件名称或描述" value={query} onChange={e => setQuery(e.target.value)} /></div><Button disabled={disabled} onClick={() => void run(() => scan(sources), false)}>刷新来源</Button><Button onClick={() => setTab('sources')}>管理来源</Button></div> : null}
         {found.filter(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())).map(item => <Row key={`${item.source}:${item.manifest.id}`} title={item.manifest.name} version={item.manifest.version} actions={<Button disabled={disabled} onClick={() => install(item.manifest, () => api('installCandidate', { token: item.token }))}>{installed.some(p => p.manifest.id === item.manifest.id) ? '重新安装' : '安装'}</Button>}><p>{item.manifest.description || '暂无描述'}</p><p className="fh-market-meta">来源：{sources.find(s => s.id === item.source)?.name || '未知来源'}</p></Row>)}
         {!found.some(item => `${item.manifest.name} ${item.manifest.description || ''}`.toLowerCase().includes(query.toLowerCase())) ? <MarketEmpty title={query ? '没有匹配的插件' : !sources.length ? '还没有插件来源' : '尚未发现插件'} description={query ? '试试其他关键词。' : !sources.length ? available ? '添加本地目录或 HTTPS 仓库，然后扫描插件。' : '在桌面 App 添加来源后，可在这里发现插件。' : '点击“刷新来源”查找可安装插件。'} action={!sources.length && available?<Button className="primary" onClick={() => setTab('sources')}>添加来源</Button>:null} /> : null}

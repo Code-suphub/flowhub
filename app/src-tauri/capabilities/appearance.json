@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "appearance",
+  "description": "Keep native glass aligned with the host window's selected light or dark theme",
+  "windows": ["main", "settings", "menu-bar-panel", "plugin-canvas"],
+  "permissions": ["core:window:allow-set-theme"]
+}

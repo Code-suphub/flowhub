@@ -11,7 +11,7 @@ test('global JSON action stays in the header across pages and cancelling malform
  const {store}=await h.loaded(),view=await h.mount(Settings,{store});
  assert.equal(view.container.querySelector('.settings-core-toolbar .fh-help'),null);assert.ok(view.container.querySelector('.settings-footer [aria-label="草稿与保存"] svg'));
  for(const page of ['网页目录','工具']){
-  await h.click(h.button(view.container,page));assert.equal(view.container.querySelector('h1').textContent,page);
+  await h.click(h.button(view.container,page));assert.equal(view.container.querySelector('h1').textContent,`设置 / ${page}`);
   await openMenu(view);
   await h.click([...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent==='编辑完整配置 JSON'));
   assert.ok(document.querySelector('[role=dialog] [aria-label="完整配置 JSON"]'));

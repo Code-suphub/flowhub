@@ -75,16 +75,11 @@ fn open_legacy(app:&tauri::AppHandle,id:&str)->Result<(),String> {
     Ok(())
 }
 pub(crate) fn open_plugin(app:&tauri::AppHandle,id:&str) {
-    if crate::open_settings_window(app.clone(),None,false).is_ok() {
-        if let Some(w)=app.get_webview_window("settings") {
-            let module=json!(format!("plugin:{id}"));
-            let _=w.eval(&format!("(()=>{{let n=0;const go=async()=>{{if(window.FlowHubPluginIntegration){{await window.FlowHubPluginIntegration.refresh();switchModule({module});}}else if(++n<50)setTimeout(go,100);}};go();}})()"));
-        }
-    }
+    if let Err(error)=crate::plugin_workspace::select(app,&format!("plugin:{id}"),false) {eprintln!("[flowhub-tauri] 插件工作区：{error}");}
 }
 #[tauri::command]
 pub(crate) fn plugin_status_api(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,action:String,payload:Value)->Result<Value,String> {
-    if window.label()!="settings" && window.label()!="plugin-canvas" && window.label()!=label(&id) {return Err("状态组件来源无效".into());}
+    if window.label()!="settings" && window.label()!="plugin-panel" && window.label()!="plugin-canvas" && window.label()!=label(&id) {return Err("状态组件来源无效".into());}
     if !available(&app,&id){return Err("插件状态组件不可用，请在市场重新加载插件".into());}
     let state=app.state::<State>();
     match action.as_str() {

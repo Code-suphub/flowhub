@@ -1,5 +1,5 @@
 body.canvas-compact-mode:has(#canvas-root) { padding: 4px; overflow: hidden; }
-.canvas-compact-bar { display: flex; align-items: center; gap: 3px; min-width: 0; height: 48px; padding: 4px; border: 1px solid var(--fh-border); border-radius: var(--fh-radius-lg); background: var(--fh-surface); color: var(--fh-text); }
+.canvas-compact-bar { display: flex; align-items: center; gap: 3px; min-width: 0; height: 48px; padding: 4px; border: 1px solid var(--fh-window-edge); border-radius: 24px; background:linear-gradient(115deg,color-mix(in srgb,var(--fh-accent-soft) 55%,transparent),var(--fh-window-surface)); color: var(--fh-text); box-shadow:inset 0 1px 0 var(--fh-window-highlight),var(--fh-glass-shadow); }
 .canvas-compact-bar .compact-icon { flex: 0 0 28px; width: 28px; height: 32px; padding: 5px; background: transparent; border-color: transparent; color: var(--fh-muted); }
 .canvas-compact-bar .compact-icon:hover, .canvas-compact-bar .compact-icon[aria-pressed="true"] { background: var(--fh-accent-soft); color: var(--fh-accent); }
 .canvas-compact-bar .compact-icon svg { width: 17px; height: 17px; }
@@ -12,7 +12,7 @@ body.canvas-compact-mode:has(#canvas-root) { padding: 4px; overflow: hidden; }
 .compact-action-menu [data-highlighted] { background: var(--fh-accent-soft); }
 .compact-action-menu [data-disabled] { opacity: .55; }
 .compact-favorite { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-width: 80px; max-width: 160px; }
-.compact-avatar { display: grid; place-items: center; flex: 0 0 26px; height: 26px; border-radius: 7px; background: var(--fh-surface-soft); font-size: 13px; }
+.compact-avatar { display: grid; place-items: center; flex: 0 0 26px; height: 26px; border:1px solid var(--fh-window-edge); border-radius: 9px; background: var(--fh-window-content); box-shadow:inset 0 1px 0 var(--fh-window-highlight); font-size: 13px; }
 .compact-favorite-copy { display: grid; min-width: 0; font-size: 11px; line-height: 16px; color: var(--fh-muted); }
 .compact-favorite-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fh-text); font-size: 12px; font-weight: 500; }
 .compact-favorite-copy > span { white-space: nowrap; }

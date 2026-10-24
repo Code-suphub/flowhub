@@ -118,7 +118,7 @@ pub(crate) fn asset_csp(id: &str) -> String {
     } else { "'none'".into() };
     format!("default-src 'none'; script-src {source}; style-src {source} 'unsafe-inline'; img-src {source} data:; font-src {source}; connect-src 'none'; base-uri 'none'; form-action 'none'")
 }
-fn trusted(window:&tauri::WebviewWindow)->Result<(),String>{if window.label()=="settings"{Ok(())}else{Err("仅设置窗口可管理插件".into())}}
+fn trusted(window:&tauri::WebviewWindow)->Result<(),String>{if matches!(window.label(),"settings"|"plugin-panel"){Ok(())}else{Err("仅宿主插件面板可管理插件".into())}}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,6 +184,8 @@ pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
 }
 #[tauri::command]
 pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
+    // The dock can read names, but cannot install, manage or execute plugins.
+    if window.label()=="plugin-dock" && action=="list" {return Ok(app.state::<Runtime>().list());}
     trusted(&window)?;let rt=app.state::<Runtime>();let id=payload["id"].as_str().unwrap_or("");
     match action.as_str(){
         "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"=>sources::api(&rt,&app,&action,&payload).await,

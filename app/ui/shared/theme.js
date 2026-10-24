@@ -3,12 +3,21 @@
   const media = matchMedia('(prefers-color-scheme: dark)');
   const valid = value => ['light', 'dark', 'system'].includes(value);
   let preference = 'system';
+  let nativePreference;
   try { const saved = localStorage.getItem(key); if (valid(saved)) preference = saved; } catch {}
   const resolved = () => preference === 'system' ? (media.matches ? 'dark' : 'light') : preference;
   const message = () => ({type: 'flowhub:theme', theme: resolved(), preference});
   function apply() {
     document.documentElement.dataset.theme = resolved();
     document.documentElement.style.colorScheme = resolved();
+    // Match AppKit's material appearance to the user's explicit theme. Browser
+    // previews and plugin frames have no native window API and stay local.
+    const nativeWindow = window.__TAURI__?.window?.getCurrentWindow?.();
+    if (nativeWindow?.setTheme && nativePreference !== preference) {
+      const next = preference;
+      nativeWindow.setTheme(next === 'system' ? null : next)
+        .then(() => { nativePreference = next; }).catch(() => {});
+    }
     document.querySelectorAll('[data-theme-select]').forEach(select => { select.value = preference; });
     document.querySelectorAll('iframe').forEach(frame => frame.contentWindow?.postMessage(message(), '*'));
     window.dispatchEvent(new Event('flowhub-theme-change'));

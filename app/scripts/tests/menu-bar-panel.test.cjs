@@ -90,7 +90,9 @@ test('failed scans preserve the inventory but block stale actions until a succes
 test('refreshes coalesce and pending results cannot update an unmounted panel',async t=>{
   let finish;const pending=new Promise(resolve=>finish=resolve);
   const s=await setup(t,async()=>pending);
-  await wait(()=>s.events.has('menu-bar-panel-opened'));
+  // The event subscription is synchronous; React may commit busy on a later
+  // frame, especially while a release build is running on the same machine.
+  await wait(()=>s.events.has('menu-bar-panel-opened')&&s.refresh().disabled);
   s.events.get('menu-bar-panel-opened')();s.events.get('menu-bar-panel-opened')();
   assert.equal(s.calls.length,1);assert.equal(s.refresh().disabled,true);
   s.unmount();finish(snapshot([item(1)]));await delay(20);

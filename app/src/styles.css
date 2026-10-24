@@ -57,10 +57,10 @@
 .fh-select-popup [data-slot="select-item-text"] { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .fh-select-popup [data-slot="select-item"][data-highlighted] { background:var(--fh-accent-soft); color:var(--fh-text); }
 .fh-tabs button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
-.fh-tabs { display:flex; gap:20px; height:auto; padding:0; overflow-x:auto; border-bottom:1px solid var(--fh-border); margin-bottom:16px; }
-.fh-tabs button { font:inherit; cursor:pointer; flex-shrink:0; height:auto; border-radius:0; box-shadow:none; color:var(--fh-muted); background:none; border:0; border-bottom:2px solid transparent; padding:10px 2px; }
+.fh-tabs { display:flex; gap:3px; width:max-content; max-width:100%; height:auto; padding:4px; overflow-x:auto; border:1px solid var(--fh-glass-edge); border-radius:13px; background:color-mix(in srgb,var(--fh-accent) 9%,transparent); margin-bottom:20px; }
+.fh-tabs button { font:inherit; font-size:13px; cursor:pointer; flex-shrink:0; min-height:34px; height:auto; border-radius:9px; box-shadow:none; color:var(--fh-muted); background:none; border:1px solid transparent; padding:6px 16px; }
 .fh-tabs button::after { display:none; }
-.fh-tabs [aria-selected=true] { color:var(--fh-accent); border-bottom-color:var(--fh-accent); font-weight:600; }
+.fh-tabs [aria-selected=true] { color:var(--fh-accent); background:var(--fh-glass-highlight); border-color:var(--fh-glass-edge); box-shadow:0 2px 5px color-mix(in srgb,var(--fh-accent) 12%,transparent); font-weight:600; }
 .fh-dialog { box-sizing:border-box; width:min(520px,calc(100vw - 32px)); max-width:none; max-height:calc(100vh - 32px); overflow:auto; padding:20px; background:var(--fh-surface); color:var(--fh-text); border:1px solid var(--fh-border); border-radius:var(--fh-radius-lg); font:14px/1.5 -apple-system,sans-serif; box-shadow:var(--fh-shadow-popover); }
 [data-slot="dialog-overlay"] { background:rgb(10 15 13 / .38); }
 .fh-dialog h2 { font-size:17px; margin:0; }

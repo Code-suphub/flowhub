@@ -1,4 +1,6 @@
 .fh-surface-body { margin:0; background:var(--fh-canvas); }
+html[data-native-glass="true"]:has(#menu-bar-root),html[data-native-glass="true"] body:has(#menu-bar-root) { background:transparent; }
+.fh-menubar-panel { min-height:100vh; border:1px solid var(--fh-window-edge); border-radius:18px; background:var(--fh-window-surface); box-shadow:inset 0 1px 0 var(--fh-window-highlight); }
 .fh-menubar-panel,.fh-status-page { padding:16px; }
 .fh-menubar-panel header,.fh-status-page header,.fh-menubar-panel footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .fh-menubar-panel h1,.fh-status-page h1 { font-size:18px; font-weight:600; margin:0; }
@@ -9,6 +11,9 @@
 .fh-menubar-panel .fh-row-copy strong { font-size:14px; font-weight:550; }
 .fh-menubar-panel small { display:block; color:var(--fh-muted); }
 .fh-menubar-panel footer { padding-top:12px; font-size:12px; color:var(--fh-muted); }
+.fh-menubar-panel main { margin-top:16px; padding:0 12px; border:1px solid var(--fh-window-edge); border-radius:var(--fh-radius-lg); background:var(--fh-window-content); }
+.fh-menubar-panel .fh-row { min-height:60px; gap:12px; }
+.fh-menubar-panel .fh-row:last-child { border-bottom:0; }
 .fh-status-page { max-width:960px; margin:0 auto; }
 .fh-status-page *, .fh-status-page *::after { box-sizing:border-box; }
 .fh-status-page > header { flex-wrap:wrap; }

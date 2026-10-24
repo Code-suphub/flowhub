@@ -32,3 +32,29 @@ test('global theme restores preferences, follows OS, broadcasts only to child fr
   listeners.message({source:frame.contentWindow,data:{type:'flowhub:theme-ready'}});assert.equal(messages.length,before+1);
   listeners.storage({key:'flowhub.theme',newValue:'light'});assert.equal(document.documentElement.dataset.theme,'light');
 });
+
+test('native material appearance follows explicit and system preferences and retries after the bridge loads',async()=>{
+  const listeners={},calls=[],media={matches:false,addEventListener(_,fn){this.change=fn;}};
+  const document={documentElement:{dataset:{},style:{}},querySelectorAll:()=>[],addEventListener:(n,f)=>listeners[n]=f};
+  const window={addEventListener:(n,f)=>listeners[n]=f,dispatchEvent:()=>{}};
+  const storage=new Map([['flowhub.theme','dark']]);
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../ui/shared/theme.js'),'utf8'),{window,document,Event,matchMedia:()=>media,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}});
+  assert.equal(document.documentElement.dataset.theme,'dark');
+  window.__TAURI__={window:{getCurrentWindow:()=>({setTheme:async value=>{calls.push(value);}})}};
+  listeners.DOMContentLoaded();await Promise.resolve();assert.deepEqual(calls,['dark']);
+  window.FlowHubTheme.set('light');await Promise.resolve();assert.equal(calls.at(-1),'light');
+  window.FlowHubTheme.set('system');await Promise.resolve();assert.equal(calls.at(-1),null);
+  media.matches=true;media.change();await Promise.resolve();assert.equal(document.documentElement.dataset.theme,'dark');
+  assert.deepEqual(calls,['dark','light',null],'following OS must not force a fixed native appearance');
+  window.FlowHubTheme.set('invalid');await Promise.resolve();assert.equal(calls.length,3);
+});
+
+test('unavailable native appearance never prevents local theme changes',async()=>{
+  const listeners={},document={documentElement:{dataset:{},style:{}},querySelectorAll:()=>[],addEventListener:(n,f)=>listeners[n]=f};
+  let attempts=0;
+  const window={addEventListener:(n,f)=>listeners[n]=f,dispatchEvent:()=>{},__TAURI__:{window:{getCurrentWindow:()=>({setTheme:()=>{attempts++;return Promise.reject(Error('native window unavailable'));}})}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../ui/shared/theme.js'),'utf8'),{window,document,Event,matchMedia:()=>({matches:false,addEventListener:()=>{}}),localStorage:{getItem:()=>null,setItem:()=>{}}});
+  await Promise.resolve();await Promise.resolve();
+  window.FlowHubTheme.set('dark');await Promise.resolve();await Promise.resolve();
+  assert.equal(document.documentElement.dataset.theme,'dark');assert.equal(attempts,2);
+});

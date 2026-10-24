@@ -16,7 +16,7 @@ assert.ok(checked>20,`解析到的本地资源引用过少（${checked} 处）�
 // 适配层用根绝对路径读取 /plugins.json，这个文件必须留在 ui 根目录。
 assert.ok(fs.existsSync(path.join(ui,'plugins.json')),'plugins.json 必须留在 ui/ 根目录');
 // 入口页文件名被 Rust 的 WebviewUrl / tauri.conf.json / desktop_security 直接引用。
-for(const entry of ['search.html','settings.html','menu-bar-panel.html','plugin-canvas.html','plugin-detail.html','plugin-market.html','plugin-status.html']){
+for(const entry of ['search.html','settings.html','menu-bar-panel.html','plugin-canvas.html','plugin-detail.html','plugin-market.html','plugin-status.html','plugin-workspace.html']){
   assert.ok(fs.existsSync(path.join(ui,entry)),`入口页 ${entry} 必须留在 ui/ 根目录`);
   const html=fs.readFileSync(path.join(ui,entry),'utf8');
   assert.match(html,/src="react\/host\.js"/,`${entry} 必须加载 React 产物`);

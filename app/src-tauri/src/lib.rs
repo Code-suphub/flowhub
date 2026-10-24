@@ -45,6 +45,7 @@ mod desktop_security;
 mod diagnostics;
 mod network;
 mod plugin;
+mod plugin_workspace;
 mod updater;
 
 #[cfg(target_os = "macos")]
@@ -887,6 +888,7 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
     });
     if let Some(window) = app.get_webview_window("settings") {
         window.show().map_err(|error| error.to_string())?;
+        plugin_workspace::show_dock(&app)?;
         window.set_focus().map_err(|error| error.to_string())?;
         if update {
             window.eval("(() => { let attempts = 0; const run = () => { if (window.runMenuUpdate) { window.runMenuUpdate(); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
@@ -914,21 +916,30 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             format!("settings.html?{}", query.finish())
         })
         .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if canvas { "settings.html?module=canvas".to_string() } else { "settings.html".to_string() });
-    let window = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
+    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
+        .transparent(true)
+        .background_color(tauri::window::Color(0, 0, 0, 0))
         .inner_size(980.0, 720.0)
-        .min_inner_size(820.0, 600.0)
-        .center()
-        .build()
+        .min_inner_size(640.0, 360.0)
+        .center();
+    #[cfg(target_os = "macos")]
+    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    let window = builder.build()
         .map_err(|error| error.to_string())?;
     let close_window = window.clone();
+    let follow_app = app.clone();
     window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged {..}) {
+            plugin_workspace::schedule_follow(&follow_app);
+        }
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
             // Queue early title-bar clicks until React installs its handler.
             let _ = close_window.eval("(() => { let attempts = 0; const request = () => { if (window.requestSettingsClose) { window.requestSettingsClose(); } else if (++attempts < 200) { setTimeout(request, 50); } else { window.__TAURI__?.core?.invoke('close_settings'); } }; request(); })();");
         }
     });
+    plugin_workspace::show_dock(&app)?;
     Ok(json!({ "ok": true }))
 }
 
@@ -1391,6 +1402,7 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 pub fn run() {
     crate::diagnostics::focus::initialize();
     let builder = tauri::Builder::default()
+        .manage(plugin_workspace::Workspace::default())
         .register_uri_scheme_protocol("flowhub-plugin", |context, request| {
             let uri=request.uri();
             let id=uri.host().unwrap_or("");
@@ -1499,6 +1511,16 @@ pub fn run() {
     let builder = builder.on_tray_icon_event(menu_bar::on_tray_event);
 
     builder
+        .on_page_load(|window, payload| {
+            #[cfg(target_os = "macos")]
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                if let Some(window) = window.app_handle().get_webview_window(window.label()) {
+                    crate::macos::material::page_ready(&window);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (window, payload);
+        })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             if let Err(error) = crate::macos::dock_menu::install(app.handle()) {
@@ -1634,6 +1656,7 @@ pub fn run() {
             get_proxy_info,
             search_usage,
             open_settings,
+            plugin_workspace::plugin_workspace,
             crate::plugin::runtime::plugin_api,
             crate::plugin::runtime::plugin_search_call,
             crate::plugin::runtime::plugin_rpc,

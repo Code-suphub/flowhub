@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{path::PathBuf, sync::Mutex};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+#[cfg(target_os = "macos")]
+pub(crate) fn sync_window_material(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let state = window.app_handle().state::<State>();
+    let presentation = state.compact.presentation(&state.layout.lock().unwrap());
+    crate::macos::material::set(window, (presentation.enabled && presentation.collapsed)
+        .then_some(crate::macos::material::Surface::Compact))
+}
 #[path = "detail.rs"]
 mod detail;
 #[path = "canvas/compact.rs"]

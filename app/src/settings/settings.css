@@ -1,6 +1,10 @@
-.settings-shell { background:var(--fh-canvas); }
+html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"] body:has(#settings-root) { background:transparent; }
+.settings-shell { background:var(--fh-window-surface); box-shadow:inset 0 1px 0 var(--fh-window-highlight); }
 .settings-shell h1 { font-size:17px; font-weight:600; margin:0; }
-.settings-topbar,.settings-footer { padding:12px 20px; background:var(--fh-surface); border-bottom:1px solid var(--fh-border); }
+.settings-topbar,.settings-footer { padding:14px 24px; background:var(--fh-window-chrome); border-bottom:1px solid var(--fh-border); }
+.settings-topbar { min-height:64px; }
+html[data-native-window="macos"] .settings-topbar { padding-left:100px; -webkit-app-region:drag; }
+html[data-native-window="macos"] .settings-topbar .settings-global-actions { -webkit-app-region:no-drag; }
 .settings-topbar .fh-button { color:var(--fh-muted); background:transparent; border-color:transparent; font-weight:400; }
 .settings-topbar .fh-button:hover:not(:disabled) { color:var(--fh-text); background:var(--fh-surface-soft); }
 .settings-footer { position:sticky; bottom:0; border-top:1px solid var(--fh-border); border-bottom:0; z-index:10; }
@@ -8,7 +12,11 @@
 .settings-footer-actions .fh-button:not(.settings-save-button) { color:var(--fh-muted); background:transparent; border-color:transparent; font-weight:400; }
 .settings-footer-actions .fh-button:not(.settings-save-button):hover:not(:disabled) { color:var(--fh-text); background:var(--fh-surface-soft); }
 .settings-workspace { min-height:60vh; flex:1; grid-template-rows:minmax(0,1fr); }
-.settings-sidebar { min-width:0; padding:14px 10px; border-right:1px solid var(--fh-border); background:var(--fh-surface); }
+.settings-sidebar { min-width:0; padding:20px 12px; border-right:1px solid var(--fh-border); background:var(--fh-window-chrome); }
+.settings-brand { display:flex; align-items:center; gap:10px; padding:0 8px 22px; font-size:16px; font-weight:600; letter-spacing:-.4px; }
+.settings-brand > span { display:grid; place-items:center; width:30px; height:30px; border:1px solid var(--fh-window-edge); border-radius:10px; background:var(--fh-window-content); color:var(--fh-accent); box-shadow:inset 0 1px 0 var(--fh-window-highlight); }
+.settings-brand svg { width:18px; height:18px; }
+@media(max-width:767px) { .settings-sidebar .settings-brand { display:none; } }
 .settings-nav-group { display:flex; flex:none; align-items:center; gap:4px; }
 .settings-nav-heading { display:none; }
 @media (min-width:768px) { .settings-nav-group { flex-direction:column; align-items:stretch; margin-bottom:10px; } .settings-nav-group + .settings-nav-group { border-top:1px solid var(--fh-border); padding-top:10px; } .settings-nav-heading { display:block; padding:4px 10px; color:var(--fh-muted); font-size:11px; font-weight:600; } .settings-nav-group .fh-button { width:100%; } }
@@ -16,15 +24,23 @@
 .settings-sidebar .fh-button svg { flex:none; color:var(--fh-muted); }
 .settings-sidebar .fh-button:hover:not([aria-current=page]) { background:var(--fh-surface-soft); color:var(--fh-text); }
 .settings-sidebar .fh-button:hover:not([aria-current=page]) svg { color:var(--fh-text); }
-.settings-sidebar .fh-button[aria-current=page],.settings-sidebar .fh-button[aria-current=page]:hover { color:var(--fh-accent); background:var(--fh-accent-soft); border-color:color-mix(in srgb,var(--fh-accent) 34%,var(--fh-border)); }
+.settings-sidebar .fh-button[aria-current=page],.settings-sidebar .fh-button[aria-current=page]:hover { color:var(--fh-accent-strong); background:var(--fh-accent-soft); border-color:var(--fh-window-edge); box-shadow:inset 0 1px 0 var(--fh-window-highlight),0 2px 5px color-mix(in srgb,var(--fh-text) 4%,transparent); }
 .settings-sidebar .fh-button[aria-current=page] svg { color:var(--fh-accent); }
 .settings-sidebar .fh-button:focus-visible { position:relative; z-index:1; outline:2px solid var(--fh-accent); outline-offset:1px; }
-.settings-main { padding:18px 20px 24px; }
+.settings-main { padding:24px 28px 28px; background:var(--fh-window-content); }
+/* The sidebar can contain installed plugins. Keep its last item reachable
+   above the save bar instead of allowing the sticky footer to cover it. */
+@media(min-width:768px) {
+  .settings-shell { height:100dvh; min-height:0; overflow:hidden; }
+  .settings-topbar,.settings-footer,.settings-preview { flex-shrink:0; }
+  .settings-workspace { min-height:0; }
+  .settings-main { min-height:0; overflow:auto; }
+}
 .settings-main > .settings-fieldset { max-width:820px; }
-.settings-core-toolbar { display:flex; align-items:flex-end; gap:16px; min-width:0; max-width:820px; border-bottom:1px solid var(--fh-border); margin-bottom:16px; }
-.settings-core-toolbar .fh-tabs { flex:1; min-width:0; border:0; margin:0; }
+.settings-core-toolbar { display:flex; align-items:flex-end; gap:16px; min-width:0; max-width:900px; margin:0 auto 22px; }
+.settings-core-toolbar .fh-tabs { min-width:0; margin:0; }
 .settings-core-panel { max-width:820px; }
-.settings-core-panel[data-section=general] { max-width:680px; }
+.settings-core-panel[data-section=general] { max-width:900px; }
 .settings-core-general { display:grid; gap:14px; }
 .settings-core-group { min-width:0; padding-bottom:10px; border-bottom:1px solid var(--fh-border); }
 .settings-core-group:last-child { padding-bottom:0; border-bottom:0; }

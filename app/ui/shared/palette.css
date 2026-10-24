@@ -1,48 +1,60 @@
 /* Shared FlowHub palette. The host resolves system/light/dark; standalone previews use local preference. */
 :root[data-theme] {
   color-scheme: dark;
-  --fh-canvas: #17191a;
-  --fh-surface: #202324;
-  --fh-surface-soft: #2a2e2f;
-  --fh-surface-raised: #303536;
-  --fh-text: #e5e8e7;
-  --fh-muted: #a0aaa7;
-  --fh-border: #3b4241;
-  --fh-accent: #9bb7dd;
-  --fh-accent-strong: #b3c8e4;
-  --fh-accent-soft: #2d3745;
-  --fh-on-accent: #142238;
+  --fh-canvas: #18211e;
+  --fh-surface: #232e29;
+  --fh-surface-soft: #2d3933;
+  --fh-surface-raised: #35423b;
+  --fh-text: #e7efe9;
+  --fh-muted: #acbdb2;
+  --fh-border: #415248;
+  --fh-accent: #a1cdb6;
+  --fh-accent-strong: #c3e5cf;
+  --fh-accent-soft: #354c40;
+  --fh-on-accent: #193326;
   --fh-danger: #f08e91;
   --fh-danger-soft: #432c2f;
   --fh-warning: #e5bf7f;
   --fh-warning-soft: #403724;
   --fh-positive: #80c9b2;
-  --fh-radius-sm: 5px;
-  --fh-radius-md: 8px;
-  --fh-radius-lg: 11px;
-  --fh-radius-xl: 15px;
+  --fh-radius-sm: 6px;
+  --fh-radius-md: 10px;
+  --fh-radius-lg: 14px;
+  --fh-radius-xl: 20px;
+  --fh-glass-tint: rgb(24 38 30 / .38);
+  --fh-glass-chrome: rgb(27 45 34 / .2);
+  --fh-glass-content: rgb(32 48 38 / .26);
+  --fh-glass-edge: rgb(218 245 225 / .2);
+  --fh-glass-highlight: rgb(240 255 242 / .13);
+  --fh-glass-shadow: 0 12px 32px rgb(5 20 12 / .16);
   --fh-focus-ring: color-mix(in srgb, var(--fh-accent) 26%, transparent);
   --fh-shadow-popover: 0 12px 30px rgb(0 0 0 / .28), 0 2px 8px rgb(0 0 0 / .16);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --fh-canvas: #f4f5f3;
-  --fh-surface: #ffffff;
-  --fh-surface-soft: #f0f3f1;
+  --fh-canvas: #eff3ed;
+  --fh-surface: #f9fbf6;
+  --fh-surface-soft: #e9efe7;
   --fh-surface-raised: #ffffff;
-  --fh-text: #252d2b;
-  --fh-muted: #687470;
-  --fh-border: #dce3df;
-  --fh-accent: #4b6f9f;
-  --fh-accent-strong: #385a87;
-  --fh-accent-soft: #e8eef6;
+  --fh-text: #263b30;
+  --fh-muted: #596e60;
+  --fh-border: #d5dfd3;
+  --fh-accent: #3c6d53;
+  --fh-accent-strong: #29533d;
+  --fh-accent-soft: #e0ebdf;
   --fh-on-accent: #ffffff;
   --fh-danger: #b83e4b;
   --fh-danger-soft: #fff0f1;
   --fh-warning: #916616;
   --fh-warning-soft: #fff7e6;
   --fh-positive: #287960;
+  --fh-glass-tint: rgb(247 251 241 / .4);
+  --fh-glass-chrome: rgb(247 253 239 / .2);
+  --fh-glass-content: rgb(255 255 248 / .35);
+  --fh-glass-edge: rgb(255 255 255 / .72);
+  --fh-glass-highlight: rgb(255 255 255 / .62);
+  --fh-glass-shadow: 0 12px 32px rgb(32 63 41 / .1);
   --fh-focus-ring: color-mix(in srgb, var(--fh-accent) 22%, transparent);
   --fh-shadow-popover: 0 12px 30px rgb(28 43 37 / .14), 0 2px 8px rgb(28 43 37 / .08);
 }
@@ -65,9 +77,9 @@
   --surface-border: var(--fh-border);
   --accent: var(--fh-accent);
   --accent-strong: var(--fh-accent-strong);
-  --accent-rgb: 155, 183, 221;
+  --accent-rgb: 161, 205, 182;
   --blue: var(--fh-accent);
-  --blue-rgb: 155, 183, 221;
+  --blue-rgb: 161, 205, 182;
   --success: var(--fh-positive);
   --warning: var(--fh-warning);
   --danger: var(--fh-danger);
@@ -78,4 +90,30 @@
   --btn-secondary-fg: var(--fh-text);
 }
 
-:root[data-theme="light"] { --accent-rgb: 75, 111, 159; --blue-rgb: 75, 111, 159; }
+:root[data-theme="light"] { --accent-rgb: 60, 109, 83; --blue-rgb: 60, 109, 83; }
+
+/* Opaque by default: browsers and platforms without a native material must
+   never expose text directly to an arbitrary background. */
+:root[data-theme] {
+  --fh-window-surface: var(--fh-surface);
+  --fh-window-chrome: var(--fh-surface);
+  --fh-window-content: transparent;
+  --fh-window-edge: var(--fh-border);
+  --fh-window-highlight: transparent;
+}
+:root[data-native-glass="true"] {
+  --fh-window-surface: var(--fh-glass-tint);
+  --fh-window-chrome: var(--fh-glass-chrome);
+  --fh-window-content: var(--fh-glass-content);
+  --fh-window-edge: var(--fh-glass-edge);
+  --fh-window-highlight: var(--fh-glass-highlight);
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-native-glass="true"] {
+    --fh-window-surface: var(--fh-surface);
+    --fh-window-chrome: var(--fh-surface);
+    --fh-window-content: var(--fh-surface);
+    --fh-window-edge: var(--fh-border);
+    --fh-window-highlight: transparent;
+  }
+}

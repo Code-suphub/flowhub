@@ -952,6 +952,8 @@ pub(crate) fn toggle_menu_bar_panel(app: tauri::AppHandle) -> Result<(), String>
     .inner_size(340.0, 570.0)
     .resizable(false)
     .decorations(false)
+    .transparent(true)
+    .background_color(tauri::window::Color(0, 0, 0, 0))
     .always_on_top(true)
     .skip_taskbar(true)
     .center()

@@ -60,3 +60,4 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-foundation = { version = "0.3", default-features = false, features = ["block2", "NSBundle", "NSURL", "NSNotification", "NSOperation", "NSArray", "NSDate", "NSObjCRuntime", "NSRunLoop", "NSProcessInfo", "NSObject", "NSString", "NSUserDefaults"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "c9ec2130422200f0863b23dfdad02b133a529b07" }
 tray-icon = "0.24.2"
+window-vibrancy = "0.6"

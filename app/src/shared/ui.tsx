@@ -19,19 +19,19 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
 export type Tab = { id: string; label: string; help?: string };
 export function Tabs({ items, value, onChange, label }: { items: readonly Tab[]; value: string; onChange: (id: string) => void; label: string }) {
   return <ShadcnTabs value={value} onValueChange={next => onChange(String(next))} className="min-w-0 flex-1">
-    <TabsList variant="line" activateOnFocus className="fh-tabs w-full justify-start" aria-label={label}>
+    <TabsList activateOnFocus className="fh-tabs justify-start" aria-label={label}>
       {items.map(item => <Tooltip key={item.id} content={item.help}><TabsTrigger className="flex-none" value={item.id} id={`tab-${item.id}`} aria-controls={`panel-${item.id}`}>{item.label}</TabsTrigger></Tooltip>)}
     </TabsList>
   </ShadcnTabs>;
 }
-export function Dialog({ title, onClose, busy, children, notice, className }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string }) {
+export function Dialog({ title, onClose, busy, children, notice, className, modal = true }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string; modal?: boolean }) {
   const previousFocus = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   useEffect(() => () => {
     const previous = previousFocus.current;
     if (previous?.isConnected) requestAnimationFrame(() => { if (previous.isConnected) previous.focus(); });
   }, []);
-  return <ShadcnDialog open onOpenChange={open => { if (!open && !busy) onClose(); }} disablePointerDismissal>
-    <DialogContent className={cn('fh-dialog gap-0', className)} showCloseButton={false} aria-busy={busy}>
+  return <ShadcnDialog open modal={modal} onOpenChange={open => { if (!open && !busy) onClose(); }} disablePointerDismissal>
+    <DialogContent className={cn('fh-dialog gap-0', className)} showCloseButton={false} showBackdrop={modal} aria-busy={busy}>
       <DialogHeader className="mb-4 flex-row items-center justify-between gap-4">
         <DialogTitle>{title}</DialogTitle>
         <DialogClose render={<Button disabled={busy} aria-label="关闭" />}>×</DialogClose>

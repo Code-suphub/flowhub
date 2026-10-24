@@ -30,4 +30,9 @@ fn bundled_desktop_security() {
         assert!(html.contains("tauri-adapter.js"));
         assert!(!html.contains("fixture.js"));
     }
+    let workspace = context.assets().get(&"/plugin-workspace.html".into()).expect("floating workspace bundled");
+    let html = String::from_utf8_lossy(&workspace);
+    assert!(html.contains("plugin/plugin-entry.js"));
+    assert!(html.contains("react/host.js"));
+    assert!(!html.contains("browser-adapter.js"));
 }

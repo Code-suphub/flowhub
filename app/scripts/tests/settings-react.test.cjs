@@ -2,10 +2,27 @@ const { test } = require('node:test'), assert = require('node:assert/strict');
 const h = require('./settings-harness.test.cjs');
 const { Settings } = require('../../src/settings/index.tsx');
 const { Core } = require('../../src/settings/Core.tsx');
+test('menu-bar preview filters and toggles only temporary examples, leaving config and native APIs untouched', async () => {
+  const calls=[];
+  const {store}=await h.loaded({setMenuBarItemHidden:async(...args)=>calls.push(args)},true);
+  const before=JSON.stringify(store.snapshot().config),view=await h.mount(Settings,{store});
+  await h.click(h.button(view.container,'菜单栏'));
+  const item=()=>view.container.querySelector('[role=switch][aria-label="显示 网络代理"]');
+  assert.equal(item().getAttribute('aria-checked'),'false');
+  await h.click(item());assert.equal(item().getAttribute('aria-checked'),'true');
+  await h.click(view.container.querySelector('#tab-visible'));
+  assert.equal(view.container.querySelectorAll('.settings-menu-item').length,4);
+  await h.click(h.button(view.container,'恢复默认'));
+  assert.equal(item().getAttribute('aria-checked'),'false');
+  assert.equal(JSON.stringify(store.snapshot().config),before);assert.equal(store.dirty,false);assert.deepEqual(calls,[]);
+  await h.click(h.button(view.container,'通用设置'));await h.click(h.button(view.container,'菜单栏'));
+  assert.equal(item().getAttribute('aria-checked'),'false');
+  await view.unmount();store.dispose();
+});
 test('2FA participates in source sorting and preserves its saved position', async () => {
   const { store } = await h.loaded({ listPlugins: async () => ['app', 'web', 'clipboard', 'memo', 'twofa', 'tools'].map(id => ({ id, name: id, available: true })) });
   const view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-search'));
+  await h.click(h.button(view.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   const grip = view.container.querySelector('[data-source=twofa] .settings-search-grip');
   assert.ok(grip);
   for (let i = 0; i < 4; i++) await h.key(grip, 'ArrowUp', { altKey: true });
@@ -14,7 +31,7 @@ test('2FA participates in source sorting and preserves its saved position', asyn
   await h.act(async () => store.save());
   await view.unmount();
   const remount = await h.mount(Settings, { store });
-  await h.click(remount.container.querySelector('#tab-search'));
+  await h.click(h.button(remount.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   assert.equal(remount.container.querySelector('.settings-search-item').dataset.source, 'twofa');
   assert.equal(remount.container.querySelector('[data-source=tools] .settings-search-grip'), null);
   await remount.unmount(); store.dispose();
@@ -23,7 +40,7 @@ const pointer = (type, element, x, y, pointerId = 1) => { const event = new wind
 test('compact settings groups sources and data; unsupported updates have no progress bar', async () => {
   const { store } = await h.loaded({ getUpdateState: async () => ({ status:'unsupported', currentVersion:'0.1.0', percent:0 }) }, true);
   const view = await h.mount(Settings, { store });
-  const select = async id => h.click(view.container.querySelector(`#tab-${id}`));
+  const select = async id => { if (id === 'search') await h.click(h.button(view.container, '搜索')); else { await h.click(h.button(view.container, '通用设置')); await h.click(view.container.querySelector(`#tab-${id}`)); } };
   await select('search');
   const sources = [...view.container.querySelectorAll('.settings-search-item')];
   assert.equal(sources.length, store.snapshot().plugins.length);
@@ -48,7 +65,7 @@ test('compact settings groups sources and data; unsupported updates have no prog
 });
 test('search source row keeps priority, toggle, and shortcut together; keyboard reorder updates config', async () => {
   const { store } = await h.loaded(), view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-search'));
+  await h.click(h.button(view.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   const rows = () => [...view.container.querySelectorAll('.settings-search-item')];
   const initial = ['app', 'web', 'clipboard', 'memo'];
   assert.deepEqual(rows().slice(0, 4).map(row => row.dataset.source), initial);
@@ -79,7 +96,7 @@ test('search source row keeps priority, toggle, and shortcut together; keyboard 
 });
 test('read-only search preview allows temporary drag and keyboard sorting without enabling settings', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-search'));
+  await h.click(h.button(view.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   const rows = () => [...view.container.querySelectorAll('.settings-search-item')];
   const initial = rows().slice(0, 4).map(row => row.dataset.source);
   const savedConfig = JSON.stringify(store.snapshot().config);
@@ -119,13 +136,13 @@ test('read-only search preview allows temporary drag and keyboard sorting withou
   assert.equal(writes.length, 0);
   await view.unmount();
   const remounted = await h.mount(Settings, { store });
-  await h.click(remounted.container.querySelector('#tab-search'));
+  await h.click(h.button(remounted.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   assert.deepEqual([...remounted.container.querySelectorAll('.settings-search-item')].slice(0, 4).map(row => row.dataset.source), initial);
   await remounted.unmount(); store.dispose();
 });
 test('search pointer drag clears its overlay on cancel, Escape, tab change, and unmount', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-search'));
+  await h.click(h.button(view.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   const rows = [...view.container.querySelectorAll('.settings-search-item')], source = rows[0], target = rows[1];
   source.getBoundingClientRect = () => ({ left:10, top:0, width:500, height:62 });
   target.getBoundingClientRect = () => ({ left:10, top:62, width:500, height:62 });
@@ -134,8 +151,8 @@ test('search pointer drag clears its overlay on cancel, Escape, tab change, and 
   const assertCleared = () => { assert.equal(document.querySelector('.settings-search-drag-preview'), null); assert.equal(view.container.querySelector('[data-drag-source]'), null); assert.equal(view.container.querySelector('[data-drop-position]'), null); assert.equal(document.body.classList.contains('settings-search-dragging'), false); };
   await begin(4); await h.act(async () => pointer('pointercancel', window, 20, 80, 4)); assertCleared();
   await begin(5); await h.act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key:'Escape', bubbles:true }))); assertCleared();
-  await begin(6); await h.click(view.container.querySelector('#tab-general')); assertCleared();
-  await h.click(view.container.querySelector('#tab-search')); await begin(7); await view.unmount();
+  await begin(6); await h.click(h.button(view.container, '通用设置')); assertCleared();
+  await h.click(h.button(view.container.querySelector('nav[aria-label="设置模块"]'), '搜索')); await begin(7); await view.unmount();
   assert.equal(document.querySelector('.settings-search-drag-preview'), null);
   assert.equal(document.body.classList.contains('settings-search-dragging'), false);
   document.elementFromPoint = previousElementFromPoint;
@@ -146,7 +163,7 @@ test('unavailable search source shows its reason inline without a redundant help
     { id: 'app', name: '应用', settingsHint: '启动设置', available: false, reason: '当前系统不支持应用扫描' },
     { id: 'web', name: '网页', available: true }
   ] }), view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-search'));
+  await h.click(h.button(view.container.querySelector('nav[aria-label="设置模块"]'), '搜索'));
   const row = view.container.querySelector('.settings-search-item[data-source=app]');
   assert.match(row.textContent, /当前系统不支持应用扫描/);
   assert.doesNotMatch(row.textContent, /启动设置/);
@@ -154,15 +171,16 @@ test('unavailable search source shows its reason inline without a redundant help
   assert.equal(row.querySelector('[role=switch]').getAttribute('aria-disabled'), 'true');
   await view.unmount(); store.dispose();
 });
-test('five settings sections mount, tabs switch with Arrow keys/Home/End in read-only preview', async () => {
+test('general settings has only three tabs; dedicated search and menu navigation remain accessible', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  const tabs = [...view.container.querySelectorAll('[role=tab]')]; assert.deepEqual(tabs.map(tab => tab.id.slice(4)), ['general','search','menubar','data','updates']);
-  assert.equal(tabs.length, 5);
+  const tabs = [...view.container.querySelectorAll('[role=tab]')]; assert.deepEqual(tabs.map(tab => tab.id.slice(4)), ['general','data','updates']);
+  assert.equal(tabs.length, 3);
   await h.key(tabs[0], 'ArrowRight'); assert.equal(tabs[1].getAttribute('aria-selected'), 'true'); assert.equal(document.activeElement, tabs[1]);
-  await h.key(tabs[1], 'End'); assert.equal(tabs[4].getAttribute('aria-selected'), 'true');
-  await h.key(tabs[4], 'Home'); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
-  await h.key(tabs[0], 'ArrowLeft'); assert.equal(tabs[4].getAttribute('aria-selected'), 'true');
+  await h.key(tabs[1], 'End'); assert.equal(tabs[2].getAttribute('aria-selected'), 'true');
+  await h.key(tabs[2], 'Home'); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+  await h.key(tabs[0], 'ArrowLeft'); assert.equal(tabs[2].getAttribute('aria-selected'), 'true');
   for (const tab of tabs) { await h.click(tab); assert.ok(view.container.querySelector(`#panel-${tab.id.slice(4)}`)); }
+  for (const label of ['搜索', '菜单栏']) { await h.click(h.button(view.container, label)); assert.equal(view.container.querySelector('[aria-label="通用设置分类"]'),null); }
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
   await view.unmount(); store.dispose();
 });
@@ -175,13 +193,30 @@ test('tools use a compact grid and memos keep navigation separate from details',
   assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-detail'));
   await view.unmount();store.dispose();
 });
+test('application options group the draft toggle and system permission action without saving implicitly', async () => {
+  let permissions=0;
+  const {store,writes}=await h.loaded({openAccessibilitySettings:async()=>{permissions++;return {ok:true};}});
+  const view=await h.mount(Settings,{store});
+  await h.click(h.button(view.container,'应用'));
+  const card=view.container.querySelector('.settings-applications');
+  assert.ok(card);assert.equal(card.querySelectorAll('.settings-row').length,2);
+  await h.click(card.querySelector('[role=switch]'));
+  assert.equal(store.snapshot().config.plugins.app.enabled,false);assert.equal(writes.length,0);
+  await h.click(h.button(card,'打开系统设置'));assert.equal(permissions,1);assert.equal(writes.length,0);
+  await view.unmount();store.dispose();
+  const preview=await h.loaded({},true),readonlyView=await h.mount(Settings,{store:preview.store});
+  await h.click(h.button(readonlyView.container,'应用'));
+  assert.equal(readonlyView.container.querySelector('.settings-applications').closest('fieldset').disabled,true);
+  await readonlyView.unmount();preview.store.dispose();
+});
 test('settings sidebar separates built-ins from plugins and preview keeps canvas control read-only', async () => {
   const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
   const groups=[...view.container.querySelectorAll('.settings-nav-group')];
-  assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['内置功能','插件']);
+  assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['工作空间','目录与工具']);
   assert.ok(h.button(groups[0],'通用设置'));
-  assert.ok(h.button(groups[1],'插件市场'));
-  await h.click(h.button(groups[1],'桌面组件'));
+  assert.ok(view.container.querySelector('.settings-plugin-dock [aria-label="插件市场"]'));
+  assert.equal(h.button(view.container.querySelector('.settings-sidebar'),'插件市场'),undefined);
+  await h.click(h.button(groups[0],'桌面组件'));
   assert.equal(view.container.querySelector('.settings-canvas [role=switch]').getAttribute('aria-disabled'),'true');
   assert.equal(h.button(view.container,'打开桌面组件').disabled,true);
   await view.unmount();store.dispose();
@@ -302,17 +337,17 @@ test('menu-bar settings expose real sections and names, retain failed scans, and
   store.edit(c=>{c.core.menuBar.organizerEnabled=true;});
   const view=await h.mount(Core,{store,section:'menubar',onSection:()=>{}});
   await h.act(async()=>store.refreshMenu());
-  const row=name=>[...view.container.querySelectorAll('.settings-row')].find(node=>node.textContent.includes(name));
-  assert.match(row('主图标').textContent,/常显区/);assert.match(row('隐藏图标').textContent,/始终隐藏区.*恢复显示/);
-  assert.match(row('未知图标').textContent,/分区未知/);assert.equal(row('未知图标').querySelector('button').disabled,true);
-  assert.match(row('固定图标').textContent,/常显区.*系统固定/);assert.equal(row('固定图标').querySelector('button').disabled,true);
-  await h.click(row('主图标').querySelector('button'));
+  const row=name=>[...view.container.querySelectorAll('.settings-menu-item')].find(node=>node.textContent.includes(name));
+  assert.match(row('主图标').textContent,/常显区/);assert.match(row('隐藏图标').textContent,/始终隐藏区/);
+  assert.match(row('未知图标').textContent,/分区未知/);assert.equal(row('未知图标').querySelector('[role=switch]').getAttribute('aria-disabled'),'true');
+  assert.match(row('固定图标').textContent,/常显区.*系统固定/);assert.equal(row('固定图标').querySelector('[role=switch]').getAttribute('aria-disabled'),'true');
+  await h.click(row('主图标').querySelector('[role=switch]'));
   assert.match(store.snapshot().notice,/鼠标正在使用中/);assert.equal(store.snapshot().error,true);
   assert.deepEqual(moves,[[1,true]]);
   const previous=store.snapshot().menuItems;failure=true;
   await h.act(async()=>store.run(()=>store.refreshMenu()));
   assert.equal(store.snapshot().menuItems,previous);assert.match(store.snapshot().notice,/扫描失败/);
-  failure=false;rejectMove=false;await h.click(row('隐藏图标').querySelector('button'));
+  failure=false;rejectMove=false;await h.click(row('隐藏图标').querySelector('[role=switch]'));
   assert.deepEqual(moves,[[1,true],[2,false]]);assert.match(row('隐藏图标').textContent,/随箭头展开／收起/);
   await view.unmount();store.dispose();
 });
