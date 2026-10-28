@@ -76,12 +76,15 @@ test('usage arrows move between rows at the preferred column and preserve input 
     [...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:80,clientY:50}));
     await wait(()=>active()==='C');
     key('ArrowDown');await wait(()=>active()==='E');key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/E.app'));
+    // Navigation resumes after the opener settles, rather than when it is called.
+    await delay(0);
     key('ArrowUp');await wait(()=>active()==='C','clamping the shorter row preserves the original column');
     key('ArrowDown');await wait(()=>active()==='E');
     key('ArrowDown');await wait(()=>!w.document.querySelector('.result.active').classList.contains('usage-tile'));
     key('ArrowUp');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='C');
     assert.ok([...w.document.querySelectorAll('.usage-tile h3')].some(node=>node.textContent==='D'));
     key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/C.app'));
+    await delay(0);
     key('ArrowDown');await wait(()=>active()==='E');
     w.document.querySelector('.usage-tile.active').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:90,clientY:100}));
     key('ArrowUp');await wait(()=>active()==='B','mouse selection replaces the preferred column even on the selected tile');

@@ -3,6 +3,50 @@ const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const app=path.resolve(__dirname,'../..');
+test('slow external opens freeze usage reordering and hover, deduplicate activation, and recover on failure',async t=>{
+  const page=id=>({type:'page',id,title:id,url:`https://example.com/${id}`});
+  const {w,key,events}=await setup(t,{usage:{frequent:[page('A'),page('B')],recent:[]}});
+  const active=()=>w.document.querySelector('.result.active h3')?.textContent;
+  let rejectOpen,opened=0;
+  w.weborg.pluginAction=()=>{opened++;return new Promise((_,reject)=>{rejectOpen=reject;});};
+  const rows=[...w.document.querySelectorAll('.usage-tile')];
+  rows[0].click();await wait(()=>opened===1);
+  const before=w.document.getElementById('results').textContent;
+  w.weborg.searchUsage=async()=>({frequent:[page('B'),page('A')],recent:[]});
+  events.onUsageUpdated();await delay(30);
+  for(let x=50;x<53;x++)rows[1].dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:100}));
+  rows[0].click();rows[1].click();key('Enter');key('ArrowDown');await delay(30);
+  assert.equal(opened,1);
+  assert.equal(active(),'A');
+  assert.equal(w.document.getElementById('results').textContent,before);
+  rejectOpen(new Error('Browser fixture failed'));
+  await wait(()=>w.document.getElementById('actionStatus').textContent==='Browser fixture failed');
+  assert.equal(active(),'A','the original target remains selected even if usage order changed');
+  w.weborg.pluginAction=async()=>{opened++;return {ok:true};};
+  w.document.querySelector('.usage-tile').click();await wait(()=>opened===2);
+});
+test('a reopened launcher ignores a previous activation failure without unlocking the new activation',async t=>{
+  const {w,input,scope,key}=await setup(t);
+  await scope('web');await input('Website');
+  const pending=[];
+  w.weborg.pluginAction=()=>new Promise((resolve,reject)=>pending.push({resolve,reject}));
+  key('Enter');await wait(()=>pending.length===1);
+  w.prepareForShow();await input('Website');key('Enter');await wait(()=>pending.length===2);
+  pending[0].reject(new Error('STALE launch error'));await delay(30);
+  assert.doesNotMatch(w.document.getElementById('actionStatus').textContent,/STALE/);
+  key('Enter');await delay(30);assert.equal(pending.length,2);
+  pending[1].resolve({ok:true});await delay(30);
+  key('Enter');await wait(()=>pending.length===3);pending[2].resolve({ok:true});
+});
+test('failed activation preserves the query and allows a deliberate retry',async t=>{
+  const {w,input,scope,key,q}=await setup(t);
+  await scope('web');await input('Website');
+  w.weborg.pluginAction=async()=>({ok:false,reason:'Cannot open fixture'});
+  key('Enter');await wait(()=>w.document.getElementById('actionStatus').textContent==='Cannot open fixture');
+  assert.equal(q.value,'Website');assert.equal(w.document.querySelector('.result.active h3').textContent,'Website');
+  let opened=0;w.weborg.pluginAction=async()=>{opened++;return {ok:true};};
+  key('Enter');await wait(()=>opened===1);
+});
 test('all tool views are React; JSON precision, URL parts, network output, port confirmation and cancellation remain available',async t=>{
   const {w,input}=await setup(t);
   for(const [query,text] of [['1+2','3'],['1700000000','时间戳'],['{"large":9007199254740993}','9007199254740993'],['https://example.com/a?x=1','URL 解析'],['port 80','确认'],['ping example.com','Ping 连通性'],['ip','公网 IP'],['8.8.8.8','Fixture city'],['dns example.com','DNS'],['proxy','代理信息']]){

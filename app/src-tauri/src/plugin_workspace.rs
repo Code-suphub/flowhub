@@ -1,8 +1,12 @@
-//! Independent host windows. The dock has a tight hit area; its panel is a
-//! separate window above it, never a transparent extension of Settings.
+//! Separate host windows with native parent-child movement on macOS.
+//! The dock has a tight hit area, never a transparent extension of Settings.
 use serde::Serialize;
 use std::sync::{Mutex, atomic::{AtomicBool, Ordering}};
-use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+#[cfg(not(target_os="macos"))]
+use tauri::PhysicalSize;
+#[cfg(target_os="macos")]
+mod macos;
 
 const DOCK: &str = "plugin-dock";
 const PANEL: &str = "plugin-panel";
@@ -33,39 +37,33 @@ fn builder<'a>(app: &'a tauri::AppHandle, label: &'a str, mode: &str) -> Webview
 }
 
 // Geometry is in physical pixels, including negative monitor origins.
+#[cfg(any(not(target_os="macos"),test))]
 type Rect = (i32,i32,u32,u32);
-fn settings_pair(area: Rect, settings: Rect, dock_width: u32, scale: f64) -> (Rect, Rect) {
-    let (ax,ay,aw,ah)=area;
-    let margin=(12.0*scale).round() as u32;
+#[cfg(any(not(target_os="macos"),test))]
+fn settings_dock_rect(settings: Rect, dock_width: u32, scale: f64) -> Rect {
     let gap=(12.0*scale).round() as u32;
-    let dock_height=(60.0*scale).round() as u32;
-    let width=settings.2.min(aw.saturating_sub(2*margin)).max(1);
-    let height=settings.3.min(ah.saturating_sub(2*margin+gap+dock_height)).max(1);
-    let dock_width=dock_width.min(aw.saturating_sub(2*margin)).max(1);
-    let x=settings.0.clamp(ax+margin as i32,(ax+aw as i32-width as i32-margin as i32).max(ax+margin as i32));
-    let y=settings.1.clamp(ay+margin as i32,(ay+ah as i32-height as i32-dock_height as i32-gap as i32-margin as i32).max(ay+margin as i32));
-    let dx=(x+(width as i32-dock_width as i32)/2).clamp(ax+margin as i32,(ax+aw as i32-dock_width as i32-margin as i32).max(ax+margin as i32));
-    ((x,y,width,height),(dx,y+height as i32+gap as i32,dock_width,dock_height))
+    let dock_height=((60.0*scale).round() as u32).max(1);
+    let x=settings.0+(settings.2 as i32-dock_width as i32)/2;
+    let y=settings.1+settings.3 as i32+gap as i32;
+    (x,y,dock_width,dock_height)
 }
 
-/// Resolve the monitor from Settings, never from the dock's previous screen.
-/// Keep the two native windows together, leaving room for the entire capsule.
+#[cfg(target_os="macos")]
+pub(crate) fn follow_settings(app: &tauri::AppHandle) -> Result<(),String> {macos::follow(app)}
+
+/// Follow Settings without changing its geometry or clamping to a screen edge.
+#[cfg(not(target_os="macos"))]
 pub(crate) fn follow_settings(app: &tauri::AppHandle) -> Result<(),String> {
     let Some(settings)=app.get_webview_window("settings") else {return Ok(())};
     let Some(dock)=app.get_webview_window(DOCK) else {return Ok(())};
     if !settings.is_visible().map_err(|e|e.to_string())? || settings.is_minimized().map_err(|e|e.to_string())? || !dock.is_visible().map_err(|e|e.to_string())? {return Ok(())}
     let monitor=settings.current_monitor().map_err(|e|e.to_string())?.ok_or("无法读取设置所在显示器")?;
-    let area=monitor.work_area();let scale=monitor.scale_factor();
+    let scale=monitor.scale_factor();
     let pos=settings.outer_position().map_err(|e|e.to_string())?;
     let size=settings.outer_size().map_err(|e|e.to_string())?;
     let dock_size=dock.outer_size().map_err(|e|e.to_string())?;
     let dock_scale=dock.scale_factor().map_err(|e|e.to_string())?;
-    let (s,d)=settings_pair((area.position.x,area.position.y,area.size.width,area.size.height),(pos.x,pos.y,size.width,size.height),(dock_size.width as f64/dock_scale*scale).round() as u32,scale);
-    if (size.width,size.height)!=(s.2,s.3) {
-        let inner=settings.inner_size().map_err(|e|e.to_string())?;
-        settings.set_size(PhysicalSize::new(s.2.saturating_sub(size.width.saturating_sub(inner.width)).max(1),s.3.saturating_sub(size.height.saturating_sub(inner.height)).max(1))).map_err(|e|e.to_string())?;
-    }
-    if (pos.x,pos.y)!=(s.0,s.1) {settings.set_position(PhysicalPosition::new(s.0,s.1)).map_err(|e|e.to_string())?;}
+    let d=settings_dock_rect((pos.x,pos.y,size.width,size.height),(dock_size.width as f64/dock_scale*scale).round() as u32,scale);
     let dock_pos=dock.outer_position().map_err(|e|e.to_string())?;
     if (dock_pos.x,dock_pos.y)!=(d.0,d.1) {dock.set_position(PhysicalPosition::new(d.0,d.1)).map_err(|e|e.to_string())?;}
     if (dock_size.width,dock_size.height)!=(d.2,d.3) {dock.set_size(PhysicalSize::new(d.2,d.3)).map_err(|e|e.to_string())?;}
@@ -83,6 +81,7 @@ pub(crate) fn schedule_follow(app: &tauri::AppHandle) {
         if let Err(error)=result {eprintln!("[flowhub-tauri] 插件栏跟随：{error}");}
     }).is_err() {app.state::<Workspace>().1.store(false,Ordering::Release);}
 }
+#[cfg(any(not(target_os="macos"),test))]
 fn panel_rect(area: (i32,i32,u32,u32), dock: (i32,i32,u32,u32), scale: f64) -> (i32,i32,u32,u32) {
     let (ax,ay,aw,ah) = area;
     let margin = (12.0 * scale) as i32;
@@ -94,6 +93,9 @@ fn panel_rect(area: (i32,i32,u32,u32), dock: (i32,i32,u32,u32), scale: f64) -> (
     let y = (dock.1 - height as i32 - gap).max(ay + margin);
     (x,y,width,height)
 }
+#[cfg(target_os="macos")]
+fn anchor(app: &tauri::AppHandle) -> Result<(),String> {macos::anchor(app)}
+#[cfg(not(target_os="macos"))]
 fn anchor(app: &tauri::AppHandle) -> Result<(),String> {
     let Some(dock) = app.get_webview_window(DOCK) else { return Ok(()) };
     let Some(panel) = app.get_webview_window(PANEL) else { return Ok(()) };
@@ -115,9 +117,10 @@ pub(crate) fn show_dock(app: &tauri::AppHandle) -> Result<(),String> {
     }
     let app_events = app.clone();
     dock.on_window_event(move |event| match event {
-        WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged {..} => {
-            if snapshot(&app_events).open { let app=app_events.clone(); tauri::async_runtime::spawn_blocking(move || {let _=anchor(&app);}); }
-        }
+        WindowEvent::ScaleFactorChanged {..} => schedule_follow(&app_events),
+        // AppKit moves both descendants synchronously with their parent.
+        #[cfg(not(target_os="macos"))]
+        WindowEvent::Moved(_) => {if snapshot(&app_events).open {let _=anchor(&app_events);}},
         WindowEvent::CloseRequested {api,..} => { api.prevent_close(); let _=hide(&app_events); }
         _=>{}
     });
@@ -127,14 +130,22 @@ pub(crate) fn show_dock(app: &tauri::AppHandle) -> Result<(),String> {
 fn collapse(app: &tauri::AppHandle) -> Result<(),String> {
     { let state=app.state::<Workspace>(); let mut s=state.0.lock().unwrap(); s.open=false; s.revision+=1; }
     publish(app);
-    if let Some(panel)=app.get_webview_window(PANEL) { panel.hide().map_err(|e|e.to_string())?; }
-    Ok(())
+    #[cfg(target_os="macos")]
+    let detach_result=macos::detach(app,PANEL);
+    #[cfg(not(target_os="macos"))]
+    let detach_result:Result<(),String>=Ok(());
+    let hide_result=app.get_webview_window(PANEL).map(|panel|panel.hide().map_err(|e|e.to_string())).unwrap_or(Ok(()));
+    detach_result.and(hide_result)
 }
 pub(crate) fn hide(app: &tauri::AppHandle) -> Result<(),String> {
     let panel_result=collapse(app);
-    // Always attempt both independent windows, even if one was already destroyed.
+    #[cfg(target_os="macos")]
+    let detach_result=macos::detach(app,DOCK);
+    #[cfg(not(target_os="macos"))]
+    let detach_result:Result<(),String>=Ok(());
+    // Attempt all cleanup even if one window was already destroyed.
     let dock_result=app.get_webview_window(DOCK).map(|dock|dock.hide().map_err(|e|e.to_string())).unwrap_or(Ok(()));
-    panel_result.and(dock_result)
+    panel_result.and(detach_result).and(dock_result)
 }
 pub(crate) fn select(app: &tauri::AppHandle, module: &str, toggle: bool) -> Result<(),String> {
     if !valid_module(module) { return Err("未知插件入口".into()); }
@@ -163,6 +174,10 @@ pub(crate) async fn plugin_workspace(window: WebviewWindow, app: tauri::AppHandl
         "ready"=>{},
         "resize" if window.label()==DOCK => {
             let width=width.filter(|w|w.is_finite()).ok_or("无效尺寸")?.clamp(180.0,640.0);
+            #[cfg(target_os="macos")]
+            macos::resize(&app,width)?;
+            #[cfg(not(target_os="macos"))]
+            {
             let old=window.outer_size().map_err(|e|e.to_string())?;
             let pos=window.outer_position().map_err(|e|e.to_string())?;
             let scale=window.scale_factor().map_err(|e|e.to_string())?;
@@ -170,6 +185,7 @@ pub(crate) async fn plugin_workspace(window: WebviewWindow, app: tauri::AppHandl
             if old.width!=next {window.set_size(tauri::LogicalSize::new(width,60.0)).map_err(|e|e.to_string())?;window.set_position(PhysicalPosition::new(pos.x+(old.width as i32-next as i32)/2,pos.y)).map_err(|e|e.to_string())?;}
             follow_settings(&app)?;
             if snapshot(&app).open {anchor(&app)?;}
+            }
         }
         "refresh" if window.label()==PANEL => {
             if let Some(dock)=app.get_webview_window(DOCK) {let _=dock.eval("window.FlowHubPluginIntegration?.refresh();");}
@@ -181,14 +197,17 @@ pub(crate) async fn plugin_workspace(window: WebviewWindow, app: tauri::AppHandl
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn settings_and_capsule_share_screen_center_and_twelve_point_gap() {
-        for (area,settings,scale) in [((0,0,1920,1080),(300,100,980,720),1.0),((-3840,-200,3840,2160),(-3000,400,1960,1440),2.0),((1920,0,1440,900),(2600,600,1100,800),1.0)] {
-            let (s,d)=settings_pair(area,settings,(500.0*scale) as u32,scale);
-            assert_eq!(d.1-s.1-s.3 as i32,(12.0*scale) as i32);
-            assert_eq!(d.0+d.2 as i32/2,s.0+s.2 as i32/2);
-            assert!(s.0>=area.0 && d.0>=area.0);
-            assert!(d.1+d.3 as i32<=area.1+area.3 as i32);
-            assert!(s.0+s.2 as i32<=area.0+area.2 as i32);
+    #[test] fn capsule_follows_settings_center_and_twelve_point_gap_when_there_is_room() {
+        let dock=settings_dock_rect((300,100,980,720),500,1.0);
+        assert_eq!(dock,(540,832,500,60));
+    }
+    #[test] fn capsule_keeps_following_offscreen_and_on_scaled_negative_displays() {
+        for (settings,scale) in [((-1800,-1200,980,720),1.0),((1900,1000,980,720),1.0),((-3000,400,1960,1440),2.0)] {
+            let width=(500.0*scale) as u32;
+            let d=settings_dock_rect(settings,width,scale);
+            assert_eq!(d.0,settings.0+(settings.2 as i32-width as i32)/2);
+            assert_eq!(d.1,settings.1+settings.3 as i32+(12.0*scale) as i32);
+            assert_eq!((d.2,d.3),(width,(60.0*scale) as u32));
         }
     }
     #[test] fn panel_stays_above_dock_and_inside_scaled_negative_monitor() {

@@ -2,3 +2,4 @@
 #[cfg(target_os = "macos")]
 pub(crate) mod app;
 pub(crate) mod visibility;
+pub(crate) mod handoff;

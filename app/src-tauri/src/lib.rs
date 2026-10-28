@@ -714,7 +714,7 @@ fn application_icon_cache_path(state: &AppState, application_path: &str) -> Path
 }
 
 pub(crate) fn hide_main(app: &tauri::AppHandle) {
-    MAIN_VISIBILITY.lock().unwrap().invalidate();
+    MAIN_VISIBILITY.lock().unwrap().dismiss();
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
@@ -794,39 +794,17 @@ async fn activate_target(
     plugin_id: String,
     payload: Value,
 ) -> Result<Value, String> {
-    let mut response = json!({ "ok": true });
-    match plugin_id.as_str() {
+    let target = match plugin_id.as_str() {
         "web" => {
             let url = payload.get("url").and_then(Value::as_str).unwrap_or("");
-            if !(url.starts_with("http://") || url.starts_with("https://")) {
-                return Ok(json!({ "ok": false, "reason": "非 http(s) 链接" }));
-            }
-            let target = url.to_string();
-            let handle = app.clone();
-            response = tauri::async_runtime::spawn_blocking(move || web_open::open(&handle, &target))
-                .await.map_err(|e| e.to_string())??;
-            if let Some(usage) = payload.get("usage") {
-                storage::record_usage(&state, usage, url)?;
-            }
+            web_open::validated_url(url)?
         }
         "app" => {
             let path = payload.get("path").and_then(Value::as_str).unwrap_or("");
             if path.is_empty() {
                 return Ok(json!({ "ok": false, "reason": "应用路径为空" }));
             }
-            #[cfg(target_os = "macos")]
-            {
-                let target = path.to_string();
-                tauri::async_runtime::spawn_blocking(move || crate::launcher::app::launch(&target))
-                    .await.map_err(|error|error.to_string())??;
-            }
-            #[cfg(not(target_os = "macos"))]
-            app.opener()
-                .open_path(path, None::<&str>)
-                .map_err(|error| error.to_string())?;
-            if let Some(usage) = payload.get("usage") {
-                storage::record_usage(&state, usage, path)?;
-            }
+            path.to_string()
         }
         "memo" => {
             let content = payload.get("content").and_then(Value::as_str).unwrap_or("");
@@ -835,9 +813,30 @@ async fn activate_target(
         _ => {
             return Ok(json!({ "ok": false, "reason": format!("当前版本不支持插件：{plugin_id}") }))
         }
+    };
+    let ticket=launcher::handoff::begin(&app).await?;
+    let handle=app.clone();let open_target=target.clone();
+    let opened=tauri::async_runtime::spawn_blocking(move|| {
+        if plugin_id=="web" {return web_open::open(&handle,&open_target);}
+        #[cfg(target_os="macos")]
+        crate::launcher::app::launch(&open_target)?;
+        #[cfg(not(target_os="macos"))]
+        handle.opener().open_path(&open_target,None::<&str>).map_err(|e|e.to_string())?;
+        Ok(json!({"ok":true}))
+    }).await.map_err(|e|e.to_string()).and_then(|result|result);
+    let response=match opened {
+        Ok(response)=>response,
+        Err(error)=>{
+            if let Err(recovery)=launcher::handoff::recover(&app,ticket).await {eprintln!("[flowhub-tauri] {recovery}");}
+            return Err(error);
+        }
+    };
+    // Usage is bookkeeping after a successful launch, not a reason to reopen it.
+    if let Some(usage)=payload.get("usage") {
+        if let Err(error)=storage::record_usage(&state,usage,&target) {eprintln!("[flowhub-tauri] 记录使用历史失败：{error}");}
     }
     let _ = app.emit("flowhub:usage-updated", ());
-    hide_main(&app);
+    // Never hide here: a slow opener may finish after the next hotkey summons.
     Ok(response)
 }
 
@@ -940,9 +939,13 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
                 eprintln!("[flowhub-tauri] 关闭设置时收起插件工作区：{error}");
             }
         }
-        if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged {..}) {
+        // macOS moves the native child windows during the drag itself; a queued
+        // positioning callback would fight AppKit and lag behind the parent.
+        if matches!(event, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged {..}) {
             plugin_workspace::schedule_follow(&follow_app);
         }
+        #[cfg(not(target_os="macos"))]
+        if matches!(event, WindowEvent::Moved(_)) {plugin_workspace::schedule_follow(&follow_app);}
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
             // Queue early title-bar clicks until React installs its handler.

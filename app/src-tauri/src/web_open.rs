@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
-fn validated_url(input: &str) -> Result<String, String> {
+pub(crate) fn validated_url(input: &str) -> Result<String, String> {
     let url = url::Url::parse(input).map_err(|_| "网页链接格式不正确")?;
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
         return Err("仅支持 http(s) 网页链接".into());

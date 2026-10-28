@@ -4,6 +4,7 @@ let disposed = false;
 const cleanups = [], handlers = {};
 const q = root.querySelector('#q'), resultsEl = root.querySelector('#results');
 let resultPointerPosition = null;
+let externalActivation = null, activationSession = 0;
 const resultInputMode = (mode) => { root.dataset.resultInput = mode; };
 const bind = (target, name, callback) => {
   if (target === document || target === window) {
@@ -785,7 +786,7 @@ function render(options = {}) {
   return renderSnapshot(options);
 }
 function renderSnapshot(options = {}) {
-  if (disposed) return;
+  if (disposed || externalActivation) return;
   const timing = {run:window.flowhubSearchTiming?.capture(),startedAt:performance.now()};
   if (!options.preserveScroll && resultsEl.scrollTop) resultsEl.scrollTop = 0;
   const items = state.config ? matches() : [];
@@ -795,7 +796,7 @@ function renderSnapshot(options = {}) {
   const paging = state.scope === 'all' ? {loading:allPaging,hasMore:state.config && allHasMore()} : {loading:state[state.scope+'Loading'],hasMore:state[state.scope+'HasMore']};
   publish({state:{...state,expandedClipboard:new Set(state.expandedClipboard)},items,plan,paging,statusText,updateState,launcherPinned,showUncachedWebIcons,loadedWebIcons,failedWebIcons,timing});
   if (options.targetIndex != null) requestAnimationFrame(() => {
-    if (disposed) return;
+    if (disposed || externalActivation) return;
     if (plan) resultsEl.scrollTop = plan.targetTop;
     resultsEl.querySelector('.result[data-i="'+state.index+'"]')?.scrollIntoView({block:'nearest'});
   });
@@ -848,6 +849,7 @@ function revealActiveResult() { render({preserveScroll:true,targetIndex:state.in
 
 
 function choose(page) {
+  if (externalActivation) return externalActivation.promise;
   if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
   if (page?.type === "twofa") {
     Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: page.id, title: page.title }))
@@ -964,15 +966,28 @@ function choose(page) {
     content: page.content,
     usage
   };
-  return Promise.resolve().then(() => {
+  const session=activationSession;
+  const activation=["web","app"].includes(pluginId)?{key:resultSlotKey(page)}:null;
+  if (activation) externalActivation=activation;
+  const reportFailure=message=>{if (!disposed && session===activationSession) showActionStatus(message);};
+  const promise=Promise.resolve().then(() => {
     if (typeof window.weborg?.pluginAction !== "function") throw new Error("当前环境无法执行打开操作");
     return window.weborg.pluginAction(pluginId, "activate", payload);
   }).then(result => {
-    if (result?.ok === false && !result.cancelled) showActionStatus(result.reason || "操作失败");
+    if (result?.ok === false && !result.cancelled) reportFailure(result.reason || "操作失败");
     return result;
   }).catch(error => {
-    showActionStatus(error?.message || String(error || "操作失败"));
+    reportFailure(error?.message || String(error || "操作失败"));
+  }).finally(() => {
+    if (activation && externalActivation===activation) {
+      externalActivation=null;
+      const index=matches().findIndex(item=>resultSlotKey(item)===activation.key);
+      if (index>=0) state.index=index;
+      render({preserveScroll:true});
+    }
   });
+  if (activation) activation.promise=promise;
+  return promise;
 }
 
 function queueDnsLookup() {
@@ -1182,6 +1197,7 @@ function returnToSearch() {
 
 
 bind(document, "keydown", (e) => {
+  if (externalActivation && e.key!=="Escape") {e.preventDefault();return;}
   // The shared Dialog owns Escape, Enter and its focus trap while confirming.
   if (state.deletingClipboard) return;
   // 编辑副本时键盘归编辑框：Esc 取消、⌘↩ 保存，其余按键交给当前聚焦的控件，
@@ -1740,6 +1756,7 @@ bind(resultsEl, "click", (e) => {
 // from a real move back into the list, without changing selection here.
 bind(document, "mousemove", (e) => { resultPointerPosition = {x:e.clientX,y:e.clientY}; });
 bind(resultsEl, "mousemove", (e) => {
+  if (externalActivation) return;
   const moved = resultPointerPosition && (e.clientX!==resultPointerPosition.x || e.clientY!==resultPointerPosition.y);
   resultPointerPosition = {x:e.clientX,y:e.clientY};
   // WebKit may send mousemove after scrolling or reflow without moving the
@@ -1770,6 +1787,8 @@ function focusSearchAfterWindowActivation() {
   }));
 }
 function prepareForShow() {
+  activationSession+=1;
+  externalActivation=null;
   resultPointerPosition = null;
   resultInputMode("keyboard");
   state.usageColumn = null;

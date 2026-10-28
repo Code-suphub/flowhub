@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 pub struct Visibility {
     generation: u64,
     shown_at: Option<Instant>,
+    launch_session: u64,
 }
 pub struct BlurCheck {
     pub generation: u64,
@@ -13,14 +14,29 @@ impl Visibility {
         Self {
             generation: 0,
             shown_at: None,
+            launch_session: 0,
         }
     }
     pub fn invalidate(&mut self) {
         self.generation = self.generation.wrapping_add(1);
     }
     pub fn show(&mut self, now: Instant) {
+        self.launch_session = self.launch_session.wrapping_add(1);
         self.invalidate();
         self.shown_at = Some(now);
+    }
+    pub fn dismiss(&mut self) {
+        self.launch_session = self.launch_session.wrapping_add(1);
+        self.invalidate();
+    }
+    pub fn begin_launch(&mut self) -> u64 {
+        self.dismiss();
+        self.launch_session
+    }
+    pub fn resume_launch(&mut self, ticket: u64, now: Instant) -> bool {
+        if ticket != self.launch_session { return false; }
+        self.show(now);
+        true
     }
     pub fn blur(&mut self, now: Instant) -> BlurCheck {
         self.invalidate();
@@ -47,6 +63,22 @@ impl Visibility {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_launch_can_resume_after_its_own_blur_but_never_after_a_new_session() {
+        let mut v=Visibility::new();let now=Instant::now();
+        v.show(now);
+        let failed=v.begin_launch();
+        v.blur(now); // Ordering out the panel itself can generate blur.
+        assert!(v.resume_launch(failed,now));
+        assert!(!v.resume_launch(failed,now));
+        let old=v.begin_launch();v.show(now);
+        assert!(!v.resume_launch(old,now));
+        let dismissed=v.begin_launch();v.dismiss();
+        assert!(!v.resume_launch(dismissed,now));
+        let superseded=v.begin_launch();let current=v.begin_launch();
+        assert!(!v.resume_launch(superseded,now));
+        assert!(v.resume_launch(current,now));
+    }
     #[test]
     fn early_real_blur_is_rechecked_after_show_grace() {
         let mut v = Visibility::new();
