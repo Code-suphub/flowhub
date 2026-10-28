@@ -853,6 +853,10 @@ async fn search_usage(app: tauri::AppHandle, scope: String) -> Result<Value, Str
 
 #[tauri::command]
 fn close_settings(app: tauri::AppHandle) -> Result<(), String> {
+    // Only invoked after the frontend resolves its unsaved-draft decision.
+    // The workspace uses independent native windows, so destroying Settings
+    // cannot implicitly hide its capsule or plugin panel.
+    plugin_workspace::hide(&app)?;
     if let Some(window) = app.get_webview_window("settings") {
         // The frontend has already resolved the draft/confirmation decision.
         // Destroy bypasses the title-bar close-request guard below.
@@ -930,6 +934,12 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
     let close_window = window.clone();
     let follow_app = app.clone();
     window.on_window_event(move |event| {
+        if matches!(event, WindowEvent::Destroyed) {
+            // Also cover native destruction outside the confirmed-close command.
+            if let Err(error)=plugin_workspace::hide(&follow_app) {
+                eprintln!("[flowhub-tauri] 关闭设置时收起插件工作区：{error}");
+            }
+        }
         if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged {..}) {
             plugin_workspace::schedule_follow(&follow_app);
         }

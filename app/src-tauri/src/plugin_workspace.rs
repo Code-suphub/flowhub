@@ -29,7 +29,7 @@ fn builder<'a>(app: &'a tauri::AppHandle, label: &'a str, mode: &str) -> Webview
     WebviewWindowBuilder::new(app, label, WebviewUrl::App(format!("plugin-workspace.html?view={mode}").into()))
         .title(if label == DOCK { "FlowHub 插件栏" } else { "FlowHub 插件面板" })
         .decorations(false).transparent(true).background_color(tauri::window::Color(0,0,0,0))
-        .resizable(false).always_on_top(true).skip_taskbar(true).accept_first_mouse(true).visible(false)
+        .resizable(false).always_on_top(false).skip_taskbar(true).accept_first_mouse(true).visible(false)
 }
 
 // Geometry is in physical pixels, including negative monitor origins.
@@ -107,7 +107,7 @@ fn anchor(app: &tauri::AppHandle) -> Result<(),String> {
     Ok(())
 }
 pub(crate) fn show_dock(app: &tauri::AppHandle) -> Result<(),String> {
-    if let Some(dock) = app.get_webview_window(DOCK) { dock.show().map_err(|e|e.to_string())?;return follow_settings(app); }
+    if let Some(dock) = app.get_webview_window(DOCK) { dock.set_always_on_top(false).map_err(|e|e.to_string())?;dock.show().map_err(|e|e.to_string())?;return follow_settings(app); }
     let dock = builder(app, DOCK, "dock").inner_size(600.0,60.0).build().map_err(|e|e.to_string())?;
     if let Some(monitor) = dock.current_monitor().map_err(|e|e.to_string())? {
         let area = monitor.work_area(); let size = dock.outer_size().map_err(|e|e.to_string())?;
@@ -130,10 +130,11 @@ fn collapse(app: &tauri::AppHandle) -> Result<(),String> {
     if let Some(panel)=app.get_webview_window(PANEL) { panel.hide().map_err(|e|e.to_string())?; }
     Ok(())
 }
-fn hide(app: &tauri::AppHandle) -> Result<(),String> {
-    collapse(app)?;
-    if let Some(dock)=app.get_webview_window(DOCK) { dock.hide().map_err(|e|e.to_string())?; }
-    Ok(())
+pub(crate) fn hide(app: &tauri::AppHandle) -> Result<(),String> {
+    let panel_result=collapse(app);
+    // Always attempt both independent windows, even if one was already destroyed.
+    let dock_result=app.get_webview_window(DOCK).map(|dock|dock.hide().map_err(|e|e.to_string())).unwrap_or(Ok(()));
+    panel_result.and(dock_result)
 }
 pub(crate) fn select(app: &tauri::AppHandle, module: &str, toggle: bool) -> Result<(),String> {
     if !valid_module(module) { return Err("未知插件入口".into()); }
@@ -148,7 +149,7 @@ pub(crate) fn select(app: &tauri::AppHandle, module: &str, toggle: bool) -> Resu
     { let state=app.state::<Workspace>();let mut s=state.0.lock().unwrap(); s.module=module.into();s.open=true;s.revision+=1; }
     anchor(app)?;
     publish(app);
-    if let Some(panel)=app.get_webview_window(PANEL) {panel.show().map_err(|e|e.to_string())?;panel.set_focus().map_err(|e|e.to_string())?;}
+    if let Some(panel)=app.get_webview_window(PANEL) {panel.set_always_on_top(false).map_err(|e|e.to_string())?;panel.show().map_err(|e|e.to_string())?;panel.set_focus().map_err(|e|e.to_string())?;}
     Ok(())
 }
 #[tauri::command]
