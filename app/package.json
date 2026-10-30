@@ -1,12 +1,12 @@
 {
   "name": "flowhub-app",
   "productName": "FlowHub",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "uTools 风格的桌面启动器：全局搜索目录/网页，回车打开；可配置启动本地应用。",
   "scripts": {
     "build:ui": "pnpm run typecheck && vite build --config vite.react.config.mjs",
     "typecheck": "tsc --noEmit",
-    "test:react": "node --test --test-concurrency=1 scripts/tests/react-host.test.cjs scripts/tests/search-react.test.cjs scripts/tests/clipboard-delete-react.test.cjs scripts/tests/search-native-diagnostics.test.cjs scripts/tests/search-stress-fixture.test.cjs scripts/tests/settings-react.test.cjs scripts/tests/settings-close.test.cjs scripts/tests/settings-json-react.test.cjs scripts/tests/shared-controls.test.cjs scripts/tests/settings-shortcuts.test.cjs",
+    "test:react": "node --test --test-concurrency=1 scripts/tests/react-host.test.cjs scripts/tests/search-react.test.cjs scripts/tests/clipboard-delete-react.test.cjs scripts/tests/search-native-diagnostics.test.cjs scripts/tests/search-stress-fixture.test.cjs scripts/tests/settings-react.test.cjs scripts/tests/settings-close.test.cjs scripts/tests/settings-json-react.test.cjs scripts/tests/shared-controls.test.cjs scripts/tests/settings-shortcuts.test.cjs scripts/tests/application-index.test.cjs",
     "pretest:ui": "pnpm run build:ui",
     "posttest:ui": "pnpm run test:react",
     "predev:web": "pnpm run build:ui",

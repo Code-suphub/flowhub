@@ -1,6 +1,6 @@
 [package]
 name = "flowhub-tauri"
-version = "0.1.15"
+version = "0.1.16"
 description = "FlowHub desktop launcher"
 authors = ["FlowHub contributors"]
 edition = "2021"
@@ -22,6 +22,7 @@ tauri-build = { version = "2.6.3", features = [] }
 custom-protocol = ["tauri/custom-protocol"]
 
 [dependencies]
+notify = "8.2.1"
 glob = "0.3"
 base64 = "0.22.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

@@ -26,7 +26,7 @@ async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons}={
     inspectPort:async port=>({port,processes:[{pid:123,name:'fixture',sockets:['*:80'],executable:'/fixture',identity:'private-token'}]}),
     runNetworkDiagnostic:async()=>({output:'fixture output',exitCode:0,elapsedMs:1}),
   };
-  for(const name of ['onConfig','onClipboardUpdated','onUsageUpdated','onUpdateState'])w.weborg[name]=fn=>{events[name]=fn;return()=>delete events[name];};
+  for(const name of ['onConfig','onClipboardUpdated','onUsageUpdated','onUpdateState','onApplicationsUpdated'])w.weborg[name]=fn=>{events[name]=fn;return()=>delete events[name];};
   w.eval(fs.readFileSync(path.join(app,'ui/shared/command-store.js'),'utf8'));
   w.eval(fs.readFileSync(path.join(app,'ui/shared/shortcuts.js'),'utf8'));
   for(const name of ['tool-registry','search-window','port-tool','local-ip-tool','network-tools','json-tool','url-tool','search'])w.eval(fs.readFileSync(path.join(app,'ui/search',name+'.js'),'utf8'));

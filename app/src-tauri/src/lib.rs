@@ -11,6 +11,7 @@ mod config_transfer;
 mod web_open;
 mod launcher;
 mod shortcut;
+mod application_index;
 #[cfg(target_os = "macos")]
 mod macos;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -20,7 +21,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     io::{Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     sync::{
         atomic::{AtomicBool, Ordering as AtomicOrdering},
@@ -196,8 +197,7 @@ pub(crate) struct AppState {
     paths: RwLock<AppPaths>,
     application_index: RwLock<Vec<Value>>,
     application_index_path: PathBuf,
-    application_index_needs_refresh: AtomicBool,
-    application_index_refreshing: AtomicBool,
+    application_fingerprint: Mutex<String>,
     application_icon_cache: Mutex<HashMap<String, String>>,
     application_icon_cache_dir: PathBuf,
 }
@@ -335,232 +335,22 @@ fn save_config(
     ))
 }
 
-fn application_directories() -> Vec<PathBuf> {
-    let mut directories = vec![
-        PathBuf::from("/Applications"),
-        PathBuf::from("/Applications/Utilities"),
-        PathBuf::from("/System/Applications"),
-        PathBuf::from("/System/Applications/Utilities"),
-        PathBuf::from("/System/Library/CoreServices"),
-    ];
-    if let Some(home) = dirs::home_dir() {
-        directories.push(home.join("Applications"));
-    }
-    directories
-}
-
-fn scan_applications() -> Vec<Value> {
-    let mut seen = HashSet::new();
-    let mut applications = Vec::new();
-    for directory in application_directories() {
-        let Ok(entries) = fs::read_dir(directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            if !path.is_dir()
-                || !file_name.to_lowercase().ends_with(".app")
-                || !seen.insert(path.clone())
-            {
-                continue;
-            }
-            applications.push(json!({
-                "kind": "app",
-                "title": file_name.trim_end_matches(".app"),
-                "fileName": file_name,
-                "path": path.to_string_lossy(),
-                "bundleId": "",
-                "iconUrl": ""
-            }));
-        }
-    }
-    if cfg!(target_os = "macos") && !applications.is_empty() {
-        const SCRIPT: &str = "ObjC.import('Foundation'); var args=$.NSProcessInfo.processInfo.arguments; var result=[]; for(var i=6;i<args.count;i++){try{var p=ObjC.unwrap(args.objectAtIndex(i));var bundle=$.NSBundle.bundleWithPath(p);var info=bundle?(bundle.localizedInfoDictionary||bundle.infoDictionary):null;var display=info&&typeof info.objectForKey==='function'?(info.objectForKey('CFBundleDisplayName')||info.objectForKey('CFBundleName')):null;var identifier=bundle?bundle.bundleIdentifier:null;result.push({displayName:display?ObjC.unwrap(display):'',bundleId:identifier?ObjC.unwrap(identifier):''});}catch(e){result.push({displayName:'',bundleId:''});}} console.log(JSON.stringify(result));";
-        let paths: Vec<String> = applications
-            .iter()
-            .filter_map(|application| {
-                application
-                    .get("path")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-            .collect();
-        let mut command = Command::new("osascript");
-        command.args(["-l", "JavaScript", "-e", SCRIPT, "--"]);
-        command.args(&paths);
-        if let Ok(output) = command.output() {
-            let text = if output.stdout.is_empty() {
-                output.stderr
-            } else {
-                output.stdout
-            };
-            let metadata: Vec<Value> = serde_json::from_slice(&text).unwrap_or_default();
-            for (index, application) in applications.iter_mut().enumerate() {
-                if let Some(object) = application.as_object_mut() {
-                    let display = metadata
-                        .get(index)
-                        .and_then(|entry| entry.get("displayName"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    let bundle_id = metadata
-                        .get(index)
-                        .and_then(|entry| entry.get("bundleId"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    if !display.is_empty() {
-                        object.insert("title".to_string(), Value::String(display.to_string()));
-                    }
-                    object.insert("bundleId".to_string(), Value::String(bundle_id.to_string()));
-                }
-            }
-        }
-    }
-    for application in &mut applications {
-        let title = application
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let file_name = application
-            .get("fileName")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let path = application
-            .get("path")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let bundle_id = application
-            .get("bundleId")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let hay = format!("{title} {file_name} {bundle_id} {path}").to_lowercase();
-        application
-            .as_object_mut()
-            .unwrap()
-            .insert("hay".to_string(), Value::String(hay));
-    }
-    applications.sort_by(|left, right| {
-        left.get("title")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_lowercase()
-            .cmp(
-                &right
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_lowercase(),
-            )
-    });
-    applications
-}
-
-fn application_fingerprint() -> String {
-    let mut entries = Vec::new();
-    for directory in application_directories() {
-        let Ok(read_dir) = fs::read_dir(directory) else {
-            continue;
-        };
-        for entry in read_dir.flatten() {
-            let path = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            if !path.is_dir() || !file_name.to_lowercase().ends_with(".app") {
-                continue;
-            }
-            let modified = entry
-                .metadata()
-                .and_then(|metadata| metadata.modified())
-                .ok()
-                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-                .map(|value| value.as_secs().to_string())
-                .unwrap_or_default();
-            entries.push(format!("{}:{}", path.to_string_lossy(), modified));
-        }
-    }
-    entries.sort_unstable();
-    entries.join("\n")
-}
-
-fn load_application_cache(path: &Path) -> (Vec<Value>, String) {
-    let Some(value) = read_json(path) else {
-        return (Vec::new(), String::new());
-    };
-    let fingerprint = value
-        .get("fingerprint")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let applications = value
-        .get("applications")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    (applications, fingerprint)
-}
-
-fn persist_application_cache(path: &Path, applications: &[Value], fingerprint: &str) {
-    let value = json!({
-        "version": 1,
-        "fingerprint": fingerprint,
-        "applications": applications
-    });
-    if let Err(error) = write_json_atomic(path, &value) {
-        eprintln!("[flowhub-tauri] 保存应用索引失败：{error}");
-    }
-}
-
-fn refresh_application_index(app: &tauri::AppHandle) {
-    let state = app.state::<AppState>();
-    if state
-        .application_index_refreshing
-        .swap(true, AtomicOrdering::AcqRel)
-    {
-        return;
-    }
-    let applications = scan_applications();
-    let fingerprint = application_fingerprint();
-    {
-        let mut index = state
-            .application_index
-            .write()
-            .expect("application index lock poisoned");
-        *index = applications.clone();
-    }
-    persist_application_cache(&state.application_index_path, &applications, &fingerprint);
-    state
-        .application_index_needs_refresh
-        .store(false, AtomicOrdering::Release);
-    state
-        .application_index_refreshing
-        .store(false, AtomicOrdering::Release);
-}
-
 #[tauri::command]
 async fn search_applications(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     query: String,
     limit: usize,
     offset: usize,
     include_icons: bool,
 ) -> Result<Vec<Value>, String> {
+    application_index::check(&app);
     let keyword = query.trim().to_lowercase();
-    let mut applications = state
+    let applications = state
         .application_index
         .read()
         .expect("application index lock poisoned")
         .clone();
-    if applications.is_empty() {
-        applications = scan_applications();
-        let fingerprint = application_fingerprint();
-        *state
-            .application_index
-            .write()
-            .expect("application index lock poisoned") = applications.clone();
-        persist_application_cache(&state.application_index_path, &applications, &fingerprint);
-        state
-            .application_index_needs_refresh
-            .store(false, AtomicOrdering::Release);
-    }
     let mut selected: Vec<Value> = applications
         .iter()
         .filter(|application| {
@@ -1230,6 +1020,7 @@ fn toggle_main(app: &tauri::AppHandle) {
         hide_main(app);
         return;
     }
+    application_index::check(app);
     // macOS uses a non-activating fullscreen-compatible panel. Select the
     // pointer's NSScreen and position it on the main thread immediately before
     // showing; NSWindow::center does not explicitly choose the pointer screen.
@@ -1548,14 +1339,7 @@ pub fn run() {
             app.manage(crate::plugin::canvas::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
             crate::plugin::canvas::restore(app.handle());
             crate::plugin::status::start(app.handle().clone());
-            if app
-                .state::<AppState>()
-                .application_index_needs_refresh
-                .load(AtomicOrdering::Acquire)
-            {
-                let handle = app.handle().clone();
-                std::thread::spawn(move || refresh_application_index(&handle));
-            }
+            application_index::start(app.handle());
             #[cfg(target_os = "macos")]
             // Keep the Carbon/event-tap fallback ready. Command+Space is often
             // claimed by Spotlight, which can make the official registrar fail.
@@ -1723,6 +1507,7 @@ pub fn run() {
         .expect("FlowHub failed to build")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                application_index::stop(app);
                 if let Err(error) = clipboard::stop_monitor(app) {
                     eprintln!("[flowhub][clipboard] shutdown failed: {error}");
                 }

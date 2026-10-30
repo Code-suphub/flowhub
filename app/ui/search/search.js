@@ -30,6 +30,7 @@ const state = { config: null, plugins: [], webResults: [], webHasMore: true, web
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
+let appCatalogRevision = 0, appCatalogDirty = false, appCatalogRefreshing = false;
 let webSearchToken = 0;
 let memoSearchToken = 0;
 let twofaSearchToken = 0;
@@ -1348,7 +1349,7 @@ async function hydrateClipboardAssets(records, token) {
   if (changed) render({ preserveScroll: true });
 }
 
-async function refreshApps({ append = false, deferRender = false } = {}) {
+async function refreshApps({ append = false, deferRender = false, background = false } = {}) {
   if (!pluginEnabled("app") || !["all", "app"].includes(state.scope)) return;
   if (append && (state.appLoading || !state.appHasMore)) return;
   const token = ++appSearchToken;
@@ -1356,7 +1357,8 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
   const iconToken = appIconSearchToken;
   // Native app results include PNG data URLs; keep the first transfer small and
   // let the existing scroll pagination fetch the rest on demand.
-  const limit = state.scope === "app" ? APP_PAGE_SIZE : 3;
+  const pageSize = state.scope === "app" ? APP_PAGE_SIZE : 3;
+  const limit = background ? Math.max(pageSize, state.appResults.length) : pageSize;
   const offset = append ? state.appResults.length : 0;
   // Keep pagination responsive: metadata arrives first, native icons are filled in
   // asynchronously for the visible page.
@@ -1365,10 +1367,14 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
   if (!append) state.appHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
-    const applications = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("app", () => window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons })) : window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons }));
+    const request = () => background ? applicationPages(state.query, limit)
+      : window.weborg?.pluginSearch("app", { query: state.query, limit, offset, includeIcons });
+    const applications = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("app", request) : request());
     if (token !== appSearchToken) return;
     window.flowhubSearchTiming?.applied();
     const next = applications || [];
+    const selected = background && matches()[state.index];
+    const selectedKey = selected && resultSlotKey(selected);
     const existing = new Set(state.appResults.map((item) => item.path || item.id));
     state.appResults = append ? [...state.appResults, ...next.filter((item) => !existing.has(item.path || item.id))] : next;
     if (!state.query.trim() && !append) state.emptyResults.app = next.slice();
@@ -1376,15 +1382,76 @@ async function refreshApps({ append = false, deferRender = false } = {}) {
     state.appLoadedQuery = state.query;
     state.appLoadedLimit = append && sameLoadedQuery ? Math.max(state.appLoadedLimit, offset + limit) : limit;
     state.appHasMore = next.length === limit;
+    if (selectedKey) {
+      const index = matches().findIndex(item => resultSlotKey(item) === selectedKey);
+      if (index >= 0) state.index = index;
+    }
     void hydrateAppIcons(next, iconToken);
-  } catch {
+  } catch (error) {
+    if (background) throw error;
     if (token === appSearchToken && !append) state.appResults = [];
   } finally {
     if (token === appSearchToken) {
       state.appLoading = false;
-      if (!deferRender) render({ preserveScroll: append });
+      if (!deferRender) render({ preserveScroll: append || background });
     }
   }
+}
+
+async function applicationPages(query, limit) {
+  const applications = [];
+  while (applications.length < limit) {
+    // Native IPC caps each response at 100 rows; reconcile as many pages as
+    // were already loaded rather than collapsing a scrolled list to page one.
+    const count = Math.min(100, limit - applications.length);
+    const next = await window.weborg.pluginSearch("app", { query, limit: count, offset: applications.length, includeIcons: false });
+    applications.push(...(next || []));
+    if (!next || next.length < count) break;
+  }
+  return applications;
+}
+
+async function refreshApplicationCatalog() {
+  if (!initialized || appCatalogRefreshing || !appCatalogDirty || !pluginEnabled("app")) return;
+  appCatalogRefreshing = true;
+  try {
+    while (appCatalogDirty && !disposed) {
+      appCatalogDirty = false;
+      const revision = appCatalogRevision;
+      const limit = state.scope === "app" && !state.query.trim() ? Math.max(APP_PAGE_SIZE, state.appResults.length) : APP_PAGE_SIZE;
+      const applications = await applicationPages("", limit);
+      if (disposed || revision !== appCatalogRevision) continue;
+      // Refresh the next-show cache even while another scope/query is active.
+      // Keep the existing rows visible until this replacement is ready.
+      state.emptyResults.app = (applications || []).slice(0, APP_PAGE_SIZE);
+      state.appLoadedQuery = null;
+      if (!["all", "app"].includes(state.scope)) continue;
+      const query = state.query, scope = state.scope;
+      const selected = matches()[state.index];
+      const selectedKey = selected && resultSlotKey(selected);
+      allResultKeys = null;
+      allInitialResults = [];
+      allScopeRefreshToken += 1;
+      if (query.trim()) {
+        await refreshApps({ deferRender: true, background: true });
+      } else {
+        ++appSearchToken;
+        state.appLoading = false;
+        state.appResults = (applications || []).slice();
+        state.appLoadedQuery = "";
+        state.appLoadedLimit = limit;
+        state.appHasMore = state.appResults.length === limit;
+        void hydrateAppIcons(state.appResults, ++appIconSearchToken);
+      }
+      if (disposed || revision !== appCatalogRevision || query !== state.query || scope !== state.scope) continue;
+      const selectedIndex = selectedKey ? matches().findIndex(item => resultSlotKey(item) === selectedKey) : -1;
+      if (!query.trim() && selectedIndex >= 0) state.index = selectedIndex;
+      render({ preserveScroll: true });
+    }
+  } catch {
+    // Preserve cached content on an IPC failure and retry on the next show.
+    appCatalogDirty = true;
+  } finally { appCatalogRefreshing = false; }
 }
 
 async function hydrateAppIcons(applications, token) {
@@ -1663,6 +1730,15 @@ subscribe("onClipboardUpdated", () => {
   queueClipboardRefresh(80, true);
 });
 subscribe("onUsageUpdated", () => { void refreshUsage(); });
+subscribe("onApplicationsUpdated", () => {
+  appCatalogRevision += 1;
+  appCatalogDirty = true;
+  ++appSearchToken;
+  ++appIconSearchToken;
+  state.appLoading = false;
+  state.appLoadedQuery = null;
+  void refreshApplicationCatalog();
+});
 // Keep keyboard navigation available after an application click, including a
 // WebKit release-before-press sequence. Launch only after a matching release;
 // ordinary presses still wait for click. Never apply this to paste/delete.
@@ -1814,6 +1890,7 @@ function prepareForShow() {
   // cancels its debounce. Paint the cache first, then reconcile with storage.
   state.clipboardLoadedQuery = null;
   void refreshClipboard();
+  void refreshApplicationCatalog();
 }
 window.focusSearch = focusSearch;
 window.prepareForShow = prepareForShow;
@@ -1876,6 +1953,7 @@ async function initialize() {
   state.usageLoadedScope = "all";
   initialized = true;
   render();
+  void refreshApplicationCatalog();
   deferUncachedWebIcons(320);
   focusSearch();
   if (state.query.trim()) queueClipboardRefresh(0);

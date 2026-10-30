@@ -6,7 +6,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
+        atomic::{AtomicU64, Ordering as AtomicOrdering},
         mpsc, Arc, Mutex, RwLock,
     },
     thread,
@@ -45,8 +45,7 @@ impl Fixture {
             }),
             application_index: RwLock::new(Vec::new()),
             application_index_path: root.join("index.json"),
-            application_index_needs_refresh: AtomicBool::new(false),
-            application_index_refreshing: AtomicBool::new(false),
+            application_fingerprint: Mutex::new(String::new()),
             application_icon_cache: Mutex::new(HashMap::new()),
             application_icon_cache_dir: root.join("icons"),
         });

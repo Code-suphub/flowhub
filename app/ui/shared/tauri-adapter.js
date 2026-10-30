@@ -9,6 +9,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   const { listen } = window.__TAURI__.event;
   const configListeners = new Set();
   const clipboardListeners = new Set();
+  const applicationListeners = new Set();
   const usageListeners = new Set();
   const updateListeners = new Set();
   let configCache = null;
@@ -16,6 +17,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   let pluginsPromise = null;
   const applicationIconCache = new Map();
   const applicationIconInflight = new Map();
+  let applicationIconRevision = 0;
 
   function cloneValue(value) {
     return JSON.parse(JSON.stringify(value));
@@ -98,12 +100,13 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     if (!uniquePaths.length) return {};
     const missingPaths = uniquePaths.filter((path) => !applicationIconCache.has(path) && !applicationIconInflight.has(path));
     if (missingPaths.length) {
+      const revision = applicationIconRevision;
       const request = invoke("load_application_icons", { paths: missingPaths }).catch(() => ({}));
       for (const path of missingPaths) {
         const pending = request
           .then((icons) => {
             const icon = icons?.[path] || "";
-            if (icon) applicationIconCache.set(path, icon);
+            if (icon && revision === applicationIconRevision) applicationIconCache.set(path, icon);
             return icon;
           })
           .finally(() => {
@@ -274,6 +277,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     quitAndInstallUpdate: () => invoke("quit_and_install_update"),
     onConfig(listener) { configListeners.add(listener); return () => configListeners.delete(listener); },
     onClipboardUpdated(listener) { clipboardListeners.add(listener); return () => clipboardListeners.delete(listener); },
+    onApplicationsUpdated(listener) { applicationListeners.add(listener); return () => applicationListeners.delete(listener); },
     onUsageUpdated(listener) { usageListeners.add(listener); return () => usageListeners.delete(listener); },
     onUpdateState(listener) { updateListeners.add(listener); return () => updateListeners.delete(listener); }
   };
@@ -287,5 +291,11 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
   });
   void listen("flowhub:usage-updated", () => usageListeners.forEach((listener) => listener()));
   void listen("flowhub:clipboard-updated", () => clipboardListeners.forEach((listener) => listener()));
+  void listen("flowhub:applications-updated", () => {
+    applicationIconRevision += 1;
+    applicationIconCache.clear();
+    applicationIconInflight.clear();
+    applicationListeners.forEach((listener) => listener());
+  });
   void listen("flowhub:update-state", (event) => updateListeners.forEach((listener) => listener(event.payload)));
 }
