@@ -32,6 +32,16 @@
 
 ## 快捷键说明
 
+### 录入与跨平台格式
+
+设置录入、别名比较和搜索范围键触发共用 `app/ui/shared/shortcuts.js`；React 通过类型适配层使用同一实现，搜索页直接加载该脚本。
+
+- Command 录入为后台支持的 `Command`，macOS 界面显示 `⌘`。后台注册兼容旧配置中的 `Meta`／`OS`，无需用户重新录入；不会把不认识的键静默替换成默认快捷键。
+- `Meta`、`Command`、`Cmd`、`Super` 使用相同的修饰键语义；`CommandOrControl` 的四种名称按当前平台解析，macOS 对应 Command，其他平台对应 Control。冲突检测与触发采用相同规则。
+- 优先读取 `KeyboardEvent.code`，避免 Option 的特殊字符、Shift 的标点变化和输入布局改变存储的按键。保留数字小键盘及小键盘 Enter 的独立身份。没有 code 时仅接受可识别的兼容键名。
+- 输入法组合中、重复事件和单独修饰键不会录入。macOS 全局注册器尚未支持的 F21–F24、媒体键会在录入时提示；范围键和其他平台按各自能力处理，不能据此保证所有硬件层 Fn 行为。
+- 无修饰键的 Escape 取消录入，无修饰键的 Delete／Backspace 清空允许清空的范围键；带修饰键时按普通组合键录入。
+
 底部说明由 React `KeyboardHint` 按当前选中结果和运行环境动态生成，只列真的可用的操作：非剪贴板结果不显示剪贴板快捷键，图片记录不显示纯文本粘贴与编辑副本，浏览器只读预览不显示删除，快捷入口不显示操作按钮提示。
 
 普通结果的长标题、路径和命令默认收起，选中后显示完整内容，也可用「展开内容」独立展开。快捷入口只显示图标与名称。剪贴板文本默认两行，选中显示五行，完整原文由「展开」查看；展开不改变打开、粘贴或复制所用的原始数据。超长普通内容保留显式展开入口，避免选择时一次插入过大的文本。虚拟列表通过 `ResizeObserver` 更新展开后的组高度，普通输入不增加同步测量。
@@ -43,6 +53,8 @@ node app/scripts/tests/result-actions.test.cjs
 node app/scripts/tests/search-focus.test.cjs
 node app/scripts/tests/clipboard-actions.test.cjs
 node app/scripts/tests/all-pagination.test.cjs
+node --test app/scripts/tests/shortcut-compatibility.test.cjs app/scripts/tests/settings-shortcuts.test.cjs
+CARGO_BUILD_JOBS=1 cargo test --manifest-path app/src-tauri/Cargo.toml --lib shortcut
 ```
 
 覆盖各类型操作栏与动作分发、F6／⇧F6 焦点顺序、`Esc`／`Tab` 规则、组合输入期间不抢焦点，以及长列表窗口下的结果定位。真实 WKWebView 中的焦点环、Tab 顺序与输入法行为仍未人工验收。

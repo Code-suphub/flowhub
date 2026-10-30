@@ -10,6 +10,7 @@ mod config_save;
 mod config_transfer;
 mod web_open;
 mod launcher;
+mod shortcut;
 #[cfg(target_os = "macos")]
 mod macos;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -1379,7 +1380,7 @@ fn install_launcher_activation_observer(app: &tauri::AppHandle) {
 }
 
 fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {
-    let parsed = hotkey.parse::<Shortcut>();
+    let parsed = shortcut::parse(hotkey);
     match parsed {
         Ok(shortcut) => match register_platform_hotkey(app, shortcut) {
             Ok(()) => json!({ "hotkey": hotkey, "hotkeyRegistered": true }),

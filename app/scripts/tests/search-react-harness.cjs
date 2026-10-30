@@ -28,6 +28,7 @@ async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons}={
   };
   for(const name of ['onConfig','onClipboardUpdated','onUsageUpdated','onUpdateState'])w.weborg[name]=fn=>{events[name]=fn;return()=>delete events[name];};
   w.eval(fs.readFileSync(path.join(app,'ui/shared/command-store.js'),'utf8'));
+  w.eval(fs.readFileSync(path.join(app,'ui/shared/shortcuts.js'),'utf8'));
   for(const name of ['tool-registry','search-window','port-tool','local-ip-tool','network-tools','json-tool','url-tool','search'])w.eval(fs.readFileSync(path.join(app,'ui/search',name+'.js'),'utf8'));
   w.eval(bundle);const unmount=w.SearchTest.mountSearch(w.document.getElementById('search-root'));
   t.after(()=>{unmount();dom.window.close();});

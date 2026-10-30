@@ -401,23 +401,7 @@ function setConfig(config) {
 }
 
 function eventMatchesShortcut(event, shortcut) {
-  const parts = String(shortcut || "").replace(/\s+/g, "").toLowerCase().split("+").filter(Boolean);
-  if (!parts.length) return false;
-  const aliases = { option: "alt", control: "ctrl", cmd: "meta", command: "meta", commandorcontrol: "commandorcontrol", cmdorctrl: "commandorcontrol" };
-  const normalized = parts.map((part) => aliases[part] || part);
-  const key = normalized.find((part) => !["shift", "alt", "ctrl", "meta", "commandorcontrol"].includes(part));
-  if (!key) return false;
-  const commandOrControl = normalized.includes("commandorcontrol");
-  const expectedCtrl = normalized.includes("ctrl");
-  const expectedMeta = normalized.includes("meta");
-  if (event.shiftKey !== normalized.includes("shift") || event.altKey !== normalized.includes("alt")) return false;
-  if (commandOrControl) {
-    if (!event.ctrlKey && !event.metaKey) return false;
-  } else if (event.ctrlKey !== expectedCtrl || event.metaKey !== expectedMeta) return false;
-  const codeKey = String(event.code || "").replace(/^Digit/, "").replace(/^Key/, "").toLowerCase();
-  const eventKey = String(event.key || "").toLowerCase();
-  const expectedKey = key === "space" ? " " : key;
-  return eventKey === expectedKey || codeKey === key;
+  return window.FlowHubShortcuts.matches(event, shortcut);
 }
 
 function scopeForShortcut(event) {
