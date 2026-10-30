@@ -91,7 +91,7 @@ export function Canvas() {
   const gesture = useRef<Gesture | null>(null), suppressClick = useRef(0), saving = useRef(0), saveTail = useRef(Promise.resolve());
   const fitted = useRef(''), alive = useRef(true);
   const restoredGeometryFit = useRef(false);
-  const activity = useCanvasActivity(invoke, () => { cancelGesture(); setMenu(null); setFramesReady(false); }, message => { setRefreshError(message); setNotice(message); });
+  const activity = useCanvasActivity(invoke, () => { cancelGesture(); setMenu(null); }, message => { setRefreshError(message); setNotice(message); });
   const board = layout.boards.find(board => board.id === layout.active)!;
   const viewOnly = layout.viewOnly === true;
   const layoutLocked = layout.layoutLocked === true, editingDisabled = demo || viewOnly || layoutLocked || layoutLockBusy || viewOnlyBusy || compactBusy;
@@ -531,7 +531,7 @@ export function Canvas() {
             if (!viewOnly && event.key === 'Enter') { event.preventDefault(); openCard(card); }
             if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); context(card, rect.left + 20, rect.top + 20, false); }
           }}>
-          {demo ? <div className="canvas-demo-card"><strong>{compactStatus(card, source).label}</strong><span>{compactStatus(card, source).metric}</span><span>只读演示</span></div> : source?.widget ? activity.active && framesReady ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <div className="canvas-suspended-card" role="status">{activity.active ? refreshError ? '等待重试更新组件' : '正在恢复最新状态…' : '窗口未显示，组件已暂停'}</div> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
+          {demo ? <div className="canvas-demo-card"><strong>{compactStatus(card, source).label}</strong><span>{compactStatus(card, source).metric}</span><span>只读演示</span></div> : source?.widget ? framesReady ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} activity={activity} onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <div className="canvas-suspended-card" role="status">{activity.active ? refreshError ? '等待重试更新组件' : '正在恢复最新状态…' : '窗口未显示，组件已暂停'}</div> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
           <div className="widget-hit absolute" aria-hidden="true">{interactive ? '⠿' : ''}</div>
           <Button className="resize-handle absolute" data-resize aria-label="调整组件大小" disabled={editingDisabled} onKeyDown={event => {
             if (modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;

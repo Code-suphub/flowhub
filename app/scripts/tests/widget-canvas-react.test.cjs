@@ -449,7 +449,8 @@ test('desktop snapshots keep refreshing while hidden and refresh on return', asy
   assert.equal(s.w.document.querySelector('.widget-content'), frame);
   assert.equal(s.intervals.filter(timer => timer.ms === 15000).length, 1, 'document return must reuse the existing refresh timer');
   s.w.dispatchEvent(new s.w.CustomEvent('flowhub:canvas-lifecycle', { detail: { active: false, revision: 1 } }));
-  await wait(() => !s.w.document.querySelector('.widget-content'));
+  await wait(() => s.responses.some(message => message.type === 'flowhub:widget-lifecycle' && !message.active));
+  assert.equal(s.w.document.querySelector('.widget-content'), frame);
   const gets = s.calls.filter(call => call.action === 'get').length;
   s.w.document.dispatchEvent(new s.w.Event('visibilitychange'));
   await new Promise(resolve => setTimeout(resolve, 20));

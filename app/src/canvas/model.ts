@@ -6,12 +6,12 @@ export type Source = { id: string; title: string; snapshot?: unknown; lastLoaded
 export type Point = { x: number; y: number };
 export type Position = Point & { id: string; w: number; h: number };
 export type FrameContext = { config: Config; title: string; snapshot?: unknown; preview: boolean };
-export type FrameHandle = { updateContext(context: FrameContext): void; save(): Promise<Config>; dispose(): void };
+export type FrameHandle = { setActive(active: boolean): void; updateContext(context: FrameContext): void; save(): Promise<Config>; dispose(): void };
 export type Invoke = <T = unknown>(command: string, args: Record<string, unknown>) => Promise<T>;
 export type CanvasHost = Window & {
   __flowhubCanvasReturn?: { boardId: string; cardId: string; invalid?: boolean; plugin?: string; requestId?: string };
   __TAURI__?: { core?: { invoke?: Invoke } };
-  FlowHubWidgetFrame: { mount(frame: HTMLIFrameElement, options: { url: string; context: FrameContext; rpc: ((params: Config) => Promise<unknown>) | null; navigate: ((action: string, selection?: Config) => void) | null; resize?: (height: number) => void }): FrameHandle };
+  FlowHubWidgetFrame: { mount(frame: HTMLIFrameElement, options: { url: string; context: FrameContext; rpc: ((params: Config) => Promise<unknown>) | null; navigate: ((action: string, selection?: Config) => void) | null; resize?: (height: number) => void; active?: boolean; persistent?: boolean }): FrameHandle };
   WidgetLayout: { arrange(cards: Card[], moving?: string | null, wanted?: Point | null, target?: string | null): Position[]; swapTarget(cards: Card[], moving: string, point: Point): string | null };
 };
 export const host = () => window as unknown as CanvasHost;

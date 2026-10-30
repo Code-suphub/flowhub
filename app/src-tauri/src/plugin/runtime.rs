@@ -93,10 +93,20 @@ impl Runtime {
     }
     pub(crate) fn asset(&self,id:&str,path:&str)->Result<(Vec<u8>,&'static str),String> {
         let p=self.get(id)?;let ui=inside(&p.directory,&p.manifest.ui)?;let root=ui.parent().ok_or("缺少页面目录")?;
+        if path=="__flowhub_widget_lifecycle.js" {return Ok((include_bytes!("../../../ui/plugin/widget-lifecycle.js").to_vec(),"text/javascript; charset=utf-8"));}
         let file=inside(root,path)?;
         let mime=match file.extension().and_then(|s|s.to_str()).unwrap_or(""){"html"=>"text/html; charset=utf-8","js"=>"text/javascript; charset=utf-8","css"=>"text/css; charset=utf-8","svg"=>"image/svg+xml","png"=>"image/png",_=>return Err("不支持的插件资源".into())};
-        let data=std::fs::read(file).map_err(|e|e.to_string())?;if data.len()>8*1024*1024{return Err("插件资源过大".into());} Ok((data,mime))
+        let data=std::fs::read(file).map_err(|e|e.to_string())?;if data.len()>8*1024*1024{return Err("插件资源过大".into());}
+        Ok((if mime.starts_with("text/html") {widget_lifecycle_html(data)}else{data},mime))
     }
+}
+fn widget_lifecycle_html(data:Vec<u8>)->Vec<u8> {
+    let mut html=match String::from_utf8(data){Ok(html)=>html,Err(error)=>return error.into_bytes()};
+    let lower=html.to_ascii_lowercase();
+    let head=lower.match_indices("<head").find(|(index,_)|matches!(lower.as_bytes().get(index+5),Some(b'>')|Some(b' ')|Some(b'\t')|Some(b'\n')|Some(b'\r')))
+        .and_then(|(index,_)|lower[index..].find('>').map(|end|index+end+1));
+    let position=head.or_else(||lower.find("<!doctype").and_then(|index|lower[index..].find('>').map(|end|index+end+1))).unwrap_or(0);
+    html.insert_str(position,"<script src=\"/__flowhub_widget_lifecycle.js\"></script>");html.into_bytes()
 }
 impl Session {
     async fn call(&self,method:String,params:Value)->Result<Value,String>{
@@ -122,6 +132,14 @@ fn trusted(window:&tauri::WebviewWindow)->Result<(),String>{if matches!(window.l
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn widget_timer_bootstrap_precedes_package_scripts_and_preserves_doctype() {
+        for html in ["<!DOCTYPE html><HTML><HEAD lang=\"zh\"><script src=\"app.js\"></script></HEAD></HTML>","<!doctype html><script src=\"app.js\"></script>","<script src=\"app.js\"></script>"] {
+            let injected=String::from_utf8(widget_lifecycle_html(html.as_bytes().to_vec())).unwrap();
+            assert!(injected.find("/__flowhub_widget_lifecycle.js").unwrap()<injected.find("app.js").unwrap());
+            if html.starts_with("<!") {assert!(injected.starts_with(&html[..15]));}
+        }
+    }
     #[test]
     fn sandbox_assets_use_explicit_package_origin() {
         let csp = asset_csp("machines");
@@ -159,7 +177,9 @@ mod tests {
         assert!(rt.asset("test-plugin","../service").is_err());
         symlink(package_root.join("service"),package_root.join("ui/escape.js")).unwrap();
         assert!(rt.asset("test-plugin","escape.js").is_err());
-        assert_eq!(rt.asset("test-plugin","index.html").unwrap().0,b"<h1>Plugin</h1>");
+        assert_eq!(rt.asset("test-plugin","index.html").unwrap().0,widget_lifecycle_html(b"<h1>Plugin</h1>".to_vec()));
+        assert_eq!(rt.asset("test-plugin","__flowhub_widget_lifecycle.js").unwrap().0,include_bytes!("../../../ui/plugin/widget-lifecycle.js"));
+        assert!(rt.asset("missing","__flowhub_widget_lifecycle.js").is_err());
         let first=rt.session("test-plugin").await.unwrap();
         assert_eq!(first.call("health".into(),json!({})).await.unwrap()["protocol"],1);
         rt.stop("test-plugin").await;
