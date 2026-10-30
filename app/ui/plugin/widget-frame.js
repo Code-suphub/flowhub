@@ -1,25 +1,26 @@
 (() => {
   // The frame identity binds RPC to its installed plugin, never to a child-supplied ID.
-  window.FlowHubWidgetFrame={mount(frame,{url,context,rpc,navigate,resize}){
+  window.FlowHubWidgetFrame={mount(frame,{url,context,rpc,navigate,resize,active=true,persistent=false}){
     let disposed=false,sequence=0;const pending=new Map();
-    const token=crypto.randomUUID(),target=new URL(url,location.href);target.hash=new URLSearchParams({flowhubWidgetToken:token});
+    const token=crypto.randomUUID(),target=new URL(url,location.href);target.hash=new URLSearchParams({flowhubWidgetToken:token,...(persistent?{flowhubWidgetLifecycle:'1',flowhubWidgetActive:active?'1':'0'}:{})});
     const send=data=>frame.contentWindow?.postMessage({...data,token},'*');
+    const initialize=()=>{if(persistent)send({type:'flowhub:widget-lifecycle',active});if(active)send({type:'flowhub:widget-init',context});};
     const receive=async event=>{
       if(disposed||!frame.isConnected||event.source!==frame.contentWindow)return;
       const d=event.data;if(!d||typeof d!=='object'||d.token!==token)return;
-      if(d.type==='flowhub:widget-ready')send({type:'flowhub:widget-init',context});
+      if(d.type==='flowhub:widget-ready')initialize();
       if(d.type==='flowhub:widget-size'&&typeof d.height==='number'&&Number.isFinite(d.height)&&d.height>0&&d.height<=2000)resize?.(Math.ceil(d.height));
-      if(d.type==='flowhub:widget-navigate'&&(d.action==='detail'||d.action==='editor')){
+      if(active&&d.type==='flowhub:widget-navigate'&&(d.action==='detail'||d.action==='editor')){
         const selection=d.selection;
         if(selection!==undefined&&(!selection||Array.isArray(selection)||typeof selection!=='object'||JSON.stringify(selection).length>4096))return;
         navigate?.(d.action,selection);
       }
       if(d.type==='flowhub:widget-config'){const p=pending.get(d.id);if(!p)return;clearTimeout(p.timer);pending.delete(d.id);if(d.error)p.reject(Error(d.error));else if(!d.config||Array.isArray(d.config)||typeof d.config!=='object'||JSON.stringify(d.config).length>65536)p.reject(Error('组件配置无效'));else p.resolve(d.config);}
       if(d.type==='flowhub:widget-rpc'&&typeof d.id==='string'&&d.id.length<100){
-        try{if(!rpc)throw Error('此页面不支持插件调用');const result=await rpc(d.params||{});if(!disposed)send({type:'flowhub:widget-result',id:d.id,result});}catch(e){if(!disposed)send({type:'flowhub:widget-result',id:d.id,error:String(e)});}
+        try{if(!active)throw Error('组件刷新已暂停');if(!rpc)throw Error('此页面不支持插件调用');const result=await rpc(d.params||{});if(!disposed)send({type:'flowhub:widget-result',id:d.id,result});}catch(e){if(!disposed)send({type:'flowhub:widget-result',id:d.id,error:String(e)});}
       }
     };
     window.addEventListener('message',receive);frame.setAttribute('sandbox','allow-scripts');frame.src=target.href;
-    return {updateContext(next){if(disposed)return;context=next;send({type:'flowhub:widget-init',context});},save(){return new Promise((resolve,reject)=>{const id=String(++sequence),timer=setTimeout(()=>{pending.delete(id);reject(Error('组件编辑器未响应'));},5000);pending.set(id,{resolve,reject,timer});send({type:'flowhub:widget-save',id});});},dispose(){disposed=true;window.removeEventListener('message',receive);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('组件页面已关闭'));}pending.clear();}};
+    return {setActive(next){if(disposed||next===active)return;active=next;initialize();},updateContext(next){if(disposed)return;context=next;if(active)initialize();},save(){return new Promise((resolve,reject)=>{const id=String(++sequence),timer=setTimeout(()=>{pending.delete(id);reject(Error('组件编辑器未响应'));},5000);pending.set(id,{resolve,reject,timer});send({type:'flowhub:widget-save',id});});},dispose(){disposed=true;window.removeEventListener('message',receive);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('组件页面已关闭'));}pending.clear();}};
   }};
 })();
