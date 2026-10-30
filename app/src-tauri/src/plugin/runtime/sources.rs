@@ -6,6 +6,18 @@ pub(super) struct Source {id:String,name:String,kind:String,location:String,#[se
 #[derive(Clone,Serialize,Deserialize)]
 pub(super) struct Candidate {token:String,source:String,manifest:Manifest,#[serde(default)]directory:Option<PathBuf>,#[serde(default)]url:String,#[serde(default)]sha256:String,#[serde(default)]signature:String,#[serde(default)]target:String}
 fn digest(bytes:&[u8])->String{format!("{:x}",Sha256::digest(bytes))}
+// Plugin releases use native minisign text; retain compatibility with sources
+// that wrap their keys/signatures in Base64 like Tauri updater metadata.
+fn verify_package(data:&[u8],signature:&str,pubkey:&str)->Result<(),String>{
+    let decode=|text:&str|->Result<String,String>{
+        String::from_utf8(base64::engine::general_purpose::STANDARD.decode(text.trim()).map_err(|e|e.to_string())?).map_err(|e|e.to_string())
+    };
+    let key=minisign_verify::PublicKey::decode(pubkey.trim()).or_else(|_|minisign_verify::PublicKey::from_base64(pubkey.trim())).map_err(|e|e.to_string())
+        .or_else(|_|minisign_verify::PublicKey::decode(&decode(pubkey)?).map_err(|e|e.to_string()))?;
+    let signature=minisign_verify::Signature::decode(signature.trim()).map_err(|e|e.to_string())
+        .or_else(|_|minisign_verify::Signature::decode(&decode(signature)?).map_err(|e|e.to_string()))?;
+    key.verify(data,&signature,true).map_err(|e|e.to_string())
+}
 pub(super) fn load(root:&Path)->Result<Vec<Source>,String>{
     let path=root.join("plugin-sources.json");
     if path.exists(){return serde_json::from_slice(&std::fs::read(path).map_err(|e|e.to_string())?).map_err(|e|format!("插件来源配置损坏：{e}"));}
@@ -91,7 +103,7 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)-
             let c=rt.candidates.lock().unwrap().get(p["token"].as_str().unwrap_or("")).cloned().ok_or("安装候选已失效，请重新扫描")?;
             let source=rt.sources.lock().unwrap().iter().find(|s|s.id==c.source).cloned().ok_or("来源已移除")?;
             let package=if let Some(directory)=c.directory{package(directory)?}else{
-                let bytes=download(&c.url,192*1024*1024).await?;if digest(&bytes)!=c.sha256{return Err("插件包校验失败".into());}crate::updater::cache::verify(&bytes,&c.signature,&source.key)?;
+                let bytes=download(&c.url,192*1024*1024).await?;if digest(&bytes)!=c.sha256{return Err("插件包校验失败".into());}verify_package(&bytes,&c.signature,&source.key)?;
                 let directory=rt.root.join("plugin-packages").join(format!("{}-{}",c.manifest.id,chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&directory).map_err(|e|e.to_string())?;
                 let result=(||{unpack(&bytes,&directory)?;let p=package(directory.clone())?;use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(inside(&p.directory,&p.manifest.executable)?,std::fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?;Ok::<_,String>(p)})();
                 match result{Ok(p)=>p,Err(e)=>{let _=std::fs::remove_dir_all(directory);return Err(e);}}
@@ -107,6 +119,21 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)-
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn plugin_signatures_accept_native_and_encoded_minisign_but_reject_tampering(){
+        // Public test vector from minisign-verify 0.2.5 (MIT), also used by the updater tests.
+        let key="untrusted comment: minisign public key E7620F1842B4E81F\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
+        let signature="untrusted comment: signature from minisign secret key\nRWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=\ntrusted comment: timestamp:1555779966\tfile:test\nQtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==";
+        let encode=|s:&str|base64::engine::general_purpose::STANDARD.encode(s);
+        for key in [key.to_string(),key.lines().nth(1).unwrap().to_string(),encode(key)]{
+            for signature in [signature.to_string(),encode(signature)]{
+                assert!(verify_package(b"test",&signature,&key).is_ok());
+                assert!(verify_package(b"Test",&signature,&key).is_err());
+            }
+        }
+        assert!(verify_package(b"test","invalid signature",key).is_err());
+        assert!(verify_package(b"test",signature,"invalid key").is_err());
+    }
     #[test]
     fn sources_migrate_scan_without_execution_and_reject_unsafe_packages(){
         let root=std::env::temp_dir().join(format!("source-test-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(root.join("machines")).unwrap();
