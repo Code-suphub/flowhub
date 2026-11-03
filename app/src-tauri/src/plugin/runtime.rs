@@ -6,6 +6,7 @@ use tauri::Manager;
 use tokio::io::{AsyncBufReadExt,AsyncWriteExt};
 use tauri_plugin_dialog::DialogExt;
 mod sources;
+mod privileged_monitor;
 
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default)] searchable:bool, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
@@ -17,6 +18,9 @@ pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool
 pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>> }
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
+fn valid_permissions(id:&str, permissions:&[String])->bool {
+    permissions==["native-process"] || (id=="resource-monitor" && permissions.len()==2 && permissions.iter().any(|p|p=="native-process") && permissions.iter().any(|p|p=="system-process-monitor"))
+}
 fn inside(root:&Path, relative:&str)->Result<PathBuf,String> {
     let relative=Path::new(relative);
     if relative.components().any(|c| !matches!(c,std::path::Component::Normal(_))) { return Err("插件路径必须是包内相对路径".into()); }
@@ -26,7 +30,7 @@ fn inside(root:&Path, relative:&str)->Result<PathBuf,String> {
 fn package(directory:PathBuf)->Result<Installed,String> {
     let directory=directory.canonicalize().map_err(|e|e.to_string())?;
     let manifest:Manifest=serde_json::from_slice(&std::fs::read(directory.join("flowhub-plugin.json")).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-    if manifest.schema!=2 || !safe_id(&manifest.id) || manifest.permissions!=["native-process"] { return Err("不支持的插件协议或权限".into()); }
+    if manifest.schema!=2 || !safe_id(&manifest.id) || !valid_permissions(&manifest.id,&manifest.permissions) { return Err("不支持的插件协议或权限".into()); }
     semver::Version::parse(&manifest.version).map_err(|e|e.to_string())?;
     inside(&directory,&manifest.ui)?; inside(&directory,&manifest.executable)?;
     if let Some(widget)=&manifest.widget {let ui=inside(&directory,&manifest.ui)?;let root=ui.parent().ok_or("缺少插件页面目录")?;for page in [&widget.card,&widget.editor,&widget.detail]{if !page.ends_with(".html"){return Err("组件入口必须为 HTML 页面".into());}inside(root,page)?;}}
@@ -34,7 +38,26 @@ fn package(directory:PathBuf)->Result<Installed,String> {
 }
 impl Runtime {
     pub(crate) fn widget(&self,id:&str)->Result<WidgetDefinition,String>{let p=self.get(id)?;package(p.directory)?.manifest.widget.ok_or_else(||"请升级插件以支持独立桌面组件".to_string())}
-    pub(crate) async fn widget_call(&self,id:&str,params:Value)->Result<Value,String>{self.widget(id)?;if params.to_string().len()>65536{return Err("组件请求过大".into());}self.session(id).await?.call("widget_api".into(),params).await}
+    pub(crate) async fn widget_call(&self,id:&str,params:Value)->Result<Value,String>{
+        self.widget(id)?;
+        if params.to_string().len()>65536{return Err("组件请求过大".into());}
+        if params["action"]=="management" {
+            let action=match params["method"].as_str().unwrap_or("") {
+                "privileged_status"=>Some("status"),
+                "privileged_enable"=>Some("enable"),
+                "privileged_disable"=>Some("disable"),
+                _=>None,
+            };
+            if let Some(action)=action {
+                let plugin=self.get(id)?;
+                if !plugin.manifest.permissions.iter().any(|permission|permission=="system-process-monitor") {
+                    return Err("已安装的插件版本未声明系统进程监控授权能力；请重新安装插件并确认该权限。".into());
+                }
+                return privileged_monitor::invoke(action).await;
+            }
+        }
+        self.session(id).await?.call("widget_api".into(),params).await
+    }
     pub(crate) fn status_plugins(&self)->Vec<(String,String)> { self.installed.lock().unwrap().iter().filter(|p|p.enabled && p.manifest.status_surface).map(|p|(p.manifest.id.clone(),p.manifest.name.clone())).collect() }
     pub(crate) fn widget_plugins(&self)->Vec<(String,String)> {
         let installed=self.installed.lock().unwrap().clone();
@@ -200,7 +223,19 @@ pub(crate) async fn plugin_search_call(window:tauri::WebviewWindow,app:tauri::Ap
 }
 #[tauri::command]
 pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,method:String,params:Value)->Result<Value,String>{
-    trusted(&window)?;let rt=app.state::<Runtime>();rt.session(&id).await?.call(method,params).await
+    trusted(&window)?;
+    if id=="resource-monitor" {
+        let action=match method.as_str(){"privileged_status"=>Some("status"),"privileged_enable"=>Some("enable"),"privileged_disable"=>Some("disable"),_=>None};
+        if let Some(action)=action {
+            let rt=app.state::<Runtime>();
+            let plugin=rt.get(&id)?;
+            if !plugin.manifest.permissions.iter().any(|permission|permission=="system-process-monitor") {
+                return Err("已安装的插件版本未声明系统进程监控授权能力；请重新安装插件并确认该权限。".into());
+            }
+            return privileged_monitor::invoke(action).await;
+        }
+    }
+    let rt=app.state::<Runtime>();rt.session(&id).await?.call(method,params).await
 }
 #[tauri::command]
 pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
