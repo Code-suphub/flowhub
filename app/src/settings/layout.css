@@ -46,6 +46,14 @@ html[data-native-window="macos"] .settings-topbar {padding-left:100px;-webkit-ap
 .settings-footer {position:relative;flex-shrink:0;min-height:60px;padding:12px 20px;border-top:1px solid var(--fh-border);background:var(--fh-study-card);}
 .settings-save-status {display:flex;flex-wrap:wrap;align-items:center;flex:1;gap:6px;min-width:140px;}
 .settings-save-status p {margin:0;font-size:12px;min-width:0;overflow-wrap:anywhere;}
+.settings-save-status>svg {width:14px;height:14px;flex:none;color:var(--fh-muted);}
+.settings-footer[data-save-state=dirty] .settings-save-status>svg {color:var(--fh-accent);}
+.settings-footer {max-height:45vh;overflow:auto;}
+.settings-footer-notice {flex-basis:100%;min-width:0;max-height:80px;overflow:auto;overflow-wrap:anywhere;}
+.settings-footer-note {flex-basis:100%;margin:0;font-size:12px;line-height:1.5;color:var(--fh-muted);max-height:48px;overflow:auto;overflow-wrap:anywhere;}
+.settings-busy-icon {animation:settings-busy-spin 1s linear infinite;}
+@keyframes settings-busy-spin {to{transform:rotate(360deg);}}
+@media(prefers-reduced-motion:reduce) {.settings-busy-icon {animation:none;}}
 .settings-review-trigger.fh-button {flex:none;min-height:28px;padding-inline:8px;color:var(--fh-accent);}
 .settings-footer-actions .fh-button:not(.settings-save-button) {color:var(--fh-muted);border-color:transparent;background:transparent;font-weight:400;}
 .settings-footer-actions .fh-button:not(.settings-save-button):hover:not(:disabled) {background:var(--fh-study-selected);color:var(--fh-text);}

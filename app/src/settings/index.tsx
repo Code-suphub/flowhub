@@ -4,9 +4,10 @@ import { ArrowLeftIcon, ArrowRightIcon, EllipsisIcon, Layers2Icon, PuzzleIcon, S
 import { Button, Dialog } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
-import { EmptyState, Help, Select, Tooltip } from '../shared/controls';
+import { EmptyState, Select, Tooltip } from '../shared/controls';
 import { DraftReview } from './DraftReview';
 import { SettingsSearch } from './SettingsSearch';
+import { SettingsFooter } from './SettingsFooter';
 import { useSettingLocation } from './useSettingLocation';
 import { shortcutKeys } from '../shared/shortcuts';
 import { useMediaQuery } from '../shared/useMediaQuery';
@@ -130,7 +131,7 @@ export function Settings({ store }: { store: SettingsStore }) {
         </>}
       </div></main></div>
     {readonly() && pluginsOpen ? <Dialog title={pluginTitle} busy={s.busy} modal={false} onClose={() => setPluginsOpen(false)} className="settings-plugin-drawer"><div className="settings-drawer-handle" aria-hidden="true" /><PluginFrame module={pluginModule} /><p className="settings-plugin-caption">{readonly() ? '浏览器预览 · 插件安装与管理请在桌面 App 中操作' : '本地插件工作区'}</p></Dialog> : null}
-    <footer className="settings-footer flex flex-wrap items-center justify-between gap-3"><div className="settings-save-status">{store.dirty && !readonly()?<Button ref={reviewTrigger} variant="ghost" size="sm" className="settings-review-trigger" aria-label="查看未保存修改" disabled={s.busy} onClick={()=>{if(finishJson())setReview(true);}}>查看修改</Button>:null}<p role={s.error ? 'alert' : 'status'} className={s.error ? 'settings-error' : ''}>{s.notice || (readonly() ? '浏览器预览 · 不会保存配置' : store.dirty ? '有未保存修改' : '已保存')}</p><Help label="草稿与保存">切换页面会保留未保存的配置草稿；保存后生效。未保存的修改也会保留为本地草稿，可在下次打开时恢复。</Help></div><div className="settings-footer-actions flex flex-wrap gap-2"><Button disabled={readonly() || s.busy || !s.undo.length || s.conflict} onClick={() => store.travel('undo')}>撤销</Button><Button disabled={readonly() || s.busy || !s.redo.length || s.conflict} onClick={() => store.travel('redo')}>重做</Button><Button disabled={s.busy || !store.dirty} onClick={() => setReset(true)}>重置未保存</Button><Button className="primary settings-save-button" disabled={readonly() || s.busy || !store.dirty || s.conflict} onClick={() => void store.run(() => store.save())}>{s.busy ? '处理中…' : '保存'}</Button></div></footer>
+    <SettingsFooter store={store} reviewTrigger={reviewTrigger} onReview={()=>{if(finishJson())setReview(true);}} onReset={()=>setReset(true)} />
     {searchOpen ? <SettingsSearch onClose={()=>setSearchOpen(false)} onChoose={entry=>{
       if(!navigate(entry.page))return {ok:false,error:store.snapshot().notice || '当前无法切换，请先处理未完成的配置编辑。'};
       setSearchOpen(false);if(entry.page!=='extensions')requestLocation(entry.page,entry.target);return {ok:true};
