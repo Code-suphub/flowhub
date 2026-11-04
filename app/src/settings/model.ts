@@ -45,6 +45,19 @@ export function normalize(value: unknown): Config {
 export function entries(nodes: WebNode[], parent: WebNode | null = null, depth = 0): { node: WebNode; parent: WebNode | null; depth: number }[] {
   return nodes.flatMap(node => [{ node, parent, depth }, ...entries(node.children || [], node, depth + 1)]);
 }
+export function webSelection(nodes: WebNode[], ids: string[]) {
+  const selected = new Set(ids), roots: WebNode[] = [], blocked = new Set<string>();
+  function visit(items: WebNode[], covered = false) {
+    for (const node of items) {
+      const included = selected.has(node.id);
+      if (included && !covered) roots.push(node);
+      if (covered || included) blocked.add(node.id);
+      visit(node.children || [], covered || included);
+    }
+  }
+  visit(nodes);
+  return { roots, blocked, count: blocked.size, descendants: blocked.size - roots.length };
+}
 export function moveNodes(nodes: WebNode[], ids: string[], targetId: string, position: 'before' | 'after' | 'inside' = 'inside'): WebNode[] {
   const next = clone(nodes), all = entries(next), selected = new Set(ids);
   const roots = all.filter(e => selected.has(e.node.id) && !all.some(a => selected.has(a.node.id) && a.node.id !== e.node.id && entries(a.node.children || []).some(c => c.node.id === e.node.id)));
