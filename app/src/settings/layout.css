@@ -78,3 +78,6 @@ html[data-native-window="macos"] .settings-topbar {padding-left:100px;-webkit-ap
   .settings-history {gap:0;}
   .settings-save-status {flex-basis:100%;}
 }
+
+.settings-search-key {padding:2px 5px;border:1px solid var(--fh-border);border-radius:4px;color:var(--fh-muted);font-size:10px;line-height:1.4;font-family:inherit;}
+@media(max-width:1050px) { .settings-search-key {display:none;} }

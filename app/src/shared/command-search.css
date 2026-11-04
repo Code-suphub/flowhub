@@ -1,0 +1,9 @@
+.fh-command-input { padding:0 0 14px; border-bottom:1px solid var(--fh-border); }
+.fh-command-input>svg { flex:none; width:18px; height:18px; color:var(--fh-muted); }
+.fh-command-input [data-slot=input] { flex:1; min-width:0; font-size:14px; }
+.fh-command-list { max-height:min(48vh,440px); min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; margin:8px -4px 0; padding:0 4px 4px; }
+.fh-command-group-label { padding:6px 10px 8px; color:var(--fh-muted); font-size:11px; }
+.fh-command-item { display:flex; align-items:center; min-width:0; gap:12px; padding:10px; margin:2px 0; border:1px solid transparent; border-radius:8px; color:var(--fh-text); cursor:pointer; outline:0; }
+.fh-command-item:hover { background:var(--fh-surface-soft); }
+.fh-command-item[data-highlighted] { border-color:var(--fh-border); background:var(--fh-accent-soft); }
+.fh-command-item[data-disabled] { opacity:.5; cursor:default; }

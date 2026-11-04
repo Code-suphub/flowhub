@@ -38,7 +38,7 @@ export function PathControl({ store, storage = false }: { store: SettingsStore; 
     finally{pending.current=false;if(alive.current)setChoosing(false);}
   }
   const disabled=preview || s.busy || s.conflict || choosing;
-  return <section className="settings-storage-control flex min-w-0 flex-col gap-3" data-storage-kind={storage?'database':'config'} aria-label={storage?'数据库与剪贴板目录':'配置文件位置'}>
+  return <section className="settings-storage-control flex min-w-0 flex-col gap-3" data-setting-label={storage?'数据库与剪贴板目录':'配置文件位置'} tabIndex={-1} data-storage-kind={storage?'database':'config'} aria-label={storage?'数据库与剪贴板目录':'配置文件位置'}>
     <header className="flex flex-wrap items-center gap-2">{storage?<DatabaseIcon aria-hidden="true" />:<FileCogIcon aria-hidden="true" />}<h3>{storage?'数据库与剪贴板目录':'配置文件位置'}</h3><Badge variant={changed?'secondary':'outline'}>{preview?'只读预览':changed?'待保存':'当前生效'}</Badge></header>
     <div className="settings-storage-path"><span>当前使用</span><code>{current}</code></div>
     {changed?<><div className="settings-storage-path"><label htmlFor={storage?'settings-database-target':'settings-config-target'}>保存后使用</label><Input id={storage?'settings-database-target':'settings-config-target'} aria-label={storage?'数据目录目标位置':'配置文件目标位置'} value={value || info.defaultPath || '默认位置（保存时解析）'} readOnly /></div><Alert variant="warning" role="status"><AlertDescription>{storage?'保存后切换数据目录。空目录接收当前全部数据；已有数据库会加载目标数据，源网页草稿不合并。':'保存后切换配置文件，原文件保留。'}</AlertDescription></Alert></>:null}
@@ -126,20 +126,20 @@ export function DataPanel({ store }: { store: SettingsStore }) {
       <header className="settings-data-heading flex flex-wrap items-center gap-2"><DatabaseIcon aria-hidden="true" /><h2 id="settings-storage-title">存储位置</h2><Help label="存储位置说明">位置修改先进入草稿，点击全局保存后生效。配置备份不包含 SQLite 中的网页目录和剪贴板记录。</Help></header>
       <div className="settings-storage-list grid min-w-0 grid-cols-1 gap-5"><PathControl store={store} /><PathControl store={store} storage /></div>
     </section>
-    <section className="settings-group" aria-labelledby="settings-history-title">
+    <section className="settings-group" aria-labelledby="settings-history-title" data-setting-label="配置历史" tabIndex={-1}>
       <header className="settings-data-heading flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><HistoryIcon aria-hidden="true" /><h2 id="settings-history-title">配置历史</h2><Help label="配置历史说明">每次保存前自动备份上一版配置，最多保留 20 份。恢复前会再次备份；网页目录和剪贴板记录不随配置历史回退。</Help></div><Button disabled={s.busy || refreshing || s.history.available===false} onClick={()=>void refreshHistory()}><RefreshCwIcon data-icon="inline-start" />{refreshing?'正在刷新…':'刷新历史'}</Button></header>
       {s.history.demo?<p className="settings-review-context">只读示例 · 实际配置历史请在桌面 App 中查看</p>:null}
       {s.history.error?<Alert variant="destructive"><AlertDescription>{s.history.error}</AlertDescription></Alert>:null}
       {!s.history.entries?.length?<Empty className="settings-history-empty"><EmptyHeader><EmptyMedia variant="icon"><ArchiveIcon /></EmptyMedia><EmptyTitle>{s.history.available===false?'浏览器预览不提供配置历史':'暂无历史版本'}</EmptyTitle></EmptyHeader></Empty>:<ul className="settings-history-list">{(s.history.entries as Bag[]).map(entry=><li key={entry.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3"><div className="min-w-0"><h3>{stamp(entry.created_at)}</h3><span>{entry.catalog_count || 0} 项网页 · {size(entry.bytes)}</span></div><div className="flex flex-wrap gap-2"><Button disabled={s.busy} onClick={()=>void openHistory(entry)}>查看差异</Button><Button variant="ghost" disabled={preview || s.busy || s.conflict} onClick={()=>void openHistory(entry,true)}>恢复</Button></div></li>)}</ul>}
     </section>
-    <section className="settings-group" aria-labelledby="settings-transfer-title">
+    <section className="settings-group" aria-labelledby="settings-transfer-title" data-setting-label="导入与导出" tabIndex={-1}>
       <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导出当前已保存的配置；导入会先展示差异，应用为草稿后仍需保存。网页目录数据继续使用当前数据库。</Help></header>
       <Choice label="导出范围" value={scope} options={[{value:'all',label:'全部配置'},{value:'core',label:'全局设置'},...Object.keys(s.config!.plugins).sort().map(value=>({value,label:names[value] || value}))]} onChange={setScope} />
       <div className="flex flex-wrap gap-2 pt-3"><Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('export')}>导出配置…</Button><Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('import')}>{transferring?'正在处理…':'导入配置…'}</Button></div>
       {store.dirty?<p className="settings-export-note" role="status">导出使用已保存配置；当前草稿需先保存。</p>:null}
       {transferError && !pending?<Alert className="mt-3" variant="destructive"><AlertDescription>{transferError}</AlertDescription></Alert>:null}
     </section>
-    <section className="settings-group" aria-labelledby="settings-diagnostics-title">
+    <section className="settings-group" aria-labelledby="settings-diagnostics-title" data-setting-label="本地诊断" tabIndex={-1}>
       <header className="settings-data-heading flex items-center gap-2"><ActivityIcon aria-hidden="true" /><h2 id="settings-diagnostics-title">本地诊断</h2><Badge variant="outline">立即生效</Badge><Help label="本地诊断说明">只记录本机 FlowHub 与 WebKit 的资源使用，不上传网络。诊断操作独立于配置草稿。</Help></header>
       <Toggle label="性能采样" checked={s.diagnostics.enabled===true} disabled={preview || diagnosing || s.busy} onChange={enabled=>void diagnose(async()=>{const result=await write('setDiagnosticsEnabled',enabled);store.patch({diagnostics:{...store.snapshot().diagnostics,...result,enabled}});host().flowhubPerformance?.enable(enabled);})} />
       <p className="settings-diagnostic-path">{s.diagnostics.path || '仅桌面 App 可用'}</p><div className="flex flex-wrap gap-2"><Button disabled={preview || diagnosing || s.busy} onClick={()=>void diagnose(async()=>{const result=await write('sampleDiagnostics');store.notice(result.reason || '已记录性能采样');})}>采样一次</Button><Button disabled={preview || diagnosing || s.busy} onClick={()=>{setDiagnosticError('');setClearSampling(true);}}>清理采样</Button><Button onClick={()=>setReport(JSON.stringify(host().flowhubPerformance?.report() || {},null,2))}>界面测量</Button><Button variant="ghost" onClick={()=>{host().flowhubPerformance?.reset();setReport('');}}>重置测量</Button></div>
