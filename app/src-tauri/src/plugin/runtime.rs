@@ -15,7 +15,7 @@ pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub det
 fn is_false(value:&bool)->bool{!*value}
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool, #[serde(default,rename="lastLoadedAt",skip_serializing_if="Option::is_none")] last_loaded_at:Option<i64> }
-pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>> }
+pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>>,package_lock:tokio::sync::Mutex<()> }
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
 fn valid_permissions(id:&str, permissions:&[String])->bool {
@@ -74,7 +74,7 @@ impl Runtime {
     pub(crate) fn new(root:PathBuf)->Result<Self,String> {
         let installed=match std::fs::read(root.join("plugins.json")) { Ok(data)=>serde_json::from_slice(&data).map_err(|e|format!("插件清单损坏：{e}"))?, Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Vec::new(),Err(e)=>return Err(e.to_string()) };
         let sources=sources::load(&root)?;
-        Ok(Self{root,installed:Mutex::new(installed),sessions:tokio::sync::Mutex::new(HashMap::new()),sources:Mutex::new(sources),candidates:Mutex::new(HashMap::new())})
+        Ok(Self{root,installed:Mutex::new(installed),sessions:tokio::sync::Mutex::new(HashMap::new()),sources:Mutex::new(sources),candidates:Mutex::new(HashMap::new()),package_lock:tokio::sync::Mutex::new(())})
     }
     pub(crate) fn loaded_at(&self,id:&str)->Option<i64>{self.get(id).ok().and_then(|p|p.last_loaded_at)}
     fn list(&self)->Value { json!(self.installed.lock().unwrap().clone()) }
@@ -242,8 +242,13 @@ pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     // The dock can read names, but cannot install, manage or execute plugins.
     if window.label()=="plugin-dock" && action=="list" {return Ok(app.state::<Runtime>().list());}
     trusted(&window)?;let rt=app.state::<Runtime>();let id=payload["id"].as_str().unwrap_or("");
+    let _mutation=if matches!(action.as_str(),"installCandidate"|"install"|"reload"|"enable"|"uninstall"){Some(rt.package_lock.try_lock().map_err(|_|"其他插件操作尚未完成，请稍后重试")?)}else{None};
+    let progress=if action=="installCandidate" && !payload["onProgress"].is_null(){
+        let channel:tauri::ipc::JavaScriptChannelId=serde_json::from_value(payload["onProgress"].clone()).map_err(|_|"安装进度通道无效")?;
+        Some(channel.channel_on::<_,Value>(window.as_ref().clone()))
+    }else{None};
     match action.as_str(){
-        "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"=>sources::api(&rt,&app,&action,&payload).await,
+        "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"=>sources::api(&rt,&app,&action,&payload,progress.as_ref()).await,
         "list"=>Ok(rt.list()),
         "choose"=>{let (tx,rx)=tokio::sync::oneshot::channel();app.dialog().file().set_title("选择独立插件目录").pick_folder(move |p|{let _=tx.send(p);});
             match rx.await.map_err(|e|e.to_string())?{Some(p)=>Ok(json!(package(p.into_path().map_err(|e|e.to_string())?)?)),None=>Ok(Value::Null)}},

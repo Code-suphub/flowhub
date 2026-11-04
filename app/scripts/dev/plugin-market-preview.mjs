@@ -2,7 +2,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 
-const mock = `(()=>{
+const mock = String.raw`(()=>{
   const manifests=[
     {id:'preview.notes',name:'便笺整理',version:'1.2.0',description:'为工作区的便笺添加轻量标签和快捷整理。',searchable:true,widget:{}},
     {id:'preview.focus',name:'专注计时',version:'0.8.1',description:'在菜单栏显示专注时段与休息提醒。',statusSurface:true},
@@ -20,6 +20,10 @@ const mock = `(()=>{
   let sources=[{id:'preview-source',name:'示例插件库',kind:'https',location:'https://example.invalid/plugins.json',key:''}];
   if(new URLSearchParams(location.search).has('empty'))sources=[];
   let installed=[{manifest:{...manifests[0]},directory:'/example/plugins/preview.notes',enabled:true,lastLoadedAt:Date.now()-3600000}];
+  if(new URLSearchParams(location.search).has('updates')){
+    sources=[{id:'preview-official',name:'FlowHub 官方库',kind:'https',location:'https://api.github.com/repos/Code-suphub/flowhub-plugins/releases?per_page=100',key:'RWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne'}];
+    installed=publicManifests.slice(0,2).map((manifest,index)=>({manifest:{...manifest,version:index?'0.2.0':'0.2.6'},directory:'/example/plugins/'+manifest.id,enabled:!index,lastLoadedAt:Date.now()-3600000}));
+  }
   const preferences={tray:true,pinned:false,favorites:[]};
   const snapshot={title:'插件状态示例',monitoring:true,rows:[
     {id:'preview-machine-a',name:'示例工作站',status:'healthy',at:Date.now()-30000,values:{cpu:18.4,memory:62.1,disk:41.8}},
@@ -32,15 +36,15 @@ const mock = `(()=>{
     {windowId:1003,displayName:'系统时钟',ownerName:'Preview',section:'shown',hideable:false}
   ];
   if(location.pathname.endsWith('/plugin-status.html')&&!location.search)history.replaceState(null,'',location.pathname+'?id=preview-status');
-  window.__TAURI__={core:{invoke:async(command,args={})=>{
+  window.__TAURI__={core:{Channel:class{onmessage=()=>{};},invoke:async(command,args={})=>{
     const action=args.action,payload=args.payload||{};
     if(command==='plugin_api') switch(action){
       case 'list': return installed.map(item=>({...item}));
       case 'sources': return sources.map(item=>({...item}));
-      case 'scanSource': {const source=sources.find(item=>item.id===payload.id);const items=publicManifests.filter(item=>source?.location.includes('/'+item.id+'-v'));return {plugins:(items.length?items:manifests).map(manifest=>({manifest:{...manifest},source:payload.id,token:'preview-token:'+manifest.id})),warnings:[]};}
+      case 'scanSource': {const source=sources.find(item=>item.id===payload.id);const items=source?.location.startsWith('https://api.github.com/repos/Code-suphub/flowhub-plugins/releases')?publicManifests:publicManifests.filter(item=>source?.location.includes('/'+item.id+'-v'));return {plugins:(items.length?items:manifests).map(manifest=>({manifest:{...manifest},source:payload.id,token:'preview-token:'+manifest.id,target:'macos-aarch64',releaseNotes:manifest.id==='device-center'?'外设中心 0.2.7，适用于 Apple Silicon Mac。\n\n- 在 Mac mini 上通过只读 SMC 传感器补充整机功耗和直流输入，供电来源独立读取。\n- 桌面组件支持蓝牙、USB、显示器分类，支持滚动查看全部设备并保留滚动位置。\n- 屏幕使用常用分辨率名称，详情保留准确像素尺寸。':'示例预览：版本说明由插件来源提供。',publishedAt:'2026-10-30T15:16:58Z'})),warnings:[]};}
       case 'saveSource': {const saved={...payload,id:payload.id||'preview-source-'+(sources.length+1)};sources=[...sources.filter(item=>item.id!==saved.id),saved];return sources.map(item=>({...item}));}
       case 'removeSource': sources=sources.filter(item=>item.id!==payload.id);return sources.map(item=>({...item}));
-      case 'installCandidate': {const manifest=[...manifests,...publicManifests].find(item=>item.id===String(payload.token).split(':').at(-1));if(!manifest)throw Error('示例候选不存在');installed=[...installed.filter(item=>item.manifest.id!==manifest.id),{manifest:{...manifest},directory:'/example/plugins/'+manifest.id,enabled:true,lastLoadedAt:Date.now()}];return null;}
+      case 'installCandidate': {const manifest=[...manifests,...publicManifests].find(item=>item.id===String(payload.token).split(':').at(-1));if(!manifest)throw Error('示例候选不存在');for(const progress of [{phase:'downloading',received:0,total:20*1024*1024},{phase:'downloading',received:12*1024*1024,total:20*1024*1024},{phase:'verifying'},{phase:'extracting'},{phase:'applying'}]){payload.onProgress?.onmessage(progress);await new Promise(resolve=>setTimeout(resolve,250));}const previous=installed.find(item=>item.manifest.id===manifest.id);installed=[...installed.filter(item=>item.manifest.id!==manifest.id),{manifest:{...manifest},directory:'/example/plugins/'+manifest.id,enabled:previous?.enabled??true,lastLoadedAt:Date.now()}];return null;}
       case 'install': {const manifest={id:'preview.local',name:'本地开发插件',version:'0.1.0',description:'仅用于本地目录安装预览。'};installed=[...installed,{manifest,directory:String(payload.directory||'/example/plugins/local-dev'),enabled:true,lastLoadedAt:Date.now()}];return null;}
       case 'reload': return null;
       case 'enable': installed=installed.map(item=>item.manifest.id===payload.id?{...item,enabled:Boolean(payload.enabled)}:item);return null;
@@ -50,6 +54,7 @@ const mock = `(()=>{
       default: throw Error('示例预览不支持此操作');
     }
     if(command==='plugin_canvas_api') return null;
+    if(command==='plugin_workspace')return {module:args.module,open:true,revision:1};
     if(command==='plugin_status_api') switch(action){
       case 'get': return {snapshot,preferences:{...preferences,favorites:[...preferences.favorites]}};
       case 'save': Object.assign(preferences,payload);return {snapshot,preferences:{...preferences,favorites:[...preferences.favorites]}};

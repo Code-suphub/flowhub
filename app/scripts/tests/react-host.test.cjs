@@ -28,7 +28,7 @@ function backend(extra={},initial={}) {
       case 'list':return copy(state.plugins);
       case 'sources':return copy(state.sources);
       case 'scanSource':return {plugins:state.catalog.map(item=>({manifest:copy(item),token:`${payload.id}:${state.epoch}:${item.id}`,source:payload.id})),warnings:[]};
-      case 'installCandidate':{assert.ok(payload.token.includes(`:${state.epoch}:`),'candidate must belong to current source configuration');const item=state.catalog.find(item=>payload.token.endsWith(':'+item.id));state.plugins=[...state.plugins.filter(plugin=>plugin.manifest.id!==item.id),{manifest:item,directory:'/test/'+item.id,enabled:true}];return null;}
+      case 'installCandidate':{assert.ok(payload.token.includes(`:${state.epoch}:`),'candidate must belong to current source configuration');const item=state.catalog.find(item=>payload.token.endsWith(':'+item.id)),previous=state.plugins.find(plugin=>plugin.manifest.id===item.id);state.plugins=[...state.plugins.filter(plugin=>plugin.manifest.id!==item.id),{manifest:item,directory:'/test/'+item.id,enabled:previous?.enabled??true}];return null;}
       case 'enable':state.plugins=state.plugins.map(item=>item.manifest.id===payload.id?{...item,enabled:payload.enabled}:item);return null;
       case 'uninstall':state.plugins=state.plugins.filter(item=>item.manifest.id!==payload.id);return null;
       case 'saveSource':{state.epoch++;const id=payload.id||'source:'+payload.location;state.sources=[...state.sources.filter(item=>item.id!==id),{...payload,id}];return copy(state.sources);}
@@ -38,6 +38,7 @@ function backend(extra={},initial={}) {
   }};
 }
 async function ready(ui){await wait(()=>ui.w.document.querySelectorAll('.market-catalog-card').length && ui.button('刷新插件') && !ui.button('刷新插件').disabled);}
+async function choose(ui,label,value){ui.w.document.querySelector(`[aria-label="${label}"]`).click();await wait(()=>[...ui.w.document.querySelectorAll('[role="option"]')].some(item=>item.textContent===value));[...ui.w.document.querySelectorAll('[role="option"]')].find(item=>item.textContent===value).click();await delay(10);}
 
 test('browser preview exposes two tabs and read-only source settings without mutation controls',async t=>{
   const ui=setup(t);await wait(()=>ui.tab('installed'));
@@ -101,6 +102,7 @@ test('saving a source refreshes every candidate token before any later installat
   ui.w.document.querySelector('form').dispatchEvent(new ui.w.Event('submit',{bubbles:true,cancelable:true}));
   await wait(()=>!ui.w.document.querySelector('form') && mock.calls.filter(call=>call.action==='scanSource').length===4);
   ui.w.document.querySelector('[aria-label="关闭"]').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
+  await choose(ui,'按来源筛选','另一来源');
   const card=[...ui.w.document.querySelectorAll('.market-catalog-card')].find(card=>card.textContent.includes('另一来源')&&card.getAttribute('aria-label')===fresh.name);
   ui.button('安装',card).click();await wait(()=>ui.button('确认'));ui.button('确认').click();await wait(()=>mock.calls.some(call=>call.action==='installCandidate'));
   assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'other:1:fresh');
@@ -148,42 +150,42 @@ test('an install completed in the background cannot leave a delayed focus reques
   assert.equal(ui.tab('discover').getAttribute('aria-selected'),'true');
 });
 
-test('official catalogs connect only on request, add six pinned sources once and install nothing',async t=>{
+test('official catalog connects only on request, adds one pinned aggregate source once and installs nothing',async t=>{
   const mock=backend({}, {sources:[]}),ui=setup(t,mock.invoke);await wait(()=>ui.button('连接官方库') && !ui.button('连接官方库').disabled);
   assert.equal(mock.calls.some(call=>call.action==='saveSource'),false);
   ui.button('连接官方库').click();ui.button('连接官方库').click();await ready(ui);
   const saves=mock.calls.filter(call=>call.action==='saveSource');
-  assert.equal(saves.length,6);assert.equal(new Set(saves.map(call=>call.payload.location)).size,6);
+  assert.equal(saves.length,1);assert.equal(saves[0].payload.location,'https://api.github.com/repos/Code-suphub/flowhub-plugins/releases?per_page=100');
   assert.ok(saves.every(call=>call.payload.key==='RWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne'));
   assert.equal(ui.button('连接官方库'),undefined);assert.equal(mock.calls.some(call=>['install','installCandidate'].includes(call.action)),false);
-  assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,6);
+  assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,1);
 });
-test('connecting official catalogs preserves custom sources and recognizes an existing commented public key',async t=>{
+test('connecting the aggregate catalog preserves custom and legacy fixed-version sources',async t=>{
   const existing={id:'official-existing',name:'我的设备来源',kind:'https',location:'https://github.com/Code-suphub/flowhub-plugins/releases/download/device-center-v0.2.7/catalog.json',key:'untrusted comment: public key\nRWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne\n'};
   const mock=backend({}, {sources:[source,existing]}),ui=setup(t,mock.invoke);await ready(ui);
-  ui.button('补全官方库 (5)').click();await wait(()=>mock.calls.filter(call=>call.action==='saveSource').length===5 && ui.button('刷新插件') && !ui.button('刷新插件').disabled);
+  ui.button('连接官方库').click();await wait(()=>mock.calls.filter(call=>call.action==='saveSource').length===1 && ui.button('刷新插件') && !ui.button('刷新插件').disabled);
   assert.deepEqual(mock.state.sources.find(item=>item.id===source.id),source);assert.deepEqual(mock.state.sources.find(item=>item.id===existing.id),existing);
-  assert.equal(mock.state.sources.length,7);assert.equal(mock.calls.filter(call=>call.action==='scanSource'&&call.payload.id==='local').length,2);
+  assert.equal(mock.state.sources.length,3);assert.equal(mock.calls.filter(call=>call.action==='scanSource'&&call.payload.id==='local').length,2);
 });
-test('a conflicting official URL never replaces a custom key and successful sources survive the partial result',async t=>{
-  const conflict={id:'conflict',name:'自定义签名来源',kind:'https',location:'https://github.com/Code-suphub/flowhub-plugins/releases/download/device-center-v0.2.7/catalog.json',key:'custom-key'};
+test('a conflicting aggregate URL never replaces a custom key and existing sources remain usable',async t=>{
+  const conflict={id:'conflict',name:'自定义签名来源',kind:'https',location:'https://api.github.com/repos/Code-suphub/flowhub-plugins/releases?per_page=100',key:'custom-key'};
   const mock=backend({}, {sources:[source,conflict]}),ui=setup(t,mock.invoke);await ready(ui);ui.button('连接官方库').click();
   await wait(()=>ui.w.document.querySelector('[role="alert"]')?.textContent.includes('不同公钥') && !ui.button('刷新插件').disabled);
-  assert.deepEqual(mock.state.sources.find(item=>item.id==='conflict'),conflict);assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,5);
-  assert.equal(mock.state.sources.length,7);assert.ok(ui.article(fresh.name));
+  assert.deepEqual(mock.state.sources.find(item=>item.id==='conflict'),conflict);assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,0);
+  assert.equal(mock.state.sources.length,2);assert.ok(ui.article(fresh.name));
   ui.button('安装',ui.article(fresh.name)).click();await wait(()=>ui.button('确认'));ui.button('确认').click();await wait(()=>mock.calls.some(call=>call.action==='installCandidate'));
-  assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'local:5:fresh');
+  assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'local:0:fresh');
 });
-test('partial source writes are recovered and retry adds only the missing official source',async t=>{
+test('a failed aggregate save retains existing sources and retry connects without duplicating them',async t=>{
   let fail=true;
   const mock=backend({saveSource:(payload,state)=>{
-    if(fail && payload.location.includes('/docker-v'))throw Error('保存失败');
+    if(fail)throw Error('保存失败');
     state.epoch++;state.sources.push({...payload,id:'saved:'+payload.location});return JSON.parse(JSON.stringify(state.sources));
   }},{sources:[source]}),ui=setup(t,mock.invoke);await ready(ui);ui.button('连接官方库').click();
   await wait(()=>ui.w.document.querySelector('[role="alert"]')?.textContent.includes('保存失败') && !ui.button('刷新插件').disabled);
-  assert.equal(mock.state.sources.length,6);assert.equal(mock.calls.filter(call=>call.action==='scanSource'&&call.payload.id==='local').length,2);
-  fail=false;ui.button('补全官方库 (1)').click();await wait(()=>!ui.button('补全官方库 (1)') && !ui.button('刷新插件').disabled);
-  assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,7);assert.equal(mock.state.sources.length,7);
+  assert.equal(mock.state.sources.length,1);assert.equal(mock.calls.filter(call=>call.action==='scanSource'&&call.payload.id==='local').length,2);
+  fail=false;ui.button('连接官方库').click();await wait(()=>!ui.button('连接官方库') && !ui.button('刷新插件').disabled);
+  assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,2);assert.equal(mock.state.sources.length,2);
 });
 test('plugin details expose full metadata without installing and continue through the explicit confirmation',async t=>{
   const long={...fresh,description:'完整说明。'.repeat(120),permissions:['native-process'],widget:{}};
@@ -203,4 +205,56 @@ test('capability and source filters combine in memory and reset without another 
   assert.equal(ui.w.document.querySelector('.market-catalog-card').getAttribute('aria-label'),'其他组件');
   ui.fill(ui.w.document.querySelector('#market-query'),'找不到');await wait(()=>ui.button('清除搜索与筛选'));ui.button('清除搜索与筛选').click();
   await wait(()=>ui.w.document.querySelectorAll('.market-catalog-card').length===3);assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,2);
+});
+
+test('semantic versions distinguish updates, downgrades, build metadata and prereleases',()=>{
+  const ts=require('typescript'),module={exports:{}};
+  const code=ts.transpileModule(fs.readFileSync(path.resolve(__dirname,'../../src/market/versions.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  new Function('exports','require','module',code)(module.exports,require,module);
+  const {compareVersions,installLabel,availableUpdates}=module.exports;
+  for(const [a,b,value] of [['0.10.0','0.9.0',1],['1.0.0-beta.10','1.0.0-beta.2',1],['1.0.0','1.0.0-rc.1',1],['1.0.0+build2','1.0.0+build1',0],['1.0.0','2.0.0',-1],['bad','1.0.0',null],['1.0.0-01','1.0.0',null]])assert.equal(compareVersions(a,b),value);
+  const plugin={manifest:{...manifest,version:'0.9.0'}};
+  assert.equal(installLabel({manifest:{...manifest,version:'0.8.0'}},plugin),'回退版本');
+  assert.equal(installLabel({manifest:{...manifest,version:'1.0.0-beta.1'}},plugin),'更换版本');
+  const updates=availableUpdates([plugin],[{manifest:{...manifest,version:'0.10.0'}},{manifest:{...manifest,version:'0.9.1'}},{manifest:{...manifest,version:'1.0.0-beta.1'}}]);
+  assert.equal(updates.get('test').manifest.version,'0.10.0');
+});
+test('installed updates choose the highest stable version, preserve disabled state and require confirmation',async t=>{
+  const mock=backend({}, {plugins:[{manifest:{...manifest,version:'0.9.0'},directory:'/test/old',enabled:false}],catalog:[{...manifest,version:'0.10.0'},fresh]}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.tab('installed').click();await wait(()=>ui.button('更新'));await choose(ui,'安装状态筛选','可更新 (1)');
+  assert.equal(ui.w.document.querySelectorAll('.market-installed-row').length,1);ui.button('更新').click();await wait(()=>ui.button('确认'));
+  assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/更新插件.*当前已安装 v0.9.0/s);ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
+  assert.equal(mock.state.plugins[0].manifest.version,'0.9.0');ui.button('更新').click();await wait(()=>ui.button('确认'));ui.button('确认').click();
+  await wait(()=>mock.state.plugins[0].manifest.version==='0.10.0' && !ui.w.document.querySelector('[role="dialog"]'));
+  assert.equal(mock.state.plugins[0].enabled,false);assert.ok(ui.button('启用'));assert.equal(ui.button('打开 测试插件'),undefined);
+});
+test('native progress is visible, failed downloads retain the old installation and retry has no late progress listener',async t=>{
+  let attempt=0,finish,channel;
+  const mock=backend({installCandidate:payload=>{attempt++;channel=payload.onProgress;channel.onmessage({phase:'downloading',received:5*1024*1024,total:10*1024*1024});return new Promise((resolve,reject)=>{finish=()=>attempt===1?reject(Error('下载中断')):resolve(null);});}}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.w.__TAURI__.core.Channel=class{onmessage=()=>{}};
+  ui.button('安装',ui.article(fresh.name)).click();await wait(()=>ui.button('确认'));ui.button('确认').click();await wait(()=>finish && ui.w.document.querySelector('[role="progressbar"]'));
+  assert.equal(ui.w.document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'),'50');assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/5.0 MB \/ 10.0 MB/);
+  assert.equal(ui.button('取消').disabled,true);finish();await wait(()=>ui.button('重试安装'));
+  assert.equal(mock.state.plugins.length,1);assert.equal(ui.w.document.querySelector('[role="progressbar"]'),null);
+  ui.button('重试安装').click();await wait(()=>attempt===2);finish();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
+  channel.onmessage({phase:'downloading',received:1,total:100});await delay(20);assert.equal(ui.w.document.querySelector('[role="progressbar"]'),null);
+});
+test('a completed install followed by a refresh failure does not offer installation again',async t=>{
+  let installed=false;
+  const mock=backend({installCandidate:()=>{installed=true;return null;},list:(_,state)=>{if(installed)throw Error('列表读取失败');return state.plugins;}}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.button('安装',ui.article(fresh.name)).click();await wait(()=>ui.button('确认'));ui.button('确认').click();await wait(()=>ui.w.document.querySelector('[role="alert"]')?.textContent.includes('操作已完成'));
+  assert.equal(ui.w.document.querySelector('[role="dialog"]'),null);assert.equal(ui.button('重试安装'),undefined);assert.ok(ui.button('重新加载列表'));assert.equal(mock.calls.filter(call=>call.action==='installCandidate').length,1);
+});
+test('installed open uses native workspace selection and release notes render as text',async t=>{
+  const mock=backend({scanSource:({id})=>({plugins:[{manifest,source:id,token:'notes',target:'macos-x86_64',releaseNotes:'<img src=x onerror=alert(1)>\n版本修复',publishedAt:'2026-10-30T12:00:00Z'}],warnings:[]})}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.w.document.querySelector('[aria-label="查看测试插件详情"]').click();await wait(()=>ui.button('返回浏览'));
+  assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/macOS · Intel/);assert.equal(ui.w.document.querySelector('[role="dialog"] img'),null);assert.match(ui.w.document.querySelector('.market-release-notes').textContent,/<img/);
+  ui.button('返回浏览').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));ui.tab('installed').click();await wait(()=>ui.button('打开'));ui.button('打开').click();await wait(()=>mock.calls.some(call=>call.command==='plugin_workspace'));
+  assert.equal(mock.calls.find(call=>call.command==='plugin_workspace').action,'select');
+});
+test('an incomplete update check stays visible in the installed view and offers source repair',async t=>{
+  let fail=false;const mock=backend({scanSource:({id})=>{if(fail)throw Error('来源离线');return {plugins:[{manifest,source:id,token:'ok'}],warnings:[]};}}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.tab('installed').click();await wait(()=>ui.button('检查更新'));fail=true;ui.button('检查更新').click();await wait(()=>ui.button('查看来源问题'));
+  assert.match(ui.w.document.body.textContent,/部分来源未完成检查/);ui.button('查看来源问题').click();await wait(()=>ui.w.document.querySelector('[role="dialog"]'));
+  assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/来源离线/);
 });

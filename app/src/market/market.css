@@ -48,7 +48,9 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-collection-tools small {display:block;color:var(--fh-muted);font-size:11px;margin-top:2px;}
 .market-collection-tools .market-plugin-icon {background:var(--fh-surface);}
 .market-custom-source {display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:24px 0;}
-.fh-dialog.market-detail-dialog {width:min(640px,calc(100vw - 32px));}
+.fh-dialog.market-detail-dialog {display:flex;flex-direction:column;width:min(640px,calc(100vw - 32px));overflow:hidden;}
+.market-detail-body {min-height:0;overflow:auto;padding-right:4px;}
+.market-detail-dialog>.market-detail-actions {flex-shrink:0;}
 .market-detail-identity {display:flex;align-items:center;gap:14px;margin:8px 0 18px;}
 .market-detail-identity .market-plugin-icon {width:56px;height:56px;flex-basis:56px;border-radius:14px;}
 .market-detail-identity .market-plugin-icon svg {width:28px;height:28px;}
@@ -60,6 +62,10 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-detail-section h3 svg {width:16px;height:16px;color:var(--fh-accent);}
 .market-detail-section .market-features {margin-bottom:10px;}
 .market-detail-section p {line-height:1.9;overflow-wrap:anywhere;}
+.market-release-notes {margin:0;color:var(--fh-muted);font-size:13px;white-space:pre-wrap;max-height:260px;overflow:auto;}
+.market-install-status [data-slot="progress-track"] {background:var(--fh-surface-soft);}
+.market-install-status [data-slot="progress-indicator"] {background:var(--fh-accent);}
+.market-install-status [data-slot="progress"]>.market-meta {margin-left:auto;}
 .market-detail-facts {display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px;margin:0 0 18px;padding:18px;background:var(--fh-surface-soft);border-radius:8px;font-size:12px;}
 .market-detail-facts dt {color:var(--fh-muted);}
 .market-detail-facts dd {margin:0;min-width:0;overflow-wrap:anywhere;}
@@ -72,7 +78,7 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-installed-details {display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 16px;}
 .market-installed-details>.market-location {margin:0;}
 .market-installed-details>.market-location[open] {flex-basis:100%;}
-.market-installed-actions {display:flex;align-items:center;gap:8px;flex:none;}
+.market-installed-actions {display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:8px;flex:none;max-width:100%;}
 .market-location {color:var(--fh-muted);font-size:12px;line-height:1.7;margin-top:6px;}
 .market-location summary {width:max-content;max-width:100%;cursor:pointer;}
 .market-location code {display:block;font:12px/1.7 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere;white-space:pre-wrap;margin-top:6px;}
@@ -109,7 +115,7 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
   .market-collection-tools {grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
   .market-catalog-grid {grid-template-columns:minmax(0,1fr);}
   .market-installed-row {align-items:flex-start;flex-wrap:wrap;gap:12px;}
-  .market-installed-actions {margin-left:56px;}
+  .market-installed-actions {margin-left:56px;max-width:calc(100% - 56px);justify-content:flex-start;}
 }
 @media(max-width:520px) {
   .fh-root.fh-market {padding:16px 12px;}
@@ -121,6 +127,7 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
   .market-toolbar-actions {gap:4px;}
   .market-heading {gap:6px;flex-wrap:wrap;}
   .market-catalog-card {padding:16px;}
+  .market-installed-actions {margin-left:0;max-width:100%;width:100%;}
   .market-official-collection {padding:20px 16px;}
   .market-collection-tools {grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 10px;}
   .market-collection-tools .market-plugin-icon {width:34px;height:34px;flex-basis:34px;border-radius:9px;}

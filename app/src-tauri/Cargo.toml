@@ -32,6 +32,9 @@ enigo = "0.6.1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 # The updater disables reqwest defaults; restore macOS/Windows system proxy discovery.
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
+# The updater's rustls-no-provider client initializes ring only when checking
+# host updates. Plugin downloads must also work before that first update check.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
