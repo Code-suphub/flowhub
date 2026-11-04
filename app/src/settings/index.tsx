@@ -5,7 +5,7 @@ import { Button, Dialog } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { EmptyState, Help, Select, Tooltip } from '../shared/controls';
-import { Badge } from '../components/ui/badge';
+import { DraftReview } from './DraftReview';
 import { useMediaQuery } from '../shared/useMediaQuery';
 import { Core, Clipboard, Tools } from './Core';
 import { CanvasSettings } from './CanvasSettings';
@@ -28,7 +28,7 @@ import { corePage, isPage, navigationItems, type PageId } from './navigation';
 import { ViewStateContext, type ViewMemory } from './view-state';
 const emptyPlugins: InstalledPlugin[] = [];
 export function Settings({ store }: { store: SettingsStore }) {
-  const s = useSettings(store), [journey,setJourney]=useState<{pages:PageId[];index:number}>(()=>{const params=new URLSearchParams(window.location.search),requested=params.get('module') || '';return {pages:[params.get('update')==='1'?'updates':isPage(requested)?requested:'core'],index:0};}), [json, setJson] = useState(false), [reset, setReset] = useState(false), [close, setClose] = useState(false);
+  const s = useSettings(store), [journey,setJourney]=useState<{pages:PageId[];index:number}>(()=>{const params=new URLSearchParams(window.location.search),requested=params.get('module') || '';return {pages:[params.get('update')==='1'?'updates':isPage(requested)?requested:'core'],index:0};}), [json, setJson] = useState(false), [reset, setReset] = useState(false), [close, setClose] = useState(false), [review,setReview] = useState(false);
   const module=journey.pages[journey.index], narrow=useMediaQuery('(max-width: 699px)');
   const journeyRef=useRef(journey), main=useRef<HTMLElement>(null);
   const sourceKey=JSON.stringify([s.configPath.resolvedPath || '',s.storage.resolvedPath || '']);
@@ -39,7 +39,7 @@ export function Settings({ store }: { store: SettingsStore }) {
   const jsonBefore = useRef<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false), [pluginModule, setPluginModule] = useState('extensions');
-  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null), reviewTrigger = useRef<HTMLButtonElement>(null);
   const menuActions = useRef<{ unmount(): void; close(): void } | null>(null);
   useLayoutEffect(() => { if (!menuOpen) menuActions.current?.unmount(); }, [menuOpen]);
   useEffect(() => {
@@ -100,7 +100,11 @@ export function Settings({ store }: { store: SettingsStore }) {
         </>}
       </div></main></div>
     {readonly() && pluginsOpen ? <Dialog title={pluginTitle} busy={s.busy} modal={false} onClose={() => setPluginsOpen(false)} className="settings-plugin-drawer"><div className="settings-drawer-handle" aria-hidden="true" /><PluginFrame module={pluginModule} /><p className="settings-plugin-caption">{readonly() ? '浏览器预览 · 插件安装与管理请在桌面 App 中操作' : '本地插件工作区'}</p></Dialog> : null}
-    <footer className="settings-footer flex flex-wrap items-center justify-between gap-3"><div className="settings-save-status">{store.dirty && !readonly()?<Badge variant="secondary">未保存</Badge>:null}<p role={s.error ? 'alert' : 'status'} className={s.error ? 'settings-error' : ''}>{s.notice || (readonly() ? '浏览器预览 · 不会保存配置' : store.dirty ? '有未保存修改' : '已保存')}</p><Help label="草稿与保存">切换页面会保留未保存的配置草稿；保存后生效。未保存的修改也会保留为本地草稿，可在下次打开时恢复。</Help></div><div className="settings-footer-actions flex flex-wrap gap-2"><Button disabled={readonly() || s.busy || !s.undo.length || s.conflict} onClick={() => store.travel('undo')}>撤销</Button><Button disabled={readonly() || s.busy || !s.redo.length || s.conflict} onClick={() => store.travel('redo')}>重做</Button><Button disabled={s.busy || !store.dirty} onClick={() => setReset(true)}>重置未保存</Button><Button className="primary settings-save-button" disabled={readonly() || s.busy || !store.dirty || s.conflict} onClick={() => void store.run(() => store.save())}>{s.busy ? '处理中…' : '保存'}</Button></div></footer>
+    <footer className="settings-footer flex flex-wrap items-center justify-between gap-3"><div className="settings-save-status">{store.dirty && !readonly()?<Button ref={reviewTrigger} variant="ghost" size="sm" className="settings-review-trigger" aria-label="查看未保存修改" disabled={s.busy} onClick={()=>{if(finishJson())setReview(true);}}>查看修改</Button>:null}<p role={s.error ? 'alert' : 'status'} className={s.error ? 'settings-error' : ''}>{s.notice || (readonly() ? '浏览器预览 · 不会保存配置' : store.dirty ? '有未保存修改' : '已保存')}</p><Help label="草稿与保存">切换页面会保留未保存的配置草稿；保存后生效。未保存的修改也会保留为本地草稿，可在下次打开时恢复。</Help></div><div className="settings-footer-actions flex flex-wrap gap-2"><Button disabled={readonly() || s.busy || !s.undo.length || s.conflict} onClick={() => store.travel('undo')}>撤销</Button><Button disabled={readonly() || s.busy || !s.redo.length || s.conflict} onClick={() => store.travel('redo')}>重做</Button><Button disabled={s.busy || !store.dirty} onClick={() => setReset(true)}>重置未保存</Button><Button className="primary settings-save-button" disabled={readonly() || s.busy || !store.dirty || s.conflict} onClick={() => void store.run(() => store.save())}>{s.busy ? '处理中…' : '保存'}</Button></div></footer>
+    {review && s.config ? <DraftReview store={store} onClose={()=>setReview(false)} onNavigate={id=>{
+      if(s.busy || !navigate(id))return;setReview(false);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{if(document.activeElement===reviewTrigger.current || document.activeElement===document.body)main.current?.focus({preventScroll:true});}));
+    }} />:null}
     {json && s.config ? <Dialog title={readonly() ? '查看完整配置 JSON' : '编辑完整配置 JSON'} busy={s.busy} onClose={cancelJson} notice={s.error ? s.notice : undefined} className="settings-json-dialog"><p className="fh-muted">{readonly() ? '此处查看 FlowHub 完整配置。' : '此处编辑 FlowHub 完整配置；完成后进入草稿，保存后生效。'}</p><Textarea aria-label="完整配置 JSON" className="settings-code" rows={18} spellCheck={false} readOnly={readonly() || s.busy || s.conflict} value={s.jsonText ?? JSON.stringify(s.config, null, 2)} onChange={e => store.setJson(e.target.value)} /><div className="settings-dialog-actions">{!readonly() ? <Button disabled={s.busy} onClick={cancelJson}>取消编辑</Button> : null}<Button disabled={s.busy} onClick={() => { finishJson(); }}>{readonly() ? '完成' : '完成编辑'}</Button></div></Dialog> : null}
     {reset ? <Dialog title="重置未保存修改" busy={s.busy} onClose={() => setReset(false)}><p>{s.conflict ? '保留源草稿并加载当前目标配置？' : '放弃当前编辑，重新加载已保存配置？'}</p><Button onClick={() => void store.run(async () => { await store.reset(); setReset(false); })}>确认重置</Button></Dialog> : null}
     {close ? <Dialog title="关闭设置" busy={s.busy} onClose={() => setClose(false)} notice={s.error ? s.notice : undefined}><p>尚有未保存修改，关闭前请选择如何处理。</p><div className="settings-dialog-actions"><Button disabled={s.busy} onClick={() => setClose(false)}>取消</Button><Button disabled={s.busy} onClick={() => void store.run(async () => { store.persist(); await call('closeSettings'); })}>保留草稿并关闭</Button><Button className="primary" disabled={s.busy || s.conflict} onClick={() => void store.run(async () => { await store.save(); if (!store.dirty) await call('closeSettings'); })}>保存并关闭</Button></div></Dialog> : null}

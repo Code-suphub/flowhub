@@ -1,42 +1,17 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Button, Dialog, Input } from '../shared/ui';
+import { Button, Dialog } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
 import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
-import { call, host, readonly, write } from './api';
-import { diff, imported, tools, clipboardLimit, hasExclusions, type Bag } from './model';
+import { host, readonly, write } from './api';
+import { tools, clipboardLimit, hasExclusions } from './model';
 import { SettingsStore, useSettings } from './store';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { MenuBar } from './MenuBar';
 import { Layers2Icon } from 'lucide-react';
+import { DataPanel, PathControl } from './DataPanel';
+export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
 const names: Record<string, string> = { all: '全部', app: '应用', web: '网页目录', clipboard: '剪贴板', memo: '备忘录', tools: '工具' };
-export function PathControl({ store, storage = false }: { store: SettingsStore; storage?: boolean }) {
-  const s = useSettings(store), config = s.config!;
-  const value = storage ? config.plugins.clipboard.settings.storagePath || '' : config.core.configPath || '';
-  const info = storage ? s.storage : s.configPath;
-  return <Row label={storage ? '数据库与剪贴板目录' : '配置文件位置'} help={storage ? '保存后：空目录接收当前全部数据；已有数据库则加载目标数据，不合并源网页草稿。恢复默认位置也遵循此规则。' : '保存后切换配置文件，原文件保留。'}><div className="grid gap-2"><Input aria-label="路径" title={value || info.defaultPath || info.resolvedPath || '默认位置'} value={value || info.defaultPath || info.resolvedPath || '默认位置'} readOnly /><div className="flex flex-wrap gap-2"><Button onClick={() => void store.run(async () => { const editing = store.snapshot().config; const result = await write(storage ? 'chooseClipboardStorage' : 'chooseConfigPath'); if (store.snapshot().config !== editing) throw new Error('配置已改变，请重新选择位置'); if (!result.canceled && result.path) store.edit(c => { if (storage) c.plugins.clipboard.settings.storagePath = result.path; else c.core.configPath = result.path; }); })}>选择…</Button><Button onClick={() => void store.run(async () => { if (value !== (info.configuredPath || '')) throw new Error('请先保存位置修改，再打开'); await write(storage ? 'openClipboardStorage' : 'openConfigPath'); })}>打开位置</Button><Button onClick={() => store.edit(c => { if (storage) c.plugins.clipboard.settings.storagePath = ''; else c.core.configPath = ''; })}>恢复默认</Button></div></div></Row>;
-}
-export function DataPanel({ store }: { store: SettingsStore }) {
-  const s = useSettings(store), [scope, setScope] = useState('all'), [pending, setPending] = useState<Bag | null>(null), [mode, setMode] = useState('merge'), [preview, setPreview] = useState<Bag | null>(null), [restore, setRestore] = useState(''), [report, setReport] = useState(''), [clearSampling, setClearSampling] = useState(false);
-  let changes: string[] = [], importError = '';
-  if (pending) { try { changes = diff(s.config, imported(s.config!, pending, mode as 'merge' | 'replace')); } catch (e) { importError = String(e); } }
-  return <div className="settings-data-panel">
-    <div className="settings-group"><h2 className="settings-core-group-title">存储位置</h2><PathControl store={store} /></div>
-    <div className="settings-group"><h2 className="settings-core-group-title">备份与恢复</h2><Row label="配置历史" help="每次保存前自动备份上一版；恢复前会再次备份。系统集成类改动可能需要重启。"><Button onClick={() => void store.refreshHistory()}>刷新历史</Button></Row>
-    {s.history.error ? <p role="alert">{s.history.error}</p> : null}
-    {!s.history.entries?.length ? <p>{s.history.available === false ? '浏览器预览不提供配置历史' : '暂无历史版本'}</p> : (s.history.entries as Bag[]).map(entry => <div className="settings-row flex flex-wrap items-center justify-between gap-2" key={entry.id}><span>{new Date(entry.created_at).toLocaleString()} · {entry.catalog_count || 0} 项 · {entry.bytes} B</span><div className="flex gap-2"><Button onClick={() => void store.run(async () => { setPreview(await call('previewConfigHistory', entry.id)); })}>预览</Button><Button onClick={() => setRestore(entry.id)}>恢复</Button></div></div>)}
-    </div>
-    {preview ? <Dialog title="历史预览" busy={false} onClose={() => setPreview(null)}><pre className="settings-code">{JSON.stringify(preview.config, null, 2)}</pre></Dialog> : null}
-    {restore ? <Dialog title="恢复配置历史" notice={s.error ? s.notice : undefined} busy={s.busy} onClose={() => setRestore('')}><p>将替换当前配置并放弃编辑器中的未保存修改。当前已保存配置会先备份；系统集成可能需要重启。</p><Button disabled={s.busy} onClick={() => void store.run(async () => { await store.restoreHistory(restore); setRestore(''); })}>确认恢复</Button></Dialog> : null}
-    <div className="settings-group"><h2 className="settings-core-group-title">导入与导出</h2><Choice label="导出范围" value={scope} options={[{ value: 'all', label: '全部配置' }, { value: 'core', label: '全局设置' }, ...Object.keys(s.config!.plugins).sort().map(value => ({ value, label: names[value] || value }))]} onChange={setScope} />
-    <div className="flex flex-wrap gap-2"><Button onClick={() => void store.run(async () => { const result = await write('exportConfig', scope); store.notice(result.canceled ? '已取消导出' : `已导出到 ${result.path}`); })}>导出配置…</Button><Button onClick={() => void store.run(async () => { const result = await write('pickConfigImport'); if (!result.canceled) { setPending(result); setMode('merge'); } })}>导入配置…</Button></div>
-    </div>
-    {pending ? <Dialog title="核对导入差异" busy={false} onClose={() => setPending(null)}><p>{pending.path} · 范围 {pending.scope || 'all'}</p>{pending.appVersion && pending.currentAppVersion !== pending.appVersion ? <p role="status">导出版本 {pending.appVersion} 与当前版本不同，请核对字段。</p> : null}<Choice label="导入方式" value={mode} options={[{ value: 'merge', label: '递归合并（数组替换）' }, { value: 'replace', label: '替换所选范围' }]} onChange={setMode} /><pre className="settings-code">{importError || changes.join('\n') || '没有变化'}</pre><Button disabled={Boolean(importError)} onClick={() => void store.run(async () => { store.replace(imported(s.config!, pending, mode as 'merge' | 'replace')); setPending(null); })}>应用为草稿</Button></Dialog> : null}
-    <div className="settings-group"><h2 className="settings-core-group-title">本地诊断</h2><Toggle label="性能采样" checked={s.diagnostics.enabled === true} onChange={enabled => void store.run(async () => { const result = await write('setDiagnosticsEnabled', enabled); store.patch({ diagnostics: { ...s.diagnostics, ...result, enabled } }); host().flowhubPerformance?.enable(enabled); })} help="记录本机 FlowHub 与 WebKit 资源使用，不上传网络。" />
-    <p className="break-all">{s.diagnostics.path || '仅桌面 App 可用'}</p><div className="flex flex-wrap gap-2"><Button onClick={() => void store.run(async () => { const result = await write('sampleDiagnostics'); store.notice(result.reason || '已记录性能采样'); })}>采样一次</Button><Button onClick={() => setClearSampling(true)}>清理采样</Button><Button onClick={() => setReport(JSON.stringify(host().flowhubPerformance?.report(), null, 2))}>界面测量</Button><Button onClick={() => { host().flowhubPerformance?.reset(); setReport(''); }}>重置测量</Button></div>{report ? <pre className="settings-code">{report}</pre> : null}{clearSampling ? <Dialog title="清理性能采样" busy={s.busy} onClose={() => setClearSampling(false)}><p>只清理本机性能记录，不影响网页、剪贴板或备忘录数据。</p><Button onClick={() => void store.run(async () => { await write('clearDiagnostics'); setClearSampling(false); store.notice('性能数据已清理'); })}>确认清理</Button></Dialog> : null}
-    </div>
-  </div>;
-}
 export function Core({ store, section }: { store: SettingsStore; section: string }) {
   const s = useSettings(store), c = s.config!, core = c.core;
   const activeSection = section === 'network' || section === 'notifications' ? 'general' : section;
@@ -127,7 +102,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
     stopPointerDrag.current = cleanup;
   }
   useEffect(() => { if (activeSection !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [activeSection, store]);
-  const previewInspect = readonly() && ['general', 'search', 'menubar'].includes(activeSection);
+  const previewInspect = readonly() && ['general', 'search', 'menubar', 'data'].includes(activeSection);
   useEffect(() => () => stopPointerDrag.current?.(), []);
   useEffect(() => { stopPointerDrag.current?.(); setDraggingSource(''); updateDropTarget(null); }, [activeSection]);
   return <><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section className="settings-core-panel" data-section={activeSection} id={`panel-${activeSection}`} aria-label={sectionLabels[activeSection]}>

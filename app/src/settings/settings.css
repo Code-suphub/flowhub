@@ -48,14 +48,6 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-search-shortcut .fh-button { width:100%; min-width:0; padding-inline:8px; }
 .settings-shortcut-inline { display:block; min-width:0; }
 .settings-shortcut-inline [role=alert] { margin:4px 0 0; font-size:12px; }
-.settings-data-panel { display:grid; gap:20px; }
-.settings-group { padding-bottom:16px; border-bottom:1px solid var(--fh-border); min-width:0; }
-.settings-group:last-child { border:0; }
-.settings-group > .settings-row { border:0; }
-.settings-group > p { margin:6px 0 10px; color:var(--fh-muted); font-size:13px; }
-.settings-group > .settings-row:first-child { padding-top:0; }
-.settings-group:first-child > .settings-row { display:block; }
-.settings-group:first-child > .settings-row > :first-child { margin-bottom:8px; }
 .settings-update-summary { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; padding:4px 0 16px; border-bottom:1px solid var(--fh-border); }
 .settings-update-summary p { margin:4px 0 0; font-size:13px; }
 .settings-update-summary progress { width:100%; accent-color:var(--fh-accent); }

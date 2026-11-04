@@ -54,8 +54,8 @@ test('compact settings groups sources and data; unsupported updates have no prog
   assert.ok(view.container.querySelector('.settings-search-item[data-source=app] [aria-label="应用范围键"]'));
   await select('data');
   assert.equal(view.container.querySelectorAll('.settings-data-panel > .settings-group').length,4);
-  const path = view.container.querySelector('[aria-label="路径"]');
-  assert.ok(path); assert.equal(path.closest('.settings-row').querySelectorAll('.settings-row').length,0);
+  const locations = view.container.querySelectorAll('.settings-storage-control');
+  assert.equal(locations.length,2);assert.match(locations[0].textContent,/配置文件位置/);assert.match(locations[1].textContent,/数据库与剪贴板目录/);
   await select('updates');
   assert.match(view.container.querySelector('#panel-updates').textContent,/当前环境不支持更新/);
   assert.equal(view.container.querySelector('progress'),null);

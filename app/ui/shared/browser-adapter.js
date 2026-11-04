@@ -305,9 +305,17 @@ if (!window.weborg) {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中选择配置文件位置" };
     },
     async listConfigHistory() {
+      if (demo) return { entries: [0, 1].map(index => ({id: `demo-history-${index}`, created_at: Date.UTC(2026, 10, 4, 8 - index * 3), bytes: 2048 + index * 512, catalog_count: 0})), limit: 20, available: true, demo: true };
       return { entries: [], limit: 0, directory: "", available: false };
     },
-    async previewConfigHistory() {
+    async previewConfigHistory(id) {
+      if (demo && ["demo-history-0", "demo-history-1"].includes(id)) {
+        const config = JSON.parse(JSON.stringify(demoConfig));
+        config.core = {hotkey: "Ctrl+Space", launchAtLogin: true, notifications: {enabled: false, updates: true}};
+        config.plugins.clipboard.settings.retentionDays = id === "demo-history-0" ? 7 : 14;
+        config.plugins.web.settings.items = [];
+        return {id, config};
+      }
       throw new Error("浏览器预览不支持配置历史");
     },
     async restoreConfigHistory() {

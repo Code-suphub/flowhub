@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Tooltip } from './controls';
 import { Button as ShadcnButton } from '../components/ui/button';
 import { Input as ShadcnInput } from '../components/ui/input';
@@ -6,7 +6,7 @@ import { Tabs as ShadcnTabs, TabsList, TabsTrigger } from '../components/ui/tabs
 import { Dialog as ShadcnDialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { cn } from '../lib/utils';
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
+type ButtonProps = ComponentProps<'button'> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
 export function Button({ className = '', variant, size = 'lg', type = 'button', ...props }: ButtonProps) {
   const classes = className.split(/\s+/);
   const legacyVariant = classes.includes('primary') ? 'default' : classes.includes('danger') ? 'destructive' : 'outline';
