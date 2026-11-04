@@ -183,6 +183,18 @@ test('settings use one navigation level for general, data and updates with keybo
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
   await view.unmount(); store.dispose();
 });
+test('clipboard and tool groups retain every setting, drafts and explicit history confirmation',async()=>{
+  let clears=0;const {store,writes}=await h.loaded();window.FlowHubCommandStore={counts:()=>({total:4,templates:2}),clearAll:()=>clears++};
+  const view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[data-page=clipboard]'));
+  assert.deepEqual([...view.container.querySelectorAll('.settings-section>legend')].map(node=>node.textContent),['采集与隐私','历史保留','存储位置']);
+  await h.input(view.container.querySelector('[aria-label="留存天数"]'),'21');await h.click(view.container.querySelector('[data-page=tools]'));
+  const names=[...view.container.querySelectorAll('.settings-tools-grid [role=switch]')].map(node=>node.getAttribute('aria-label'));
+  assert.deepEqual(names.sort(),Object.values(h.model.tools).sort());assert.equal(new Set(names).size,names.length);
+  await h.click(view.container.querySelector('[role=switch][aria-label="计算表达式"]'));assert.equal(store.snapshot().config.plugins.tools.settings.calculator,false);
+  await h.click(h.button(view.container,'清空历史与模板'));assert.equal(clears,0);await h.key(document.querySelector('[role=dialog] button'),'Escape');assert.equal(clears,0);
+  await h.click(view.container.querySelector('[data-page=clipboard]'));assert.equal(view.container.querySelector('[aria-label="留存天数"]').value,'21');assert.equal(store.dirty,true);assert.equal(writes.length,0);
+  await view.unmount();store.dispose();delete window.FlowHubCommandStore;
+});
 test('tools use a compact grid and memos keep navigation separate from details', async () => {
   const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
   await h.click(h.button(view.container,'工具'));

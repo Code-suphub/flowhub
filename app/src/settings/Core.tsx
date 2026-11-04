@@ -9,6 +9,7 @@ import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { MenuBar } from './MenuBar';
 import { Layers2Icon } from 'lucide-react';
 import { DataPanel, PathControl } from './DataPanel';
+import { SettingsSection } from './SettingsSection';
 export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
 const names: Record<string, string> = { all: '全部', app: '应用', web: '网页目录', clipboard: '剪贴板', memo: '备忘录', tools: '工具' };
@@ -150,5 +151,28 @@ function Updates({ store }: { store: SettingsStore }) {
     <section className="settings-core-group" aria-labelledby="update-preferences"><h2 id="update-preferences" className="settings-core-group-title">自动更新</h2><Toggle label="自动检查正式版" checked={core.autoUpdateCheck !== false} onChange={v => store.edit(c => { c.core.autoUpdateCheck = v; })} help="每 10 分钟检查正式版。" /><Toggle label="自动下载并重启安装" checked={core.autoUpdateInstall === true} onChange={v => store.edit(c => { c.core.autoUpdateInstall = v; })} /></section>
   </div>;
 }
-export function Tools({ store }: { store: SettingsStore }) { const s = useSettings(store), [counts, setCounts] = useState(() => host().FlowHubCommandStore?.counts()), [clearHistory, setClearHistory] = useState(false); return <><div className="settings-tools-grid">{Object.entries(tools).map(([key, label]) => <Toggle key={key} label={label} checked={s.config!.plugins.tools.settings[key] !== false} onChange={v => store.edit(c => { c.plugins.tools.settings[key] = v; })} />)}</div><Row label="命令历史与参数模板" help="ping、curl、端口历史共用此开关；包含凭据的查询不会写入历史。"><p>{counts ? `${counts.total} 条历史 · ${counts.templates} 个模板` : '暂无历史'}</p><Button onClick={() => setClearHistory(true)}>清空历史与模板</Button></Row>{clearHistory ? <Dialog title="清空命令历史与模板" busy={false} onClose={() => setClearHistory(false)}><p>此操作不能撤销。历史和参数模板将同时清空。</p><Button onClick={() => { if (readonly()) return; host().FlowHubCommandStore?.clearAll(); setCounts(host().FlowHubCommandStore?.counts()); setClearHistory(false); }}>确认清空</Button></Dialog> : null}</>; }
-export function Clipboard({ store }: { store: SettingsStore }) { const s = useSettings(store), config = s.config!.plugins.clipboard.settings; return <><Toggle label="暂停采集" checked={config.capturePaused === true} onChange={v => store.edit(c => { c.plugins.clipboard.settings.capturePaused = v; })} help="暂停保留历史搜索和粘贴，恢复不会补采暂停期间的内容；请保存成功后再复制敏感内容。" /><Toggle label="敏感标记保护" checked={config.protectSensitive !== false} onChange={v => store.edit(c => { c.plugins.clipboard.settings.protectSensitive = v; })} help="按 macOS 剪贴板类型标记跳过隐藏、临时和自动生成内容；未标记的密码仍可能被记录，历史不会自动脱敏。" />{['retentionDays', 'maxRecords', 'maxBytes'].map((key, i) => <TextField key={key} label={['留存天数', '最多记录条数', '逻辑内容容量（字节）'][i]} type="number" min={0} max={i === 0 ? 3650 : undefined} value={config[key] ?? (i === 0 ? 30 : 0)} onChange={v => store.edit(c => { c.plugins.clipboard.settings[key] = clipboardLimit(v, key); })} help="0 表示不限制；保存后生效，超限按最近复制时间淘汰。逻辑容量不等于数据库物理大小。" />)}{hasExclusions(s.config) || hasExclusions(s.saved) ? <Row label="旧来源应用排除列表" help="平台无法可靠识别来源应用；旧列表会保守阻止所有新采集。清空列表将连同其他草稿一起保存。"><Button onClick={() => void store.run(async () => { store.edit(c => { c.plugins.clipboard.settings.excludedApps = []; c.plugins.clipboard.settings.excludedBundleIds = []; }); await store.save(); })}>清空旧列表并保存</Button></Row> : null}<PathControl store={store} storage /></>; }
+const toolSections: {title:string;keys:(keyof typeof tools)[]}[] = [
+  {title:'网络与连接',keys:['ping','curl','dns','dnsIpGeo','cloudflare','ip']},
+  {title:'转换与解析',keys:['calculator','timestamp','jwt','json','url']},
+  {title:'本机与进程',keys:['port','localIp','proxy']},
+  {title:'历史与模板',keys:['commandHistory']},
+];
+export function Tools({ store }: { store: SettingsStore }) {
+  const s=useSettings(store),[counts,setCounts]=useState(()=>host().FlowHubCommandStore?.counts()),[clearHistory,setClearHistory]=useState(false);
+  return <><div className="settings-tool-sections grid gap-7">{toolSections.map(section=><SettingsSection key={section.title} title={section.title}>
+    <div className="settings-tools-grid">{section.keys.map(key=><Toggle key={key} label={tools[key]} checked={s.config!.plugins.tools.settings[key]!==false} onChange={value=>store.edit(config=>{config.plugins.tools.settings[key]=value;})} />)}</div>
+    {section.keys.includes('commandHistory')?<Row label="命令历史与参数模板" help="ping、curl、端口历史共用此开关；包含凭据的查询不会写入历史。"><p>{counts?`${counts.total} 条历史 · ${counts.templates} 个模板`:'暂无历史'}</p><Button onClick={()=>setClearHistory(true)}>清空历史与模板</Button></Row>:null}
+  </SettingsSection>)}</div>{clearHistory?<Dialog title="清空命令历史与模板" busy={false} onClose={()=>setClearHistory(false)}><p>此操作不能撤销。历史和参数模板将同时清空。</p><Button onClick={()=>{if(readonly())return;host().FlowHubCommandStore?.clearAll();setCounts(host().FlowHubCommandStore?.counts());setClearHistory(false);}}>确认清空</Button></Dialog>:null}</>;
+}
+export function Clipboard({ store }: { store: SettingsStore }) {
+  const s=useSettings(store),config=s.config!.plugins.clipboard.settings;
+  return <div className="settings-section-stack flex flex-col gap-7">
+    <SettingsSection title="采集与隐私">
+      <Toggle label="暂停采集" checked={config.capturePaused===true} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.capturePaused=value;})} help="暂停保留历史搜索和粘贴，恢复不会补采暂停期间的内容；请保存成功后再复制敏感内容。" />
+      <Toggle label="敏感标记保护" checked={config.protectSensitive!==false} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.protectSensitive=value;})} help="按 macOS 剪贴板类型标记跳过隐藏、临时和自动生成内容；未标记的密码仍可能被记录，历史不会自动脱敏。" />
+      {hasExclusions(s.config)||hasExclusions(s.saved)?<Row label="旧来源应用排除列表" help="平台无法可靠识别来源应用；旧列表会保守阻止所有新采集。清空列表将连同其他草稿一起保存。"><Button onClick={()=>void store.run(async()=>{store.edit(config=>{config.plugins.clipboard.settings.excludedApps=[];config.plugins.clipboard.settings.excludedBundleIds=[];});await store.save();})}>清空旧列表并保存</Button></Row>:null}
+    </SettingsSection>
+    <SettingsSection title="历史保留">{(['retentionDays','maxRecords','maxBytes'] as const).map((key,index)=><TextField key={key} label={['留存天数','最多记录条数','逻辑内容容量（字节）'][index]} type="number" min={0} max={index===0?3650:undefined} value={config[key]??(index===0?30:0)} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings[key]=clipboardLimit(value,key);})} help="0 表示不限制；保存后生效，超限按最近复制时间淘汰。逻辑容量不等于数据库物理大小。" />)}</SettingsSection>
+    <SettingsSection title="存储位置"><PathControl store={store} storage /></SettingsSection>
+  </div>;
+}

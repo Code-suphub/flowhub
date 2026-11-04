@@ -16,6 +16,12 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-tools-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 20px; max-width:960px; }
 .settings-tools-grid .settings-row { grid-template-columns:minmax(0,1fr) auto; }
 .settings-tools-grid .settings-row > :last-child { width:auto; }
+.settings-section { min-inline-size:0; margin:0; padding:0; border:0; }
+.settings-section > legend { width:100%; padding:0 0 8px; border-bottom:1px solid var(--fh-border); color:var(--fh-muted); }
+.settings-section [data-slot=field-group] { min-width:0; }
+.settings-section .settings-row:last-child { border-bottom:0; }
+.settings-tool-sections { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); align-items:start; }
+.settings-tool-sections .settings-tools-grid { grid-template-columns:minmax(0,1fr); }
 @media(max-width:680px) { .settings-tools-grid { grid-template-columns:minmax(0,1fr); } }
 .settings-row { padding:11px 0; border-bottom:1px solid var(--fh-border); grid-template-columns:minmax(0,1fr) minmax(220px,.85fr); column-gap:24px; }
 .settings-row > :last-child { justify-self:end; width:100%; text-align:right; }
