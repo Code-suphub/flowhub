@@ -4,7 +4,7 @@ import { Button, Dialog } from '../shared/ui';
 import { Help, Tooltip } from '../shared/controls';
 import { CornerUpLeft, CornerDownLeft, MoreHorizontal, PanelRight, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { Results, resultActions } from './Results';
-import { Preview, canPreview, primaryLabel } from './Preview';
+import { Preview, canPreview, previewNeighbor, primaryLabel } from './Preview';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
 
@@ -18,14 +18,15 @@ function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNav
     if(document.documentElement.dataset.weborgReadonly!=='true')hints.push('⌥⌫ 删除');
   }
   if(selected && !selected.usageSection && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 更多操作');
-  const toolActions:Record<string,string>={calculation:'复制结果',timestamp:'复制结果',jwt:'复制结果',json:'复制结果','url-tool':'复制结果',ip:'复制信息',proxy:'复制信息',dns:'查询并复制',cloudflare:'检测',port:'复制详情',network:'执行'};
-  const action=!selected?'打开':toolActions[selected.type] || (selected.toolId?'执行':selected.type==='memo' || selected.type==='clipboard'?'粘贴':selected.type==='twofa'?'复制验证码':selected.type==='web-add'?'添加网页':'打开');
-  hints.push('单击预览 · 双击或回车执行','⌘I 查看预览');
-  return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?'↑↓ 选择 · 双击'+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
+  const action=primaryLabel(selected);
+  hints.push('单击预览 · 双击或回车执行');
+  if(canPreview(selected))hints.push('⌘I 查看预览','预览中 ⌥↑ / ⌥↓ 切换结果');
+  return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?'↑↓ 选择 · ↵ '+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
 }
 
 function ActionMenu({item,index,x,y,onDismiss,onAction}: {item:SearchItem;index:number;x:number;y:number;onDismiss:()=>void;onAction:React.MouseEventHandler<HTMLDivElement>}) {
   return <div className="search-context-menu" role="menu" aria-label="搜索结果操作" style={{left:x,top:y}} onClickCapture={onDismiss} onClick={onAction} onKeyDown={event => {
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();onDismiss();return;}
     const buttons=[...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')], position=buttons.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
       event.preventDefault();
@@ -48,8 +49,8 @@ function Search() {
   const [snapshot,setSnapshot]=useState<SearchSnapshot | null>(null), [pinBusy,setPinBusy]=useState(false);
   const [detailOpen,setDetailOpen]=useState(false);
   const previewFrame=useRef<number | undefined>(undefined);
-  const openPreview=useCallback((index:number)=>{
-    controller.current?.selectResult(index);
+  const openPreview=useCallback((index:number,reveal=false)=>{
+    controller.current?.selectResult(index,{reveal});
     setDetailOpen(true);
     if(previewFrame.current!==undefined)cancelAnimationFrame(previewFrame.current);
     previewFrame.current=requestAnimationFrame(()=>{
@@ -58,6 +59,10 @@ function Search() {
     });
   },[]);
   const cancelPreviewFocus=useCallback(()=>{if(previewFrame.current!==undefined){cancelAnimationFrame(previewFrame.current);previewFrame.current=undefined;}},[]);
+  const clearSearch=useCallback(()=>{
+    const input=root.current?.querySelector<HTMLInputElement>('#q');
+    if(!input)return;input.value='';controller.current?.handlers['input:input']?.();input.focus({preventScroll:true});
+  },[]);
   const [actionMenu,setActionMenu]=useState<{index:number;key:string;x:number;y:number}|null>(null);
   const menuKey=(item:SearchItem)=>`${item.type}:${item.id ?? ''}:${item.path ?? ''}:${item.url ?? ''}`;
   useLayoutEffect(()=>{
@@ -166,7 +171,7 @@ function Search() {
     <SearchIcon className="search-leading-icon" aria-hidden="true"/>
     <div className="search-input-wrap"><label className="sr-only" htmlFor="q">搜索网页、应用、剪贴板或命令备忘</label>
       <div className="search-input-box"><input id="q" className="fh-input" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder={placeholder} role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="search-results" aria-activedescendant={activeRendered?`search-result-${activeIndex}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
-      {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={()=>{const input=root.current?.querySelector<HTMLInputElement>('#q');if(!input)return;input.value='';controller.current?.handlers['input:input']?.();input.focus({preventScroll:true});}}>×</button>:null}</div>
+      {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={clearSearch}>×</button>:null}</div>
     </div>
     {readonly?<span className="search-preview-badge">{new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'}</span>:null}
     <div className="search-header-actions flex items-center gap-1"><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" size="icon-sm" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" size="icon-sm" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content={`打开 FlowHub 设置${version?` · v${version}`:''}${hasUpdate?' · 有新版本':''}`}><Button id="settingsBtn" variant="ghost" size="icon-sm" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div>
@@ -175,19 +180,18 @@ function Search() {
     {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
     <div className="search-workbench" data-has-preview={Boolean(previewable)} data-detail-open={detailOpen}>
       <div id="results" className="search-result-pane min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onDoubleClick={dispatch('results:dblclick')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onContextMenu={contextMenu}>
-        {snapshot?<Results snapshot={snapshot} onPreview={openPreview}/>:<p className="search-empty" role="status">配置加载中…</p>}
+        {snapshot?<Results snapshot={snapshot} onPreview={openPreview} onClear={clearSearch} onSearchAll={()=>controller.current?.setScope('all')}/>:<p className="search-empty" role="status">配置加载中…</p>}
       </div>
-      {previewable && selected && snapshot?<Preview item={selected} index={activeIndex} snapshot={snapshot} onAction={dispatch('results:click')} onBack={()=>{cancelPreviewFocus();setDetailOpen(false);controller.current?.returnToSearch();}}/>:null}
+      {previewable && selected && snapshot?<Preview item={selected} index={activeIndex} snapshot={snapshot} onAction={dispatch('results:click')} onBack={()=>{cancelPreviewFocus();setDetailOpen(false);controller.current?.returnToSearch();}} onNavigate={direction=>{const next=previewNeighbor(snapshot.items,activeIndex,direction);if(next>=0)openPreview(next,true);}}/>:null}
     </div>
     {menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onAction={dispatch('results:click')} onDismiss={()=>{controller.current?.returnToSearch();setActionMenu(null);}}/>:null}
     <footer className="search-footer" onClick={dispatch('results:click')}>
-      <KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/>
+      <div className="search-footer-message"><span id="actionStatus" role="status">{snapshot?.statusText}</span>{!snapshot?.statusText?<KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/>:null}</div>
       <div className="search-footer-actions">
         {previewable?<Button variant="ghost" size="sm" aria-label="预览当前结果" aria-keyshortcuts="Meta+I" onClick={()=>openPreview(activeIndex)}><PanelRight data-icon="inline-start"/><kbd>⌘I</kbd></Button>:null}
         {selected && (selected.type==='clipboard' || resultActions(selected).length)?<Button id="resultActionsBtn" variant="ghost" size="sm" aria-label="更多结果操作" onClick={openActions}>操作<MoreHorizontal data-icon="inline-end"/></Button>:null}
         {selected?<Button id="activateResultBtn" className="tool-action" variant="default" size="sm" data-result-action="open" data-result-index={activeIndex} disabled={Boolean(state?.editingClipboard || state?.deletingClipboard || readonly && ['clipboard','memo'].includes(selected.type))}>{primaryLabel(selected)}<CornerDownLeft data-icon="inline-end"/></Button>:null}
       </div>
-      <span id="actionStatus" role="status">{snapshot?.statusText}</span>
     </footer>
   </div>;
 }

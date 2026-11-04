@@ -782,7 +782,7 @@ function renderSnapshot(options = {}) {
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
   const previewVisible=window.innerWidth>=720 || root.querySelector('.search-workbench')?.dataset.detailOpen==='true';
-  const inlineActions = [...(previewVisible?root.querySelectorAll('.search-preview-actions .tool-action'):[]),...root.querySelectorAll('#activateResultBtn'),...resultsEl.querySelectorAll(".result.active .tool-action:not(.result-preview-button)")].filter(button=>!button.disabled);
+  const inlineActions = [...(previewVisible?root.querySelectorAll('.search-preview-actions .tool-action'):[]),...root.querySelectorAll('#activateResultBtn'),...root.querySelectorAll('.search-recovery .tool-action'),...resultsEl.querySelectorAll(".result.active .tool-action:not(.result-preview-button)")].filter(button=>!button.disabled);
   const menuActions = [...root.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
   const resultActions = [...inlineActions,...menuActions];
   const selected = matches()[state.index];
@@ -822,7 +822,7 @@ function focusResultAction(direction = 1) {
 // 都会改变可用项，避免显示未实现或当前不可用的快捷键。
 function updateKeyboardHint() {}
 function revealActiveResult() { render({preserveScroll:true,targetIndex:state.index}); }
-function selectResult(index) {
+function selectResult(index, {reveal = false} = {}) {
   if (disposed || externalActivation || state.editingClipboard || state.deletingClipboard) return;
   const items=matches();
   if (!Number.isInteger(index) || index<0 || index>=items.length) return;
@@ -833,7 +833,7 @@ function selectResult(index) {
     state.usageColumn=index-start;
   }
   resultInputMode('pointer');
-  render({preserveScroll:true});
+  render({preserveScroll:true,...(reveal ? {targetIndex:index} : {})});
 }
 function previewEvent(mode) {
   return root.dispatchEvent(new CustomEvent('flowhub:preview',{detail:mode,cancelable:true}));

@@ -1,10 +1,15 @@
 import { useEffect, useRef, type MouseEventHandler } from 'react';
-import { ArrowLeft, Clipboard, FileText, Image, Pin } from 'lucide-react';
+import { ArrowLeft, ChevronUp, ChevronDown, Clipboard, FileText, Image, Pin } from 'lucide-react';
 import { Button } from '../shared/ui';
+import { Tooltip } from '../shared/controls';
 import { ResultIcon } from './Results';
 import type { SearchItem, SearchSnapshot } from './types';
 
 export const canPreview = (item?: SearchItem) => Boolean(item && ['app', 'page', 'web', 'web-add', 'clipboard', 'memo', 'twofa'].includes(item.type));
+export function previewNeighbor(items:SearchItem[], index:number, direction:-1|1) {
+  for(let next=index+direction;next>=0 && next<items.length;next+=direction)if(canPreview(items[next]))return next;
+  return -1;
+}
 export function primaryLabel(item?: SearchItem) {
   if (!item) return '打开';
   const tools:Record<string,string>={calculation:'复制结果',timestamp:'复制结果',jwt:'复制结果',json:'复制结果','url-tool':'复制结果',ip:'复制信息',proxy:'复制信息',dns:'查询并复制',cloudflare:'检测',port:'复制详情',network:'执行'};
@@ -23,7 +28,7 @@ function itemTitle(item: SearchItem) {
 }
 const typeNames: Record<string, string> = { app: '应用', page: '网页', web: '网页', 'web-add': '网页', clipboard: '剪贴板', memo: '命令备忘', twofa: '验证码' };
 
-export function Preview({item, index, snapshot, onBack, onAction}: {item: SearchItem; index: number; snapshot: SearchSnapshot; onBack: () => void; onAction: MouseEventHandler<HTMLElement>}) {
+export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {item: SearchItem; index: number; snapshot: SearchSnapshot; onBack: () => void; onAction: MouseEventHandler<HTMLElement>; onNavigate:(direction:-1|1)=>void}) {
   const body = useRef<HTMLDivElement>(null);
   const identity = `${item.type}:${item.id ?? item.path ?? item.url ?? ''}`;
   useEffect(() => { if (body.current) body.current.scrollTop = 0; }, [identity]);
@@ -34,10 +39,19 @@ export function Preview({item, index, snapshot, onBack, onAction}: {item: Search
   const date = item.lastSeenAt ? new Date(item.lastSeenAt) : null;
   const copyLabel = item.type === 'app' ? '复制路径' : clipboard ? item.kind === 'file' ? '复制文件名' : '复制全文' : item.type === 'memo' ? '复制命令' : '复制链接';
   const copyable = ['app', 'page', 'web', 'web-add', 'memo'].includes(item.type) || (clipboard && item.kind !== 'image');
-  return <aside className="search-preview" aria-label="结果预览" onClick={onAction}>
+  return <aside className="search-preview" aria-label="结果预览" onClick={onAction} onKeyDown={event=>{
+    if(event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.nativeEvent.isComposing && ['ArrowUp','ArrowDown'].includes(event.key)) {
+      if((event.target as HTMLElement).closest('input,textarea,[contenteditable="true"]'))return;
+      event.preventDefault();event.stopPropagation();onNavigate(event.key==='ArrowUp'?-1:1);
+    }
+  }}>
     <div className="search-preview-toolbar">
       <Button variant="ghost" size="sm" className="preview-back" onClick={onBack}><ArrowLeft data-icon="inline-start"/>返回结果</Button>
       <span className="preview-type">{typeNames[item.type]}</span><span className="preview-position">{index + 1} / {snapshot.items.length}</span>
+      <div className="preview-navigation flex gap-1">
+        <Tooltip content="上一个结果（⌥↑）"><Button variant="ghost" size="icon-sm" aria-label="上一个结果" aria-keyshortcuts="Alt+ArrowUp" disabled={previewNeighbor(snapshot.items,index,-1)<0} onClick={()=>onNavigate(-1)}><ChevronUp aria-hidden="true"/></Button></Tooltip>
+        <Tooltip content="下一个结果（⌥↓）"><Button variant="ghost" size="icon-sm" aria-label="下一个结果" aria-keyshortcuts="Alt+ArrowDown" disabled={previewNeighbor(snapshot.items,index,1)<0} onClick={()=>onNavigate(1)}><ChevronDown aria-hidden="true"/></Button></Tooltip>
+      </div>
     </div>
     <div ref={body} className="search-preview-body" tabIndex={0} aria-label="预览内容">
       <div className="preview-identity"><ResultIcon item={item} snapshot={snapshot}/><div>{clipboard ? <p className="preview-eyebrow">{ ({text:`${content.length.toLocaleString()} 字符`, image:'图片记录', file:'文件记录'}[item.kind as string] || '剪贴板记录')}</p> : null}<h2>{itemTitle(item)}</h2></div></div>

@@ -115,8 +115,8 @@ test('clear search participates in the F6 cycle and returns focus without switch
 test('clear search remains reachable with no result actions',async t=>{
   const {w,q,input,scope,key}=await setup(t,{search:()=>[]});
   await scope('web');await input('missing');
-  key('F6',{shiftKey:true});assert.ok(w.document.activeElement.matches('.search-clear'));
-  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+  key('F6');assert.ok(w.document.activeElement.matches('.search-clear'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',shiftKey:true,bubbles:true,cancelable:true}));
   assert.equal(w.document.activeElement,q);
 });
 test('search migration contains no HTML proxy or legacy result markup renderer',()=>{
@@ -208,7 +208,8 @@ test('narrow preview returns to results on Escape or input and keeps menus outsi
   w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');
   w.document.getElementById('resultActionsBtn').click();await wait(()=>w.document.querySelector('[role="menu"]'));
   assert.equal(w.document.querySelector('[role="menu"]').closest('#results'),null);
-  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait(()=>workbench.dataset.detailOpen==='false');assert.equal(w.document.activeElement,q);
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait(()=>!w.document.querySelector('[role="menu"]'));assert.equal(workbench.dataset.detailOpen,'true','Escape closes only the top layer');assert.equal(w.document.activeElement,q);
+  key('Escape');await wait(()=>workbench.dataset.detailOpen==='false');
   key('F6');assert.equal(w.document.activeElement.id,'activateResultBtn','hidden preview actions cannot trap keyboard focus');
   q.focus();w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');await input('new');
   assert.equal(workbench.dataset.detailOpen,'false');assert.equal(w.document.activeElement,q);

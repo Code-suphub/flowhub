@@ -1,11 +1,15 @@
-import { Fragment, memo } from 'react';
+import { Fragment, memo, useMemo } from 'react';
 import { AppWindow, Clipboard as ClipboardIcon, File, FileText, Folder, Globe, Link2, Plus, ShieldCheck, PanelRight } from 'lucide-react';
 import { Button } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { ToolContent } from './Tools';
+import { Badge } from '../components/ui/badge';
+import { Highlight, searchPattern } from './Highlight';
+import { NoResults } from './NoResults';
 import { host, type SearchItem, type SearchSnapshot } from './types';
 
 const tools = new Set(['calculation','timestamp','jwt','ip','dns','cloudflare','proxy','port','network','public-ip','json','url-tool']);
+export const resultKind = (item: SearchItem) => ({app:'应用',page:'网页',web:'网页','web-add':'网页',clipboard:'剪贴板',memo:'命令',twofa:'验证码'}[item.type] || '工具');
 const imageUrl = (value: unknown) => /^(https?:\/\/|data:image\/|(?:\.\/|\/)?assets\/)/i.test(String(value || ''));
 const excerpt = (value: unknown, limit = 100) => String(value || '').slice(0, limit * 4).replace(/\s+/g, ' ').slice(0, limit);
 function itemMeta(item: SearchItem) {
@@ -46,13 +50,14 @@ function ClipboardEditor({item,snapshot}: {item: SearchItem; snapshot: SearchSna
     <div className="search-actions">{[['edit-save','保存副本（⌘↩）'],['edit-cancel','取消（Esc）']].map(([action,label]) => <Button key={action} className="tool-action" data-clipboard-action={action} data-clipboard-id={item.id}>{label}</Button>)}</div>
   </>;
 }
-const Row = memo(function Row({item,index,snapshot,onPreview}: {item: SearchItem; index: number; snapshot: SearchSnapshot; onPreview: (index: number) => void}) {
+const Row = memo(function Row({item,index,snapshot,onPreview,pattern}: {item: SearchItem; index: number; snapshot: SearchSnapshot; onPreview: (index: number) => void; pattern:RegExp|null}) {
   const isTool = tools.has(item.type), usage = Boolean(item.usageSection), selected = index === snapshot.state.index;
   const editing = item.type === 'clipboard' && snapshot.state.editingClipboard?.id === Number(item.id);
   const title = item.type === 'clipboard' ? item.kind === 'image' ? `图片${item.sourceName ? ' · '+item.sourceName : ''}` : item.kind === 'file' ? (item.fileNames || []).join('、') || `${item.fileCount || 0} 个文件` : excerpt(item.content) || '空文本' : item.title || item.id || '未命名';
   return <div id={`search-result-${index}`} role="option" aria-selected={selected} aria-setsize={snapshot.items.length} aria-posinset={index + 1} className={`result ${item.type}-result ${usage ? 'usage-tile' : ''} ${selected ? 'active' : ''}`} data-i={index}>
     {!isTool && !editing ? <ResultIcon item={item} snapshot={snapshot}/> : null}
-    <div className="search-row-content min-w-0 flex-1">{editing ? <ClipboardEditor item={item} snapshot={snapshot}/> : isTool ? <ToolContent item={item} snapshot={snapshot}/> : <><h3 className={usage ? 'search-tile-title' : item.type === 'clipboard' ? 'clipboard-title' : undefined}>{title}</h3>{!usage ? <p className="search-meta">{excerpt(itemMeta(item), 180)}</p> : null}</>}</div>
+    <div className="search-row-content min-w-0 flex-1">{editing ? <ClipboardEditor item={item} snapshot={snapshot}/> : isTool ? <ToolContent item={item} snapshot={snapshot}/> : <><h3 className={usage ? 'search-tile-title' : item.type === 'clipboard' ? 'clipboard-title' : undefined}><Highlight text={String(title)} pattern={pattern}/></h3>{!usage ? <p className="search-meta"><Highlight text={excerpt(itemMeta(item), 180)} pattern={pattern}/></p> : null}</>}</div>
+    {!usage && !isTool && !editing && snapshot.state.scope==='all' ? <Badge variant="outline" className="result-kind shrink-0">{resultKind(item)}</Badge> : null}
     {!usage && !isTool && !editing ? <Button variant="ghost" size="icon-sm" className="result-preview-button tool-action" aria-label="预览此结果" onMouseDown={event => event.stopPropagation()} onClick={event => {event.stopPropagation(); onPreview(index);}}><PanelRight aria-hidden="true"/></Button> : null}
   </div>;
 }, (before,after) => {
@@ -60,15 +65,18 @@ const Row = memo(function Row({item,index,snapshot,onPreview}: {item: SearchItem
   const a=before.item,b=after.item;
   if (Object.keys(a).length !== Object.keys(b).length || Object.keys(a).some(key => a[key] !== b[key])) return false;
   const previous=before.snapshot,next=after.snapshot;
+  if (previous.state.query !== next.state.query || previous.state.scope !== next.state.scope) return false;
   if (previous.items.length !== next.items.length || previous.showUncachedWebIcons !== next.showUncachedWebIcons || previous.state.config !== next.state.config) return false;
   if (a.type === 'clipboard') return previous.state.editingClipboard === next.state.editingClipboard;
   if (a.type === 'dns') return previous.state.dnsResult === next.state.dnsResult && previous.state.dnsIpResults === next.state.dnsIpResults;
   if (a.type === 'app' && a.usageSection) return previous.state.appResults === next.state.appResults;
   return !['network','port'].includes(a.type);
 });
-export function Results({snapshot,onPreview}: {snapshot: SearchSnapshot; onPreview: (index: number) => void}) {
+export function Results({snapshot,onPreview,onClear,onSearchAll}: {snapshot: SearchSnapshot; onPreview: (index: number) => void; onClear:()=>void; onSearchAll:()=>void}) {
+  const pattern=useMemo(()=>searchPattern(String(snapshot.state.query || '')), [snapshot.state.query]);
   const ready=Boolean(snapshot.state.config);
   const showUsage=ready && !snapshot.state.query.trim() && ['all','app','web'].includes(snapshot.state.scope);
+  if(ready && !snapshot.items.length && !showUsage)return <><div id="search-results" role="listbox" aria-label="搜索结果" aria-busy={snapshot.paging.loading || false}/><NoResults snapshot={snapshot} onClear={onClear} onSearchAll={onSearchAll}/></>;
   const hasFrequent=snapshot.items.some(item => item.usageSection === 'frequent'), hasRecent=snapshot.items.some(item => item.usageSection === 'recent');
   const emptyUsage=(section:string) => <div className="search-usage-group" role="group" aria-label={section === 'frequent' ? '常用入口' : '最近使用'}><h2 className="search-usage-label">{section === 'frequent' ? '常用' : '最近'}</h2><p className="search-usage-empty">{section === 'frequent' ? '暂无常用入口' : '暂无最近使用'}</p></div>;
   const {items,plan}=snapshot, rows: React.ReactNode[]=[];
@@ -82,11 +90,11 @@ export function Results({snapshot,onPreview}: {snapshot: SearchSnapshot; onPrevi
       const item=items[i];
       if (item.usageSection) {
         const section=item.usageSection, group: React.ReactNode[]=[];
-        while (i<(plan?.to ?? items.length) && items[i].usageSection === section) { group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot} onPreview={onPreview}/>); i++; }
+        while (i<(plan?.to ?? items.length) && items[i].usageSection === section) { group.push(<Row key={`${section}:${items[i].type}:${items[i].id || items[i].path || items[i].url}`} item={items[i]} index={i} snapshot={snapshot} onPreview={onPreview} pattern={pattern}/>); i++; }
         rows.push(<div key={`usage:${section}`} data-group={`usage:${section}`} role="group" aria-label={section === 'frequent' ? '常用入口' : '最近使用'}>{section === 'recent' && !hasFrequent ? emptyUsage('frequent') : null}<div className="search-usage-group" role="presentation"><h2 className="search-usage-label">{section === 'frequent' ? '常用' : '最近'}</h2><div className="usage-strip flex gap-2 overflow-x-auto" role="presentation">{group}</div></div>{section === 'frequent' && !hasRecent ? emptyUsage('recent') : null}</div>);
       } else {
         const key=`${item.type}:${item.id || item.path || item.url || item.title}`;
-        const row=<Row item={item} index={i} snapshot={snapshot} onPreview={onPreview}/>;
+        const row=<Row item={item} index={i} snapshot={snapshot} onPreview={onPreview} pattern={pattern}/>;
         rows.push(showUsage && !hasFrequent && !hasRecent && i === 0 ? <div key={key} data-group="empty-usage-and-first-result" role="presentation">{emptyUsage('frequent')}{emptyUsage('recent')}{row}</div> : <Fragment key={key}>{row}</Fragment>); i++;
       }
     }
