@@ -59,7 +59,7 @@ try {
       const targetPath = "/Applications/FlowHub.app";
       stopInstalledFlowHub();
       if (existsSync(targetPath)) {
-        const removed = spawnSync("osascript", ["-e", `tell application \"Finder\" to delete POSIX file \"${targetPath}\"`], { stdio: "inherit" });
+        const removed = spawnSync("swift", [join(appDirectory, "scripts", "native", "trash-local-app.swift"), targetPath], { stdio: "inherit" });
         if ((removed.status ?? 1) !== 0) throw new Error("无法移除旧版 FlowHub，请先退出正在运行的应用");
       }
       const copied = spawnSync("ditto", [appPath, targetPath], { stdio: "inherit" });
