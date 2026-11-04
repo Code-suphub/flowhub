@@ -8,7 +8,17 @@ const mock = `(()=>{
     {id:'preview.focus',name:'专注计时',version:'0.8.1',description:'在菜单栏显示专注时段与休息提醒。',statusSurface:true},
     {id:'preview.export',name:'摘要导出',version:'2.0.0',description:'将选中的摘要导出为常见文本格式。',searchable:true}
   ];
+  // Snapshot of public metadata, not a network client or native install fixture.
+  const publicManifests=[
+    {id:'device-center',name:'外设中心',version:'0.2.7',description:'查看 macOS 蓝牙、USB、显示器及供电信息，提供连接事件与桌面组件',statusSurface:true,widget:{}},
+    {id:'resource-monitor',name:'应用资源监控',version:'0.3.0',description:'本机应用占用排行、子进程与来源识别、手动结束进程及桌面监控',statusSurface:true,widget:{}},
+    {id:'machines',name:'机器管理',version:'0.3.1',description:'本机 SSH、堡垒机会话、指标采集和命令工作台',statusSurface:true,widget:{}},
+    {id:'docker',name:'Docker 管理',version:'0.1.0',description:'本机容器与 Compose 项目、资源状态、日志及启停操作',statusSurface:true,widget:{}},
+    {id:'twofa',name:'2FA 验证码',version:'0.1.0',description:'本地加密保存 TOTP 密钥，按名称生成一次性验证码',searchable:true},
+    {id:'social-hub',name:'社交聚合',version:'0.1.0',description:'统一查看社交平台会话，支持本地演示数据和连接器状态'}
+  ].map(item=>({...item,permissions:['native-process']}));
   let sources=[{id:'preview-source',name:'示例插件库',kind:'https',location:'https://example.invalid/plugins.json',key:''}];
+  if(new URLSearchParams(location.search).has('empty'))sources=[];
   let installed=[{manifest:{...manifests[0]},directory:'/example/plugins/preview.notes',enabled:true,lastLoadedAt:Date.now()-3600000}];
   const preferences={tray:true,pinned:false,favorites:[]};
   const snapshot={title:'插件状态示例',monitoring:true,rows:[
@@ -27,10 +37,10 @@ const mock = `(()=>{
     if(command==='plugin_api') switch(action){
       case 'list': return installed.map(item=>({...item}));
       case 'sources': return sources.map(item=>({...item}));
-      case 'scanSource': return {plugins:manifests.map((manifest,index)=>({manifest:{...manifest},source:payload.id,token:'preview-token-'+index})),warnings:[]};
-      case 'saveSource': {const saved={...payload,id:payload.id||'preview-source-'+Date.now()};sources=[...sources.filter(item=>item.id!==saved.id),saved];return sources.map(item=>({...item}));}
+      case 'scanSource': {const source=sources.find(item=>item.id===payload.id);const items=publicManifests.filter(item=>source?.location.includes('/'+item.id+'-v'));return {plugins:(items.length?items:manifests).map(manifest=>({manifest:{...manifest},source:payload.id,token:'preview-token:'+manifest.id})),warnings:[]};}
+      case 'saveSource': {const saved={...payload,id:payload.id||'preview-source-'+(sources.length+1)};sources=[...sources.filter(item=>item.id!==saved.id),saved];return sources.map(item=>({...item}));}
       case 'removeSource': sources=sources.filter(item=>item.id!==payload.id);return sources.map(item=>({...item}));
-      case 'installCandidate': {const index=Number(String(payload.token).split('-').at(-1))||0;const manifest=manifests[index]||manifests[0];installed=[...installed.filter(item=>item.manifest.id!==manifest.id),{manifest:{...manifest},directory:'/example/plugins/'+manifest.id,enabled:true,lastLoadedAt:Date.now()}];return null;}
+      case 'installCandidate': {const manifest=[...manifests,...publicManifests].find(item=>item.id===String(payload.token).split(':').at(-1));if(!manifest)throw Error('示例候选不存在');installed=[...installed.filter(item=>item.manifest.id!==manifest.id),{manifest:{...manifest},directory:'/example/plugins/'+manifest.id,enabled:true,lastLoadedAt:Date.now()}];return null;}
       case 'install': {const manifest={id:'preview.local',name:'本地开发插件',version:'0.1.0',description:'仅用于本地目录安装预览。'};installed=[...installed,{manifest,directory:String(payload.directory||'/example/plugins/local-dev'),enabled:true,lastLoadedAt:Date.now()}];return null;}
       case 'reload': return null;
       case 'enable': installed=installed.map(item=>item.manifest.id===payload.id?{...item,enabled:Boolean(payload.enabled)}:item);return null;

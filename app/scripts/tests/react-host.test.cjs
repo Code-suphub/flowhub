@@ -31,7 +31,7 @@ function backend(extra={},initial={}) {
       case 'installCandidate':{assert.ok(payload.token.includes(`:${state.epoch}:`),'candidate must belong to current source configuration');const item=state.catalog.find(item=>payload.token.endsWith(':'+item.id));state.plugins=[...state.plugins.filter(plugin=>plugin.manifest.id!==item.id),{manifest:item,directory:'/test/'+item.id,enabled:true}];return null;}
       case 'enable':state.plugins=state.plugins.map(item=>item.manifest.id===payload.id?{...item,enabled:payload.enabled}:item);return null;
       case 'uninstall':state.plugins=state.plugins.filter(item=>item.manifest.id!==payload.id);return null;
-      case 'saveSource':state.epoch++;state.sources=[...state.sources.filter(item=>item.id!==payload.id),{...payload,id:payload.id||'new-source'}];return copy(state.sources);
+      case 'saveSource':{state.epoch++;const id=payload.id||'source:'+payload.location;state.sources=[...state.sources.filter(item=>item.id!==id),{...payload,id}];return copy(state.sources);}
       case 'removeSource':state.epoch++;state.sources=state.sources.filter(item=>item.id!==payload.id);return copy(state.sources);
       default:return null;
     }
@@ -146,4 +146,61 @@ test('an install completed in the background cannot leave a delayed focus reques
   ui.button('刷新插件').click();await wait(()=>ui.button('刷新插件') && !ui.button('刷新插件').disabled);await delay(30);
   assert.ok(ui.w.document.activeElement===search,'later source reads must not move focus to an old install target');
   assert.equal(ui.tab('discover').getAttribute('aria-selected'),'true');
+});
+
+test('official catalogs connect only on request, add six pinned sources once and install nothing',async t=>{
+  const mock=backend({}, {sources:[]}),ui=setup(t,mock.invoke);await wait(()=>ui.button('连接官方库') && !ui.button('连接官方库').disabled);
+  assert.equal(mock.calls.some(call=>call.action==='saveSource'),false);
+  ui.button('连接官方库').click();ui.button('连接官方库').click();await ready(ui);
+  const saves=mock.calls.filter(call=>call.action==='saveSource');
+  assert.equal(saves.length,6);assert.equal(new Set(saves.map(call=>call.payload.location)).size,6);
+  assert.ok(saves.every(call=>call.payload.key==='RWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne'));
+  assert.equal(ui.button('连接官方库'),undefined);assert.equal(mock.calls.some(call=>['install','installCandidate'].includes(call.action)),false);
+  assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,6);
+});
+test('connecting official catalogs preserves custom sources and recognizes an existing commented public key',async t=>{
+  const existing={id:'official-existing',name:'我的设备来源',kind:'https',location:'https://github.com/Code-suphub/flowhub-plugins/releases/download/device-center-v0.2.7/catalog.json',key:'untrusted comment: public key\nRWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne\n'};
+  const mock=backend({}, {sources:[source,existing]}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.button('补全官方库 (5)').click();await wait(()=>mock.calls.filter(call=>call.action==='saveSource').length===5 && ui.button('刷新插件') && !ui.button('刷新插件').disabled);
+  assert.deepEqual(mock.state.sources.find(item=>item.id===source.id),source);assert.deepEqual(mock.state.sources.find(item=>item.id===existing.id),existing);
+  assert.equal(mock.state.sources.length,7);assert.equal(mock.calls.filter(call=>call.action==='scanSource'&&call.payload.id==='local').length,2);
+});
+test('a conflicting official URL never replaces a custom key and successful sources survive the partial result',async t=>{
+  const conflict={id:'conflict',name:'自定义签名来源',kind:'https',location:'https://github.com/Code-suphub/flowhub-plugins/releases/download/device-center-v0.2.7/catalog.json',key:'custom-key'};
+  const mock=backend({}, {sources:[source,conflict]}),ui=setup(t,mock.invoke);await ready(ui);ui.button('连接官方库').click();
+  await wait(()=>ui.w.document.querySelector('[role="alert"]')?.textContent.includes('不同公钥') && !ui.button('刷新插件').disabled);
+  assert.deepEqual(mock.state.sources.find(item=>item.id==='conflict'),conflict);assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,5);
+  assert.equal(mock.state.sources.length,7);assert.ok(ui.article(fresh.name));
+  ui.button('安装',ui.article(fresh.name)).click();await wait(()=>ui.button('确认'));ui.button('确认').click();await wait(()=>mock.calls.some(call=>call.action==='installCandidate'));
+  assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'local:5:fresh');
+});
+test('partial source writes are recovered and retry adds only the missing official source',async t=>{
+  let fail=true;
+  const mock=backend({saveSource:(payload,state)=>{
+    if(fail && payload.location.includes('/docker-v'))throw Error('保存失败');
+    state.epoch++;state.sources.push({...payload,id:'saved:'+payload.location});return JSON.parse(JSON.stringify(state.sources));
+  }},{sources:[source]}),ui=setup(t,mock.invoke);await ready(ui);ui.button('连接官方库').click();
+  await wait(()=>ui.w.document.querySelector('[role="alert"]')?.textContent.includes('保存失败') && !ui.button('刷新插件').disabled);
+  assert.equal(mock.state.sources.length,6);assert.equal(mock.calls.filter(call=>call.action==='scanSource'&&call.payload.id==='local').length,2);
+  fail=false;ui.button('补全官方库 (1)').click();await wait(()=>!ui.button('补全官方库 (1)') && !ui.button('刷新插件').disabled);
+  assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,7);assert.equal(mock.state.sources.length,7);
+});
+test('plugin details expose full metadata without installing and continue through the explicit confirmation',async t=>{
+  const long={...fresh,description:'完整说明。'.repeat(120),permissions:['native-process'],widget:{}};
+  const mock=backend({}, {catalog:[long]}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.w.document.querySelector('[aria-label="查看新插件详情"]').click();await wait(()=>ui.button('返回浏览'));
+  const detail=ui.w.document.querySelector('[role="dialog"]');assert.ok(detail.textContent.includes(long.description));assert.match(detail.textContent,/可安装版本|native-process|当前用户文件和网络/);
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+  ui.button('安装插件').click();await wait(()=>ui.button('确认'));assert.equal(ui.w.document.querySelectorAll('[role="dialog"]').length,1);
+  assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/来源：测试来源/);ui.button('取消').click();
+  await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+});
+test('capability and source filters combine in memory and reset without another catalog request',async t=>{
+  const mock=backend({scanSource:({id})=>({plugins:(id==='local'?[manifest,{...fresh,widget:{}}]:[{...fresh,id:'other-tool',name:'其他组件',widget:{}}]).map(manifest=>({manifest,source:id,token:manifest.id})),warnings:[]})},{sources:[source,{...source,id:'other',name:'其他库'}]}),ui=setup(t,mock.invoke);await ready(ui);
+  const choose=async(label,value)=>{ui.w.document.querySelector(`[aria-label="${label}"]`).click();await wait(()=>[...ui.w.document.querySelectorAll('[role="option"]')].some(item=>item.textContent===value));[...ui.w.document.querySelectorAll('[role="option"]')].find(item=>item.textContent===value).click();};
+  await choose('按功能筛选','桌面组件');await wait(()=>ui.w.document.querySelectorAll('.market-catalog-card').length===2);
+  await choose('按来源筛选','其他库');await wait(()=>ui.w.document.querySelectorAll('.market-catalog-card').length===1);
+  assert.equal(ui.w.document.querySelector('.market-catalog-card').getAttribute('aria-label'),'其他组件');
+  ui.fill(ui.w.document.querySelector('#market-query'),'找不到');await wait(()=>ui.button('清除搜索与筛选'));ui.button('清除搜索与筛选').click();
+  await wait(()=>ui.w.document.querySelectorAll('.market-catalog-card').length===3);assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,2);
 });

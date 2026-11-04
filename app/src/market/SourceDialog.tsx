@@ -6,6 +6,7 @@ import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
 import type { Source } from './api';
+import { isOfficialSource } from './official';
 
 export type SourceState = {loading?:boolean;count?:number;warnings?:string[];error?:string};
 const blank = ():Source => ({id:'',name:'',kind:'local',location:'',key:''});
@@ -23,6 +24,7 @@ export function SourceDialog({sources,states,available,busy,locking,error,onClos
         const status=states[source.id],Icon=source.kind==='local'?FolderIcon:GlobeIcon;
         return <article key={source.id} className="market-source-row" aria-label={source.name}><div className="market-source-identity"><Icon aria-hidden="true"/><div className="min-w-0"><h3>{source.name}</h3><p className="market-meta">{source.kind==='local'?'本地目录':'HTTPS 仓库'} · {status?.loading?'刷新中…':status?.error?'刷新失败':status?.count!==undefined?`${status.count} 个插件`:'尚未刷新'}</p></div></div>
           <details className="market-location"><summary>来源位置</summary><code>{source.location}</code></details>
+          {isOfficialSource(source)?<p className="market-meta">官方公开版本目录 · 刷新读取此版本，不会自动升级插件。</p>:null}
           {status?.error?<p role="alert" className="market-source-error">{status.error}</p>:null}
           {status?.warnings?.length?<details className="market-location"><summary>{status.warnings.length} 条来源提示</summary>{status.warnings.map((warning,index)=><p key={index}>{warning}</p>)}</details>:null}
           {available?<div className="market-source-actions"><Button size="sm" disabled={busy || Boolean(editing)} onClick={()=>onScan(source)}>刷新</Button><Button size="sm" disabled={busy || Boolean(editing)} onClick={e=>edit(source,e.currentTarget)}>编辑</Button><Button variant="ghost" size="sm" disabled={busy || Boolean(editing)} onClick={()=>setRemoving(source.id)}>移除</Button></div>:null}

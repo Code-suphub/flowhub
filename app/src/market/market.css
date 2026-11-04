@@ -14,11 +14,17 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-search input {width:100%;box-sizing:border-box;padding-left:32px;}
 .market-results-heading {display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;}
 .market-meta {color:var(--fh-muted);font-size:12px;line-height:1.6;margin:0;overflow-wrap:anywhere;}
-.market-catalog-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+.market-catalog-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
 .market-catalog-grid:empty,.market-installed-list:empty {display:none;}
-.market-catalog-card {display:flex;flex-direction:column;gap:14px;min-width:0;padding:18px;border:1px solid var(--fh-border);border-radius:12px;background:var(--fh-surface);}
+.market-catalog-card {display:flex;flex-direction:column;gap:14px;min-width:0;padding:20px;border:1px solid var(--fh-border);border-radius:12px;background:var(--fh-surface);transition:border-color .14s ease,box-shadow .14s ease;}
+.market-catalog-card:has(.market-name-button:hover),.market-catalog-card:focus-within {border-color:var(--fh-accent);box-shadow:0 2px 10px var(--fh-accent-soft);}
+.market-name-button {appearance:none;background:none;border:0;padding:0;text-align:left;color:inherit;cursor:pointer;overflow-wrap:anywhere;}
+.fh-market h2 .market-name-button {font-size:15px;font-weight:600;line-height:1.4;}
+.market-name-button:focus-visible {outline:2px solid var(--fh-accent);outline-offset:4px;border-radius:2px;}
+.market-installed-badge {margin-left:auto;flex:none;}
+.market-catalog-card>.market-description {display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:46px;}
 .market-plugin-identity {display:flex;align-items:center;gap:12px;min-width:0;}
-.market-plugin-icon {display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid var(--fh-border);border-radius:10px;background:var(--fh-surface-soft);color:var(--fh-accent);}
+.market-plugin-icon {display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border:1px solid var(--fh-border);border-radius:12px;background:var(--fh-surface-soft);color:var(--fh-accent);}
 .market-plugin-icon svg {width:23px;height:23px;stroke-width:1.5;}
 .market-description {margin:0;color:var(--fh-muted);font-size:13px;line-height:1.75;overflow-wrap:anywhere;}
 .market-features {display:flex;flex-wrap:wrap;gap:5px 12px;color:var(--fh-muted);font-size:11px;}
@@ -26,6 +32,38 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-features svg {width:13px;height:13px;}
 .market-card-footer {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding-top:12px;border-top:1px solid var(--fh-border);}
 .market-source-name {margin:0 0 4px;color:var(--fh-muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.market-card-footer>.min-w-0>button {padding:0;height:auto;min-height:0;}
+.market-filters {display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:20px 0 4px;}
+.market-filters [data-slot="select-trigger"] {max-width:min(300px,100%);}
+.market-filters [data-slot="select-value"] {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.market-official-collection {display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:22px 0 24px;padding:28px;background:var(--fh-surface-soft);border:1px solid var(--fh-border);border-radius:14px;}
+.market-collection-label {display:flex;align-items:center;gap:7px;color:var(--fh-accent);font-size:12px;font-weight:500;}
+.market-collection-label svg {width:16px;height:16px;}
+.fh-market .market-collection-copy h2 {font-size:24px;line-height:1.4;letter-spacing:-.04em;margin:12px 0 8px;}
+.market-collection-copy>p {margin:0 0 18px;color:var(--fh-muted);font-size:13px;line-height:1.8;}
+.market-collection-copy>p:last-child {margin:12px 0 0;font-size:11px;}
+.market-collection-tools {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:center;gap:18px 20px;margin:0;padding:0;list-style:none;}
+.market-collection-tools li {display:flex;align-items:center;gap:10px;min-width:0;}
+.market-collection-tools li>div>span {font-size:13px;font-weight:500;overflow-wrap:anywhere;}
+.market-collection-tools small {display:block;color:var(--fh-muted);font-size:11px;margin-top:2px;}
+.market-collection-tools .market-plugin-icon {background:var(--fh-surface);}
+.market-custom-source {display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:24px 0;}
+.fh-dialog.market-detail-dialog {width:min(640px,calc(100vw - 32px));}
+.market-detail-identity {display:flex;align-items:center;gap:14px;margin:8px 0 18px;}
+.market-detail-identity .market-plugin-icon {width:56px;height:56px;flex-basis:56px;border-radius:14px;}
+.market-detail-identity .market-plugin-icon svg {width:28px;height:28px;}
+.market-detail-identity h3 {margin:0 0 4px;font-size:21px;line-height:1.4;overflow-wrap:anywhere;}
+.market-detail-identity [data-slot="badge"] {margin-left:auto;flex:none;}
+.market-detail-description {font-size:14px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 20px;}
+.market-detail-section {padding:18px 0;border-top:1px solid var(--fh-border);}
+.market-detail-section h3 {display:flex;align-items:center;gap:6px;margin:0 0 10px;font-size:13px;font-weight:600;}
+.market-detail-section h3 svg {width:16px;height:16px;color:var(--fh-accent);}
+.market-detail-section .market-features {margin-bottom:10px;}
+.market-detail-section p {line-height:1.9;overflow-wrap:anywhere;}
+.market-detail-facts {display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px;margin:0 0 18px;padding:18px;background:var(--fh-surface-soft);border-radius:8px;font-size:12px;}
+.market-detail-facts dt {color:var(--fh-muted);}
+.market-detail-facts dd {margin:0;min-width:0;overflow-wrap:anywhere;}
+.market-detail-actions {display:flex;justify-content:flex-end;gap:8px;padding-top:16px;border-top:1px solid var(--fh-border);}
 .market-installed-row {display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 2px;border-bottom:1px solid var(--fh-border);}
 .market-installed-copy {display:flex;align-items:flex-start;gap:12px;flex:1;min-width:0;}
 .market-installed-info {flex:1;min-width:0;}
@@ -63,10 +101,15 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .fh-market-menu [role="menuitem"] {padding:7px 10px;border-radius:5px;outline:none;cursor:pointer;}
 .fh-market-menu [role="menuitem"][data-highlighted] {background:var(--fh-accent-soft);color:var(--fh-accent);}
 .fh-market-menu [data-disabled] {opacity:.45;cursor:default;}
+@media(min-width:1000px) {
+  .market-catalog-grid {grid-template-columns:repeat(3,minmax(0,1fr));}
+}
 @media(max-width:760px) {
+  .market-official-collection {grid-template-columns:minmax(0,1fr);gap:24px;padding:22px;}
+  .market-collection-tools {grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
   .market-catalog-grid {grid-template-columns:minmax(0,1fr);}
   .market-installed-row {align-items:flex-start;flex-wrap:wrap;gap:12px;}
-  .market-installed-actions {margin-left:52px;}
+  .market-installed-actions {margin-left:56px;}
 }
 @media(max-width:520px) {
   .fh-root.fh-market {padding:16px 12px;}
@@ -78,5 +121,13 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
   .market-toolbar-actions {gap:4px;}
   .market-heading {gap:6px;flex-wrap:wrap;}
   .market-catalog-card {padding:16px;}
+  .market-official-collection {padding:20px 16px;}
+  .market-collection-tools {grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 10px;}
+  .market-collection-tools .market-plugin-icon {width:34px;height:34px;flex-basis:34px;border-radius:9px;}
+  .market-collection-tools .market-plugin-icon svg {width:19px;height:19px;}
+  .market-collection-tools li {gap:8px;}
+  .market-collection-tools li>div>span {font-size:12px;}
+  .fh-market .market-collection-copy h2 {font-size:21px;}
+  .market-detail-facts {grid-template-columns:72px minmax(0,1fr);padding:14px;}
   .market-source-heading {flex-wrap:wrap;}
 }

@@ -22,9 +22,13 @@ macOS 使用 AppKit 原生父子窗口关系连接设置、胶囊和展开面板
 
 发现页使用插件摘要卡片，展示真实清单中的版本及搜索／组件／状态能力。同版本已安装项进入管理，需要重装时在更多菜单明确选择；不同版本显示“更换版本”。安装确认列出来源和版本，存在已安装版本时一并显示。已安装列表显示启用状态，将重新加载和卸载收进更多菜单。安装、更换和卸载仍须明确确认；签名、权限与原生插件隔离边界保持原实现。
 
+发现页支持按真实清单能力与配置来源组合筛选，筛选及搜索仅处理已读取的数据。卡片名称及“查看详情”打开完整介绍、可安装／本机版本、能力、来源与运行权限；浏览详情不会安装，继续安装仍进入独立确认。详情根据当前候选记录取得安装凭据，来源失效后不保留旧凭据。
+
+“连接官方库”使用宿主内置的六个公开版本目录及固定 minisign 公钥（`app/src/market/official.ts`），来源为 [flowhub-plugins 的公开 Releases](https://github.com/Code-suphub/flowhub-plugins/releases)。点击后只添加缺少的来源，再统一刷新所有目录，不安装或升级插件。已配置的同地址、同公钥来源按原配置保留；同地址不同公钥会报告冲突，不能直接覆盖。部分写入失败仍重新读取实际来源并刷新所有安装凭据，重试只补充缺少项。当前目录固定到明确发布版本，刷新不等同于更新；版本和公钥的维护须对照插件仓库的[发布说明](https://github.com/Code-suphub/flowhub-plugins/blob/main/docs/releases.md)。当前这六个版本仅提供 macOS Apple Silicon 包，原生层继续按宿主 target 筛选。
+
 来源保存或移除会作废原生运行时中的全部候选安装凭据，因此界面先移除旧候选，再重新读取所有剩余来源，不保留可点击的旧安装凭据。慢来源的响应不会切走用户当前视图或清空查询。
 
-界面组织参考 [Zed 扩展页面](https://github.com/zed-industries/zed/blob/main/crates/extensions_ui/src/extensions_ui.rs)的集中搜索与安装状态筛选，以及 [Flow Launcher 插件商店](https://github.com/Flow-Launcher/Flow.Launcher/blob/dev/Flow.Launcher/SettingPages/Views/SettingsPanePluginStore.xaml)的插件摘要和安装状态展示；由宿主现有 React 公共控件实现。
+界面组织参考 [Zed 扩展页面](https://github.com/zed-industries/zed/blob/main/crates/extensions_ui/src/extensions_ui.rs)的集中搜索与安装状态筛选、[Flow Launcher 插件商店](https://github.com/Flow-Launcher/Flow.Launcher/blob/dev/Flow.Launcher/SettingPages/Views/SettingsPanePluginStore.xaml)的插件摘要和安装状态，以及 [Open VSX](https://github.com/eclipse-openvsx/openvsx/blob/main/webui/src/components/extension-list.tsx)的目录筛选和详情入口；由宿主现有 React 公共控件实现，未引入其他插件协议。
 
 原机器目录保留；旧机器 state.json 中的 folders、sources、source 会首次迁移到通用 plugin-sources.json。旧 schema 1 包扫描时明确提示升级，不自动执行。
 
