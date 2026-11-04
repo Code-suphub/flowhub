@@ -24,7 +24,6 @@ export function MenuBar({ store }: { store: SettingsStore }) {
   const shown = items.filter(item => item.section === 'visible' || item.section === 'hidden');
   const filtered = filter === 'visible' ? shown : items;
   return <div className="settings-menubar">
-    <div className="settings-page-intro"><span className="settings-eyebrow">A LITTLE LESS. A LITTLE LIGHTER.</span><h2>留一点，刚刚好。</h2><p>整理菜单栏，把视线留给正在做的事。</p></div>
     {preview ? <div className="settings-menu-demo" aria-label="菜单栏效果演示"><span>显示效果</span><div>{shown.map(item => { const Icon = item.Icon || AppWindowIcon; return <Icon key={item.windowId} aria-label={item.displayName} />; })}</div><small>示例数据</small></div> : null}
     <div className="settings-menu-toolbar"><Tabs label="筛选菜单栏项目" items={[{ id: 'all', label: '全部项目' }, { id: 'visible', label: '已显示' }]} value={filter} onChange={setFilter} /><span>{shown.length} / {items.length} 项{preview ? '显示' : '可显示'}</span></div>
     <div className="settings-menu-items" role="tabpanel" id={`panel-${filter}`} aria-labelledby={`tab-${filter}`} aria-label="菜单栏项目">{filtered.map(item => {

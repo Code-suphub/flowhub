@@ -2,8 +2,9 @@ import { call, host, readonly, write } from './api';
 import { primaryUpdate } from './Core';
 import { entries } from './model';
 import type { SettingsStore } from './store';
+import { isPage } from './navigation';
 // Bind synchronously before configuration loading, so native eval calls can queue.
-export function bindNativeSettings(store: SettingsStore, navigate: (id: string) => void, section: (id: string) => void) {
+export function bindNativeSettings(store: SettingsStore, navigate: (id: string) => boolean|void, section: (id: string) => boolean|void) {
   let disposed = false, updating = false, queuedUpdate = false;
   const queuedUrls: string[] = [];
   const previous = { runMenuUpdate: host().runMenuUpdate, prepareAddWebUrl: host().prepareAddWebUrl, switchModule: host().switchModule };
@@ -22,8 +23,8 @@ export function bindNativeSettings(store: SettingsStore, navigate: (id: string) 
   async function runMenuUpdate() {
     if (disposed || updating) return;
     if (!store.snapshot().config || store.snapshot().busy) { queuedUpdate = true; return; }
-    updating = true; navigate('core'); section('updates');
-    try { await store.run(async () => { const update = await call('getUpdateState'); if (disposed) return; store.patch({ update }); if (['available', 'downloaded'].includes(update.status)) await primaryUpdate(store); else if (!['checking', 'downloading', 'installing'].includes(update.status)) { const result = await write('checkForUpdates'); if (result.state) store.patch({ update: result.state }); } }); }
+    updating = true;
+    try { if(section('updates')===false)return;await store.run(async () => { const update = await call('getUpdateState'); if (disposed) return; store.patch({ update }); if (['available', 'downloaded'].includes(update.status)) await primaryUpdate(store); else if (!['checking', 'downloading', 'installing'].includes(update.status)) { const result = await write('checkForUpdates'); if (result.state) store.patch({ update: result.state }); } }); }
     finally { updating = false; }
   }
   const switchModule = (module: string) => { if (!disposed) navigate(module); };
@@ -42,7 +43,7 @@ export function bindNativeSettings(store: SettingsStore, navigate: (id: string) 
   });
   const params = new URLSearchParams(window.location.search);
   const requestedModule = params.get('module');
-  if (requestedModule) switchModule(['core', 'search', 'menubar', 'appearance', 'web', 'app', 'clipboard', 'memo', 'tools', 'extensions', 'canvas'].includes(requestedModule) ? requestedModule : 'core');
+  if (requestedModule) switchModule(isPage(requestedModule) || requestedModule==='extensions'?requestedModule:'core');
   if (params.get('addUrl')) prepareAddWebUrl(params.get('addUrl')!);
   if (params.get('update') === '1') void runMenuUpdate();
   if (params.has('addUrl') || params.has('update')) window.history.replaceState({}, '', window.location.pathname);

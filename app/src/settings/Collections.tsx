@@ -9,12 +9,13 @@ import { clone, entries, importWeb, moveNodes, moveMemo, removeNodes, renameCate
 import { useTreeView } from './useTreeView';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { SettingsStore, useSettings } from './store';
+import { useViewScroll, useViewState } from './view-state';
 
 export function WebCatalog({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), sourceNodes: WebNode[] = s.config!.plugins.web.settings.items;
-  const [previewNodes, setPreviewNodes] = useState<WebNode[] | null>(null);
+  const [previewNodes, setPreviewNodes] = useViewState<WebNode[] | null>('web:preview',null);
   const nodes = preview && previewNodes ? previewNodes : sourceNodes;
-  const [selected, setSelected] = useState<string[]>([]), [expanded, setExpanded] = useState<Set<string>>(() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useState(''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [deleteOpen, setDeleteOpen] = useState(false), [pendingAdd, setPendingAdd] = useState('');
+  const [selected, setSelected] = useViewState<string[]>('web:selected',[]), [expanded, setExpanded] = useViewState<Set<string>>('web:expanded',() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useViewState('web:filter',''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [deleteOpen, setDeleteOpen] = useState(false), [pendingAdd, setPendingAdd] = useState('');
   const deferred = useDeferredValue(filter).trim().toLowerCase(), all = useMemo(() => entries(nodes), [nodes]);
   const node = all.find(e => e.node.id === selected[0])?.node;
   const stopPointerDrag = useRef<(() => void) | null>(null);
@@ -90,7 +91,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     window.addEventListener('keydown', onKey);
     stopPointerDrag.current = cleanup;
   }
-  useEffect(() => { if (s.webSelection) { setSelected([s.webSelection]); setExpanded(prev => new Set([...prev, ...all.filter(e => entries(e.node.children || []).some(child => child.node.id === s.webSelection)).map(e => e.node.id)])); } }, [s.webSelection]);
+  useEffect(() => { if (s.webSelection) { const incoming=s.webSelection;setFilter('');setSelected([incoming]); setExpanded(prev => new Set([...prev, ...all.filter(e => entries(e.node.children || []).some(child => child.node.id === incoming)).map(e => e.node.id)]));store.patch({webSelection:undefined}); } }, [s.webSelection,store]);
   const visible = useMemo(() => {
     const matched = new Set(all.filter(e => [e.node.title, e.node.url, e.node.note, e.node.id].join(' ').toLowerCase().includes(deferred)).map(e => e.node.id));
     const list: typeof all = [];
@@ -206,9 +207,10 @@ function MemoTreeView({ branch, depth, collapsed, forceOpen, selected, onSelect,
 export function Memos({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), configured = s.config!.plugins.memo.settings.items;
   const defaults = useMemo(() => host().FlowHubMemoCatalog?.cloneDefaults() || [], []);
-  const [previewItems, setPreviewItems] = useState<Memo[] | null>(null);
+  const [previewItems, setPreviewItems] = useViewState<Memo[] | null>('memo:preview',null);
   const items: Memo[] = preview && previewItems ? previewItems : configured || defaults;
-  const [selected, setSelected] = useState(''), [filter, setFilter] = useState(''), [collapsed, setCollapsed] = useState(new Set<string>()), [category, setCategory] = useState<string | null>(null), [tags, setTags] = useState<string | null>(null), [confirm, setConfirm] = useState<'reset' | 'delete' | null>(null);
+  const [selected, setSelected] = useViewState('memo:selected',''), [filter, setFilter] = useViewState('memo:filter',''), [collapsed, setCollapsed] = useViewState('memo:collapsed',()=>new Set<string>()), [category, setCategory] = useState<string | null>(null), [tags, setTags] = useState<string | null>(null), [confirm, setConfirm] = useState<'reset' | 'delete' | null>(null);
+  const memoScroll=useViewScroll('memo:scroll');
   const dragging = useRef<MemoMoveRef | null>(null);
   const [dropTarget, setDropTarget] = useState<MemoDropTarget | null>(null);
   const deferred = useDeferredValue(filter).trim().toLowerCase();
@@ -263,7 +265,7 @@ export function Memos({ store }: { store: SettingsStore }) {
     <div className="settings-memo-workspace">
       <aside className="settings-memo-nav">
         <div className="settings-memo-search"><Input aria-label="筛选备忘录" value={filter} onChange={event => setFilter(event.target.value)} placeholder="搜索备忘…" /><Button onClick={() => setCollapsed(new Set())}>展开</Button><Button onClick={() => setCollapsed(new Set(tree.children.map(child => child.path)))}>收起</Button></div>
-        <div className="settings-memo-tree" role="tree" aria-label="备忘录分类">{!tree.children.length && !tree.items.length ? <p className="settings-memo-empty">{deferred ? '没有匹配的备忘' : '暂无备忘录'}</p> : <MemoTreeView branch={tree} depth={1} collapsed={collapsed} forceOpen={Boolean(deferred)} selected={current?.id || ''} onSelect={selectMemo} onToggle={path => setCollapsed(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; })} onSetOpen={(path, open) => setCollapsed(previous => { const next = new Set(previous); if (open) next.delete(path); else next.add(path); return next; })} drag={drag} />}</div>
+        <div ref={memoScroll.ref} onScroll={memoScroll.onScroll} className="settings-memo-tree" role="tree" aria-label="备忘录分类">{!tree.children.length && !tree.items.length ? <p className="settings-memo-empty">{deferred ? '没有匹配的备忘' : '暂无备忘录'}</p> : <MemoTreeView branch={tree} depth={1} collapsed={collapsed} forceOpen={Boolean(deferred)} selected={current?.id || ''} onSelect={selectMemo} onToggle={path => setCollapsed(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; })} onSetOpen={(path, open) => setCollapsed(previous => { const next = new Set(previous); if (open) next.delete(path); else next.add(path); return next; })} drag={drag} />}</div>
       </aside>
       <div className="settings-memo-detail min-w-0">{current ? <>
         <div className="settings-memo-fields"><TextField label="标题" value={current.title} readOnly={preview} onChange={value => edit(list => { list.find(item => item.id === current.id)!.title = value; }, `memo:${current.id}:title`)} />

@@ -289,6 +289,7 @@ if (!window.weborg) {
       return { ok: false, trusted: false, preview: true, reason: "请在 FlowHub App 中授权辅助功能" };
     },
     async getConfigPathInfo() {
+      if (demo) return { available:false,configuredPath:'',defaultPath:'示例配置目录/config.json',resolvedPath:'示例配置目录/config.json',activePath:'' };
       try {
         const response = await fetch("/__weborg/config/location", { cache: "no-store" });
         const result = await response.json();
@@ -325,6 +326,7 @@ if (!window.weborg) {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },
     async getClipboardStorageInfo() {
+      if (demo) return { available:false,configuredPath:'',defaultPath:'示例数据目录/clipboard',resolvedPath:'示例数据目录/clipboard',activePath:'' };
       try {
         const response = await fetch("/__weborg/clipboard/storage", { cache: "no-store" });
         const result = await response.json();
