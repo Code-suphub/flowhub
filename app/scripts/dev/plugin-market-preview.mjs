@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises';
 
 const mock = `(()=>{
   const manifests=[
-    {id:'preview.notes',name:'便笺整理',version:'1.2.0',description:'为工作区的便笺添加轻量标签和快捷整理。'},
-    {id:'preview.focus',name:'专注计时',version:'0.8.1',description:'在菜单栏显示专注时段与休息提醒。'},
-    {id:'preview.export',name:'摘要导出',version:'2.0.0',description:'将选中的摘要导出为常见文本格式。'}
+    {id:'preview.notes',name:'便笺整理',version:'1.2.0',description:'为工作区的便笺添加轻量标签和快捷整理。',searchable:true,widget:{}},
+    {id:'preview.focus',name:'专注计时',version:'0.8.1',description:'在菜单栏显示专注时段与休息提醒。',statusSurface:true},
+    {id:'preview.export',name:'摘要导出',version:'2.0.0',description:'将选中的摘要导出为常见文本格式。',searchable:true}
   ];
   let sources=[{id:'preview-source',name:'示例插件库',kind:'https',location:'https://example.invalid/plugins.json',key:''}];
   let installed=[{manifest:{...manifests[0]},directory:'/example/plugins/preview.notes',enabled:true,lastLoadedAt:Date.now()-3600000}];
@@ -28,8 +28,8 @@ const mock = `(()=>{
       case 'list': return installed.map(item=>({...item}));
       case 'sources': return sources.map(item=>({...item}));
       case 'scanSource': return {plugins:manifests.map((manifest,index)=>({manifest:{...manifest},source:payload.id,token:'preview-token-'+index})),warnings:[]};
-      case 'saveSource': {const saved={...payload,id:payload.id||'preview-source-'+Date.now()};sources=[...sources.filter(item=>item.id!==saved.id),saved];return saved;}
-      case 'removeSource': sources=sources.filter(item=>item.id!==payload.id);return null;
+      case 'saveSource': {const saved={...payload,id:payload.id||'preview-source-'+Date.now()};sources=[...sources.filter(item=>item.id!==saved.id),saved];return sources.map(item=>({...item}));}
+      case 'removeSource': sources=sources.filter(item=>item.id!==payload.id);return sources.map(item=>({...item}));
       case 'installCandidate': {const index=Number(String(payload.token).split('-').at(-1))||0;const manifest=manifests[index]||manifests[0];installed=[...installed.filter(item=>item.manifest.id!==manifest.id),{manifest:{...manifest},directory:'/example/plugins/'+manifest.id,enabled:true,lastLoadedAt:Date.now()}];return null;}
       case 'install': {const manifest={id:'preview.local',name:'本地开发插件',version:'0.1.0',description:'仅用于本地目录安装预览。'};installed=[...installed,{manifest,directory:String(payload.directory||'/example/plugins/local-dev'),enabled:true,lastLoadedAt:Date.now()}];return null;}
       case 'reload': return null;

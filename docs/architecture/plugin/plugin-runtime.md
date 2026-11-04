@@ -18,7 +18,15 @@ macOS 使用 AppKit 原生父子窗口关系连接设置、胶囊和展开面板
 
 重新加载重新校验 manifest，并重启进程；页面每次进入使用无缓存资源。前后端均随插件目录更新，不需宿主编译。可执行文件需先构建。
 
-迁移后需安装一次新 FlowHub 宿主。市场提供发现、已安装、来源三个页面；先添加本地目录或 HTTPS 仓库，再扫描和安装。开发目录安装仍作为快捷方式保留。原机器目录保留；旧机器 state.json 中的 folders、sources、source 会首次迁移到通用 plugin-sources.json。旧 schema 1 包扫描时明确提示升级，不自动执行。
+迁移后需安装一次新 FlowHub 宿主。市场主界面提供“发现”和“已安装”两个视图；来源通过“来源设置”对话框管理，本地开发目录安装位于更多操作。首次进入读取已配置来源并自动刷新，最多同时读取三个来源；一个来源失败时保留其他来源的结果，问题在来源设置中展示。搜索在当前已读取的目录中过滤名称、ID、描述及来源，不触发额外网络请求；每次先显示 24 个插件，可继续加载。
+
+发现页使用插件摘要卡片，展示真实清单中的版本及搜索／组件／状态能力。同版本已安装项进入管理，需要重装时在更多菜单明确选择；不同版本显示“更换版本”。安装确认列出来源和版本，存在已安装版本时一并显示。已安装列表显示启用状态，将重新加载和卸载收进更多菜单。安装、更换和卸载仍须明确确认；签名、权限与原生插件隔离边界保持原实现。
+
+来源保存或移除会作废原生运行时中的全部候选安装凭据，因此界面先移除旧候选，再重新读取所有剩余来源，不保留可点击的旧安装凭据。慢来源的响应不会切走用户当前视图或清空查询。
+
+界面组织参考 [Zed 扩展页面](https://github.com/zed-industries/zed/blob/main/crates/extensions_ui/src/extensions_ui.rs)的集中搜索与安装状态筛选，以及 [Flow Launcher 插件商店](https://github.com/Flow-Launcher/Flow.Launcher/blob/dev/Flow.Launcher/SettingPages/Views/SettingsPanePluginStore.xaml)的插件摘要和安装状态展示；由宿主现有 React 公共控件实现。
+
+原机器目录保留；旧机器 state.json 中的 folders、sources、source 会首次迁移到通用 plugin-sources.json。旧 schema 1 包扫描时明确提示升级，不自动执行。
 
 HTTPS 来源需要 minisign 公钥。索引格式为 schema:2、plugins 数组；每项包含 manifest（与包内清单完全一致）、target（如 macos-aarch64 或 macos-x86_64）、url、sha256、signature。签名针对完整下载包字节，使用与更新器相同的 minisign 验证格式。仅允许 HTTPS，不支持把 Git 仓库 URL 当作安装包；私有仓库需提供客户端可访问的索引及下载地址。
 

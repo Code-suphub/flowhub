@@ -1,4 +1,4 @@
-export interface Manifest { id: string; name: string; version: string; description?: string }
+export interface Manifest { id: string; name: string; version: string; description?: string; searchable?: boolean; statusSurface?: boolean; widget?: Record<string, unknown>; permissions?: string[] }
 export interface Installed { manifest: Manifest; directory: string; enabled: boolean; lastLoadedAt?: number }
 export interface Source { id: string; name: string; kind: 'local' | 'https'; location: string; key: string }
 export interface Candidate { manifest: Manifest; source: string; token: string }
