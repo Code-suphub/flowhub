@@ -19,6 +19,7 @@ export interface SearchController {
   render(options?: {preserveScroll?: boolean}): void;
   returnToSearch(): void; setScope(scope:string): void; setClipboardKind(kind:string): void;
   preserveSearchFocus(event: any): void; activateScopeControl(button: HTMLElement): void;
+  selectResult(index: number): void;
   togglePin(): Promise<void>; dispose(): void;
   confirmClipboardDelete(): Promise<void>; cancelClipboardDelete():void;
 }

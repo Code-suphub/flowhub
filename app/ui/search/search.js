@@ -26,7 +26,7 @@ const PLUGIN_PAGE_SIZE = 30;
 const APP_PAGE_SIZE = 12;
 const DEFAULT_SCOPE_SHORTCUTS = { all: "Shift+1", clipboard: "Shift+2", app: "Shift+3", web: "Shift+4", memo: "Shift+5" };
 
-const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, expandedClipboard: new Set(), editingClipboard: null, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
+const state = { config: null, plugins: [], webResults: [], webHasMore: true, webLoading: false, query: "", index: 0, scope: "all", clipboardKind: "all", clipboardResults: [], clipboardHasMore: true, clipboardLoading: false, clipboardLoadedQuery: null, appResults: [], appHasMore: true, appLoading: false, appLoadedQuery: null, appLoadedLimit: 0, memoResults: [], memoHasMore: true, memoLoading: false, memoLoadedQuery: null, twofaResults: [], twofaHasMore: true, twofaLoading: false, twofaLoadedQuery: null, webLoadedQuery: null, usageSections: { frequent: [], recent: [] }, usageLoadedScope: null, emptyResults: { clipboard: [], app: [], web: [], memo: [], twofa: [] }, editingClipboard: null, dnsResult: null, dnsIpResults: {}, cloudflareResult: null,  ipResult: null, proxyResult: null };
 let clipboardSearchToken = 0;
 let appSearchToken = 0;
 let appIconSearchToken = 0;
@@ -635,18 +635,6 @@ function moveVertical(items, offset) {
   state.index = Math.max(0, Math.min(items.length - 1, state.index + offset));
 }
 
-function toggleClipboardPreview(button) {
-  const id = Number(button.dataset.clipboardToggle);
-  if (state.expandedClipboard.has(id)) state.expandedClipboard.delete(id); else state.expandedClipboard.add(id);
-  render({preserveScroll:true});
-}
-
-function isExpandableClipboard(item) {
-  if (item.kind !== "text") return false;
-  const content = String(item.content || "");
-  return content.length > 120 || content.split("\n").length > 3;
-}
-
 // 剪贴板高频操作：粘贴（原格式）、纯文本粘贴、置顶、编辑副本。
 // 置顶与编辑都改数据库，完成后重新取第一页；粘贴会隐藏窗口，不再刷新。
 function clipboardAction(action, item, extra = {}) {
@@ -758,6 +746,7 @@ function runResultAction(action, item) {
     ? normalizeUrl(item.url)
     : item.type === "app" ? String(item.path || "")
     : item.type === "memo" ? String(item.content || "")
+    : item.type === "clipboard" ? item.kind === "file" ? (item.fileNames || []).join("\n") : String(item.content || "")
     : String(item.result || "");
   if (!text) return showActionStatus("没有可复制的内容");
   const message = item.type === "app" ? "路径已复制" : item.type === "web" ? "链接已复制" : "已复制";
@@ -780,7 +769,7 @@ function renderSnapshot(options = {}) {
   windowedResults = items.length > 80;
   const plan = windowedResults ? resultWindow.plan(items, resultKey, resultsEl.scrollTop, resultsEl.clientHeight, options.targetIndex) : null;
   const paging = state.scope === 'all' ? {loading:allPaging,hasMore:state.config && allHasMore()} : {loading:state[state.scope+'Loading'],hasMore:state[state.scope+'HasMore']};
-  publish({state:{...state,expandedClipboard:new Set(state.expandedClipboard)},items,plan,paging,statusText,updateState,launcherPinned,showUncachedWebIcons,loadedWebIcons,failedWebIcons,timing});
+  publish({state:{...state},items,plan,paging,statusText,updateState,launcherPinned,showUncachedWebIcons,loadedWebIcons,failedWebIcons,timing});
   if (options.targetIndex != null) requestAnimationFrame(() => {
     if (disposed || externalActivation) return;
     if (plan) resultsEl.scrollTop = plan.targetTop;
@@ -792,15 +781,16 @@ function renderSnapshot(options = {}) {
 // 操作焦点顺序：F6 先进入清除按钮（有搜索内容时），再进入当前结果的操作按钮，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
-  const inlineActions = [...resultsEl.querySelectorAll(".result.active .tool-action")].filter(button=>!button.disabled);
-  const menuActions = [...resultsEl.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
+  const previewVisible=window.innerWidth>=720 || root.querySelector('.search-workbench')?.dataset.detailOpen==='true';
+  const inlineActions = [...(previewVisible?root.querySelectorAll('.search-preview-actions .tool-action'):[]),...root.querySelectorAll('#activateResultBtn'),...resultsEl.querySelectorAll(".result.active .tool-action:not(.result-preview-button)")].filter(button=>!button.disabled);
+  const menuActions = [...root.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
   const resultActions = [...inlineActions,...menuActions];
   const selected = matches()[state.index];
   const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
   const clear = root.querySelector('.search-clear');
   if (clear && current === q && direction > 0) { clear.focus(); return; }
   if (clear && current === clear && direction < 0) { returnToSearch(); return; }
-  const hasMenu = selected && !selected.usageSection && ["app","page","web","web-add","memo","twofa","calculation","timestamp","jwt","dns","ip","clipboard"].includes(selected.type);
+  const hasMenu = selected && ["app","page","web","web-add","memo","twofa","calculation","timestamp","jwt","dns","ip","clipboard"].includes(selected.type);
   const leavingInline = direction>0 && inlineActions.length>0 && inlineActions.indexOf(current)===inlineActions.length-1;
   if (hasMenu && !menuActions.length && (!inlineActions.length || leavingInline)) {
     const row = resultsEl.querySelector(".result.active");
@@ -832,6 +822,22 @@ function focusResultAction(direction = 1) {
 // 都会改变可用项，避免显示未实现或当前不可用的快捷键。
 function updateKeyboardHint() {}
 function revealActiveResult() { render({preserveScroll:true,targetIndex:state.index}); }
+function selectResult(index) {
+  if (disposed || externalActivation || state.editingClipboard || state.deletingClipboard) return;
+  const items=matches();
+  if (!Number.isInteger(index) || index<0 || index>=items.length) return;
+  state.index=index;
+  if(items[index].usageSection) {
+    let start=index;
+    while(start>0 && items[start-1].usageSection===items[index].usageSection)start--;
+    state.usageColumn=index-start;
+  }
+  resultInputMode('pointer');
+  render({preserveScroll:true});
+}
+function previewEvent(mode) {
+  return root.dispatchEvent(new CustomEvent('flowhub:preview',{detail:mode,cancelable:true}));
+}
 
 
 function choose(page) {
@@ -1085,6 +1091,7 @@ function invalidatePluginPaging({ resetPaging = true } = {}) {
 }
 
 function setScope(scope) {
+  previewEvent('reset');
   window.flowhubSearchTiming?.begin("scope");
   allResultKeys = null;
   allScopeRefreshToken += 1;
@@ -1175,6 +1182,7 @@ subscribe("onConfig", async (cfg) => {
 });
 
 function returnToSearch() {
+  previewEvent('dismiss-actions');
   scopeTabHeld = false;
   scopeTabUsedWithArrow = false;
   q.focus({ preventScroll: true });
@@ -1197,6 +1205,10 @@ bind(document, "keydown", (e) => {
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
   if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
+  if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyI' || e.key.toLowerCase() === 'i')) {
+    if(['app','page','web','web-add','clipboard','memo','twofa'].includes(matches()[state.index]?.type)) {e.preventDefault();previewEvent('toggle');}
+    return;
+  }
   // 清除按钮使用原生 Enter/Space 激活；Tab 和 Escape 返回搜索框。
   if (e.target.closest?.('.search-clear') && ["Tab", "Escape"].includes(e.key)) {
     e.preventDefault(); returnToSearch(); return;
@@ -1209,8 +1221,9 @@ bind(document, "keydown", (e) => {
   }
   if (e.key === "Escape") {
     e.preventDefault();
+    if (!previewEvent('close')) return;
     // 焦点在结果操作栏里时先回到搜索框，再按一次才隐藏窗口。
-    if (resultsEl.contains(document.activeElement)) { returnToSearch(); return; }
+    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest('.search-preview,.search-footer,.search-context-menu')) { returnToSearch(); return; }
     if (window.weborg?.hideMain) void window.weborg.hideMain();
     else window.close();
     return;
@@ -1223,7 +1236,7 @@ bind(document, "keydown", (e) => {
   }
   if (e.key === "Tab") {
     // 焦点已经在结果操作栏里：交给浏览器的顺序，Tab 不再切换范围。
-    if (resultsEl.contains(document.activeElement)) return;
+    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest('.search-preview,.search-footer,.search-context-menu')) return;
     e.preventDefault();
     if (!scopeTabHeld) {
       scopeTabHeld = true;
@@ -1643,6 +1656,7 @@ bind(q, "compositionend", () => {
   searchCompositionEndedAt = performance.now();
 });
 bind(q, "input", () => {
+  previewEvent('reset');
   window.flowhubSearchTiming?.begin("input");
   state.editingClipboard = null;
   allResultKeys = null;
@@ -1740,34 +1754,11 @@ subscribe("onApplicationsUpdated", () => {
   state.appLoadedQuery = null;
   void refreshApplicationCatalog();
 });
-// Keep keyboard navigation available after an application click, including a
-// WebKit release-before-press sequence. Launch only after a matching release;
-// ordinary presses still wait for click. Never apply this to paste/delete.
-let releasedAppPress = null;
-let recoveredAppClick = null;
-bind(resultsEl, "mouseup", (e) => {
-  const row = e.target.closest(".result");
-  const item = row && matches()[Number(row.dataset.i)];
-  releasedAppPress = e.button === 0 && item?.type === "app"
-    ? { row, path:item.path, stamp:e.timeStamp, received:performance.now() } : null;
-});
+// Selection is separate from execution. Looking at a result must never open
+// an application or paste into the previously active application.
 bind(resultsEl, "mousedown", (e) => {
-  resultInputMode("pointer");
-  resultPointerPosition = {x:e.clientX,y:e.clientY};
-  const released = releasedAppPress;
-  releasedAppPress = null;
-  recoveredAppClick = null;
-  const row = e.target.closest(".result");
-  const item = row && matches()[Number(row.dataset.i)];
-  if (e.button !== 0 || item?.type !== "app") return;
-  e.preventDefault();
-  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-  if (released?.row === row && released.path === item.path
-    && e.timeStamp < released.stamp && released.stamp-e.timeStamp < 1000
-    && performance.now()-released.received < 100) {
-    recoveredAppClick = {row,down:e.timeStamp,up:released.stamp};
-    choose(item);
-  }
+  if(e.button !== 0 || e.target.closest('button,input,textarea,select,a,[contenteditable="true"]')) return;
+  if(e.target.closest('.result')) e.preventDefault();
 });
 bind(resultsEl, "click", (e) => {
   const resultAction = e.target.closest("[data-result-action]");
@@ -1779,64 +1770,45 @@ bind(resultsEl, "click", (e) => {
   }
   const clipAction = e.target.closest("[data-clipboard-action]");
   if (clipAction) {
-    e.preventDefault();e.stopPropagation();
-    const id = Number(clipAction.dataset.clipboardId);
-    const item = state.clipboardResults.find(record => Number(record.id) === id);
+    e.preventDefault(); e.stopPropagation();
+    const item = state.clipboardResults.find(record => Number(record.id) === Number(clipAction.dataset.clipboardId));
     if (!item) return;
-    if (clipAction.dataset.clipboardAction === "pin") void toggleClipboardPin(item);
-    if (clipAction.dataset.clipboardAction === "plain") void pasteClipboardPlain(item);
-    if (clipAction.dataset.clipboardAction === "edit") startClipboardEdit(item);
-    if (clipAction.dataset.clipboardAction === "delete") requestClipboardDelete(item);
-    if (clipAction.dataset.clipboardAction === "edit-save") void saveClipboardEdit();
-    if (clipAction.dataset.clipboardAction === "edit-cancel") cancelClipboardEdit();
+    const action = clipAction.dataset.clipboardAction;
+    if(action === 'pin') void toggleClipboardPin(item);
+    if(action === 'plain') void pasteClipboardPlain(item);
+    if(action === 'edit') startClipboardEdit(item);
+    if(action === 'delete') requestClipboardDelete(item);
+    if(action === 'edit-save') void saveClipboardEdit();
+    if(action === 'edit-cancel') cancelClipboardEdit();
     return;
   }
-  const action=e.target.closest("[data-tool-action]");
-  if (action) {
-    e.preventDefault();e.stopPropagation();
-    Promise.resolve(window.FlowHubTools.action(action.dataset.toolId,action.dataset.toolAction,action,toolContext())).catch(error=>showActionStatus(error.message||"操作失败"));
+  const action = e.target.closest('[data-tool-action]');
+  if(action) {
+    e.preventDefault(); e.stopPropagation();
+    Promise.resolve(window.FlowHubTools.action(action.dataset.toolId,action.dataset.toolAction,action,toolContext())).catch(error=>showActionStatus(error.message||'操作失败'));
     return;
   }
-  const toggle = e.target.closest("[data-clipboard-toggle]");
-  if (toggle) {
-    e.preventDefault();
-    e.stopPropagation();
-    toggleClipboardPreview(toggle);
-    return;
+  if(e.target.closest('button,input,textarea,select,a,[contenteditable="true"]')) return;
+  const row = e.target.closest('.result');
+  if(row && !externalActivation && !state.editingClipboard && !state.deletingClipboard) {
+    selectResult(Number(row.dataset.i));
+    q?.focus({preventScroll:true});
+    previewEvent('selection');
   }
-  const row = e.target.closest(".result");
-  if (recoveredAppClick?.row === row && e.detail !== 0
-    && e.timeStamp >= recoveredAppClick.down && e.timeStamp <= recoveredAppClick.up) {
-    recoveredAppClick = null;
-    return;
-  }
-  if (row) { const p = matches()[+row.dataset.i]; if (p) choose(p); }
 });
-// React's result handler runs before this document bubble listener. Tracking
-// outside the list keeps reflow under a stationary pointer distinguishable
-// from a real move back into the list, without changing selection here.
-bind(document, "mousemove", (e) => { resultPointerPosition = {x:e.clientX,y:e.clientY}; });
-bind(resultsEl, "mousemove", (e) => {
-  if (externalActivation) return;
-  const moved = resultPointerPosition && (e.clientX!==resultPointerPosition.x || e.clientY!==resultPointerPosition.y);
+bind(resultsEl, 'dblclick', (e) => {
+  if(e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || state.editingClipboard || state.deletingClipboard) return;
+  if(e.target.closest('button,input,textarea,select,a,[contenteditable="true"]')) return;
+  const row = e.target.closest('.result'), item = row && matches()[Number(row.dataset.i)];
+  if(item) {e.preventDefault();choose(item);}
+});
+// Hover changes only the visual affordance. The selected result and preview
+// stay put until an explicit click or keyboard navigation.
+bind(resultsEl, 'mousemove', (e) => {
+  if(externalActivation) return;
+  const moved = resultPointerPosition && (e.clientX !== resultPointerPosition.x || e.clientY !== resultPointerPosition.y);
   resultPointerPosition = {x:e.clientX,y:e.clientY};
-  // WebKit may send mousemove after scrolling or reflow without moving the
-  // pointer. An unknown first position only establishes the baseline.
-  if (root.dataset.resultInput === "keyboard" && !moved) return;
-  resultInputMode("pointer");
-  const row = e.target.closest(".result");
-  if (!row) return;
-  const i = Number(row.dataset.i);
-  if (!Number.isFinite(i)) return;
-  const items=matches();
-  if(items[i]?.usageSection) {
-    let start=i;
-    while(start>0 && items[start-1].usageSection===items[i].usageSection)start--;
-    state.usageColumn=i-start;
-  }
-  if(i === state.index)return;
-  state.index = i;
-  render({preserveScroll:true});
+  if(root.dataset.resultInput !== 'keyboard' || moved) resultInputMode('pointer');
 });
 
 function cancelActivationFocus() {
@@ -1862,7 +1834,7 @@ function restoreLauncherFocus() {
   }
   // Re-entering a key window must not select new typing, interrupt IME, or
   // take focus away from a menu, action button or another editable control.
-  if (active === q || active?.closest('input,textarea,select,button,a[href],[contenteditable="true"],[role="dialog"],[role="menu"]')) return;
+  if (active === q || active?.closest('input,textarea,select,button,a[href],[contenteditable="true"],[role="dialog"],[role="menu"],.search-preview')) return;
   q?.focus({preventScroll:true});
 }
 function focusSearchAfterWindowActivation() {
@@ -1884,6 +1856,7 @@ function prepareForShow() {
     restoreLauncherFocus();
     return;
   }
+  previewEvent('reset');
   resultPointerPosition = null;
   resultInputMode("keyboard");
   state.usageColumn = null;
@@ -2047,7 +2020,7 @@ if (fixture) {
       invalidateClipboardPaging(); invalidatePluginPaging(); ++allScopeRefreshToken;
       allResultKeys = null; allInitialResults = []; allPaging = false;
       state.query = ''; q.value = ''; state.scope = 'all'; state.index = 0;
-      state.editingClipboard = null; state.expandedClipboard.clear();
+      state.editingClipboard = null;
       for (const id of Object.keys(refreshers)) {
         state[id+'Results'] = []; state.emptyResults[id] = [];
         state[id+'LoadedQuery'] = null; state[id+'HasMore'] = true;
@@ -2078,7 +2051,7 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());

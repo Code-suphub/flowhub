@@ -69,7 +69,7 @@ console.log('PASS search order: default, opt-out, pagination, empty query, indiv
 require('node:test')('regular boundaries retain row navigation and return to usage column zero without prior selection',()=>{
   const state={index:3};
   const ctx=vm.createContext({state});
-  vm.runInContext(source.slice(source.indexOf('function moveVertical('),source.indexOf('function toggleClipboardPreview(')),ctx);
+  vm.runInContext(source.slice(source.indexOf('function moveVertical('),source.indexOf('function clipboardAction(')),ctx);
   const items=[{usageSection:'frequent'},{usageSection:'recent'},{usageSection:'recent'},{type:'app'},{type:'app'}];
   ctx.moveVertical(items,-1);assert.equal(state.index,1,'first regular returns to the first column of the last nonempty usage row');
   ctx.moveVertical(items,1);assert.equal(state.index,3);ctx.moveVertical(items,1);assert.equal(state.index,4);

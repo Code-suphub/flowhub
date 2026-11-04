@@ -77,18 +77,18 @@
       frameIntervals.push(performance.now()-t);
     }
     report.scroll={twoFrameWaitMs:frameIntervals,rows:resultsEl.querySelectorAll('.result').length};
-    report.foldChecks=[];
+    report.previewChecks=[];
     bridge.setScope('clipboard'); await settle();
     resultsEl.scrollTop=800; await sleep(250);
     const viewport=resultsEl.getBoundingClientRect();
-    const foldButton=[...resultsEl.querySelectorAll('[data-clipboard-toggle]')].find(button=>{
+    const previewButton=[...resultsEl.querySelectorAll('.result-preview-button')].find(button=>{
       const bounds=button.closest('.result').getBoundingClientRect();return bounds.top>=viewport.top && bounds.top<viewport.bottom;
     });
-    if (foldButton) {
-      const row=foldButton.closest('.result');
+    if (previewButton) {
+      const row=previewButton.closest('.result');
       for (let step=0;step<2;step++) {
-        const before=resultsEl.scrollTop;foldButton.click();await sleep(100);
-        report.foldChecks.push({before,after:resultsEl.scrollTop,sameButton:foldButton.isConnected,sameRow:row.isConnected,expanded:foldButton.getAttribute('aria-expanded')});
+        const before=resultsEl.scrollTop;previewButton.click();await sleep(100);
+        report.previewChecks.push({before,after:resultsEl.scrollTop,sameButton:previewButton.isConnected,sameRow:row.isConnected,selected:row.getAttribute('aria-selected'),previewPresent:Boolean(document.querySelector('.search-preview'))});
       }
     }
     report.urlChecks=[];

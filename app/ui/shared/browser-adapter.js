@@ -22,7 +22,16 @@ if (!window.weborg) {
     id: `demo-web-${index}`, title, url: `https://example.com/teams/flowhub/documentation/interaction-and-layout-review/${index}`, icon: demoIcon
   }));
   const demoMemos = Array.from({length:8}, (_, index) => ({id:`demo-memo-${index}`, title:index ? `开发命令 ${index}` : "查看所有服务日志并定位较长的异常上下文", category:"演示 / 开发 / 排查", content:`docker compose --project-name flowhub-preview --file /Users/demo/Projects/FlowHub/deployment/compose.production.yml logs --tail 200 --follow service-${index}`}));
-  const demoClipboard = Array.from({length:8}, (_, index) => ({id:index+1, kind:"text", content:`演示剪贴板 ${index+1}：用于验证长文本展开、键盘选择和滚动保持。\n${"这一段包含较长的工作记录与界面验收说明，展开后应完整呈现且保持选中对象。\n".repeat(8)}`, hash:`demo-clipboard-${index}`, copyCount:index+1, createdAt:"2026-10-16T08:00:00Z", lastSeenAt:"2026-10-16T08:00:00Z"}));
+  const demoClipboard = [
+    "本周迭代安排\n\n周三完成搜索与剪贴板的交互调整，周四进行联调，周五整理发布说明。\n\n待办事项\n• 核对常用入口和最近使用的顺序\n• 整理设计评审中的修改意见\n• 与团队确认下周的优先级\n\n发布前预留半天回归，发现的问题统一记录到项目看板。",
+    "会议记录：下周产品评审\n时间：周一 14:00—15:00\n议题：搜索体验、信息布局、快捷键约定\n会前请补齐各自的设计稿和使用反馈。",
+    "git log --oneline --max-count=20",
+    "https://example.com/design/components",
+    "{\n  \"project\": \"FlowHub\",\n  \"theme\": \"system\",\n  \"language\": \"zh-CN\"\n}",
+    "发布说明草稿\n优化搜索和内容预览，补充常用操作的键盘入口。",
+    "待回复：设计稿已更新，下午一起看一下。",
+    "参考资料\n组件设计规范\n键盘交互约定\n产品反馈汇总"
+  ].map((content, index) => ({id:index+1,kind:"text",content,sourceName:index%2?"Safari":"Notes",hash:`demo-clipboard-${index}`,copyCount:index+1,createdAt:"2026-10-16T08:00:00Z",lastSeenAt:"2026-10-16T08:00:00Z"}));
   const demoConfig = {core:{},plugins:{
     app:{enabled:true,settings:{}}, web:{enabled:true,settings:{items:[{id:"demo-folder",title:"演示 / 团队资料 / 较长的目录路径",children:demoPages}]}},
     clipboard:{enabled:true,settings:{}}, memo:{enabled:true,settings:{items:demoMemos}}, tools:{enabled:false,settings:{}}

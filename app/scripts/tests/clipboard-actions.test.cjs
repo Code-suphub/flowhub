@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../../ui/search/search.js'), 'utf8');
-const slice = source.slice(source.indexOf('function toggleClipboardPreview('), source.indexOf('const resultWindow = new window.FlowHubResultWindow();'));
+const slice = source.slice(source.indexOf('function clipboardAction('), source.indexOf('const resultWindow = new window.FlowHubResultWindow();'));
 
 function harness() {
   const calls = [];

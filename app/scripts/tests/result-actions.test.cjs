@@ -131,8 +131,7 @@ const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://e
     assert.equal(h.menuRequests[0].index,0);
     h.ctx.matches = () => [{type:'app',path:'/Applications/App.app',usageSection:'recent'}];
     h.ctx.focusResultAction(1);
-    assert.equal(h.menuRequests.length,1,'usage entry does not request a regular-result menu');
-    assert.equal(h.returned(),3,'usage entry returns directly to search');
+    assert.equal(h.menuRequests.length,2,'usage entries expose the same explicit actions as other applications');
   }
 
   console.log('PASS: result actions and F6/Tab/Escape follow one focus order');

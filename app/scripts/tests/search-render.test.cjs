@@ -1,16 +1,16 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
-test('React owns all sources, escaped previews, stable expansion, clipboard edit cancellation and read-only actions',async t=>{
+test('React owns all sources, escaped previews, independent detail previews, clipboard edit cancellation and read-only actions',async t=>{
   const {w,q,scope,key,calls}=await setup(t,{readonly:true});
   for(const id of ['app','web','memo','twofa','clipboard']){await scope(id);assert.ok(w.document.querySelector('.result'),id);}
-  const row=w.document.querySelector('.clipboard-result'), toggle=row.querySelector('[data-clipboard-toggle]');
+  const row=w.document.querySelector('.clipboard-result');
   assert.equal(row.querySelector('script'),null);assert.match(row.textContent,/<script>/);
-  toggle.click();await wait(()=>toggle.getAttribute('aria-expanded')==='true');assert.equal(w.document.querySelector('.clipboard-result'),row);
+  row.click();await wait(()=>w.document.querySelector('.preview-content'));assert.equal(w.document.querySelector('.clipboard-result'),row);assert.equal(w.document.querySelector('.preview-content script'),null);assert.match(w.document.querySelector('.preview-content').textContent,/<script>/);
   row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[role="menu"]'));
   w.document.querySelector('[data-clipboard-action="pin"]').click();await delay(20);assert.equal(calls.filter(c=>c[0]==='action').length,0);
-  row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[data-clipboard-action="edit"]'));
-  w.document.querySelector('[data-clipboard-action="edit"]').click();await wait(()=>w.document.querySelector('textarea'));
+  row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[role="menu"] [data-clipboard-action="edit"]'));
+  w.document.querySelector('[role="menu"] [data-clipboard-action="edit"]').click();await wait(()=>w.document.querySelector('textarea'));
   key('Escape');await wait(()=>!w.document.querySelector('textarea'));assert.equal(w.document.activeElement,q);assert.equal(calls.filter(c=>c[0]==='hide').length,0);
 });
 test('React renders type-specific clipboard and result actions, preserves editor input and saves only on explicit action',async t=>{

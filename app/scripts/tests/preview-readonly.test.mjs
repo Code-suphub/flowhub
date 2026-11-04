@@ -187,7 +187,7 @@ test('explicit search demo supplies local searchable fixtures without requests o
   assert.ok((await api.listPlugins()).some(plugin=>plugin.id==='memo'));
   for(const id of ['app','web','memo','clipboard']) {
     const items=await api.pluginSearch(id,{query:'',limit:30});assert.ok(items.length>5,id);
-    const query={app:'Visual',web:'设计规范',memo:'service-3',clipboard:'剪贴板 3'}[id];
+    const query={app:'Visual',web:'设计规范',memo:'service-3',clipboard:'git log'}[id];
     assert.ok((await api.pluginSearch(id,{query,limit:30})).length,id+' search');
   }
   for(const scope of ['all','app','web']) {
