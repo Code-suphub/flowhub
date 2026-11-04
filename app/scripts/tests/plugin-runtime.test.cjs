@@ -114,3 +114,32 @@ test('floating workspace handles native selection, overflow, refresh, collapse a
  await h.click(dock.container.querySelector('[aria-label="隐藏插件栏"]'));assert.equal(calls.at(-1).action,'hide');
  await panel.unmount();await dock.unmount();delete window.FlowHubPluginIntegration;delete global.ResizeObserver;
 });
+test('workspace initialization failures are visible and reconnect without installing or selecting plugins',async()=>{
+ h.environment();let fail=true,refreshes=0,frame;const plugins=[],calls=[];
+ window.FlowHubPluginIntegration={subscribe:()=>()=>{},getSnapshot:()=>plugins,refresh:async()=>{refreshes++;if(fail)throw Error('隔离连接失败');},attach:element=>{frame=element;return()=>{frame=null;};},show:()=>{if(frame)frame.src='about:blank';}};
+ window.__TAURI__.core.invoke=async(command,args)=>{calls.push(args.action);return {module:'extensions',open:true,revision:1};};
+ const {PluginWorkspace}=require('../../src/plugin-workspace/index.tsx'),view=await h.mount(PluginWorkspace,{view:'panel'});
+ assert.match(view.container.querySelector('[role=alert]').textContent,/隔离连接失败/);assert.equal(view.container.querySelector('iframe'),null);
+ fail=false;await h.click(h.button(view.container,'重新连接'));assert.equal(refreshes,2);assert.equal(view.container.querySelector('[role=alert]'),null);assert.ok(view.container.querySelector('iframe'));
+ assert.ok(calls.every(action=>['ready','refresh'].includes(action)));await view.unmount();delete window.FlowHubPluginIntegration;
+});
+test('late workspace readiness respects newer focus and Escape belongs to the active input or layer first',async()=>{
+ h.environment();let release,closed=0;const gate=new Promise(resolve=>release=resolve),plugins=[];
+ window.FlowHubPluginIntegration={subscribe:()=>()=>{},getSnapshot:()=>plugins,refresh:async()=>{},attach:()=>()=>{},show:()=>{}};
+ window.__TAURI__.core.invoke=async(command,args)=>{if(args.action==='ready')await gate;if(args.action==='close')closed++;return {module:'extensions',open:closed===0,revision:closed+1};};
+ const {PluginWorkspace}=require('../../src/plugin-workspace/index.tsx'),view=await h.mount(PluginWorkspace,{view:'panel'}),input=document.createElement('input');document.body.append(input);input.focus();
+ await h.act(async()=>release());assert.equal(document.activeElement,input);
+ const close=view.container.querySelector('[aria-label="收起插件面板"]');
+ await h.key(close,'Escape',{isComposing:true});await h.key(close,'Escape',{ctrlKey:true});assert.equal(closed,0);
+ await h.act(async()=>{const event=new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true});event.preventDefault();close.dispatchEvent(event);});assert.equal(closed,0);
+ const menu=document.createElement('div');menu.setAttribute('role','menu');const item=document.createElement('button');menu.append(item);view.container.querySelector('section').append(menu);await h.key(item,'Escape');assert.equal(closed,0);menu.remove();
+ await h.key(close,'Escape');assert.equal(closed,1);assert.equal(view.container.querySelector('iframe'),null);input.remove();await view.unmount();delete window.FlowHubPluginIntegration;
+});
+test('the floating dock can recover a missing bridge through its own reconnect control',async()=>{
+ h.environment();global.ResizeObserver=class{observe(){}disconnect(){}};delete window.FlowHubPluginIntegration;const calls=[],plugins=[];
+ window.__TAURI__.core.invoke=async(command,args)=>{calls.push(args.action);return {module:'extensions',open:false,revision:1};};
+ const {PluginWorkspace}=require('../../src/plugin-workspace/index.tsx'),view=await h.mount(PluginWorkspace,{view:'dock'});assert.ok(view.container.querySelector('[aria-label="重新连接插件栏"]'));
+ window.FlowHubPluginIntegration={subscribe:()=>()=>{},getSnapshot:()=>plugins,refresh:async()=>{},attach:()=>()=>{},show:()=>{}};
+ await h.click(view.container.querySelector('[aria-label="重新连接插件栏"]'));assert.equal(view.container.querySelector('[role=alert]'),null);assert.equal(view.container.querySelector('[aria-label="插件市场"]').disabled,false);assert.ok(calls.every(action=>action==='ready'));
+ await view.unmount();delete window.FlowHubPluginIntegration;delete global.ResizeObserver;
+});
