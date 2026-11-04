@@ -403,6 +403,25 @@ test('native navigation and update requests respect malformed JSON without chang
   await h.act(async()=>window.runMenuUpdate());assert.equal(checks,baseline);assert.equal(view.container.querySelector('h1').textContent,'通用设置');assert.equal(view.container.querySelector('[aria-label="返回上一页"]').disabled,true);assert.equal(store.snapshot().jsonText,'{ invalid');
   await view.unmount();store.dispose();
 });
+test('navigation retains lookup, scroll and focus across breakpoints without stealing field focus',async()=>{
+  const previous=window.matchMedia,listeners=new Set(),media={matches:false,addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)};
+  window.matchMedia=query=>query==='(max-width: 699px)'?media:{matches:false,addEventListener(){},removeEventListener(){}};
+  const resize=async narrow=>h.act(async()=>{media.matches=narrow;for(const listener of listeners)listener();});
+  try {
+    const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+    const lookup=()=>view.container.querySelector('[aria-label="查找页面"]');
+    await h.input(lookup(),'备份');lookup().focus();await resize(true);
+    assert.equal(document.activeElement,view.container.querySelector('[aria-label="切换页面"]'));
+    await resize(false);assert.equal(lookup().value,'备份');assert.equal(document.activeElement,lookup());
+    await h.input(lookup(),'未匹配页面');await h.click(h.button(view.container,'显示全部页面'));assert.equal(lookup().value,'');assert.equal(document.activeElement,lookup());
+    const scroll=view.container.querySelector('.settings-navigation-scroll');await h.act(async()=>{scroll.scrollTop=180;scroll.dispatchEvent(new window.Event('scroll'));});
+    await resize(true);await resize(false);assert.equal(view.container.querySelector('.settings-navigation-scroll').scrollTop,180);
+    await h.click(view.container.querySelector('[data-page="clipboard"]'));const input=view.container.querySelector('[aria-label="留存天数"]');input.focus();await h.input(input,'21');
+    await resize(true);assert.equal(document.activeElement,input);await resize(false);assert.equal(document.activeElement,input);assert.equal(store.dirty,true);assert.equal(writes.length,0);
+    await h.input(lookup(),'备份');await h.act(async()=>store.patch({configPath:{resolvedPath:'/config/B'}}));assert.equal(lookup().value,'');
+    await view.unmount();store.dispose();
+  } finally {window.matchMedia=previous;}
+});
 test('narrow navigation uses one page selector and restores the sidebar without losing the active route',async()=>{
   const previous=window.matchMedia,listeners=new Set();const media={matches:true,addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)};
   window.matchMedia=query=>query==='(max-width: 699px)'?media:{matches:false,addEventListener(){},removeEventListener(){}};
