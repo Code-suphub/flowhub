@@ -39,7 +39,8 @@ export function Settings({ store }: { store: SettingsStore }) {
   useLayoutEffect(()=>{
     if(!navigationFocus.current || document.activeElement!==document.body)return;
     const selector=narrow?'.settings-mobile-navigation [role=combobox]':navigationFocus.current==='lookup'?'[aria-label="查找页面"]':'.settings-sidebar [aria-current=page]';
-    transferringNavigation.current=true;document.querySelector<HTMLElement>(selector)?.focus({preventScroll:true});transferringNavigation.current=false;
+    const target=document.querySelector<HTMLElement>(selector) || (!narrow?document.querySelector<HTMLElement>('[aria-label="查找页面"]'):null);
+    transferringNavigation.current=true;target?.focus({preventScroll:true});transferringNavigation.current=false;
   },[narrow]);
   const sourceKey=JSON.stringify([s.configPath.resolvedPath || '',s.storage.resolvedPath || '']);
   const viewMemory=useMemo<ViewMemory>(()=>new Map(),[sourceKey]);

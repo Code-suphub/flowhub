@@ -430,7 +430,10 @@ test('navigation retains lookup, scroll and focus across breakpoints without ste
     await resize(true);await resize(false);assert.equal(view.container.querySelector('.settings-navigation-scroll').scrollTop,180);
     await h.click(view.container.querySelector('[data-page="clipboard"]'));const input=view.container.querySelector('[aria-label="留存天数"]');input.focus();await h.input(input,'21');
     await resize(true);assert.equal(document.activeElement,input);await resize(false);assert.equal(document.activeElement,input);assert.equal(store.dirty,true);assert.equal(writes.length,0);
-    await h.input(lookup(),'备份');await h.act(async()=>store.patch({configPath:{resolvedPath:'/config/B'}}));assert.equal(lookup().value,'');
+    await h.input(lookup(),'备份');lookup().focus();await resize(true);await h.act(async()=>window.switchModule('tools'));
+    await h.act(async()=>{const selector=view.container.querySelector('[aria-label="切换页面"]');selector.blur();selector.focus();});await resize(false);
+    assert.equal(view.container.querySelector('h1').textContent,'工具');assert.equal(lookup().value,'备份');assert.equal(document.activeElement===lookup(),true,'a filtered-out current page falls back to lookup focus');
+    await h.act(async()=>store.patch({configPath:{resolvedPath:'/config/B'}}));assert.equal(lookup().value,'');
     await view.unmount();store.dispose();
   } finally {window.matchMedia=previous;}
 });
