@@ -4,4 +4,5 @@ pub(crate) mod dock_menu;
 pub(crate) mod hotkey;
 pub(crate) mod item_submenu;
 pub(crate) mod launcher_position;
+pub(crate) mod launcher_focus;
 pub(crate) mod material;

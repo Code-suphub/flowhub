@@ -14,7 +14,7 @@
 | 返回搜索 | 进入结果按钮后按 Command+K | 聚焦并选中现有查询，输入可替换 |
 | 两排快捷入口 | 空查询分别进入全部、应用、网页范围，检查常用及最近两组，包含不同长度、单组为空及共享对象 | 上下跨排保持列，短排暂选末项且回返恢复列；普通结果交界可往返，Enter 打开选中对象，空组不遮蔽另一排 |
 | 输入光标与同排导航 | 空输入选中快捷入口按左右键，再分别输入文字、空格，组合输入时切字、回车 | 仅完全空输入且焦点在搜索框时同排移动；文字与空格保留光标移动，组合输入不误选择或打开结果 |
-| 长内容与列表 | 选择长标题／路径／命令，展开剪贴板；滚动长列表后折叠 | 内容可完整查看，相邻入口无重叠；列表定位与 Enter 目标一致 |
+| 长内容与列表 | 在长标题／路径／命令及剪贴板之间用方向键、鼠标切换，再显式展开；滚动长列表后折叠 | 单纯选中不改变预览行数或展开内容；手动展开可查看完整内容，相邻入口无重叠；列表定位与 Enter 目标一致 |
 | 只读演示 | 浏览器打开 `?preview=demo`，切范围与快捷入口，展开内容 | 显示本地演示数据和只读演示标识，不写配置、不调用原生动作 |
 
 关键字段：`pointerScreenIndex` 与 `screens` 对应鼠标屏幕；`target` 为实际选用屏幕；`selection=fallback` 表示未命中鼠标屏幕而回退。`before`／`after` 为窗口位置，坐标均为 AppKit 逻辑点。
@@ -22,3 +22,27 @@
 `mainThreadQueueMs` 测主线程任务排队，`nativeShowMs` 测从排队到原生显示调用结束（包含排队）。两者不包含快捷键分发前的等待，也不代表 WebKit 首帧或肉眼可见延迟。`visible`／`keyWindow` 只描述调用后原生状态，不能单独证明全屏 Space 中实际可见。
 
 遇到异常时记录场景、目标屏幕、实际屏幕和对应事件时间。几何单元测试通过不替代上表的真实显示器验收。
+
+## 输入焦点与窗口生命周期
+
+唤出需要按顺序完成三个步骤：NSPanel 成为 key window、实际 WKWebView 成为原生 first responder、搜索页恢复适当的 DOM 焦点。`tauri-nspanel` 的 `show_and_make_key` 把 `contentView` 交给 `makeFirstResponder`；它可能只是包含 WebView 的容器，因此不能用窗口可见或 DOM 的 `activeElement` 单独判断键盘输入已就绪。`macos/launcher_focus.rs` 在 Tauri 的主线程 WebView 回调中恢复实际视图，仅在当前显示会话仍有效、窗口仍可见且为 key window 时执行。隐藏、启动外部应用或再次唤出都会作废旧会话，迟到的显示或聚焦回调不能抢回键盘。
+
+前端控制器在首帧布局阶段绑定交互，输入不等待插件、配置或索引查询完成。窗口重新获得焦点时只补齐缺失焦点，不重新选中已输入文字，不抢走菜单、操作按钮、其他编辑控件或输入法组合输入。初始化完成也遵守同一规则。快捷键显式返回搜索框时仍可选中现有查询。
+
+切到其他应用可能在编辑剪贴板副本或确认删除时隐藏窗口。再次唤出保留原查询、草稿和确认状态，不用空查询替换其结果列表；恢复到编辑框或对话框后由用户继续、保存或取消。
+
+设计参考：[EcoPaste macOS 窗口生命周期](https://github.com/EcoPasteHub/EcoPaste/blob/master/src-tauri/src/window/macos.rs)、[Sol PanelManager](https://github.com/ospfranco/sol/blob/main/macos/sol-macOS/managers/PanelManager.swift)。FlowHub 保留自己的 Tauri 宿主、插件协议及存储，不引入这两个应用的运行时。
+
+可使用独立 AppKit/WKWebView 冒烟脚本验证原生 responder 链和生产搜索页。它只加载本机只读演示页，键盘事件仅发送到脚本自己的进程，不打开 FlowHub 用户数据：
+
+```sh
+cd app
+pnpm run build:ui
+pnpm exec vite --config vite.config.mjs --port 5199
+# 在另一个终端，使用上面的只读预览服务：
+swift scripts/native/launcher-input-smoke.swift --url 'http://127.0.0.1:5199/search.html?preview=demo'
+# 对照组：只聚焦容器，应捕获键盘落到容器而搜索框未收到文字：
+swift scripts/native/launcher-input-smoke.swift --legacy --url 'http://127.0.0.1:5199/search.html?preview=demo'
+```
+
+默认脚本连续执行 20 轮显隐、原生焦点切换与输入。它验证同一测试进程内的真实 WKWebView 输入，不替代上表跨应用、输入法、多屏及全屏 Space 的实际应用验收。

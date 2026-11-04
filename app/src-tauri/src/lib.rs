@@ -1030,9 +1030,9 @@ fn toggle_main(app: &tauri::AppHandle) {
     let _ = window.set_always_on_top(true);
     #[cfg(not(target_os = "macos"))]
     let _ = window.center();
-    MAIN_VISIBILITY.lock().unwrap().show(Instant::now());
+    let session = MAIN_VISIBILITY.lock().unwrap().show(Instant::now());
     #[cfg(target_os = "macos")]
-    show_macos_window(&window);
+    show_macos_window(&window, session);
     #[cfg(not(target_os = "macos"))]
     {
         if let Err(error) = window.show() {
@@ -1041,6 +1041,7 @@ fn toggle_main(app: &tauri::AppHandle) {
         if let Err(error) = window.set_focus() {
             eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
         }
+        let _ = window.eval("window.prepareForShow?.(); window.restoreLauncherFocus?.();");
     }
     // Showing and focusing are dispatched to the windowing system. A second
     // focus request is only needed for regular windows; the macOS NSPanel is
@@ -1067,11 +1068,14 @@ fn toggle_main(app: &tauri::AppHandle) {
 }
 
 #[cfg(target_os = "macos")]
-fn show_macos_window(window: &tauri::WebviewWindow) {
+fn show_macos_window(window: &tauri::WebviewWindow, session: u64) {
     let handle = window.app_handle().clone();
     let panel_handle = handle.clone();
     let queued_at = std::time::Instant::now();
     let _ = handle.run_on_main_thread(move || {
+        if !MAIN_VISIBILITY.lock().unwrap().is_current_show(session) {
+            return;
+        }
         let queue_ms = queued_at.elapsed().as_secs_f64() * 1000.0;
         let mut detail = match panel_handle.get_webview_panel("main") {
             Ok(panel) => {
@@ -1079,14 +1083,10 @@ fn show_macos_window(window: &tauri::WebviewWindow) {
                     .map(|mtm| crate::macos::launcher_position::position_at_pointer(panel.as_panel(), mtm))
                     .unwrap_or_else(|| json!({"status": "missing-main-thread"}));
                 panel.show_and_make_key();
-                // `show_and_make_key` changes the native first responder. The
-                // earlier call from `toggle_main` can race that transition.
-                // Re-apply launcher state after the panel is key so the first
-                // keystroke is delivered to the search field.
+                // The panel helper assigns contentView as first responder,
+                // which can be a container rather than the actual WKWebView.
                 if let Some(main) = panel_handle.get_webview_window("main") {
-                    let _ = main.eval(
-                        "window.prepareForShow?.(); window.focusSearch?.();",
-                    );
+                    crate::macos::launcher_focus::restore(&main, true);
                 }
                 detail["visible"] = json!(panel.as_panel().isVisible());
                 detail["keyWindow"] = json!(panel.as_panel().isKeyWindow());
@@ -1391,6 +1391,8 @@ pub fn run() {
                         crate::diagnostics::focus::record("native-focus", json!({"focused": true}));
                         eprintln!("[flowhub-tauri] 主窗口获得焦点");
                         MAIN_VISIBILITY.lock().unwrap().invalidate();
+                        #[cfg(target_os = "macos")]
+                        crate::macos::launcher_focus::restore(&main_window, false);
                     } else if let WindowEvent::Focused(false) = event {
                         crate::diagnostics::focus::record("native-focus", json!({"focused": false}));
                         eprintln!("[flowhub-tauri] 主窗口失去焦点");
@@ -1414,8 +1416,7 @@ pub fn run() {
                     }
                 });
                 if std::env::var("FLOWHUB_TAURI_SHOW_ON_START").as_deref() == Ok("1") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    toggle_main(app.handle());
                 }
             }
 

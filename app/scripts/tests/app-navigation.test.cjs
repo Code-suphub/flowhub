@@ -177,13 +177,13 @@ test('application metadata updates per query; native icon hydration stays asynch
   assert.equal(w.document.querySelector('.app-result h3').textContent,'new');assert.ok(!w.document.querySelector('.app-result img').src.includes('STALE'));
   assert.ok(iconCalls.some(paths=>paths[0]==='/new.app'));
 });
-test('native first activation focuses after two paints and reopening resets query without losing navigation',async t=>{
+test('native activation restores input without selecting typing; reopening resets query and retains navigation',async t=>{
   const {w,q,input,key,calls}=await setup(t,{native:true});
-  await input('previous');q.blur();const frames=[],original=w.requestAnimationFrame;
-  w.requestAnimationFrame=callback=>{frames.push(callback);return frames.length;};
-  w.dispatchEvent(new w.Event('focus'));assert.notEqual(w.document.activeElement,q);
-  frames.shift()();assert.notEqual(w.document.activeElement,q);frames.shift()();assert.equal(w.document.activeElement,q);
-  assert.equal(q.selectionStart,0);assert.equal(q.selectionEnd,q.value.length);w.requestAnimationFrame=original;
+  await input('previous');q.blur();
+  Object.defineProperty(w.document,'hasFocus',{configurable:true,value:()=>true});
+  w.dispatchEvent(new w.Event('focus'));await wait(()=>w.document.activeElement===q);
+  await delay(50);
+  assert.equal(q.selectionStart,q.value.length);assert.equal(q.selectionEnd,q.value.length);
   w.prepareForShow();await wait(()=>q.value==='');assert.equal(w.document.activeElement,q);
   key('Tab');q.dispatchEvent(new w.KeyboardEvent('keyup',{key:'Tab',bubbles:true}));await wait(()=>w.document.querySelector('[data-scope="clipboard"]').getAttribute('aria-pressed')==='true');
   assert.equal(calls.filter(c=>c[0]==='hide').length,0);

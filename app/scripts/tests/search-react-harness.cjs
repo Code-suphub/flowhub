@@ -6,7 +6,7 @@ const app=path.resolve(__dirname,'../..');
 const bundle=buildSync({stdin:{contents:"export {mountSearch} from './src/search';",resolveDir:app,loader:'tsx'},bundle:true,write:false,format:'iife',globalName:'SearchTest',loader:{'.css':'empty'},define:{'process.env.NODE_ENV':'"production"'}}).outputFiles[0].text;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function wait(fn){for(let i=0;i<150;i++){if(fn())return;await delay(10);}assert.ok(fn(),'search did not settle');}
-async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons}={}) {
+async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,beforeReady}={}) {
   const dom=new JSDOM('<div id="search-root"></div>',{url:'http://localhost',runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window, calls=[], events={};
   w.HTMLElement.prototype.scrollIntoView=function(){};
@@ -32,6 +32,7 @@ async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons}={
   for(const name of ['tool-registry','search-window','port-tool','local-ip-tool','network-tools','json-tool','url-tool','search'])w.eval(fs.readFileSync(path.join(app,'ui/search',name+'.js'),'utf8'));
   w.eval(bundle);const unmount=w.SearchTest.mountSearch(w.document.getElementById('search-root'));
   t.after(()=>{unmount();dom.window.close();});
+  if(beforeReady){await wait(()=>w.document.getElementById('q'));await beforeReady({w,q:w.document.getElementById('q')});}
   await wait(()=>w.document.querySelectorAll('[data-scope]').length===6);
   const q=w.document.getElementById('q');
   const input=async value=>{q.value=value;q.dispatchEvent(new w.Event('input',{bubbles:true}));await delay(300);};

@@ -54,6 +54,7 @@ let proxySearchTimer = null;
 let inputRenderFrame = null;
 let webInputSearchFrame = null;
 let webIconTimer = null;
+let activationFocusFrame = null;
 let showUncachedWebIcons = false;
 const loadedWebIcons = new Set();
 const failedWebIcons = new Set();
@@ -1838,17 +1839,51 @@ bind(resultsEl, "mousemove", (e) => {
   render({preserveScroll:true});
 });
 
-function focusSearch() { if (state.deletingClipboard || state.editingClipboard) return; q?.focus(); q?.select(); }
+function cancelActivationFocus() {
+  if (activationFocusFrame !== null) cancelAnimationFrame(activationFocusFrame);
+  activationFocusFrame = null;
+}
+function focusSearch() {
+  cancelActivationFocus();
+  if (disposed || state.deletingClipboard || state.editingClipboard) return;
+  q?.focus({preventScroll:true});
+  if (!searchInputComposing) q?.select();
+}
+function restoreLauncherFocus() {
+  if (disposed || document.hidden || !document.hasFocus()) return;
+  const active = document.activeElement;
+  if (state.deletingClipboard) {
+    if (!active?.closest('[role="dialog"]')) document.querySelector('[role="dialog"] button:not(:disabled)')?.focus({preventScroll:true});
+    return;
+  }
+  if (state.editingClipboard) {
+    if (!resultsEl.contains(active)) resultsEl.querySelector('.clipboard-editor')?.focus({preventScroll:true});
+    return;
+  }
+  // Re-entering a key window must not select new typing, interrupt IME, or
+  // take focus away from a menu, action button or another editable control.
+  if (active === q || active?.closest('input,textarea,select,button,a[href],[contenteditable="true"],[role="dialog"],[role="menu"]')) return;
+  q?.focus({preventScroll:true});
+}
 function focusSearchAfterWindowActivation() {
-  // A non-activating macOS panel becomes key before WebView focus is settled.
-  // Wait two paints so the first keystroke cannot leak to the previous app.
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (!document.hidden) focusSearch();
-  }));
+  cancelActivationFocus();
+  restoreLauncherFocus();
+  activationFocusFrame = requestAnimationFrame(() => {
+    activationFocusFrame = null;
+    restoreLauncherFocus();
+  });
 }
 function prepareForShow() {
+  cancelActivationFocus();
   activationSession+=1;
   externalActivation=null;
+  // Switching apps can hide the launcher while a draft or confirmation is
+  // open. Resetting its query would unmount the editor but retain the edit
+  // guard, leaving a visible launcher that cannot accept search input.
+  if (state.editingClipboard || state.deletingClipboard) {
+    restoreLauncherFocus();
+    return;
+  }
   resultPointerPosition = null;
   resultInputMode("keyboard");
   state.usageColumn = null;
@@ -1893,14 +1928,19 @@ function prepareForShow() {
   void refreshApplicationCatalog();
 }
 window.focusSearch = focusSearch;
+window.restoreLauncherFocus = restoreLauncherFocus;
 window.prepareForShow = prepareForShow;
 bind(window, "focus", focusSearchAfterWindowActivation);
+bind(window, "blur", cancelActivationFocus);
 bind(document, "visibilitychange", () => {
   if (!document.hidden) focusSearchAfterWindowActivation();
+  else cancelActivationFocus();
 });
 subscribe("onUpdateState", renderVersion);
 
 // 初始加载
+// Native data/index reads must not gate the first editable frame.
+focusSearch();
 async function initialize() {
   const plugins = await window.weborg.listPlugins();
   if (disposed) return;
@@ -1955,7 +1995,7 @@ async function initialize() {
   render();
   void refreshApplicationCatalog();
   deferUncachedWebIcons(320);
-  focusSearch();
+  restoreLauncherFocus();
   if (state.query.trim()) queueClipboardRefresh(0);
 }
 
@@ -2042,12 +2082,14 @@ return { ready, handlers, state, resultWindow, render, returnToSearch, setScope,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());
+    cancelActivationFocus();
     invalidateClipboardPaging(); invalidatePluginPaging(); ++allScopeRefreshToken; ++usageSearchToken; ++dnsSearchToken; ++ipSearchToken; ++proxySearchToken;
     [clipboardSearchTimer,dnsSearchTimer,ipSearchTimer,proxySearchTimer,actionStatusTimer,webIconTimer].forEach(clearTimeout);
     [inputRenderFrame,webInputSearchFrame,windowRenderFrame].forEach(cancelAnimationFrame);
     window.FlowHubTools.queryChanged({...toolContext(),enabled:()=>false,query:''});
     for (const id of ['dns','cloudflare','proxy','timestamp','jwt','ip','calculator']) window.FlowHubTools.unregister(id);
     if(window.focusSearch===focusSearch) delete window.focusSearch;
+    if(window.restoreLauncherFocus===restoreLauncherFocus) delete window.restoreLauncherFocus;
     if(window.prepareForShow===prepareForShow) delete window.prepareForShow;
     if(window.FlowHubSearchDiagnostics===diagnosticBridge) delete window.FlowHubSearchDiagnostics;
   }

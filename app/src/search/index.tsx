@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Button, Dialog } from '../shared/ui';
 import { Help, Tooltip } from '../shared/controls';
-import { CornerUpLeft, Pin, PinOff, Settings2 } from 'lucide-react';
+import { CornerUpLeft, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { Results, resultActions } from './Results';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
@@ -45,7 +45,7 @@ function Search() {
   const [snapshot,setSnapshot]=useState<SearchSnapshot | null>(null), [pinBusy,setPinBusy]=useState(false);
   const [actionMenu,setActionMenu]=useState<{index:number;key:string;x:number;y:number}|null>(null);
   const menuKey=(item:SearchItem)=>`${item.type}:${item.id ?? ''}:${item.path ?? ''}:${item.url ?? ''}`;
-  useEffect(()=>{
+  useLayoutEffect(()=>{
     const c=host.createFlowHubSearchController(root.current!,setSnapshot); controller.current=c;
     return ()=>{controller.current=null;c.dispose();};
   },[]);
@@ -113,20 +113,25 @@ function Search() {
   const activeRendered=Boolean(selected)&&(!plan||(activeIndex>=plan.from&&activeIndex<plan.to));
   const menuItem=actionMenu && snapshot?.items[actionMenu.index];
   const version=String(snapshot?.updateState?.currentVersion || ''), hasUpdate=['available','downloaded'].includes(snapshot?.updateState?.status || '');
+  const placeholders:Record<string,string>={app:'搜索已安装的应用…',web:'搜索网页与书签…',clipboard:'搜索剪贴板历史…',memo:'搜索命令备忘…',twofa:'搜索验证码账户…'};
+  const placeholder=placeholders[state?.scope || ''] || '搜索应用、网页、剪贴板…';
   return <div ref={root} className="fh-root search-shell flex flex-col h-full">
     {state?.deletingClipboard?<Dialog title="删除剪贴板记录" busy={state.deletingClipboard.busy} notice={state.deletingClipboard.error} onClose={()=>controller.current?.cancelClipboardDelete()}>
       <p>确定删除这条剪贴板记录吗？只会删除历史记录和图片副本，不会删除原始文件。</p>
       <div className="flex justify-end gap-2 mt-4"><Button autoFocus disabled={state.deletingClipboard.busy} onClick={()=>controller.current?.cancelClipboardDelete()}>取消</Button><Button className="danger" disabled={state.deletingClipboard.busy} onClick={()=>void controller.current?.confirmClipboardDelete()}>确认删除</Button></div>
     </Dialog>:null}
-    <header className="search-header flex items-center justify-between gap-2"><strong>FlowHub</strong><div className="search-header-actions flex items-center gap-1"><span id="versionBadge" className={hasUpdate?'search-update':''} title={hasUpdate?`发现正式版 v${snapshot?.updateState?.availableVersion || '新版本'}`:`当前应用版本：${version || '浏览器预览'}`}>{version?`v${version.split('-')[0]}${version.includes('-local')?' · 本地版':''}`:'浏览器预览'}</span><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/><kbd>⌘K</kbd></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content="打开 FlowHub 设置"><Button id="settingsBtn" variant="ghost" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div></header>
-    <div className="search-input-wrap grid gap-2"><label className="sr-only" htmlFor="q">搜索网页、应用、剪贴板或命令备忘</label>
-      <div className="search-input-box"><input id="q" className="fh-input" autoComplete="off" aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder="搜索网页、应用、剪贴板或命令备忘…" role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="search-results" aria-activedescendant={activeRendered?`search-result-${activeIndex}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
+    <header className="search-header flex items-center gap-2">
+    <SearchIcon className="search-leading-icon" aria-hidden="true"/>
+    <div className="search-input-wrap"><label className="sr-only" htmlFor="q">搜索网页、应用、剪贴板或命令备忘</label>
+      <div className="search-input-box"><input id="q" className="fh-input" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder={placeholder} role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="search-results" aria-activedescendant={activeRendered?`search-result-${activeIndex}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
       {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={()=>{const input=root.current?.querySelector<HTMLInputElement>('#q');if(!input)return;input.value='';controller.current?.handlers['input:input']?.();input.focus({preventScroll:true});}}>×</button>:null}</div>
     </div>
+    <div className="search-header-actions flex items-center gap-1"><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" size="icon-sm" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" size="icon-sm" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content="打开 FlowHub 设置"><Button id="settingsBtn" variant="ghost" size="icon-sm" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div>
+    </header>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
     <div id="results" className="flex-1 min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onMouseUp={dispatch('results:mouseup')} onContextMenu={contextMenu} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>{snapshot?<Results snapshot={snapshot}/>:<p className="search-empty" role="status">配置加载中…</p>}{menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onDismiss={()=>{root.current?.querySelector<HTMLElement>('#q')?.focus({preventScroll:true});setActionMenu(null);}}/>:null}</div>
-    <footer className="search-footer flex flex-wrap justify-between gap-2"><KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/><span id="actionStatus" role="status">{snapshot?.statusText}</span><span id="runtimeMode">{document.documentElement.dataset.weborgReadonly==='true'?(new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'):'FlowHub'}</span></footer>
+    <footer className="search-footer"><KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/><div className="search-runtime"><span id="runtimeMode">{document.documentElement.dataset.weborgReadonly==='true'?(new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'):'FlowHub'}</span><span id="versionBadge" className={hasUpdate?'search-update':''} title={hasUpdate?`发现正式版 v${snapshot?.updateState?.availableVersion || '新版本'}`:`当前应用版本：${version || '浏览器预览'}`}>{version?`v${version.split('-')[0]}${version.includes('-local')?' · 本地版':''}`:''}</span></div><span id="actionStatus" role="status">{snapshot?.statusText}</span></footer>
   </div>;
 }
 const mounted = new WeakMap<HTMLElement,Root>();

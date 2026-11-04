@@ -20,12 +20,20 @@ impl Visibility {
     pub fn invalidate(&mut self) {
         self.generation = self.generation.wrapping_add(1);
     }
-    pub fn show(&mut self, now: Instant) {
+    pub fn show(&mut self, now: Instant) -> u64 {
         self.launch_session = self.launch_session.wrapping_add(1);
         self.invalidate();
         self.shown_at = Some(now);
+        self.launch_session
+    }
+    pub fn active_session(&self) -> Option<u64> {
+        self.shown_at.map(|_| self.launch_session)
+    }
+    pub fn is_current_show(&self, session: u64) -> bool {
+        self.active_session() == Some(session)
     }
     pub fn dismiss(&mut self) {
+        self.shown_at = None;
         self.launch_session = self.launch_session.wrapping_add(1);
         self.invalidate();
     }
@@ -63,6 +71,22 @@ impl Visibility {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deferred_show_and_focus_cannot_outlive_their_visible_session() {
+        let mut v = Visibility::new();
+        let now = Instant::now();
+        let first = v.show(now);
+        v.invalidate(); // Becoming key only invalidates pending blur checks.
+        assert!(v.is_current_show(first));
+        v.dismiss();
+        assert!(!v.is_current_show(first));
+        assert_eq!(v.active_session(), None);
+        let second = v.show(now);
+        assert!(!v.is_current_show(first));
+        assert!(v.is_current_show(second));
+        v.begin_launch();
+        assert!(!v.is_current_show(second));
+    }
     #[test]
     fn failed_launch_can_resume_after_its_own_blur_but_never_after_a_new_session() {
         let mut v=Visibility::new();let now=Instant::now();

@@ -29,6 +29,7 @@ pub(crate) async fn recover(app:&tauri::AppHandle,ticket:Option<u64>)->Result<()
             use tauri_nspanel::ManagerExt;
             let panel=app.get_webview_panel("main").map_err(|e|format!("恢复启动器失败：{e:?}"))?;
             panel.show_and_make_key();
+            crate::macos::launcher_focus::restore(&window, false);
         }
         #[cfg(not(target_os="macos"))]
         {
@@ -36,7 +37,8 @@ pub(crate) async fn recover(app:&tauri::AppHandle,ticket:Option<u64>)->Result<()
             window.set_focus().map_err(|e|e.to_string())?;
         }
         // Keep the failed query and selection so its error is visible and retryable.
-        window.eval("window.focusSearch?.();").map_err(|e|e.to_string())?;
+        #[cfg(not(target_os="macos"))]
+        window.eval("window.restoreLauncherFocus?.();").map_err(|e|e.to_string())?;
         Ok(())
     }).await
 }
