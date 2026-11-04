@@ -25,7 +25,7 @@ async fn download(url:&str,limit:usize)->Result<Vec<u8>,String>{
     let mut bytes=Vec::new();while let Some(chunk)=response.chunk().await.map_err(|e|e.to_string())?{if bytes.len()+chunk.len()>limit{return Err("仓库或插件包超过大小限制".into());}bytes.extend_from_slice(&chunk);}Ok(bytes)
 }
 fn validate_manifest(m:&Manifest)->Result<(),String>{
-    if m.schema!=2||!safe_id(&m.id)||m.permissions!=["native-process"]{return Err("插件需要 schema 2 原生进程格式".into());}
+    if m.schema!=2||!safe_id(&m.id)||!super::valid_permissions(&m.id,&m.permissions){return Err("插件需要 schema 2 原生进程格式".into());}
     semver::Version::parse(&m.version).map_err(|e|e.to_string())?;Ok(())
 }
 fn candidate(source:&Source,manifest:Manifest,directory:Option<PathBuf>)->Candidate {

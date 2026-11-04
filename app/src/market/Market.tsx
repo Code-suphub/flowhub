@@ -40,7 +40,11 @@ export function Market() {
   }
   useEffect(() => { if (available) void run(async () => {}, true); }, []);
   function install(manifest: Manifest, action: () => Promise<unknown>) {
-    setConfirmation({ title: '安装插件', detail: `${manifest.name} · ${manifest.version}`, warning: '将在本机运行插件进程，可访问当前用户文件和网络。仅安装可信来源的插件。', action: async () => { await action(); setTab('installed'); setNotice('安装完成，入口已加入底部插件栏。'); } });
+    const systemMonitor = manifest.permissions?.includes('system-process-monitor');
+    const warning = systemMonitor
+      ? '将在本机运行插件进程，可访问当前用户文件和网络。该插件还可请求安装以 root 身份运行的系统级只读采集服务；启用后会读取所有用户进程的 PID、名称、路径、UID、父进程、RSS、内存足迹和 CPU 时间，不读取命令行或环境变量，也不能结束进程。安装和卸载服务时，macOS 会请求管理员认证。仅安装可信来源的插件。'
+      : '将在本机运行插件进程，可访问当前用户文件和网络。仅安装可信来源的插件。';
+    setConfirmation({ title: '安装插件', detail: `${manifest.name} · ${manifest.version}`, warning, action: async () => { await action(); setTab('installed'); setNotice('安装完成，入口已加入底部插件栏。'); } });
   }
   async function scan(list: Source[]) {
     const messages: string[] = []; let hasError = false;

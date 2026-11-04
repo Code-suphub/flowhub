@@ -1169,6 +1169,7 @@ dependencies = [
  "enigo",
  "glob",
  "image",
+ "libc",
  "minisign-verify",
  "objc2",
  "objc2-app-kit",

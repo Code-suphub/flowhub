@@ -4,7 +4,7 @@
   "version": "0.1.13",
   "identifier": "cn.ac.camellia.flowhub",
   "build": {
-    "beforeBuildCommand": "pnpm run build:ui",
+    "beforeBuildCommand": "node scripts/build/prepare-app-assets.mjs",
     "beforeDevCommand": "pnpm run dev:web --port 5174",
     "devUrl": "http://127.0.0.1:5174",
     "frontendDist": "../ui"
@@ -50,11 +50,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "target/resource-monitor-helper/daemon": "FlowHubResourceMonitorHelper/daemon"
+    },
     "macOS": {
       "minimumSystemVersion": "10.15",
       "infoPlist": "Info.plist",
       "entitlements": "Entitlements.plist",
-      "signingIdentity": "FlowHub Local Development"
+      "signingIdentity": "-"
     }
   },
   "plugins": {
