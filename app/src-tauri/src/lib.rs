@@ -349,33 +349,46 @@ fn application_directories() -> Vec<PathBuf> {
 }
 
 fn scan_applications() -> Vec<Value> {
-    let mut seen = HashSet::new();
-    let mut applications = Vec::new();
+    let mut paths = Vec::new();
     for directory in application_directories() {
         let Ok(entries) = fs::read_dir(directory) else {
             continue;
         };
         for entry in entries.flatten() {
-            let path = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
+            paths.push(entry.path().to_string_lossy().into_owned());
+        }
+    }
+    scan_application_paths(&paths)
+}
+
+/// Share bundle metadata resolution with monitors for apps outside launcher roots
+/// (for example /Library/Input Methods). This only reads bundles, never loads code.
+pub(crate) fn scan_application_paths(paths: &[String]) -> Vec<Value> {
+    let mut seen = HashSet::new();
+    let mut applications: Vec<Value> = paths
+        .iter()
+        .filter_map(|value| {
+            let path = Path::new(value);
+            let file_name = path.file_name()?.to_string_lossy().into_owned();
             if !path.is_dir()
                 || !file_name.to_lowercase().ends_with(".app")
-                || !seen.insert(path.clone())
+                || !path.join("Contents/Info.plist").is_file()
+                || !seen.insert(path.to_path_buf())
             {
-                continue;
+                return None;
             }
-            applications.push(json!({
+            Some(json!({
                 "kind": "app",
                 "title": file_name.trim_end_matches(".app"),
                 "fileName": file_name,
                 "path": path.to_string_lossy(),
                 "bundleId": "",
                 "iconUrl": ""
-            }));
-        }
-    }
+            }))
+        })
+        .collect();
     if cfg!(target_os = "macos") && !applications.is_empty() {
-        const SCRIPT: &str = "ObjC.import('Foundation'); var args=$.NSProcessInfo.processInfo.arguments; var result=[]; for(var i=6;i<args.count;i++){try{var p=ObjC.unwrap(args.objectAtIndex(i));var bundle=$.NSBundle.bundleWithPath(p);var info=bundle?(bundle.localizedInfoDictionary||bundle.infoDictionary):null;var display=info&&typeof info.objectForKey==='function'?(info.objectForKey('CFBundleDisplayName')||info.objectForKey('CFBundleName')):null;var identifier=bundle?bundle.bundleIdentifier:null;result.push({displayName:display?ObjC.unwrap(display):'',bundleId:identifier?ObjC.unwrap(identifier):''});}catch(e){result.push({displayName:'',bundleId:''});}} console.log(JSON.stringify(result));";
+        const SCRIPT: &str = "ObjC.import('Foundation'); var args=$.NSProcessInfo.processInfo.arguments; var result=[]; for(var i=6;i<args.count;i++){try{var p=ObjC.unwrap(args.objectAtIndex(i));var bundle=$.NSBundle.bundleWithPath(p);var display=bundle?(bundle.objectForInfoDictionaryKey('CFBundleDisplayName')||bundle.objectForInfoDictionaryKey('CFBundleName')):null;var identifier=bundle?bundle.bundleIdentifier:null;result.push({displayName:display?ObjC.unwrap(display):'',bundleId:identifier?ObjC.unwrap(identifier):''});}catch(e){result.push({displayName:'',bundleId:''});}} console.log(JSON.stringify(result));";
         let paths: Vec<String> = applications
             .iter()
             .filter_map(|application| {

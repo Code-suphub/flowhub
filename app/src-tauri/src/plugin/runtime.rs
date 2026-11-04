@@ -7,6 +7,7 @@ use tokio::io::{AsyncBufReadExt,AsyncWriteExt};
 use tauri_plugin_dialog::DialogExt;
 mod sources;
 mod privileged_monitor;
+mod applications;
 
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default)] searchable:bool, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
@@ -37,6 +38,11 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None})
 }
 impl Runtime {
+    pub(crate) async fn application_metadata(&self,app:&tauri::AppHandle,id:&str,params:&Value)->Result<Value,String>{
+        self.get(id)?;
+        if id!="resource-monitor" {return Err("此插件未提供应用监控能力".into());}
+        applications::metadata(app.clone(),params).await
+    }
     pub(crate) fn widget(&self,id:&str)->Result<WidgetDefinition,String>{let p=self.get(id)?;package(p.directory)?.manifest.widget.ok_or_else(||"请升级插件以支持独立桌面组件".to_string())}
     pub(crate) async fn widget_call(&self,id:&str,params:Value)->Result<Value,String>{
         self.widget(id)?;
@@ -224,6 +230,9 @@ pub(crate) async fn plugin_search_call(window:tauri::WebviewWindow,app:tauri::Ap
 #[tauri::command]
 pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,id:String,method:String,params:Value)->Result<Value,String>{
     trusted(&window)?;
+    if method=="application_metadata" {
+        return app.state::<Runtime>().application_metadata(&app,&id,&params).await;
+    }
     if id=="resource-monitor" {
         let action=match method.as_str(){"privileged_status"=>Some("status"),"privileged_enable"=>Some("enable"),"privileged_disable"=>Some("disable"),_=>None};
         if let Some(action)=action {
