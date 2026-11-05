@@ -1311,18 +1311,21 @@ bind(window, "blur", () => {
   scopeTabUsedWithArrow = false;
 });
 
-async function refreshClipboard({ append = false, deferRender = false } = {}) {
+async function refreshClipboard({ append = false, deferRender = false, preserveSelection = false } = {}) {
   if (!pluginEnabled("clipboard") || !["all", "clipboard"].includes(state.scope)) return;
   if (append && (!["all", "clipboard"].includes(state.scope) || state.clipboardLoading || !state.clipboardHasMore)) return;
   const token = ++clipboardSearchToken;
   const offset = append ? state.clipboardResults.length : 0;
   state.clipboardLoading = true;
+  let targetIndex;
   if (!append) state.clipboardHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
     const records = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("clipboard", () => window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset })) : window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset }));
     if (token !== clipboardSearchToken) return;
     window.flowhubSearchTiming?.applied();
+    const selected = preserveSelection ? matches()[state.index] : null;
+    const selectedKey = selected ? resultSlotKey(selected) : null;
     const nextRecords = records || [];
     state.clipboardResults = append
       ? [...state.clipboardResults, ...nextRecords.filter((record) => !state.clipboardResults.some((current) => current.id === record.id))]
@@ -1330,13 +1333,21 @@ async function refreshClipboard({ append = false, deferRender = false } = {}) {
     if (!state.query.trim() && !append) state.emptyResults.clipboard = nextRecords.slice();
     state.clipboardLoadedQuery = state.query;
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
+    if (preserveSelection) {
+      // Apply fresh ordering and retain the selected record, not its former row.
+      allResultKeys = null;
+      allInitialResults = [];
+      const nextIndex = selectedKey ? matches().findIndex(item => resultSlotKey(item) === selectedKey) : -1;
+      if (state.index !== Math.max(0, nextIndex)) targetIndex = Math.max(0, nextIndex);
+      state.index = nextIndex >= 0 ? nextIndex : 0;
+    }
     void hydrateClipboardAssets(nextRecords, token);
   } catch {
     if (token === clipboardSearchToken && !append) state.clipboardResults = [];
   } finally {
     if (token === clipboardSearchToken) {
       state.clipboardLoading = false;
-      if (!deferRender) render({ preserveScroll: true });
+      if (!deferRender) render({ preserveScroll: true, targetIndex });
     }
   }
 }
@@ -1622,9 +1633,8 @@ function queueClipboardRefresh(delay = 180, refreshEmpty = false) {
       void refreshUsage();
       return;
     }
-    if (!state.query.trim() && refreshEmpty) {
-      void refreshClipboard();
-      void refreshUsage();
+    if (refreshEmpty) {
+      void refreshClipboard({ preserveSelection: true });
       return;
     }
     if (state.scope === "all") void refreshAllScopes();
@@ -1739,8 +1749,6 @@ function preserveSearchFocus(event) {
 subscribe("onClipboardUpdated", () => {
   invalidateClipboardPaging();
   state.clipboardLoadedQuery = null;
-  allResultKeys = null;
-  allInitialResults = [];
   allScopeRefreshToken += 1;
   queueClipboardRefresh(80, true);
 });
