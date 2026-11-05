@@ -2,6 +2,98 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 
+test('preview starts collapsed; explicit toggles preserve the query, caret and selected record without execution',async t=>{
+  const apps=['A','B'].map(id=>({id,title:`App ${id}`,path:`/Applications/${id}.app`}));
+  const {w,q,key,input,scope,calls}=await setup(t,{search:id=>id==='app'?apps:[]});
+  await scope('app');await input('App');key('ArrowDown');
+  await wait(()=>w.document.querySelector('.app-result.active h3')?.textContent==='App B');
+  q.setSelectionRange(1,2);
+  const toggle=()=>w.document.querySelector('[aria-keyshortcuts="Meta+I"]');
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  assert.equal(toggle().getAttribute('aria-expanded'),'false');
+  assert.equal(w.localStorage.length,0);
+  toggle().click();await wait(()=>w.document.activeElement.matches('.search-preview-body'));
+  assert.equal(toggle().getAttribute('aria-controls'),'search-preview');
+  assert.equal(w.document.querySelector('.preview-identity h2').textContent,'App B');
+  toggle().click();await wait(()=>!w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q);assert.equal(q.value,'App');
+  assert.deepEqual([q.selectionStart,q.selectionEnd],[1,2]);
+  assert.equal(w.document.querySelector('.app-result.active h3').textContent,'App B');
+  assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'false');
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
+  key('i',{metaKey:true,code:'KeyI',repeat:true});await delay(25);
+  assert.ok(w.document.querySelector('.search-preview'),'holding the shortcut does not repeatedly toggle');
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>!w.document.querySelector('.search-preview'));
+  key('F6');assert.ok(w.document.activeElement.matches('.search-clear'));
+  key('F6');assert.equal(w.document.activeElement.id,'activateResultBtn','collapsed preview actions are outside the focus cycle');
+  assert.equal(calls.some(call=>call[0]==='action'||call[0]==='copy'),false);
+});
+
+test('wide preview preference survives input, scopes, reopening and remounting, including temporary tool results',async t=>{
+  const {w,q,key,input,scope,unmount,remount}=await setup(t);
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
+  assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
+  await scope('app');await input('Application');assert.ok(w.document.querySelector('.search-preview'));
+  w.prepareForShow();await wait(()=>q.value===''&&w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q);
+  await scope('all');await input('1+2');
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  assert.equal(w.document.querySelector('[aria-keyshortcuts="Meta+I"]'),null);
+  assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
+  await input('Application');assert.ok(w.document.querySelector('.search-preview'));
+  unmount();const dispose=remount();t.after(dispose);
+  await wait(()=>w.document.querySelector('.search-preview'));
+  w.document.querySelector('[aria-label="收起预览"]').click();await wait(()=>!w.document.querySelector('.search-preview'));
+  dispose();const disposeAgain=remount();t.after(disposeAgain);
+  await wait(()=>w.document.querySelectorAll('[data-scope]').length===6);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+});
+
+test('narrow detail navigation and resizing preserve the wide preference and never leave focus on a hidden preview',async t=>{
+  const {w,q,input,scope,resize}=await setup(t,{previewExpanded:true,width:860});
+  await scope('app');await input('Application');q.setSelectionRange(2,2);
+  w.document.querySelector('.search-preview-body').focus();
+  await resize(640);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  assert.equal(w.document.activeElement,q);
+  assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
+  w.document.querySelector('.result-preview-button').click();await wait(()=>w.document.activeElement.matches('.search-preview-body'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  await wait(()=>!w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q);assert.equal(q.value,'Application');
+  assert.deepEqual([q.selectionStart,q.selectionEnd],[2,2]);
+  await resize(860);assert.ok(w.document.querySelector('.search-preview'));
+  w.document.querySelector('[aria-label="收起预览"]').click();await wait(()=>!w.document.querySelector('.search-preview'));
+  await resize(640);w.document.querySelector('.result-preview-button').click();
+  await wait(()=>w.document.activeElement.matches('.search-preview-body'));
+  await resize(860);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  assert.equal(w.document.activeElement,q);
+  assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'false');
+  assert.equal(q.value,'Application');
+});
+
+test('read-only preview layout changes stay in memory and do not persist across remounts',async t=>{
+  const {w,key,unmount,remount}=await setup(t,{readonly:true});
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
+  assert.equal(w.localStorage.length,0);
+  unmount();const dispose=remount();t.after(dispose);
+  await wait(()=>w.document.querySelectorAll('[data-scope]').length===6);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  assert.equal(w.localStorage.length,0);
+});
+
+test('unavailable presentation storage cannot prevent mounting or toggling the preview',async t=>{
+  const {w,unmount,remount}=await setup(t);
+  w.Storage.prototype.getItem=()=>{throw Error('storage unavailable');};
+  w.Storage.prototype.setItem=()=>{throw Error('storage unavailable');};
+  unmount();const dispose=remount();t.after(dispose);
+  await wait(()=>w.document.querySelectorAll('[data-scope]').length===6);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  w.document.querySelector('[aria-label="展开预览"]').click();await wait(()=>w.document.querySelector('.search-preview'));
+  w.document.querySelector('[aria-label="收起预览"]').click();await wait(()=>!w.document.querySelector('.search-preview'));
+});
+
 test('mixed results identify their source without repeating it in a dedicated scope',async t=>{
   const {w,scope}=await setup(t);
   for(const [selector,label] of [['.app-result','应用'],['.page-result','网页'],['.clipboard-result','剪贴板'],['.memo-result','命令']]) {

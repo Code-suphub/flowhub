@@ -7,7 +7,7 @@ for(const scopeId of ['clipboard','all'])for(const query of ['', 'fixture'])test
   const record=(id,content,pinnedAt='')=>({id,kind:'text',content,hash:String(id),pinnedAt,copyCount:1});
   const pinned=record(1,'fixture pinned','2026-09-01T00:00:00Z'),recent=record(2,'fixture recent'),old=record(3,'fixture reused');
   let records=[pinned,recent,old];
-  const {w,q,input,scope,key,calls,events}=await setup(t,{search:id=>id==='clipboard'?records:[]});
+  const {w,q,input,scope,key,calls,events}=await setup(t,{previewExpanded:true,search:id=>id==='clipboard'?records:[]});
   await scope(scopeId);if(query)await input(query);
   const titles=()=>[...w.document.querySelectorAll('.clipboard-result h3')].map(row=>row.textContent);
   await wait(()=>titles().length===3);
@@ -111,7 +111,7 @@ test('pagination updates the accessible set size on retained and virtualized opt
   }
 });
 test('clear search participates in the F6 cycle and returns focus without switching scope or activating results',async t=>{
-  const {w,q,input,scope,key,calls}=await setup(t);
+  const {w,q,input,scope,key,calls}=await setup(t,{previewExpanded:true});
   await scope('web');await input('Website');
   const clear=w.document.querySelector('.search-clear');
   const press=(element,value,extra={})=>element.dispatchEvent(new w.KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true,...extra}));
@@ -181,7 +181,7 @@ test('mount/dispose removes subscriptions and the native diagnostic bridge; remo
 
 test('long application details move to the preview while list summaries stay bounded',async t=>{
   const apps=['A','B'].map(id=>({id,title:`${id} ${'长应用名称'.repeat(28)} TITLE-END-${id}`,path:`/Applications/${'Long Directory/'.repeat(25)}${id}-PATH-END.app`}));
-  const {w,scope,key,calls,q}=await setup(t,{search:(id,args,fixture)=>id==='app'?(args.offset?[]:apps):fixture[id]||[]});await scope('app');
+  const {w,scope,key,calls,q}=await setup(t,{previewExpanded:true,search:(id,args,fixture)=>id==='app'?(args.offset?[]:apps):fixture[id]||[]});await scope('app');
   const rows=[...w.document.querySelectorAll('.app-result')];assert.equal(rows.length,2);
   for(const row of rows)assert.doesNotMatch(row.querySelector('.search-meta').textContent,/PATH-END/);
   assert.match(w.document.querySelector('.search-preview').textContent,/A-PATH-END/);
@@ -194,7 +194,7 @@ test('long application details move to the preview while list summaries stay bou
 test('multi-line commands are readable and copyable without pasting or expanding list rows',async t=>{
   const command='first line\nsecond line\nthird line\nCOMMAND-END';
   const memos=['a','b'].map(id=>({id,title:'命令 '+id,category:'测试',content:command}));
-  const {w,scope,calls,input}=await setup(t,{search:(id,args,fixture)=>id==='memo'?(args.offset?[]:memos):fixture[id]||[]});await scope('memo');
+  const {w,scope,calls,input}=await setup(t,{previewExpanded:true,search:(id,args,fixture)=>id==='memo'?(args.offset?[]:memos):fixture[id]||[]});await scope('memo');
   const rows=[...w.document.querySelectorAll('.memo-result')];assert.ok(!rows[0].textContent.includes('COMMAND-END'));
   rows[1].click();await wait(()=>rows[1].getAttribute('aria-selected')==='true');assert.equal(w.document.querySelector('.preview-content').textContent,command);
   w.document.querySelector('.search-preview-actions [data-result-action="copy"]').click();await wait(()=>calls.some(c=>c[0]==='copy'&&c[1]===command));
@@ -204,13 +204,14 @@ test('multi-line commands are readable and copyable without pasting or expanding
 test('clipboard full-text previews remain read-only and bounded; copy obtains the entire record',async t=>{
   const contents=['first\n'+('line\n'.repeat(5000))+'CLIP-END','other\nsecond\n<script>unsafe()</script>\nOTHER-END'];
   const {w,scope,key,calls}=await setup(t,{readonly:true,search:(id,args,fixture)=>id==='clipboard'?(args.offset?[]:contents.map((content,i)=>({id:i+1,kind:'text',content}))):fixture[id]||[]});await scope('clipboard');
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.preview-content'));w.document.getElementById('q').focus();
   const rows=[...w.document.querySelectorAll('.clipboard-result')];assert.ok(rows[0].querySelector('.clipboard-title').textContent.length<=100);
   assert.equal(w.document.querySelector('.preview-content').textContent.length,20000);
   assert.equal(w.document.querySelector('.search-preview-actions [data-result-action="copy"]').disabled,true);
   key('ArrowDown');await wait(()=>rows[1].getAttribute('aria-selected')==='true');assert.equal(w.document.querySelector('.preview-content').textContent,contents[1]);
   assert.equal(w.document.querySelector('.search-preview script'),null);assert.equal(w.document.querySelector('#activateResultBtn').disabled,true);
   assert.equal(calls.filter(c=>c[0]==='action').length,0);assert.equal(w.localStorage.length,0);
-  const native=await setup(t,{search:(id,args,fixture)=>id==='clipboard'?[{id:1,kind:'text',content:contents[0]}]:fixture[id]||[]});await native.scope('clipboard');
+  const native=await setup(t,{previewExpanded:true,search:(id,args,fixture)=>id==='clipboard'?[{id:1,kind:'text',content:contents[0]}]:fixture[id]||[]});await native.scope('clipboard');
   native.w.document.querySelector('.search-preview-actions [data-result-action="copy"]').click();await wait(()=>native.calls.some(c=>c[0]==='copy'&&c[1]===contents[0]));
 });
 
@@ -223,12 +224,13 @@ test('preview shortcuts preserve focus, native Tab order and pending input',asyn
   w.dispatchEvent(new w.Event('focus'));await delay(25);assert.equal(w.document.activeElement,body);
   body.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert.equal(w.document.activeElement,q);
   assert.equal(w.document.querySelector('[data-scope][aria-pressed="true"]').dataset.scope,scope);assert.equal(calls.filter(c=>c[0]==='hide').length,0);
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>!w.document.querySelector('.search-preview'));
   key('i',{metaKey:true,code:'KeyI'});q.value='new typing';q.dispatchEvent(new w.Event('input',{bubbles:true}));await delay(35);
   assert.equal(w.document.activeElement,q,'an obsolete preview focus frame cannot steal new input');assert.equal(q.value,'new typing');
 });
 
 test('narrow preview returns to results on Escape or input and keeps menus outside the hidden list',async t=>{
-  const {w,q,key,scope,input}=await setup(t);Object.defineProperty(w,'innerWidth',{configurable:true,value:390});await scope('clipboard');
+  const {w,q,key,scope,input}=await setup(t,{width:390});await scope('clipboard');
   const workbench=w.document.querySelector('.search-workbench');
   w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');
   w.document.getElementById('resultActionsBtn').click();await wait(()=>w.document.querySelector('[role="menu"]'));

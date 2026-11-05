@@ -13,7 +13,7 @@ test('scope bindings share Command aliases and preserve physical punctuation and
   key('m',{code:'KeyM',metaKey:true});await wait(()=>w.document.querySelector('[data-scope="memo"]').getAttribute('aria-pressed')==='true');
 });
 test('scope primary press deduplicates click, F6/Escape, IME and bare cursor arrows preserve focus contracts',async t=>{
-  const {w,q,scope,key,calls}=await setup(t);
+  const {w,q,scope,key,calls}=await setup(t,{previewExpanded:true});
   q.focus();q.value='preserve';
   const button=w.document.querySelector('[data-scope="app"]');
   const before=calls.length;button.dispatchEvent(new w.MouseEvent('mousedown',{button:0,bubbles:true,cancelable:true}));button.click();

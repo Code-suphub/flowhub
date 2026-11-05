@@ -6,7 +6,7 @@ test('React owns all sources, escaped previews, independent detail previews, cli
   for(const id of ['app','web','memo','twofa','clipboard']){await scope(id);assert.ok(w.document.querySelector('.result'),id);}
   const row=w.document.querySelector('.clipboard-result');
   assert.equal(row.querySelector('script'),null);assert.match(row.textContent,/<script>/);
-  row.click();await wait(()=>w.document.querySelector('.preview-content'));assert.equal(w.document.querySelector('.clipboard-result'),row);assert.equal(w.document.querySelector('.preview-content script'),null);assert.match(w.document.querySelector('.preview-content').textContent,/<script>/);
+  row.querySelector('.result-preview-button').click();await wait(()=>w.document.querySelector('.preview-content'));assert.equal(w.document.querySelector('.clipboard-result'),row);assert.equal(w.document.querySelector('.preview-content script'),null);assert.match(w.document.querySelector('.preview-content').textContent,/<script>/);
   row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[role="menu"]'));
   w.document.querySelector('[data-clipboard-action="pin"]').click();await delay(20);assert.equal(calls.filter(c=>c[0]==='action').length,0);
   row.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));await wait(()=>w.document.querySelector('[role="menu"] [data-clipboard-action="edit"]'));

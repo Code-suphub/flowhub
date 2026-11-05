@@ -38,7 +38,7 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
   const date = item.lastSeenAt ? new Date(item.lastSeenAt) : null;
   const copyLabel = item.type === 'app' ? '复制路径' : clipboard ? item.kind === 'file' ? '复制文件名' : '复制全文' : item.type === 'memo' ? '复制命令' : '复制链接';
   const copyable = ['app', 'page', 'web', 'web-add', 'memo'].includes(item.type) || (clipboard && item.kind !== 'image');
-  return <aside className="search-preview" aria-label="结果预览" onClick={onAction} onKeyDown={event=>{
+  return <aside id="search-preview" className="search-preview" aria-label="结果预览" onClick={onAction} onKeyDown={event=>{
     if(event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.nativeEvent.isComposing && ['ArrowUp','ArrowDown'].includes(event.key)) {
       if((event.target as HTMLElement).closest('input,textarea,[contenteditable="true"]'))return;
       event.preventDefault();event.stopPropagation();onNavigate(event.key==='ArrowUp'?-1:1);

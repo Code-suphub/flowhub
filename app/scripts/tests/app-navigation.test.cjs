@@ -4,7 +4,7 @@ const {setup,wait,delay}=require('./search-react-harness.cjs');
 const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
 test('hover never changes selection; click previews and double-click executes exactly once',async t=>{
   const clips=[1,2,3].map(id=>({id,kind:'text',content:`clipboard ${id}\n`+'long line\n'.repeat(10)}));
-  const {w,q,key,scope,calls}=await setup(t,{native:true,search:(id,args,fixture)=>id==='clipboard'?clips:fixture[id]||[]});await scope('clipboard');
+  const {w,q,key,scope,calls}=await setup(t,{native:true,previewExpanded:true,search:(id,args,fixture)=>id==='clipboard'?clips:fixture[id]||[]});await scope('clipboard');
   const row=index=>w.document.querySelector(`.result[data-i="${index}"]`),active=()=>Number(w.document.querySelector('.result.active').dataset.i);
   key('ArrowDown');await wait(()=>active()===1);
   for(const x of [50,50,51])row(0).dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:150}));
@@ -122,7 +122,7 @@ test('both usage rows filter by source and keep recent entries when frequent is 
 
 test('F6 cycles preview, primary and menu actions for apps, usage and clipboard then returns to search',async t=>{
   for(const target of ['app','usage','clipboard']) {
-    const {w,q,key,scope}=await setup(t,target==='usage'?{usage:{frequent:[appItem('A')],recent:[]}}:{});
+    const {w,q,key,scope}=await setup(t,{previewExpanded:true,...(target==='usage'?{usage:{frequent:[appItem('A')],recent:[]}}:{})});
     if(target!=='usage')await scope(target);
     const seen=[];key('F6');
     for(let i=0;i<18 && w.document.activeElement!==q;i++) {

@@ -781,7 +781,7 @@ function renderSnapshot(options = {}) {
 // 操作焦点顺序：F6 先进入清除按钮（有搜索内容时），再进入当前结果的操作按钮，
 // 走过最后一个回到搜索框；⇧F6 反向进入。按钮之间也可以直接用 Tab。
 function focusResultAction(direction = 1) {
-  const previewVisible=window.innerWidth>=720 || root.querySelector('.search-workbench')?.dataset.detailOpen==='true';
+  const previewVisible=root.querySelector('.search-workbench')?.dataset.previewOpen==='true';
   const inlineActions = [...(previewVisible?root.querySelectorAll('.search-preview-actions .tool-action'):[]),...root.querySelectorAll('#activateResultBtn'),...root.querySelectorAll('.search-recovery .tool-action'),...resultsEl.querySelectorAll(".result.active .tool-action:not(.result-preview-button)")].filter(button=>!button.disabled);
   const menuActions = [...root.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
   const resultActions = [...inlineActions,...menuActions];
@@ -1206,7 +1206,7 @@ bind(document, "keydown", (e) => {
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
   if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
   if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyI' || e.key.toLowerCase() === 'i')) {
-    if(['app','page','web','web-add','clipboard','memo','twofa'].includes(matches()[state.index]?.type)) {e.preventDefault();previewEvent('toggle');}
+    if(['app','page','web','web-add','clipboard','memo','twofa'].includes(matches()[state.index]?.type)) {e.preventDefault();if(!e.repeat)previewEvent('toggle');}
     return;
   }
   // 清除按钮使用原生 Enter/Space 激活；Tab 和 Escape 返回搜索框。

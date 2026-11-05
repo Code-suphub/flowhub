@@ -61,6 +61,7 @@ const Row = memo(function Row({item,index,snapshot,onPreview,pattern}: {item: Se
     {!usage && !isTool && !editing ? <Button variant="ghost" size="icon-sm" className="result-preview-button tool-action" aria-label="预览此结果" onMouseDown={event => event.stopPropagation()} onClick={event => {event.stopPropagation(); onPreview(index);}}><PanelRight aria-hidden="true"/></Button> : null}
   </div>;
 }, (before,after) => {
+  if (before.onPreview !== after.onPreview) return false;
   if (before.index !== after.index || (before.index === before.snapshot.state.index) !== (after.index === after.snapshot.state.index)) return false;
   const a=before.item,b=after.item;
   if (Object.keys(a).length !== Object.keys(b).length || Object.keys(a).some(key => a[key] !== b[key])) return false;

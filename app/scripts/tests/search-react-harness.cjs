@@ -6,9 +6,18 @@ const app=path.resolve(__dirname,'../..');
 const bundle=buildSync({stdin:{contents:"export {mountSearch} from './src/search';",resolveDir:app,loader:'tsx'},bundle:true,write:false,format:'iife',globalName:'SearchTest',loader:{'.css':'empty'},define:{'process.env.NODE_ENV':'"production"'}}).outputFiles[0].text;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function wait(fn){for(let i=0;i<150;i++){if(fn())return;await delay(10);}assert.ok(fn(),'search did not settle');}
-async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,beforeReady}={}) {
+async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,beforeReady,previewExpanded,width=1024}={}) {
   const dom=new JSDOM('<div id="search-root"></div>',{url:'http://localhost',runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window, calls=[], events={};
+  Object.defineProperty(w,'innerWidth',{configurable:true,value:width});
+  w.matchMedia=query=>{
+    const listeners=new Set();
+    const matches=()=>{const max=query.match(/max-width:\s*(\d+)px/);return max?w.innerWidth<=Number(max[1]):false;};
+    const notify=()=>listeners.forEach(listener=>listener({matches:matches()}));
+    w.addEventListener('resize',notify);
+    return {media:query,get matches(){return matches();},addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn),addListener:fn=>listeners.add(fn),removeListener:fn=>listeners.delete(fn)};
+  };
+  if(previewExpanded!==undefined)w.localStorage.setItem('flowhub.search.previewExpanded',String(previewExpanded));
   w.HTMLElement.prototype.scrollIntoView=function(){};
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.HTMLDialogElement.prototype.close=function(){this.open=false;};
@@ -38,6 +47,7 @@ async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,be
   const input=async value=>{q.value=value;q.dispatchEvent(new w.Event('input',{bubbles:true}));await delay(300);};
   const scope=async id=>{w.document.querySelector(`[data-scope="${id}"]`).click();await delay(30);};
   const key=(key,extra={})=>q.dispatchEvent(new w.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...extra}));
-  return {w,q,input,scope,key,calls,events,unmount,remount:()=>w.SearchTest.mountSearch(w.document.getElementById('search-root'))};
+  const resize=async width=>{Object.defineProperty(w,'innerWidth',{configurable:true,value:width});w.dispatchEvent(new w.Event('resize'));await delay(30);};
+  return {w,q,input,scope,key,calls,events,unmount,resize,remount:()=>w.SearchTest.mountSearch(w.document.getElementById('search-root'))};
 }
 module.exports={setup,wait,delay};
