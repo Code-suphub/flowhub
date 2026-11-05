@@ -14,6 +14,7 @@ export function availableActions(item:SearchItem,readonly:boolean):ResultAction[
     {id:'clipboard:open',label:'粘贴',action:'open',kind:'result',shortcut:'↵',keywords:'paste 粘贴 原格式',disabled:readonly},
     ...(item.kind!=='image'?[{id:'result:copy',label:item.kind==='file'?'复制文件名':'复制全文',action:'copy',kind:'result' as const,keywords:'copy text filename 复制 文本 文件名',disabled:readonly}]:[]),
     {id:'clipboard:pin',label:item.pinnedAt?'取消置顶':'置顶',action:'pin',kind:'clipboard',shortcut:'⌘D',keywords:'pin unpin 固定 收藏 置顶',disabled:readonly},
+    {id:'clipboard:note',label:item.note?'编辑备注':'添加备注',action:'note',kind:'clipboard',keywords:'note annotation 备注 标注 整理',disabled:readonly},
     ...(['text','file'].includes(item.kind)?[{id:'clipboard:plain',label:'纯文本粘贴',action:'plain',kind:'clipboard' as const,shortcut:'⇧↵',keywords:'paste plain 粘贴 纯文本',disabled:readonly}]:[]),
     ...(item.kind==='text'?[{id:'clipboard:edit',label:'编辑副本',action:'edit',kind:'clipboard' as const,shortcut:'⌘E',keywords:'edit 编辑 修改 副本',disabled:readonly}]:[]),
     ...(!readonly?[{id:'clipboard:delete',label:'删除记录…',action:'delete',kind:'clipboard' as const,shortcut:'⌥⌫',keywords:'delete remove 删除 清除 历史'}]:[]),

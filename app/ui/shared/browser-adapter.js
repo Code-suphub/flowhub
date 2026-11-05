@@ -212,8 +212,8 @@ if (!window.weborg) {
     const query = String(request.query || "").trim().toLowerCase();
     const limit = Number(request.limit) || (id === "clipboard" ? 30 : 12);
     if (id === "clipboard") {
-      if (demo) return demoClipboard.filter(item=>(!query || item.content.toLowerCase().includes(query)) && (!request.kind || request.kind==="all" || item.kind===request.kind)).slice(Number(request.offset)||0,(Number(request.offset)||0)+limit).map(record=>({...record,pluginId:id}));
-      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(request.query || "")}&kind=${encodeURIComponent(request.kind || "all")}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(request.offset || 0)}`, { cache: "no-store" });
+      if (demo) return demoClipboard.filter(item=>(!query || `${item.content} ${item.note || ''}`.toLowerCase().includes(query)) && (!request.kind || request.kind==="all" || item.kind===request.kind) && (request.source==null || (item.sourceName || '').trim()===request.source) && (!request.pinnedOnly || item.pinnedAt)).slice(Number(request.offset)||0,(Number(request.offset)||0)+limit).map(record=>({...record,pluginId:id}));
+      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(request.query || "")}&kind=${encodeURIComponent(request.kind || "all")}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(request.offset || 0)}${request.source==null?'':`&source=${encodeURIComponent(request.source)}`}&pinnedOnly=${request.pinnedOnly?'1':'0'}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
       return (result.records || []).map((record) => ({ ...record, pluginId: id }));
@@ -265,6 +265,8 @@ if (!window.weborg) {
     inspectCloudflare,
     lookupProxy,
     pluginAction,
+    async listClipboardSources(){if(demo){const counts=new Map();for(const row of demoClipboard)counts.set(row.sourceName || '',(counts.get(row.sourceName || '') || 0)+1);return [...counts].map(([name,count])=>({name,count}));}const response=await fetch('/__weborg/clipboard/sources',{cache:'no-store'}),result=await response.json();if(!response.ok || !result.ok)throw Error(result.reason || '来源读取失败');return result.sources || [];},
+    async setClipboardNote(){return {ok:false,readonly:true,reason:'浏览器预览不能修改备注'};},
     searchUsage: usageSections,
     async openSettings(options = {}) {
       const url = String(options.initialUrl || "").trim();

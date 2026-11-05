@@ -1,5 +1,6 @@
 
 pub(crate) mod privacy;
+pub(crate) mod organization;
 
 use crate::storage::database;
 use crate::{application_icon_data_urls, AppState};
@@ -786,14 +787,17 @@ pub async fn search_clipboard(
     kind: String,
     limit: usize,
     offset: usize,
+    source: Option<String>,
+    pinned_only: Option<bool>,
 ) -> Result<Vec<Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        search_clipboard_records(&app.state::<AppState>(), &query, &kind, limit, offset)
+        search_clipboard_filtered(&app.state::<AppState>(), &query, &kind, limit, offset, source.as_deref(), pinned_only.unwrap_or(false))
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
+#[cfg(test)]
 fn search_clipboard_records(
     state: &AppState,
     query: &str,
@@ -801,6 +805,10 @@ fn search_clipboard_records(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<Value>, String> {
+    search_clipboard_filtered(state,query,kind,limit,offset,None,false)
+}
+fn search_clipboard_filtered(state:&AppState,query:&str,kind:&str,limit:usize,offset:usize,source:Option<&str>,pinned_only:bool)->Result<Vec<Value>,String> {
+    if source.is_some_and(|value|value.chars().count()>512){return Err("来源名称过长".into());}
     let connection = database(state)?;
     let policy = CleanupPolicy::from_config(
         &crate::storage::read_json(&state.paths().config_path).unwrap_or_default(),
@@ -809,7 +817,7 @@ fn search_clipboard_records(
     let mut statement = connection
         .prepare(
             "SELECT id, kind, hash, content, file_name, source_name, file_paths, file_types,
-                    size, created_at, last_seen_at, copy_count, pinned_at
+                    size, created_at, last_seen_at, copy_count, pinned_at, COALESCE(note,'')
              FROM clipboard_records
              WHERE (
                ?1 = 'all'
@@ -827,10 +835,12 @@ fn search_clipboard_records(
              AND (
                ?2 = '' OR instr(lower(
                  COALESCE(content, '') || ' ' || COALESCE(source_name, '') || ' '
-                 || COALESCE(file_paths, '') || ' ' || hash
+                 || COALESCE(file_paths, '') || ' ' || hash || ' ' || COALESCE(note, '')
                ), ?2) > 0
              )
              AND (?5 = 0 OR pinned_at IS NOT NULL OR julianday(last_seen_at) >= julianday(?6))
+             AND (?7 IS NULL OR trim(COALESCE(source_name, '')) = ?7)
+             AND (?8 = 0 OR pinned_at IS NOT NULL)
              ORDER BY CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, julianday(last_seen_at) DESC, id DESC
              LIMIT ?3 OFFSET ?4",
         )
@@ -849,7 +859,9 @@ fn search_clipboard_records(
                 page_limit as i64,
                 offset as i64,
                 policy.days,
-                cutoff
+                cutoff,
+                source.map(str::trim),
+                pinned_only
             ],
             |row| {
                 Ok((
@@ -866,6 +878,7 @@ fn search_clipboard_records(
                     row.get::<_, String>(10)?,
                     row.get::<_, i64>(11)?,
                     row.get::<_, Option<String>>(12)?,
+                    row.get::<_, String>(13)?,
                 ))
             },
         )
@@ -886,6 +899,7 @@ fn search_clipboard_records(
             last_seen_at,
             copy_count,
             pinned_at,
+            note,
         ) = row.map_err(|error| error.to_string())?;
         let paths = parse_string_array(file_paths);
         let types = parse_string_array(file_types);
@@ -910,6 +924,7 @@ fn search_clipboard_records(
             "hash": hash,
             "content": content.unwrap_or_default(),
             "sourceName": source_name.unwrap_or_default(),
+            "note": note,
             "filePaths": paths,
             "fileNames": file_names,
             "fileCount": paths.len(),
@@ -1995,6 +2010,28 @@ mod record_tests {
             .iter()
             .map(|record| record["id"].as_i64().unwrap())
             .collect()
+    }
+
+    #[test]
+    fn organization_filters_compose_before_pagination_and_notes_preserve_original_records() {
+        let f=fixture();let a=insert_text(&f,"a","original","2026-09-01T00:00:00Z");
+        let b=insert_text(&f,"b","other","2026-09-02T00:00:00Z");
+        let c=insert_text(&f,"c","third","2026-09-03T00:00:00Z");
+        let db=database(&f.state).unwrap();db.execute("UPDATE clipboard_records SET source_name=' Editor ' WHERE id IN (?1,?2)",params![a,c]).unwrap();set_pinned(&f.state,a,true).unwrap();
+        organization::set_note(&f.state,a," 发布步骤 ","").unwrap();
+        let rows=search_clipboard_filtered(&f.state,"发布","text",1,0,Some("Editor"),true).unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0]["id"],a);assert_eq!(rows[0]["content"],"original");assert_eq!(rows[0]["note"],"发布步骤");assert_eq!(rows[0]["copyCount"],1);
+        assert_eq!(search_clipboard_filtered(&f.state,"","all",1,1,Some("Editor"),false).unwrap()[0]["id"],c);
+        assert_eq!(search_clipboard_filtered(&f.state,"","all",10,0,Some(""),false).unwrap()[0]["id"],b);
+        assert!(search_clipboard_filtered(&f.state,"发布","image",10,0,None,false).unwrap().is_empty());
+        assert_eq!(organization::sources(&f.state).unwrap()[0],json!({"name":"Editor","count":2}));
+        write_text_record(&db,"original","a","2026-09-04T00:00:00Z").unwrap();let row=search_clipboard_filtered(&f.state,"发布","all",10,0,None,true).unwrap();assert_eq!(row[0]["note"],"发布步骤");assert_eq!(row[0]["id"],a);assert_eq!(row[0]["copyCount"],2);
+    }
+    #[test]
+    fn note_updates_reject_stale_missing_or_oversized_targets_and_can_clear() {
+        let f=fixture();let id=insert_text(&f,"note","body","2026-09-01T00:00:00Z");
+        organization::set_note(&f.state,id,"first","").unwrap();
+        assert!(organization::set_note(&f.state,id,"stale","").is_err());assert!(organization::set_note(&f.state,999,"missing","").is_err());assert!(organization::set_note(&f.state,id,&"x".repeat(501),"first").is_err());assert!(organization::set_note(&f.state,id,"bad\0value","first").is_err());
+        organization::set_note(&f.state,id,"","first").unwrap();assert_eq!(search_clipboard_records(&f.state,"", "all",1,0).unwrap()[0]["note"],"");
     }
 
     #[test]

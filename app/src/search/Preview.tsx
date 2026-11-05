@@ -53,6 +53,7 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
       {clipboard && item.kind === 'image' ? <div className="preview-image">{item.imageUrl ? <img src={item.imageUrl} alt="剪贴板图片预览" decoding="async"/> : <><Image aria-hidden="true"/><p>图片预览暂不可用，仍可粘贴原图。</p></>}</div> : null}
       {(clipboard && item.kind === 'text') || item.type === 'memo' ? <pre className={`preview-content ${item.type === 'memo' ? 'preview-code' : ''}`}>{text || '空文本'}</pre> : null}
       {content.length > text.length ? <p className="preview-note">内容较长，预览显示前一部分。复制全文可获取完整内容。</p> : null}
+      {clipboard && item.note?<div className="preview-clipboard-note"><span>备注</span><p>{item.note}</p></div>:null}
       {item.type === 'app' ? <dl className="preview-properties"><dt>位置</dt><dd>{item.path}</dd>{item.fileName ? <><dt>文件名</dt><dd>{item.fileName}</dd></> : null}</dl> : null}
       {['page', 'web', 'web-add'].includes(item.type) ? <><dl className="preview-properties"><dt>网址</dt><dd>{item.url}</dd>{breadcrumb ? <><dt>目录</dt><dd>{breadcrumb}</dd></> : null}</dl>{item.note ? <p className="preview-note">{item.note}</p> : null}</> : null}
       {item.type === 'memo' && item.description ? <p className="preview-note">{item.description}</p> : null}
@@ -61,7 +62,7 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
     </div>
     <div className="search-preview-actions">
       {copyable ? <Button className="tool-action" variant="outline" size="sm" disabled={readonly} data-result-action="copy" data-result-index={index}><Clipboard data-icon="inline-start"/>{copyLabel}</Button> : null}
-      {clipboard ? <><Button className="tool-action" variant="ghost" size="sm" disabled={readonly} data-clipboard-action="pin" data-clipboard-id={item.id}><Pin data-icon="inline-start"/>{item.pinnedAt ? '取消置顶' : '置顶'}</Button>{item.kind === 'text' ? <Button className="tool-action" variant="ghost" size="sm" disabled={readonly} data-clipboard-action="edit" data-clipboard-id={item.id}><FileText data-icon="inline-start"/>编辑副本</Button> : null}</> : null}
+      {clipboard ? <><Button className="tool-action" variant="ghost" size="sm" disabled={readonly} data-clipboard-action="pin" data-clipboard-id={item.id}><Pin data-icon="inline-start"/>{item.pinnedAt ? '取消置顶' : '置顶'}</Button><Button className="tool-action" variant="ghost" size="sm" disabled={readonly} data-clipboard-action="note" data-clipboard-id={item.id}>{item.note?'编辑备注':'添加备注'}</Button>{item.kind === 'text' ? <Button className="tool-action" variant="ghost" size="sm" disabled={readonly} data-clipboard-action="edit" data-clipboard-id={item.id}><FileText data-icon="inline-start"/>编辑副本</Button> : null}</> : null}
     </div>
   </aside>;
 }

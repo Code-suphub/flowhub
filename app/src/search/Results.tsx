@@ -17,7 +17,7 @@ function itemMeta(item: SearchItem) {
   if (item.type === 'clipboard') {
     const kind = item.kind === 'image' ? '图片' : item.kind === 'file' ? '文件' : '文本';
     const date = item.lastSeenAt ? new Date(item.lastSeenAt) : null;
-    return [kind, item.sourceName, date && Number.isFinite(date.getTime()) ? date.toLocaleString() : '', item.pinnedAt ? '已置顶' : ''].filter(Boolean).join(' · ');
+    return [kind,item.note?`备注：${excerpt(item.note,60)}`:'', item.sourceName, date && Number.isFinite(date.getTime()) ? date.toLocaleString() : '', item.pinnedAt ? '已置顶' : ''].filter(Boolean).join(' · ');
   }
   if (item.type === 'memo') return host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category || '命令备忘';
   if (item.type === 'twofa') return item.issuer || '验证码';

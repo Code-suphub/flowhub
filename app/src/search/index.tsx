@@ -8,6 +8,7 @@ import { Results, resultActions } from './Results';
 import { ActionPanel, actionIdentity, availableActions, type ResultAction } from './ActionPanel';
 import { CommandPalette } from './CommandPalette';
 import { QueryHistory } from './QueryHistory';
+import { ClipboardFilters, ClipboardNoteEditor, type ClipboardNoteTarget } from './ClipboardOrganization';
 import { getQueryHistory, type QueryHistoryEntry } from './query-history';
 import type { LauncherCommand } from './commands';
 import { shortcutKeys } from '../shared/shortcuts';
@@ -80,6 +81,7 @@ function Search() {
   const [actionKey,setActionKey]=useState<string|null>(null);
   const [commandsOpen,setCommandsOpen]=useState(false);
   const [historyOpen,setHistoryOpen]=useState(false);
+  const [noteTarget,setNoteTarget]=useState<ClipboardNoteTarget|null>(null);
   const actionFrame=useRef<number|undefined>(undefined);
   const cancelActionWork=useCallback(()=>{
     if(actionFrame.current!==undefined){cancelAnimationFrame(actionFrame.current);actionFrame.current=undefined;}
@@ -92,6 +94,7 @@ function Search() {
     // Wait for the modal focus trap to unmount before returning to the query.
     actionFrame.current=requestAnimationFrame(()=>{actionFrame.current=undefined;controller.current?.returnToSearch();});
   },[cancelActionWork]);
+  const closeNote=useCallback(()=>{setNoteTarget(null);actionFrame.current=requestAnimationFrame(()=>{actionFrame.current=undefined;controller.current?.returnToSearch();});},[]);
   useLayoutEffect(()=>{
     const c=host.createFlowHubSearchController(root.current!,setSnapshot,{onQueryUsed:entry=>getQueryHistory().record(entry)}); controller.current=c;
     return ()=>{controller.current=null;c.dispose();cancelActionWork();if(previewFrame.current!==undefined)cancelAnimationFrame(previewFrame.current);};
@@ -120,6 +123,12 @@ function Search() {
     const open=()=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setHistoryOpen(false);setCommandsOpen(true);};
     node?.addEventListener('flowhub:commands',open);
     return()=>node?.removeEventListener('flowhub:commands',open);
+  },[cancelActionWork,cancelPreviewFocus]);
+  useEffect(()=>{
+    const node=root.current;
+    const open=(event:Event)=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setCommandsOpen(false);setHistoryOpen(false);setNoteTarget((event as CustomEvent<ClipboardNoteTarget>).detail);};
+    node?.addEventListener('flowhub:clipboard-note',open);
+    return()=>node?.removeEventListener('flowhub:clipboard-note',open);
   },[cancelActionWork,cancelPreviewFocus]);
   useEffect(()=>{
     const node=root.current;
@@ -267,7 +276,7 @@ function Search() {
     <div className="search-header-actions flex items-center gap-1"><Tooltip content={`查找页面、设置与插件（${shortcutKeys.format('CommandOrControl+Shift+P')}）`}><Button id="commandsBtn" variant="ghost" size="sm" aria-label="查找 FlowHub 命令" aria-keyshortcuts={shortcutKeys.isMac()?'Meta+Shift+P':'Control+Shift+P'} aria-haspopup="dialog" aria-expanded={commandsOpen} disabled={!snapshot?.state.config || Boolean(state?.editingClipboard || state?.deletingClipboard)} onClick={()=>controller.current?.requestCommands()}><Command aria-hidden="true"/><span>命令</span></Button></Tooltip><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" size="icon-sm" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" size="icon-sm" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content={`打开 FlowHub 设置${version?` · v${version}`:''}${hasUpdate?' · 有新版本':''}`}><Button id="settingsBtn" variant="ghost" size="icon-sm" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div>
     </header>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
-    {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
+    {state?.scope==='clipboard' && snapshot?<ClipboardFilters snapshot={snapshot} onKind={kind=>controller.current?.setClipboardKind(kind)} onFilter={(source,pinnedOnly)=>controller.current?.setClipboardFilters({source,pinnedOnly})} onReset={()=>{controller.current?.setClipboardFilters({kind:'all',source:null,pinnedOnly:false});controller.current?.returnToSearch();}} onReturn={()=>controller.current?.returnToSearch()}/>:null}
     <div className="search-workbench" data-has-preview={Boolean(previewable)} data-preview-open={previewVisible} data-detail-open={detailOpen}>
       <div id="results" className="search-result-pane min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onDoubleClick={dispatch('results:dblclick')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onContextMenu={contextMenu}>
         {snapshot?<Results snapshot={snapshot} onPreview={openPreview} onClear={clearSearch} onSearchAll={()=>controller.current?.setScope('all')}/>:<p className="search-empty" role="status">配置加载中…</p>}
@@ -277,6 +286,7 @@ function Search() {
     {actionItem?<ActionPanel key={actionKey} item={actionItem} onClose={closeActions} onChoose={chooseAction}/>:null}
     {commandsOpen && snapshot?<CommandPalette snapshot={snapshot} previewable={Boolean(previewable)} previewOpen={previewVisible} onClose={closeActions} onExecute={executeCommand}/>:null}
     {historyOpen && snapshot?<QueryHistory snapshot={snapshot} onClose={closeActions} onRecall={recallHistory}/>:null}
+    {noteTarget?<ClipboardNoteEditor key={noteTarget.id} target={noteTarget} onClose={closeNote} onSaved={()=>void controller.current?.refreshClipboard()}/>:null}
     <footer className="search-footer" onClick={dispatch('results:click')}>
       <div className="search-footer-message"><span id="actionStatus" role="status">{snapshot?.statusText}</span>{!snapshot?.statusText?<KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/>:null}</div>
       <div className="search-footer-actions">

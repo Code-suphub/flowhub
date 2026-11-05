@@ -1,6 +1,7 @@
 import {
   clipboardStorageInfo,
   searchClipboardRecords,
+  clipboardSources,
   clipboardImage,
   sendJson
 } from "./preview-helpers.mjs";
@@ -32,12 +33,20 @@ export function localClipboardApi() {
             requestUrl.searchParams.get("q") || "",
             requestUrl.searchParams.get("limit") || 30,
             requestUrl.searchParams.get("kind") || "all",
-            requestUrl.searchParams.get("offset") || 0
+            requestUrl.searchParams.get("offset") || 0,
+            requestUrl.searchParams.has('source')?requestUrl.searchParams.get('source'):null,
+            requestUrl.searchParams.get('pinnedOnly')==='1'
           );
           sendJson(response, 200, { ok: true, readonly: true, ...result });
         } catch (error) {
           sendJson(response, 500, { ok: false, readonly: true, reason: error.message, total: 0, records: [] });
         }
+      });
+
+      server.middlewares.use('/__weborg/clipboard/sources',async(request,response)=>{
+        if(request.method!=='GET'){response.statusCode=405;response.setHeader('allow','GET');response.end('Read only');return;}
+        try{sendJson(response,200,{ok:true,readonly:true,sources:await clipboardSources()});}
+        catch(error){sendJson(response,500,{ok:false,readonly:true,reason:error.message});}
       });
 
       server.middlewares.use("/__weborg/clipboard/image", async (request, response) => {

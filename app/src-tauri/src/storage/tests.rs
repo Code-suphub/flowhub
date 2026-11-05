@@ -209,6 +209,8 @@ fn existing_databases_gain_the_pinned_column_without_losing_rows() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert!(columns.iter().any(|name| name == "pinned_at"), "旧库补上 pinned_at 列");
+    assert!(columns.iter().any(|name| name == "note"), "旧库补上备注列");
+    assert_eq!(db.query_row("SELECT note FROM clipboard_records", [], |row|row.get::<_,String>(0)).unwrap(),"");
     assert_eq!(
         db.query_row("SELECT content FROM clipboard_records", [], |row| row
             .get::<_, String>(0))

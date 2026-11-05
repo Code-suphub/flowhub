@@ -434,6 +434,7 @@ function formatTime(value) {
 
 function clipboardMatches() {
   return state.clipboardResults
+    .filter(record=>state.scope!=='clipboard' || (state.clipboardSource==null || String(record.sourceName || '').trim()===state.clipboardSource) && (!state.clipboardPinnedOnly || Boolean(record.pinnedAt)))
     .filter((record) => {
       if (state.scope !== "clipboard" || state.clipboardKind === "all") return true;
       if (state.clipboardKind === "image") return record.kind === "image" || record.fileType === "image";
@@ -763,7 +764,7 @@ function executeAction(key, kind, action) {
   if (!item) return;
   if (kind === 'clipboard') {
     if (item.type !== 'clipboard') return;
-    const actions = {pin:toggleClipboardPin,plain:pasteClipboardPlain,edit:startClipboardEdit,delete:requestClipboardDelete};
+    const actions = {pin:toggleClipboardPin,plain:pasteClipboardPlain,edit:startClipboardEdit,note:requestClipboardNote,delete:requestClipboardDelete};
     if (Object.hasOwn(actions,action)) void Promise.resolve(actions[action](item)).catch(error=>showActionStatus(error?.message || '操作失败'));
   } else if (kind === 'result' && ['open','copy','copy-query','edit'].includes(action)) {
     void Promise.resolve(runResultAction(action,item)).catch(error=>showActionStatus(error?.message || '操作失败'));
@@ -859,7 +860,7 @@ function previewEvent(mode) {
 function rememberQuery(item) {
   if(disposed || document.documentElement.dataset.weborgReadonly==='true' || state.config?.core?.searchHistoryEnabled===false || ['jwt','twofa','json'].includes(item?.type))return;
   if(item?.toolId && !toolEnabled('commandHistory'))return;
-  try {integration.onQueryUsed?.({query:state.query,scope:state.scope,clipboardKind:state.scope==='clipboard'?state.clipboardKind:'all'});}catch{}
+  try {integration.onQueryUsed?.({query:state.query,scope:state.scope,clipboardKind:state.scope==='clipboard'?state.clipboardKind:'all',clipboardSource:state.scope==='clipboard'?state.clipboardSource ?? null:null,clipboardPinnedOnly:state.scope==='clipboard' && state.clipboardPinnedOnly===true});}catch{}
 }
 function choose(page) {
   if (externalActivation) return externalActivation.promise;
@@ -1119,6 +1120,7 @@ function setScope(scope) {
   allScopeRefreshToken += 1;
   invalidateClipboardPaging({ resetPaging: false });
   invalidatePluginPaging({ resetPaging: false });
+  if(state.scope!==scope && (state.scope==='clipboard' || scope==='clipboard')){state.clipboardResults=[];state.clipboardLoadedQuery=null;}
   state.scope = scope;
   state.usageColumn = null;
   window.FlowHubTools.queryChanged(toolContext());
@@ -1163,12 +1165,27 @@ function renderKeyboardHint() {}
 
 function setClipboardKind(kind) {
   if (!clipboardKinds.includes(kind)) return;
+  setClipboardFilters({kind});
+  q?.focus({preventScroll:true});
+}
+function setClipboardFilters(filters) {
+  if(state.editingClipboard || state.deletingClipboard || document.querySelector('.clipboard-note-dialog'))return;
+  if('source' in filters && filters.source!==null && (typeof filters.source!=='string' || filters.source.length>512))return;
+  previewEvent('reset');
   invalidateClipboardPaging();
-  state.clipboardKind = kind;
+  if(clipboardKinds.includes(filters.kind))state.clipboardKind=filters.kind;
+  if('source' in filters)state.clipboardSource=filters.source===null?null:filters.source.trim();
+  if('pinnedOnly' in filters)state.clipboardPinnedOnly=filters.pinnedOnly===true;
+  state.clipboardResults=[];state.clipboardLoadedQuery=null;
+  allResultKeys=null;allInitialResults=[];
   state.index = 0;
   render();
   void refreshClipboard();
-  q?.focus({ preventScroll: true });
+}
+function requestClipboardNote(item) {
+  if(disposed || externalActivation || state.editingClipboard || state.deletingClipboard || document.documentElement.dataset.weborgReadonly==='true' || item?.type!=='clipboard')return;
+  const id=Number(item.id);if(!Number.isSafeInteger(id) || id<=0)return;
+  root.dispatchEvent(new CustomEvent('flowhub:clipboard-note',{detail:{id,note:String(item.note || ''),summary:String(item.kind==='text'?item.content:(item.fileNames || []).join('、') || '图片记录').slice(0,100).replace(/\s+/g,' ')}}));
 }
 
 // 更新配置（主进程每次呼出都会推送）
@@ -1222,6 +1239,8 @@ function recallQuery(entry) {
   if(disposed || externalActivation || state.editingClipboard || state.deletingClipboard || typeof entry?.query!=='string' || !entry.query.trim() || entry.query.length>256)return;
   state.scope=scopeOrder.includes(entry.scope)?entry.scope:'all';
   state.clipboardKind=['all','text','image','file'].includes(entry.clipboardKind)?entry.clipboardKind:'all';
+  state.clipboardSource=state.scope==='clipboard' && typeof entry.clipboardSource==='string' && entry.clipboardSource.length<=512?entry.clipboardSource.trim():null;
+  state.clipboardPinnedOnly=state.scope==='clipboard' && entry.clipboardPinnedOnly===true;
   // Recall changes the entire search context. Until its results arrive, old
   // rows must not be executable by a quick second Enter or double-click.
   for(const source of ['clipboard','app','web','memo','twofa']) {state[source+'Results']=[];state[source+'LoadedQuery']=null;}
@@ -1237,6 +1256,7 @@ bind(document, "keydown", (e) => {
   // The searchable action dialog owns input, navigation and Escape. Its portal
   // is outside the search root; launcher shortcuts must not reach through it.
   if (document.querySelector('.fh-command-dialog')) return;
+  if (document.querySelector('.clipboard-note-dialog,.clipboard-source-popup[data-open]')) return;
   if (externalActivation && e.key!=="Escape") {e.preventDefault();return;}
   // The shared Dialog owns Escape, Enter and its focus trap while confirming.
   if (state.deletingClipboard) return;
@@ -1370,7 +1390,8 @@ async function refreshClipboard({ append = false, deferRender = false, preserveS
   if (!append) state.clipboardHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
   try {
-    const records = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("clipboard", () => window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset })) : window.weborg?.pluginSearch("clipboard", { query: state.query, kind: state.scope === "clipboard" ? state.clipboardKind : "all", limit: CLIPBOARD_PAGE_SIZE, offset }));
+    const request={query:state.query,kind:state.scope==='clipboard'?state.clipboardKind:'all',source:state.scope==='clipboard'?state.clipboardSource ?? null:null,pinnedOnly:state.scope==='clipboard' && state.clipboardPinnedOnly===true,limit:CLIPBOARD_PAGE_SIZE,offset};
+    const records = await (window.flowhubSearchTiming ? window.flowhubSearchTiming.query("clipboard", () => window.weborg?.pluginSearch("clipboard",request)) : window.weborg?.pluginSearch("clipboard",request));
     if (token !== clipboardSearchToken) return;
     window.flowhubSearchTiming?.applied();
     const selected = preserveSelection ? matches()[state.index] : null;
@@ -1379,7 +1400,7 @@ async function refreshClipboard({ append = false, deferRender = false, preserveS
     state.clipboardResults = append
       ? [...state.clipboardResults, ...nextRecords.filter((record) => !state.clipboardResults.some((current) => current.id === record.id))]
       : nextRecords;
-    if (!state.query.trim() && !append) state.emptyResults.clipboard = nextRecords.slice();
+    if (!state.query.trim() && !append && (state.scope!=='clipboard' || state.clipboardKind==='all' && state.clipboardSource==null && !state.clipboardPinnedOnly)) state.emptyResults.clipboard = nextRecords.slice();
     state.clipboardLoadedQuery = state.query;
     state.clipboardHasMore = nextRecords.length === CLIPBOARD_PAGE_SIZE;
     if (preserveSelection) {
@@ -1796,6 +1817,7 @@ function preserveSearchFocus(event) {
 
 
 subscribe("onClipboardUpdated", () => {
+  state.clipboardSourceRevision=(state.clipboardSourceRevision || 0)+1;
   invalidateClipboardPaging();
   state.clipboardLoadedQuery = null;
   allScopeRefreshToken += 1;
@@ -1834,6 +1856,7 @@ bind(resultsEl, "click", (e) => {
     if(action === 'pin') void toggleClipboardPin(item);
     if(action === 'plain') void pasteClipboardPlain(item);
     if(action === 'edit') startClipboardEdit(item);
+    if(action === 'note')requestClipboardNote({...item,type:'clipboard'});
     if(action === 'delete') requestClipboardDelete(item);
     if(action === 'edit-save') void saveClipboardEdit();
     if(action === 'edit-cancel') cancelClipboardEdit();
@@ -1881,6 +1904,8 @@ function focusSearch() {
 function restoreLauncherFocus() {
   if (disposed || document.hidden || !document.hasFocus()) return;
   const active = document.activeElement;
+  const noteEditor=document.querySelector('.clipboard-note-dialog textarea');
+  if(noteEditor){if(!active?.closest('.clipboard-note-dialog'))noteEditor.focus({preventScroll:true});return;}
   if (state.deletingClipboard) {
     if (!active?.closest('[role="dialog"]')) document.querySelector('[role="dialog"] button:not(:disabled)')?.focus({preventScroll:true});
     return;
@@ -1909,7 +1934,7 @@ function prepareForShow() {
   // Switching apps can hide the launcher while a draft or confirmation is
   // open. Resetting its query would unmount the editor but retain the edit
   // guard, leaving a visible launcher that cannot accept search input.
-  if (state.editingClipboard || state.deletingClipboard) {
+  if (state.editingClipboard || state.deletingClipboard || document.querySelector('.clipboard-note-dialog')) {
     restoreLauncherFocus();
     return;
   }
@@ -2108,7 +2133,7 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, requestCommands, requestQueryHistory, recallQuery, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, requestCommands, requestQueryHistory, recallQuery, setScope, setClipboardKind, setClipboardFilters, refreshClipboard:()=>refreshClipboard({preserveSelection:true}), selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});return true;} catch(error){showActionStatus(error.message);return false;}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());

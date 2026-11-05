@@ -1553,6 +1553,8 @@ pub fn run() {
             open_config_path,
             open_storage_path,
             clipboard::search_clipboard,
+            clipboard::organization::clipboard_sources,
+            clipboard::organization::set_clipboard_note,
             clipboard::load_clipboard_assets,
             clipboard::activate_clipboard,
             clipboard::copy_text,
