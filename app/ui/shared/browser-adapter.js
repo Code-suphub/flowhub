@@ -268,7 +268,8 @@ if (!window.weborg) {
     searchUsage: usageSections,
     async openSettings(options = {}) {
       const url = String(options.initialUrl || "").trim();
-      const query = url ? `?addUrl=${encodeURIComponent(url)}` : "";
+      const module = String(options.initialModule || "").trim();
+      const query = url ? `?addUrl=${encodeURIComponent(url)}` : module ? `?module=${encodeURIComponent(module)}` : "";
       const settingsPath = `/settings.html${query}`;
       // The in-app browser preview does not expose window.open. Fall back to
       // same-tab navigation there; desktop Tauri keeps using its native window.
@@ -279,6 +280,7 @@ if (!window.weborg) {
       window.location.assign(settingsPath);
       return { ok: true, preview: true };
     },
+    async listLauncherPlugins() { return []; },
     async openAccessibilitySettings() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开系统辅助功能设置" };
     },

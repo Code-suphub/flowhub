@@ -19,9 +19,10 @@ export interface SearchController {
   render(options?: {preserveScroll?: boolean}): void;
   returnToSearch(): void; setScope(scope:string): void; setClipboardKind(kind:string): void;
   executeAction(key:string,kind:'result'|'clipboard',action:string):void;
+  requestCommands():void;
   preserveSearchFocus(event: any): void; activateScopeControl(button: HTMLElement): void;
   selectResult(index: number, options?: {reveal?: boolean}): void;
-  togglePin(): Promise<void>; dispose(): void;
+  togglePin(): Promise<boolean>; dispose(): void;
   confirmClipboardDelete(): Promise<void>; cancelClipboardDelete():void;
 }
 export type SearchHost = Window & {

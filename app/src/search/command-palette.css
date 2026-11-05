@@ -1,0 +1,15 @@
+.fh-dialog.launcher-commands-dialog { display:flex; flex-direction:column; width:min(620px,calc(100vw - 24px)); overflow:hidden; max-height:calc(100vh - 24px); }
+.launcher-commands-dialog>[data-slot=dialog-header] { flex-shrink:0; margin-bottom:12px; }
+.launcher-commands-dialog .fh-command-input { flex-shrink:0; }
+.launcher-commands-dialog .fh-command-list { flex:1; max-height:440px; }
+.launcher-command-icon { display:grid; place-items:center; flex:none; width:30px; height:30px; color:var(--fh-accent); background:var(--fh-canvas); border-radius:7px; }
+.launcher-command-icon svg { width:16px; height:16px; }
+.launcher-command-copy { display:flex; flex-direction:column; gap:2px; }
+.launcher-command-copy strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.launcher-command-copy small { font-size:11px; color:var(--fh-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.launcher-command-arrow { width:14px; height:14px; flex:none; color:var(--fh-muted); }
+.launcher-commands-dialog kbd { flex:none; color:var(--fh-muted); font:11px/1.5 -apple-system,sans-serif; }
+.launcher-command-load-error { flex-shrink:0; color:var(--fh-danger); font-size:12px; margin-top:8px; }
+.launcher-command-load-error>span { overflow-wrap:anywhere; }
+@media(max-width:440px) { .launcher-command-icon,.launcher-command-arrow { display:none; } .launcher-commands-dialog .fh-command-item { gap:8px; padding-inline:8px; } }
+@media(max-height:440px) { .fh-dialog.launcher-commands-dialog { padding:12px; } }

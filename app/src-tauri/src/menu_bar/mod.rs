@@ -1083,7 +1083,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
         .on_menu_event(|app, event| match event.id().0.as_str() {
             "flowhub-open" => toggle_main(app),
             "flowhub-settings" => {
-                let _ = open_settings(app.clone(), None);
+                let _ = open_settings(app.clone(), None, None);
             }
             "flowhub-desktop-widgets" => {
                 if let Err(error) = crate::plugin::canvas::open(app, "") {
@@ -1118,7 +1118,7 @@ pub(crate) fn apply_menu_bar(app: &tauri::AppHandle, config: &Value) -> Result<V
             }
             "flowhub-organizer-refresh" => schedule_flowhub_menu_refresh(app),
             "flowhub-organizer-open-settings" => {
-                let _ = open_settings(app.clone(), None);
+                let _ = open_settings(app.clone(), None, None);
             }
             "flowhub-quit" => app.exit(0),
             id if id.starts_with(FLOWHUB_ORGANIZER_ITEM_PREFIX) => {

@@ -343,6 +343,15 @@ test('module queries select requested section and reject unknown module values',
   const { bindNativeSettings } = require('../../src/settings/native.ts');
   for (const [query, expected] of [['clipboard','clipboard'], ['canvas','canvas'], ['data','data'], ['updates','updates'], ['not-a-module','core']]) { const { store } = await h.loaded(); window.history.replaceState({}, '', '/settings.html?module='+query); let module; const dispose = bindNativeSettings(store, v => { module=v; }, () => {}); assert.equal(module, expected); dispose(); store.dispose(); }
 });
+test('launcher module links queue until settings load, keep the latest request while busy, and never write drafts',async()=>{
+  const {bindNativeSettings}=require('../../src/settings/native.ts');
+  const {store,writes}=await h.loaded();store.patch({config:null});window.history.replaceState({},'','/settings.html?module=plugin%3Aexample');
+  const visited=[],dispose=bindNativeSettings(store,id=>{visited.push(id);return true;},()=>{});
+  assert.equal(visited.length,0);store.patch({config:h.fixture()});await Promise.resolve();assert.equal(visited.at(-1),'plugin:example');
+  store.patch({busy:true});window.switchModule('appearance');window.switchModule('search');assert.equal(visited.length,1);
+  store.patch({busy:false});await Promise.resolve();assert.deepEqual(visited,['plugin:example','search']);assert.equal(writes.length,0);
+  store.patch({busy:true});window.switchModule('clipboard');dispose();store.patch({busy:false});await Promise.resolve();assert.equal(visited.length,2);store.dispose();
+});
 test('theme Select writes shared theme preference and follows host theme events', async () => {
   h.environment(); let theme = 'system'; window.FlowHubTheme = { get: () => theme, set: value => { theme = value; } };
   const { Theme } = require('../../src/settings/Theme.tsx'), view = await h.mount(Theme, {});

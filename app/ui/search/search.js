@@ -1203,12 +1203,16 @@ function returnToSearch() {
   q.focus({ preventScroll: true });
   q.select();
 }
+function requestCommands() {
+  if(disposed || externalActivation || !state.config || state.editingClipboard || state.deletingClipboard || document.querySelector('[role="dialog"]'))return;
+  root.dispatchEvent(new CustomEvent('flowhub:commands'));
+}
 
 
 bind(document, "keydown", (e) => {
   // The searchable action dialog owns input, navigation and Escape. Its portal
   // is outside the search root; launcher shortcuts must not reach through it.
-  if (document.querySelector('.search-actions-dialog')) return;
+  if (document.querySelector('.fh-command-dialog')) return;
   if (externalActivation && e.key!=="Escape") {e.preventDefault();return;}
   // The shared Dialog owns Escape, Enter and its focus trap while confirming.
   if (state.deletingClipboard) return;
@@ -1222,6 +1226,7 @@ bind(document, "keydown", (e) => {
   // 组合输入期间不抢焦点：IME 的按键交给输入法，F6 也在之后才处理。
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
+  if (window.FlowHubShortcuts?.matches(e,'CommandOrControl+Shift+P')) {e.preventDefault();if(!e.repeat)requestCommands();return;}
   if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
   if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyI' || e.key.toLowerCase() === 'i')) {
     if(['app','page','web','web-add','clipboard','memo','twofa'].includes(matches()[state.index]?.type)) {e.preventDefault();if(!e.repeat)previewEvent('toggle');}
@@ -1316,7 +1321,7 @@ bind(document, "keydown", (e) => {
 });
 
 bind(document, "keyup", (e) => {
-  if (document.querySelector('.search-actions-dialog')) {scopeTabHeld=false;scopeTabUsedWithArrow=false;return;}
+  if (document.querySelector('.fh-command-dialog')) {scopeTabHeld=false;scopeTabUsedWithArrow=false;return;}
   if (e.key !== "Tab" || !scopeTabHeld) return;
   e.preventDefault();
   if (!scopeTabUsedWithArrow) moveScope(scopeTabTapOffset);
@@ -2078,8 +2083,8 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
-  togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
+return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, requestCommands, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+  togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});return true;} catch(error){showActionStatus(error.message);return false;}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());
     cancelActivationFocus();

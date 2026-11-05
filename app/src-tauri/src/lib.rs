@@ -8,6 +8,7 @@ use storage::{
 mod config_history;
 mod config_save;
 mod config_transfer;
+mod settings_navigation;
 mod web_open;
 mod launcher;
 mod shortcut;
@@ -667,19 +668,26 @@ fn close_settings(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<Value, String> {
-    open_settings_window(app, initial_url, false)
+fn open_settings(app: tauri::AppHandle, initial_url: Option<String>, initial_module: Option<String>) -> Result<Value, String> {
+    if initial_url.is_some() && initial_module.is_some() { return Err("一次只能选择一个设置目标".into()); }
+    open_settings_window_target(app, initial_url, false, initial_module)
 }
 
 pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<String>, update: bool) -> Result<Value, String> {
-    open_settings_window_target(app, initial_url, update, false)
+    open_settings_window_target(app, initial_url, update, None)
 }
 
 pub(crate) fn open_canvas_settings(app: tauri::AppHandle) -> Result<Value, String> {
-    open_settings_window_target(app, None, false, true)
+    open_settings_window_target(app, None, false, Some("canvas".into()))
 }
 
-fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String>, update: bool, canvas: bool) -> Result<Value, String> {
+fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String>, update: bool, initial_module: Option<String>) -> Result<Value, String> {
+    if let Some(module)=&initial_module {
+        if !settings_navigation::valid_module(module) {return Err("未知设置入口".into());}
+        if let Some(id)=module.strip_prefix("plugin:") {
+            if !app.state::<crate::plugin::runtime::Runtime>().has_launcher_entry(id) {return Err("插件已停用或卸载，请重新查找命令".into());}
+        }
+    }
     // Opening settings from the launcher is an in-app navigation. Workspace
     // activation notifications do not fire because both windows belong to
     // FlowHub, so explicitly dismiss the launcher before bringing settings up.
@@ -699,8 +707,8 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             window.eval("(() => { let attempts = 0; const run = () => { if (window.runMenuUpdate) { window.runMenuUpdate(); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
                 .map_err(|error| error.to_string())?;
         }
-        if canvas {
-            window.eval("(() => { let attempts = 0; const run = () => { if (window.switchModule) { window.switchModule('canvas'); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
+        if let Some(module)=&initial_module {
+            window.eval(&settings_navigation::script(module))
                 .map_err(|error| error.to_string())?;
         }
         if let Some(url) = initial_url {
@@ -720,7 +728,7 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             query.append_pair("addUrl", url);
             format!("settings.html?{}", query.finish())
         })
-        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if canvas { "settings.html?module=canvas".to_string() } else { "settings.html".to_string() });
+        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if let Some(module)=&initial_module { settings_navigation::path(module) } else { "settings.html".to_string() });
     let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
         .transparent(true)
@@ -1478,7 +1486,7 @@ pub fn run() {
             }
 
             if std::env::var("FLOWHUB_TAURI_SHOW_SETTINGS_ON_START").as_deref() == Ok("1") {
-                open_settings(app.handle().clone(), None).map_err(std::io::Error::other)?;
+                open_settings(app.handle().clone(), None, None).map_err(std::io::Error::other)?;
             }
 
             if std::env::var("FLOWHUB_TAURI_SMOKE_TEST").as_deref() == Ok("1") {
@@ -1512,6 +1520,7 @@ pub fn run() {
             get_proxy_info,
             search_usage,
             open_settings,
+            crate::plugin::runtime::launcher_plugin_entries,
             plugin_workspace::plugin_workspace,
             crate::plugin::runtime::plugin_api,
             crate::plugin::runtime::plugin_search_call,

@@ -29,7 +29,7 @@ async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,be
     pluginSearch:async(id,args)=>{calls.push(['search',id,args]);return search?search(id,args,fixture):args.offset?[]:fixture[id]||[];},
     pluginAction:async(...args)=>{calls.push(['action',...args]);return args[0]==='twofa'?{code:'123456'}:{ok:true};},
     searchUsage:async()=>usage || {frequent:[],recent:[]},loadAppIcons,
-    copyText:async text=>calls.push(['copy',text]),openSettings:async()=>calls.push(['settings']),hideMain:async()=>calls.push(['hide']),
+    copyText:async text=>calls.push(['copy',text]),openSettings:async(...args)=>calls.push(['settings',...args]),listLauncherPlugins:async()=>[],hideMain:async()=>calls.push(['hide']),
     getLauncherPinned:async()=>false,setLauncherPinned:async p=>p,
     lookupDns:async()=>({Answer:[{type:1,data:'8.8.8.8'}]}),lookupIp:async()=>({city:'Fixture city'}),lookupProxy:async()=>({http:{enabled:false}}),lookupLocalIp:async()=>({ipv4:'1.2.3.4',pending:[]}),
     inspectPort:async port=>({port,processes:[{pid:123,name:'fixture',sockets:['*:80'],executable:'/fixture',identity:'private-token'}]}),

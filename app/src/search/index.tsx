@@ -2,10 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createRoot, type Root } from 'react-dom/client';
 import { Button, Dialog } from '../shared/ui';
 import { Help, Tooltip } from '../shared/controls';
-import { CornerUpLeft, CornerDownLeft, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
+import { Command, CornerUpLeft, CornerDownLeft, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { useMediaQuery } from '../shared/useMediaQuery';
 import { Results, resultActions } from './Results';
 import { ActionPanel, actionIdentity, availableActions, type ResultAction } from './ActionPanel';
+import { CommandPalette } from './CommandPalette';
+import type { LauncherCommand } from './commands';
+import { shortcutKeys } from '../shared/shortcuts';
 import { Preview, canPreview, previewNeighbor, primaryLabel } from './Preview';
 import { isLongPreviewContent, previewIdentity, readPreviewExpanded, rememberPreviewExpanded } from './preview-layout';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
@@ -13,7 +16,7 @@ import './search.css';
 
 function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNavigation?:boolean}) {
   const hints:string[]=[];
-  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮，末尾 F6 进入操作面板','⌘K 返回搜索框');
+  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮，末尾 F6 进入操作面板',`${shortcutKeys.format('CommandOrControl+Shift+P')} 查找命令`,'⌘K 返回搜索框');
   if(selected?.type==='clipboard') {
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
     hints.push('⌘D 置顶');
@@ -73,6 +76,7 @@ function Search() {
     if(!input)return;input.value='';controller.current?.handlers['input:input']?.();input.focus({preventScroll:true});
   },[]);
   const [actionKey,setActionKey]=useState<string|null>(null);
+  const [commandsOpen,setCommandsOpen]=useState(false);
   const actionFrame=useRef<number|undefined>(undefined);
   const cancelActionWork=useCallback(()=>{
     if(actionFrame.current!==undefined){cancelAnimationFrame(actionFrame.current);actionFrame.current=undefined;}
@@ -80,6 +84,7 @@ function Search() {
   const closeActions=useCallback(()=>{
     cancelActionWork();
     setActionKey(null);
+    setCommandsOpen(false);
     // Wait for the modal focus trap to unmount before returning to the query.
     actionFrame.current=requestAnimationFrame(()=>{actionFrame.current=undefined;controller.current?.returnToSearch();});
   },[cancelActionWork]);
@@ -91,8 +96,8 @@ function Search() {
     const node=root.current;
     const preview=(event:Event)=>{
       const mode=(event as CustomEvent<string>).detail;
-      if(mode==='dismiss-actions'){cancelActionWork();setActionKey(null);return;}
-      if(mode==='reset'){cancelActionWork();cancelPreviewFocus();setDetailOpen(false);setActionKey(null);return;}
+      if(mode==='dismiss-actions'){cancelActionWork();setActionKey(null);setCommandsOpen(false);return;}
+      if(mode==='reset'){cancelActionWork();cancelPreviewFocus();setDetailOpen(false);setActionKey(null);setCommandsOpen(false);return;}
       if(mode==='selection'){if(narrow)setDetailOpen(true);return;}
       if(mode==='close'){
         if(narrow && detailOpen){event.preventDefault();closePreview();}
@@ -106,6 +111,12 @@ function Search() {
     node?.addEventListener('flowhub:preview',preview);
     return ()=>node?.removeEventListener('flowhub:preview',preview);
   },[detailOpen,widePreview,narrow,openPreview,closePreview,cancelPreviewFocus,cancelActionWork]);
+  useEffect(()=>{
+    const node=root.current;
+    const open=()=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setCommandsOpen(true);};
+    node?.addEventListener('flowhub:commands',open);
+    return()=>node?.removeEventListener('flowhub:commands',open);
+  },[cancelActionWork,cancelPreviewFocus]);
   useLayoutEffect(()=>{
     if(snapshot?.timing) host.flowhubSearchTiming?.commit(snapshot.timing.run,snapshot.timing.startedAt);
   },[snapshot]);
@@ -203,6 +214,23 @@ function Search() {
     });
   };
   const readonly=document.documentElement.dataset.weborgReadonly==='true';
+  async function executeCommand(command:LauncherCommand) {
+    const c=controller.current;if(!c)throw Error('启动器已关闭');
+    const target=command.target;
+    if(target.type==='settings') {
+      const result=await host.weborg.openSettings({initialModule:target.module});
+      if(result?.ok===false)throw Error(result.reason || '当前无法打开此入口');
+      return;
+    }
+    if(target.type==='scope')c.setScope(target.id);
+    else if(target.action==='clear')clearSearch();
+    else if(target.action==='preview') {if(previewVisible)closePreview();else openPreview(activeIndex);cancelPreviewFocus();}
+    else if(target.action==='pin') {
+      if(readonly || document.documentElement.dataset.weborgReadonly==='true')throw Error('只读预览不能固定窗口');
+      if(!await c.togglePin())throw Error('窗口固定失败，请重试');
+    }
+    closeActions();
+  }
   return <div ref={root} className="fh-root search-shell flex flex-col h-full" onFocusCapture={event=>{previewFocused.current=Boolean((event.target as HTMLElement).closest('.search-preview'));}} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>
     {state?.deletingClipboard?<Dialog title="删除剪贴板记录" busy={state.deletingClipboard.busy} notice={state.deletingClipboard.error} onClose={()=>controller.current?.cancelClipboardDelete()}>
       <p>确定删除这条剪贴板记录吗？只会删除历史记录和图片副本，不会删除原始文件。</p>
@@ -215,7 +243,7 @@ function Search() {
       {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={clearSearch}>×</button>:null}</div>
     </div>
     {readonly?<span className="search-preview-badge">{new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'}</span>:null}
-    <div className="search-header-actions flex items-center gap-1"><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" size="icon-sm" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" size="icon-sm" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content={`打开 FlowHub 设置${version?` · v${version}`:''}${hasUpdate?' · 有新版本':''}`}><Button id="settingsBtn" variant="ghost" size="icon-sm" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div>
+    <div className="search-header-actions flex items-center gap-1"><Tooltip content={`查找页面、设置与插件（${shortcutKeys.format('CommandOrControl+Shift+P')}）`}><Button id="commandsBtn" variant="ghost" size="sm" aria-label="查找 FlowHub 命令" aria-keyshortcuts={shortcutKeys.isMac()?'Meta+Shift+P':'Control+Shift+P'} aria-haspopup="dialog" aria-expanded={commandsOpen} disabled={!snapshot?.state.config || Boolean(state?.editingClipboard || state?.deletingClipboard)} onClick={()=>controller.current?.requestCommands()}><Command aria-hidden="true"/><span>命令</span></Button></Tooltip><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" size="icon-sm" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" size="icon-sm" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content={`打开 FlowHub 设置${version?` · v${version}`:''}${hasUpdate?' · 有新版本':''}`}><Button id="settingsBtn" variant="ghost" size="icon-sm" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div>
     </header>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard'?<div id="clipboardKindRow" className="search-scopes flex gap-1" aria-label="剪贴板类型筛选">{[['all','全部'],['text','文本'],['image','图片'],['file','文件']].map(([kind,label])=><Button key={kind} data-clipboard-kind={kind} aria-pressed={state.clipboardKind===kind} onMouseDown={press} onClick={activate}>{label}</Button>)}</div>:null}
@@ -226,6 +254,7 @@ function Search() {
       {previewVisible && selected && snapshot?<Preview item={selected} index={activeIndex} snapshot={snapshot} onAction={dispatch('results:click')} onBack={closePreview} onNavigate={direction=>{const next=previewNeighbor(snapshot.items,activeIndex,direction);if(next>=0)openPreview(next,true);}}/>:null}
     </div>
     {actionItem?<ActionPanel key={actionKey} item={actionItem} onClose={closeActions} onChoose={chooseAction}/>:null}
+    {commandsOpen && snapshot?<CommandPalette snapshot={snapshot} previewable={Boolean(previewable)} previewOpen={previewVisible} onClose={closeActions} onExecute={executeCommand}/>:null}
     <footer className="search-footer" onClick={dispatch('results:click')}>
       <div className="search-footer-message"><span id="actionStatus" role="status">{snapshot?.statusText}</span>{!snapshot?.statusText?<KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/>:null}</div>
       <div className="search-footer-actions">

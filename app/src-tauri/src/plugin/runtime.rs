@@ -38,6 +38,8 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None})
 }
 impl Runtime {
+    pub(crate) fn has_launcher_entry(&self,id:&str)->bool { self.get(id).is_ok() }
+    fn launcher_entries(&self)->Value { Value::Array(self.installed.lock().unwrap().iter().filter_map(launcher_entry).collect()) }
     pub(crate) async fn application_metadata(&self,app:&tauri::AppHandle,id:&str,params:&Value)->Result<Value,String>{
         self.get(id)?;
         if id!="resource-monitor" {return Err("此插件未提供应用监控能力".into());}
@@ -158,9 +160,22 @@ pub(crate) fn asset_csp(id: &str) -> String {
     format!("default-src 'none'; script-src {source}; style-src {source} 'unsafe-inline'; img-src {source} data:; font-src {source}; connect-src 'none'; base-uri 'none'; form-action 'none'")
 }
 fn trusted(window:&tauri::WebviewWindow)->Result<(),String>{if matches!(window.label(),"settings"|"plugin-panel"){Ok(())}else{Err("仅宿主插件面板可管理插件".into())}}
+fn launcher_entry(plugin:&Installed)->Option<Value> {
+    plugin.enabled.then(||json!({"id":plugin.manifest.id,"name":plugin.manifest.name,"description":plugin.manifest.description}))
+}
+#[tauri::command]
+pub(crate) fn launcher_plugin_entries(window:tauri::WebviewWindow,app:tauri::AppHandle)->Result<Value,String> {
+    if window.label()!="main" {return Err("仅启动器可读取命令入口".into());}
+    Ok(app.state::<Runtime>().launcher_entries())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn launcher_catalog_exposes_enabled_names_without_paths_or_permissions() {
+        let mut plugin:Installed=serde_json::from_value(json!({"manifest":{"schema":2,"id":"example","name":"示例插件","version":"1.0.0","ui":"ui/index.html","executable":"bin/secret","permissions":["native-process"],"description":"测试"},"directory":"/private/plugin","enabled":true})).unwrap();
+        assert_eq!(launcher_entry(&plugin),Some(json!({"id":"example","name":"示例插件","description":"测试"})));
+        plugin.enabled=false;assert!(launcher_entry(&plugin).is_none());
+    }
     #[test]
     fn widget_timer_bootstrap_precedes_package_scripts_and_preserves_doctype() {
         for html in ["<!DOCTYPE html><HTML><HEAD lang=\"zh\"><script src=\"app.js\"></script></HEAD></HTML>","<!doctype html><script src=\"app.js\"></script>","<script src=\"app.js\"></script>"] {
