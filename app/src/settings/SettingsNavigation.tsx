@@ -4,12 +4,14 @@ import { Button, Input } from '../shared/ui';
 import { Tooltip } from '../shared/controls';
 import { matchingNavigation, type PageId } from './navigation';
 import { useViewMemory, useViewScroll, useViewState } from './view-state';
+import { scrollElementWithin } from '../shared/scroll';
 
 export function Navigation({page,busy,preview,onNavigate}: {page:PageId;busy:boolean;preview:boolean;onNavigate:(id:string)=>boolean}) {
   const [query,setQuery]=useViewState('navigation:query',''), memory=useViewMemory();
   const scroll=useViewScroll('navigation:scroll');
   useLayoutEffect(()=>{
-    if(memory?.get('navigation:page')!==page)scroll.ref.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({block:'nearest'});
+    const pane=scroll.ref.current,current=pane?.querySelector<HTMLElement>('[aria-current="page"]');
+    if(memory?.get('navigation:page')!==page && pane && current)scrollElementWithin(pane,current);
     memory?.set('navigation:page',page);
   },[page,memory,scroll.ref]);
   const groups=matchingNavigation(query),matches=groups.flatMap(group=>group.items);
@@ -19,7 +21,8 @@ export function Navigation({page,busy,preview,onNavigate}: {page:PageId;busy:boo
     if(!(event.target instanceof HTMLElement) || !event.target.matches('button[data-page]'))return;
     const items=[...event.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-page]:not(:disabled)')],index=items.indexOf(event.target as HTMLButtonElement);
     const next=event.key==='Home'?0:event.key==='End'?items.length-1:event.key==='ArrowDown'?Math.min(index+1,items.length-1):event.key==='ArrowUp'?Math.max(index-1,0):-1;
-    if(next<0)return;event.preventDefault();items[next]?.focus();items[next]?.scrollIntoView?.({block:'nearest'});
+    if(next<0)return;event.preventDefault();const target=items[next];
+    target?.focus({preventScroll:true});if(scroll.ref.current && target)scrollElementWithin(scroll.ref.current,target);
   }
   return <nav className="settings-sidebar flex flex-col" aria-label="设置模块" onKeyDown={move}>
     <div className="settings-brand"><span><Layers2Icon aria-hidden="true"/></span>FlowHub</div>

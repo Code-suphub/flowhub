@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { PageId } from './navigation';
 import type { SettingTarget } from './settings-search';
+import { scrollElementWithin } from '../shared/scroll';
 
 export function locateSetting(main: HTMLElement, target: SettingTarget): HTMLElement | null {
   return [...main.querySelectorAll<HTMLElement>('[data-setting-label]')].find(row=>row.dataset.settingLabel===target.label) || null;
@@ -35,7 +36,7 @@ export function useSettingLocation(main: RefObject<HTMLElement|null>, page: Page
       for(let parent:HTMLElement|null=row;parent && main.current.contains(parent);parent=parent.parentElement)if(parent.tagName==='DETAILS')(parent as HTMLDetailsElement).open=true;
       row.dataset.settingHighlight='true';
       const control=settingControl(row,next.target.control);
-      control.focus({preventScroll:true});control.scrollIntoView?.({block:'center',inline:'nearest'});
+      control.focus({preventScroll:true});scrollElementWithin(main.current,control,'center');
       timer=window.setTimeout(()=>{if(row)delete row.dataset.settingHighlight;},4000);
     });});
     return()=>{cancelAnimationFrame(frame);if(timer!==undefined)window.clearTimeout(timer);if(row)delete row.dataset.settingHighlight;};

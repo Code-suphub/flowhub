@@ -43,6 +43,21 @@ test('locating collapsed permission controls opens their section without request
   layout(t);let permissions=0;const {store}=await h.loaded({requestMenuBarManagementPermission:async()=>{permissions++;return {};}}),view=await h.mount(Settings,{store});await choose(view,'菜单栏权限','menubar-permission');
   const details=view.container.querySelector('.settings-menu-options');assert.equal(details.open,true);assert.equal(document.activeElement===h.button(details,'授权辅助功能'),true);assert.equal(permissions,0);assert.equal(store.dirty,false);await view.unmount();store.dispose();
 });
+test('locating a distant setting scrolls its content pane without shifting the outer document',async t=>{
+  layout(t);const {store}=await h.loaded(),view=await h.mount(Settings,{store});
+  await h.click(view.container.querySelector('[data-page="tools"]'));
+  const main=view.container.querySelector('main'),control=view.container.querySelector('[aria-label="计算表达式"]');
+  main.style.overflowY='auto';
+  Object.defineProperties(main,{clientHeight:{value:160},scrollHeight:{value:1000}});
+  main.getBoundingClientRect=()=>({top:100,bottom:260,height:160});
+  control.getBoundingClientRect=()=>({top:580-main.scrollTop,bottom:616-main.scrollTop,height:36});
+  const root=document.documentElement;root.scrollTop=0;t.after(()=>{root.scrollTop=0;});
+  // WebKit can scroll an overflow-hidden outer ancestor as well as main.
+  control.scrollIntoView=()=>{root.scrollTop=18;};
+  await choose(view,'计算表达式','tool:calculator');
+  assert.equal(document.activeElement,control);assert.equal(main.scrollTop,418);assert.equal(root.scrollTop,0);assert.equal(store.dirty,false);
+  await view.unmount();store.dispose();
+});
 test('destructive and file-picker entries only locate buttons; confirmation still needs a separate action',async t=>{
   layout(t);let clears=0,picks=0;const {store,writes}=await h.loaded({pickConfigImport:async()=>{picks++;return {canceled:true};}}),view=await h.mount(Settings,{store});window.FlowHubCommandStore={counts:()=>({total:3,templates:1}),clearAll:()=>clears++};
   await choose(view,'清空历史','clear-command-history');assert.equal(document.activeElement===h.button(view.container,'清空历史与模板'),true);assert.equal(dialog(),null);assert.equal(clears,0);
