@@ -54,6 +54,23 @@ pub fn record_focus_sample(app: tauri::AppHandle, sample: Sample) {
     }));
 }
 
+/// Structural state only. Window numbers identify this process's windows,
+/// never their titles, text, URLs or the identity of another application.
+#[cfg(target_os = "macos")]
+pub fn native_window_state(window: &objc2_app_kit::NSWindow) -> Value {
+    use objc2_app_kit::{NSApplication, NSWorkspace};
+    let Some(mtm) = objc2::MainThreadMarker::new() else { return Value::Null; };
+    let app = NSApplication::sharedApplication(mtm);
+    json!({
+        "windowNumber": window.windowNumber(),
+        "visible": window.isVisible(), "windowKey": window.isKeyWindow(),
+        "applicationKeyMatches": app.keyWindow().as_deref().is_some_and(|key|std::ptr::eq(key,window)),
+        "applicationActive": app.isActive(),
+        "frontmostSelf": NSWorkspace::sharedWorkspace().frontmostApplication()
+            .is_some_and(|front|front.processIdentifier()==std::process::id() as i32)
+    })
+}
+
 // Observe AppKit delivery without swallowing, modifying or generating events.
 #[cfg(target_os = "macos")]
 pub fn install_native_monitor() {
@@ -71,15 +88,19 @@ pub fn install_native_monitor() {
             let value = unsafe { event.as_ref() };
             let received = chrono::Utc::now().to_rfc3339();
             let delay = (NSProcessInfo::processInfo().systemUptime() - value.timestamp()) * 1000.0;
-            record("appkit-mouse", json!({
-                "kind": if value.r#type() == NSEventType::LeftMouseDown {"down"} else {"up"},
+            // Key delivery is recorded without inspecting characters, key codes
+            // or modifiers. This distinguishes routing failures from DOM focus.
+            let key = value.r#type() == NSEventType::KeyDown;
+            record(if key {"appkit-key"} else {"appkit-mouse"}, json!({
+                "kind": if key {"key"} else if value.r#type() == NSEventType::LeftMouseDown {"down"} else {"up"},
                 "receivedAt":received,"deliveryMs":delay.max(0.0),
-                "keyWindow":objc2::MainThreadMarker::new().and_then(|mtm|value.window(mtm)).map(|window|window.isKeyWindow())
+                "state":objc2::MainThreadMarker::new().and_then(|mtm|value.window(mtm))
+                    .map(|window|native_window_state(&window))
             }));
             event.as_ptr()
         });
         *stored.borrow_mut() = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(
-            NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp, &callback
+            NSEventMask::LeftMouseDown | NSEventMask::LeftMouseUp | NSEventMask::KeyDown, &callback
         ) };
     });
 }

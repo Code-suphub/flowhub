@@ -2,7 +2,9 @@
 pub(crate) mod privacy;
 
 use crate::storage::database;
-use crate::{application_icon_data_urls, hide_main, AppState};
+use crate::{application_icon_data_urls, AppState};
+#[cfg(not(target_os = "macos"))]
+use crate::hide_main;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::Utc;
 use clipboard_rs::{
@@ -974,8 +976,32 @@ pub async fn load_clipboard_assets(
     .map_err(|error| error.to_string())?
 }
 
-fn send_paste() -> Result<(), String> {
+fn paste_source_generation() -> u64 {
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::launcher_activation::source_generation()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        0
+    }
+}
+
+fn send_paste(
+    app: &tauri::AppHandle,
+    show_session: Option<u64>,
+    source_generation: u64,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let receipt = crate::macos::launcher_activation::prepare_paste(app, show_session, source_generation)?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (show_session, source_generation);
+        hide_main(app);
+    }
     thread::sleep(Duration::from_millis(70));
+    #[cfg(target_os = "macos")]
+    crate::macos::launcher_activation::verify_paste_target(app, receipt)?;
     let mut enigo = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
     let modifier = Key::Meta;
@@ -995,6 +1021,8 @@ fn send_paste() -> Result<(), String> {
 }
 
 pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
+    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
+    let source_generation = paste_source_generation();
     if text.trim().is_empty() {
         return Ok(json!({ "ok": false, "reason": "内容为空" }));
     }
@@ -1007,8 +1035,7 @@ pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
             .and_then(|context| context.set_text(text))
             .map_err(|error| error.to_string())
     })??;
-    hide_main(app);
-    let paste = send_paste();
+    let paste = send_paste(app, show_session, source_generation);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "pasteReason": reason }),
@@ -1030,6 +1057,8 @@ pub fn activate_clipboard(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<Value, String> {
+    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
+    let source_generation = paste_source_generation();
     let connection = database(&state)?;
     let record = connection
         .query_row(
@@ -1087,8 +1116,7 @@ pub fn activate_clipboard(
         }
         .map_err(|error| error.to_string())
     })??;
-    hide_main(&app);
-    let paste = send_paste();
+    let paste = send_paste(&app, show_session, source_generation);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "pasteReason": reason }),
@@ -1222,6 +1250,8 @@ pub fn paste_clipboard_text(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<Value, String> {
+    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
+    let source_generation = paste_source_generation();
     let text = match plain_text(&state, id)? {
         PlainText::Text(text) => text,
         PlainText::Unavailable(reason) => return Ok(json!({ "ok": false, "reason": reason })),
@@ -1235,8 +1265,7 @@ pub fn paste_clipboard_text(
             .set_text(text)
             .map_err(|error| error.to_string())
     })??;
-    hide_main(&app);
-    let paste = send_paste();
+    let paste = send_paste(&app, show_session, source_generation);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true, "plain": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "plain": true, "pasteReason": reason }),
