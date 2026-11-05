@@ -1,18 +1,19 @@
 //! NSPanel key status and DOM focus are separate from WKWebView's first responder.
 use tauri::WebviewWindow;
+use objc2_foundation::NSString;
+use objc2_web_kit::WKWebView;
 
 pub(crate) fn restore(window: &WebviewWindow, prepare: bool) {
     let Some(session) = crate::MAIN_VISIBILITY.lock().unwrap().active_session() else {
         return;
     };
-    let main = window.clone();
     if let Err(error) = window.with_webview(move |webview| {
         if !crate::MAIN_VISIBILITY.lock().unwrap().is_current_show(session) {
             return;
         }
-        // Tauri supplies the live WKWebView on the main thread. NSView is its
-        // superclass; the platform handle remains owned for this callback.
-        let view = unsafe { &*webview.inner().cast::<objc2_app_kit::NSView>() };
+        // Tauri supplies the live WKWebView on the main thread; the platform
+        // handle remains owned for this callback.
+        let view = unsafe { &*webview.inner().cast::<WKWebView>() };
         let Some(panel) = view.window() else { return; };
         // Never reclaim the keyboard after the user has left or hidden us.
         if !panel.isVisible() || !panel.isKeyWindow() { return; }
@@ -26,9 +27,10 @@ pub(crate) fn restore(window: &WebviewWindow, prepare: bool) {
             } else {
                 "window.restoreLauncherFocus?.();"
             };
-            if let Err(error) = main.eval(script) {
-                eprintln!("[flowhub-tauri] 恢复启动器输入焦点失败：{error}");
-            }
+            // with_webview holds Tauri's dispatcher mutex. Calling window.eval
+            // here re-enters that dispatcher and deadlocks the main thread.
+            // Use the native view already supplied by the callback instead.
+            unsafe { view.evaluateJavaScript_completionHandler(&NSString::from_str(script), None); }
         }
     }) {
         eprintln!("[flowhub-tauri] 恢复启动器 WebView 焦点失败：{error}");
