@@ -30,6 +30,7 @@ export const settingsSearchEntries: readonly SettingsSearchEntry[] = [
   }),
   field('reuse-browser-tabs','search','优先复用浏览器标签页','网页 浏览器 Arc 重复 打开 browser tabs reuse'),
   field('long-content-preview','search','长内容自动预览','长文本 多行 剪贴板 命令 详情 展开 自动 preview automatic long content'),
+  field('search-history','search','记录搜索历史','查询 历史 补全 记忆 隐私 暂停 history completion query'),
   ...Object.entries({enabled:'显示 FlowHub 图标',showOpenLauncher:'打开启动器',showOpenSettings:'打开设置',showVersion:'显示版本',showQuit:'退出菜单',organizerEnabled:'启用菜单栏隐藏分区',collapseOnLaunch:'启动时收起隐藏分区'}).map(([id,label])=>field(`menubar:${id}`,'menubar',label,`菜单栏 状态栏 隐藏 图标 menubar ${id}`)),
   entry('menubar-permission','menubar','菜单栏辅助功能权限',{label:'菜单栏设置与权限',control:'授权辅助功能'},'定位授权按钮，选中不会请求权限','菜单栏权限 辅助功能权限 菜单栏 授权 permission accessibility'),
   field('canvas-locked','canvas','锁定布局','桌面 组件 拖动 缩放 canvas widget lock'),

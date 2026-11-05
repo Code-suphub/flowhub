@@ -21,6 +21,7 @@ export function normalize(value: unknown): Config {
   c.core.notifications = { enabled: true, updates: true, ...c.core.notifications };
   c.core.scopeShortcuts = { ...shortcuts, ...c.core.scopeShortcuts };
   c.core.autoPreviewLongContent = c.core.autoPreviewLongContent !== false;
+  c.core.searchHistoryEnabled = c.core.searchHistoryEnabled !== false;
   const used = new Set<string>();
   for (const [id, raw] of Object.entries(c.core.scopeShortcuts)) {
     if (typeof raw !== 'string') throw new Error('范围快捷键必须是字符串');

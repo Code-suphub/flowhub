@@ -8,7 +8,7 @@ import { findLauncherCommands, launcherCommands, type LauncherCommand, type Laun
 import { host, type SearchSnapshot } from './types';
 import './command-palette.css';
 
-export function CommandPalette({snapshot,previewable,previewOpen,onClose,onExecute}: {snapshot:SearchSnapshot;previewable:boolean;previewOpen:boolean;onClose():void;onExecute(command:LauncherCommand):Promise<void>}) {
+export function CommandPalette({snapshot,previewable,previewOpen,onClose,onExecute}: {snapshot:SearchSnapshot;previewable:boolean;previewOpen:boolean;onClose():void;onExecute(command:LauncherCommand):Promise<void|'handled'>}) {
   const [query,setQuery]=useState(''),[plugins,setPlugins]=useState<LauncherPlugin[]>([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[attempt,setAttempt]=useState(0);
   const input=useRef<HTMLInputElement>(null),mounted=useRef(true),pending=useRef(false);
   const readonly=document.documentElement.dataset.weborgReadonly==='true';
@@ -23,7 +23,7 @@ export function CommandPalette({snapshot,previewable,previewOpen,onClose,onExecu
   async function choose(command:LauncherCommand) {
     if(pending.current || command.disabled)return;
     pending.current=true;setBusy(true);setError('');
-    try {await onExecute(command);if(mounted.current)onClose();}
+    try {const result=await onExecute(command);if(result!=='handled' && mounted.current)onClose();}
     catch(error) {if(mounted.current){setError(String((error as Error)?.message || error));input.current?.focus();}}
     finally {pending.current=false;if(mounted.current)setBusy(false);}
   }

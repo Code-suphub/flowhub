@@ -2,11 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createRoot, type Root } from 'react-dom/client';
 import { Button, Dialog } from '../shared/ui';
 import { Help, Tooltip } from '../shared/controls';
-import { Command, CornerUpLeft, CornerDownLeft, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
+import { Command, CornerUpLeft, CornerDownLeft, History, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { useMediaQuery } from '../shared/useMediaQuery';
 import { Results, resultActions } from './Results';
 import { ActionPanel, actionIdentity, availableActions, type ResultAction } from './ActionPanel';
 import { CommandPalette } from './CommandPalette';
+import { QueryHistory } from './QueryHistory';
+import { getQueryHistory, type QueryHistoryEntry } from './query-history';
 import type { LauncherCommand } from './commands';
 import { shortcutKeys } from '../shared/shortcuts';
 import { Preview, canPreview, previewNeighbor, primaryLabel } from './Preview';
@@ -16,7 +18,7 @@ import './search.css';
 
 function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNavigation?:boolean}) {
   const hints:string[]=[];
-  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮，末尾 F6 进入操作面板',`${shortcutKeys.format('CommandOrControl+Shift+P')} 查找命令`,'⌘K 返回搜索框');
+  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮，末尾 F6 进入操作面板',`${shortcutKeys.format('CommandOrControl+Shift+P')} 查找命令`,`${shortcutKeys.format('CommandOrControl+Shift+H')} 搜索历史与补全`,'⌘K 返回搜索框');
   if(selected?.type==='clipboard') {
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
     hints.push('⌘D 置顶');
@@ -77,6 +79,7 @@ function Search() {
   },[]);
   const [actionKey,setActionKey]=useState<string|null>(null);
   const [commandsOpen,setCommandsOpen]=useState(false);
+  const [historyOpen,setHistoryOpen]=useState(false);
   const actionFrame=useRef<number|undefined>(undefined);
   const cancelActionWork=useCallback(()=>{
     if(actionFrame.current!==undefined){cancelAnimationFrame(actionFrame.current);actionFrame.current=undefined;}
@@ -85,19 +88,20 @@ function Search() {
     cancelActionWork();
     setActionKey(null);
     setCommandsOpen(false);
+    setHistoryOpen(false);
     // Wait for the modal focus trap to unmount before returning to the query.
     actionFrame.current=requestAnimationFrame(()=>{actionFrame.current=undefined;controller.current?.returnToSearch();});
   },[cancelActionWork]);
   useLayoutEffect(()=>{
-    const c=host.createFlowHubSearchController(root.current!,setSnapshot); controller.current=c;
+    const c=host.createFlowHubSearchController(root.current!,setSnapshot,{onQueryUsed:entry=>getQueryHistory().record(entry)}); controller.current=c;
     return ()=>{controller.current=null;c.dispose();cancelActionWork();if(previewFrame.current!==undefined)cancelAnimationFrame(previewFrame.current);};
   },[cancelActionWork]);
   useEffect(()=>{
     const node=root.current;
     const preview=(event:Event)=>{
       const mode=(event as CustomEvent<string>).detail;
-      if(mode==='dismiss-actions'){cancelActionWork();setActionKey(null);setCommandsOpen(false);return;}
-      if(mode==='reset'){cancelActionWork();cancelPreviewFocus();setDetailOpen(false);setActionKey(null);setCommandsOpen(false);return;}
+      if(mode==='dismiss-actions'){cancelActionWork();setActionKey(null);setCommandsOpen(false);setHistoryOpen(false);return;}
+      if(mode==='reset'){cancelActionWork();cancelPreviewFocus();setDetailOpen(false);setActionKey(null);setCommandsOpen(false);setHistoryOpen(false);return;}
       if(mode==='selection'){if(narrow)setDetailOpen(true);return;}
       if(mode==='close'){
         if(narrow && detailOpen){event.preventDefault();closePreview();}
@@ -113,9 +117,15 @@ function Search() {
   },[detailOpen,widePreview,narrow,openPreview,closePreview,cancelPreviewFocus,cancelActionWork]);
   useEffect(()=>{
     const node=root.current;
-    const open=()=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setCommandsOpen(true);};
+    const open=()=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setHistoryOpen(false);setCommandsOpen(true);};
     node?.addEventListener('flowhub:commands',open);
     return()=>node?.removeEventListener('flowhub:commands',open);
+  },[cancelActionWork,cancelPreviewFocus]);
+  useEffect(()=>{
+    const node=root.current;
+    const open=()=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setCommandsOpen(false);setHistoryOpen(true);};
+    node?.addEventListener('flowhub:query-history',open);
+    return()=>node?.removeEventListener('flowhub:query-history',open);
   },[cancelActionWork,cancelPreviewFocus]);
   useLayoutEffect(()=>{
     if(snapshot?.timing) host.flowhubSearchTiming?.commit(snapshot.timing.run,snapshot.timing.startedAt);
@@ -214,6 +224,16 @@ function Search() {
     });
   };
   const readonly=document.documentElement.dataset.weborgReadonly==='true';
+  function recallHistory(entry:QueryHistoryEntry) {
+    if(actionFrame.current!==undefined)return;
+    setHistoryOpen(false);
+    actionFrame.current=requestAnimationFrame(()=>{
+      actionFrame.current=undefined;
+      const current=getQueryHistory().snapshot().find(current=>current.id===entry.id);
+      if(current)controller.current?.recallQuery(current);
+      else controller.current?.returnToSearch();
+    });
+  }
   async function executeCommand(command:LauncherCommand) {
     const c=controller.current;if(!c)throw Error('启动器已关闭');
     const target=command.target;
@@ -223,6 +243,7 @@ function Search() {
       return;
     }
     if(target.type==='scope')c.setScope(target.id);
+    else if(target.action==='history') {cancelPreviewFocus();setCommandsOpen(false);setHistoryOpen(true);return 'handled' as const;}
     else if(target.action==='clear')clearSearch();
     else if(target.action==='preview') {if(previewVisible)closePreview();else openPreview(activeIndex);cancelPreviewFocus();}
     else if(target.action==='pin') {
@@ -240,7 +261,7 @@ function Search() {
     <SearchIcon className="search-leading-icon" aria-hidden="true"/>
     <div className="search-input-wrap"><label className="sr-only" htmlFor="q">搜索网页、应用、剪贴板或命令备忘</label>
       <div className="search-input-box"><input id="q" className="fh-input" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} aria-label="搜索网页、应用、剪贴板或命令备忘" placeholder={placeholder} role="combobox" aria-autocomplete="list" aria-expanded={Boolean(snapshot?.items.length)} aria-controls="search-results" aria-activedescendant={activeRendered?`search-result-${activeIndex}`:undefined} onInput={dispatch('input:input')} onCompositionStart={dispatch('input:compositionstart')} onCompositionEnd={dispatch('input:compositionend')}/>
-      {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={clearSearch}>×</button>:null}</div>
+      {state?.query?<button type="button" className="search-clear" aria-label="清除搜索内容" onMouseDown={event=>event.preventDefault()} onClick={clearSearch}>×</button>:null}<Tooltip content={`搜索历史与补全（${shortcutKeys.format('CommandOrControl+Shift+H')}）`}><Button className="search-history-button" variant="ghost" size="icon-sm" aria-label="搜索历史与补全" aria-haspopup="dialog" aria-expanded={historyOpen} aria-keyshortcuts={shortcutKeys.isMac()?'Meta+Shift+H':'Control+Shift+H'} disabled={!snapshot?.state.config || Boolean(state?.editingClipboard || state?.deletingClipboard)} onClick={()=>controller.current?.requestQueryHistory()}><History aria-hidden="true"/></Button></Tooltip></div>
     </div>
     {readonly?<span className="search-preview-badge">{new URLSearchParams(location.search).get('preview')==='demo'?'只读演示':'只读预览'}</span>:null}
     <div className="search-header-actions flex items-center gap-1"><Tooltip content={`查找页面、设置与插件（${shortcutKeys.format('CommandOrControl+Shift+P')}）`}><Button id="commandsBtn" variant="ghost" size="sm" aria-label="查找 FlowHub 命令" aria-keyshortcuts={shortcutKeys.isMac()?'Meta+Shift+P':'Control+Shift+P'} aria-haspopup="dialog" aria-expanded={commandsOpen} disabled={!snapshot?.state.config || Boolean(state?.editingClipboard || state?.deletingClipboard)} onClick={()=>controller.current?.requestCommands()}><Command aria-hidden="true"/><span>命令</span></Button></Tooltip><Tooltip content="返回搜索框（⌘K）"><Button id="returnSearchBtn" variant="ghost" size="icon-sm" aria-label="返回搜索框" aria-keyshortcuts="Meta+K" onClick={()=>controller.current?.returnToSearch()}><CornerUpLeft aria-hidden="true"/></Button></Tooltip><Tooltip content={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'}><Button id="pinBtn" variant="ghost" size="icon-sm" aria-label={snapshot?.launcherPinned?'取消固定搜索窗口':'固定搜索窗口'} aria-pressed={snapshot?.launcherPinned || false} disabled={!host.weborg?.setLauncherPinned || pinBusy} onClick={async()=>{setPinBusy(true);try{await controller.current?.togglePin();}finally{setPinBusy(false);}}}>{snapshot?.launcherPinned?<PinOff aria-hidden="true"/>:<Pin aria-hidden="true"/>}</Button></Tooltip><Tooltip content={`打开 FlowHub 设置${version?` · v${version}`:''}${hasUpdate?' · 有新版本':''}`}><Button id="settingsBtn" variant="ghost" size="icon-sm" aria-label="打开 FlowHub 设置" onClick={()=>host.weborg.openSettings()}><Settings2 aria-hidden="true"/></Button></Tooltip></div>
@@ -255,6 +276,7 @@ function Search() {
     </div>
     {actionItem?<ActionPanel key={actionKey} item={actionItem} onClose={closeActions} onChoose={chooseAction}/>:null}
     {commandsOpen && snapshot?<CommandPalette snapshot={snapshot} previewable={Boolean(previewable)} previewOpen={previewVisible} onClose={closeActions} onExecute={executeCommand}/>:null}
+    {historyOpen && snapshot?<QueryHistory snapshot={snapshot} onClose={closeActions} onRecall={recallHistory}/>:null}
     <footer className="search-footer" onClick={dispatch('results:click')}>
       <div className="search-footer-message"><span id="actionStatus" role="status">{snapshot?.statusText}</span>{!snapshot?.statusText?<KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/>:null}</div>
       <div className="search-footer-actions">

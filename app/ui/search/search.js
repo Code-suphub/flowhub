@@ -1,5 +1,5 @@
 // Search business controller. React owns markup and element events.
-window.createFlowHubSearchController = function(root, publish) {
+window.createFlowHubSearchController = function(root, publish, integration = {}) {
 let disposed = false;
 const cleanups = [], handlers = {};
 const q = root.querySelector('#q'), resultsEl = root.querySelector('#results');
@@ -730,6 +730,7 @@ function saveClipboardEdit() {
 
 function runResultAction(action, item) {
   if (action === "open") return choose(item);
+  if (['copy','copy-query'].includes(action))rememberQuery(item);
   if (action === "edit" && item.type === "page") {
     const url = normalizeUrl(item.url);
     if (url && typeof window.weborg?.openSettings === "function") return window.weborg.openSettings({ initialUrl: url });
@@ -855,8 +856,14 @@ function previewEvent(mode) {
 }
 
 
+function rememberQuery(item) {
+  if(disposed || document.documentElement.dataset.weborgReadonly==='true' || state.config?.core?.searchHistoryEnabled===false || ['jwt','twofa','json'].includes(item?.type))return;
+  if(item?.toolId && !toolEnabled('commandHistory'))return;
+  try {integration.onQueryUsed?.({query:state.query,scope:state.scope,clipboardKind:state.scope==='clipboard'?state.clipboardKind:'all'});}catch{}
+}
 function choose(page) {
   if (externalActivation) return externalActivation.promise;
+  rememberQuery(page);
   if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
   if (page?.type === "twofa") {
     Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: page.id, title: page.title }))
@@ -1207,6 +1214,23 @@ function requestCommands() {
   if(disposed || externalActivation || !state.config || state.editingClipboard || state.deletingClipboard || document.querySelector('[role="dialog"]'))return;
   root.dispatchEvent(new CustomEvent('flowhub:commands'));
 }
+function requestQueryHistory() {
+  if(disposed || externalActivation || !state.config || state.editingClipboard || state.deletingClipboard || document.querySelector('[role="dialog"]'))return;
+  root.dispatchEvent(new CustomEvent('flowhub:query-history'));
+}
+function recallQuery(entry) {
+  if(disposed || externalActivation || state.editingClipboard || state.deletingClipboard || typeof entry?.query!=='string' || !entry.query.trim() || entry.query.length>256)return;
+  state.scope=scopeOrder.includes(entry.scope)?entry.scope:'all';
+  state.clipboardKind=['all','text','image','file'].includes(entry.clipboardKind)?entry.clipboardKind:'all';
+  // Recall changes the entire search context. Until its results arrive, old
+  // rows must not be executable by a quick second Enter or double-click.
+  for(const source of ['clipboard','app','web','memo','twofa']) {state[source+'Results']=[];state[source+'LoadedQuery']=null;}
+  q.value=entry.query;
+  handlers['input:input']?.();
+  if(state.scope!=='web')queueClipboardRefresh(0);
+  render();
+  q.focus({preventScroll:true});q.setSelectionRange(q.value.length,q.value.length);
+}
 
 
 bind(document, "keydown", (e) => {
@@ -1227,6 +1251,7 @@ bind(document, "keydown", (e) => {
   const justCommittedComposition = e.key === "Enter" && performance.now() - searchCompositionEndedAt < 80;
   if (searchInputComposing || e.isComposing || e.keyCode === 229 || e.key === "Process" || justCommittedComposition) return;
   if (window.FlowHubShortcuts?.matches(e,'CommandOrControl+Shift+P')) {e.preventDefault();if(!e.repeat)requestCommands();return;}
+  if (window.FlowHubShortcuts?.matches(e,'CommandOrControl+Shift+H')) {e.preventDefault();if(!e.repeat)requestQueryHistory();return;}
   if (e.key === "F6") { e.preventDefault(); focusResultAction(e.shiftKey ? -1 : 1); return; }
   if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyI' || e.key.toLowerCase() === 'i')) {
     if(['app','page','web','web-add','clipboard','memo','twofa'].includes(matches()[state.index]?.type)) {e.preventDefault();if(!e.repeat)previewEvent('toggle');}
@@ -2083,7 +2108,7 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, requestCommands, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, requestCommands, requestQueryHistory, recallQuery, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});return true;} catch(error){showActionStatus(error.message);return false;}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());

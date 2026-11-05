@@ -1,0 +1,15 @@
+.fh-dialog.query-history-dialog { display:flex; flex-direction:column; width:min(620px,calc(100vw - 24px)); overflow:hidden; max-height:calc(100vh - 24px); }
+.query-history-dialog>[data-slot=dialog-header],.query-history-dialog .fh-command-input { flex-shrink:0; }
+.query-history-dialog .fh-command-list { flex:1; max-height:380px; }
+.query-history-dialog .fh-command-item>svg { flex:none; width:16px; height:16px; color:var(--fh-muted); }
+.query-history-copy { display:flex; flex-direction:column; gap:3px; }
+.query-history-copy strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.query-history-copy small { font-size:11px; color:var(--fh-muted); }
+.query-history-management,.query-history-confirm { flex-shrink:0; margin-top:8px; font-size:12px; }
+.query-history-confirm { color:var(--fh-danger); }
+.query-history-empty { padding:16px 8px; color:var(--fh-muted); font-size:12px; }
+.query-history-note { flex-shrink:0; margin:8px 0 0; color:var(--fh-muted); font-size:11px; }
+.search-shell .search-history-button { position:absolute; right:0; top:50%; transform:translateY(-50%); min-height:24px; width:26px; padding:3px; border:0; background:transparent; color:var(--fh-muted); }
+.search-history-button svg { width:16px; height:16px; }
+@media(max-height:440px) { .fh-dialog.query-history-dialog { padding:12px; } .query-history-note { display:none; } }
+@media(max-width:440px) { .query-history-recall { display:none; } .query-history-dialog .fh-command-item { gap:8px; padding-inline:8px; } }

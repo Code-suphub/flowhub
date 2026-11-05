@@ -20,13 +20,14 @@ export interface SearchController {
   returnToSearch(): void; setScope(scope:string): void; setClipboardKind(kind:string): void;
   executeAction(key:string,kind:'result'|'clipboard',action:string):void;
   requestCommands():void;
+  requestQueryHistory():void;recallQuery(entry:{query:string;scope:string;clipboardKind:string}):void;
   preserveSearchFocus(event: any): void; activateScopeControl(button: HTMLElement): void;
   selectResult(index: number, options?: {reveal?: boolean}): void;
   togglePin(): Promise<boolean>; dispose(): void;
   confirmClipboardDelete(): Promise<void>; cancelClipboardDelete():void;
 }
 export type SearchHost = Window & {
-  createFlowHubSearchController(root: HTMLElement, publish: (snapshot: SearchSnapshot) => void): SearchController;
+  createFlowHubSearchController(root: HTMLElement, publish: (snapshot: SearchSnapshot) => void,integration?:{onQueryUsed(entry:{query:string;scope:string;clipboardKind:string}):void}): SearchController;
   weborg: Data; FlowHubCommandStore?: Data;
   flowhubSearchTiming?: {commit(run:unknown, startedAt:number):void};
   FlowHubMemoCatalog?: {categorySegments(category:string): string[]};

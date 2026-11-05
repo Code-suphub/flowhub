@@ -2,6 +2,16 @@ const { test } = require('node:test'), assert = require('node:assert/strict');
 const h = require('./settings-harness.test.cjs');
 const { Settings } = require('../../src/settings/index.tsx');
 const { Core } = require('../../src/settings/Core.tsx');
+test('search history defaults on and participates in drafts, saved settings, review and readonly boundaries',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[data-page="search"]'));
+  const toggle=view.container.querySelector('[aria-label="记录搜索历史"]');assert.equal(toggle.getAttribute('aria-checked'),'true');assert.equal(store.dirty,false);
+  await h.click(toggle);assert.equal(store.snapshot().config.core.searchHistoryEnabled,false);
+  const {configChanges,changeGroup,changeLabel}=require('../../src/settings/config-changes.ts'),change=configChanges(h.fixture(),store.snapshot().config).find(change=>change.path.join('.')==='core.searchHistoryEnabled');
+  assert.equal(changeLabel(change.path),'记录搜索历史');assert.equal(changeGroup(change.path).page,'search');assert.equal(change.before,true);assert.equal(change.after,false);
+  await h.act(async()=>store.save());assert.equal(writes[0].core.searchHistoryEnabled,false);await view.unmount();store.dispose();
+  const preview=await h.loaded({},true),readView=await h.mount(Settings,{store:preview.store});await h.click(readView.container.querySelector('[data-page="search"]'));
+  const readonlyToggle=readView.container.querySelector('[aria-label="记录搜索历史"]');assert.equal(readonlyToggle.getAttribute('aria-disabled'),'true');await h.click(readonlyToggle);assert.equal(preview.store.dirty,false);assert.equal(preview.writes.length,0);await readView.unmount();preview.store.dispose();
+});
 test('long content preview defaults on and its saved setting, change review and read-only boundary remain consistent',async()=>{
   const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
   const searchPage=()=>h.click(view.container.querySelector('[data-page="search"]'));

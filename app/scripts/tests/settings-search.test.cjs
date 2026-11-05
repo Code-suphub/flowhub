@@ -14,7 +14,7 @@ async function choose(view,query,id){await h.click(view.container.querySelector(
 
 test('host settings index supports Chinese aliases, English terms, exact ranking and bounded results',()=>{
   assert.equal(new Set(settingsSearchEntries.map(item=>item.id)).size,settingsSearchEntries.length);
-  for(const [query,id] of [['开机启动','launch-at-login'],['保留天数','clipboard-retention'],['菜单栏权限','menubar-permission'],['max records','clipboard-records'],['主题','theme'],['应用范围键','scope-key:app'],['长文本','long-content-preview'],['自动预览','long-content-preview']])assert.equal(findSettings(query)[0].id,id,query);
+  for(const [query,id] of [['开机启动','launch-at-login'],['保留天数','clipboard-retention'],['菜单栏权限','menubar-permission'],['max records','clipboard-records'],['主题','theme'],['应用范围键','scope-key:app'],['长文本','long-content-preview'],['自动预览','long-content-preview'],['搜索历史','search-history'],['补全','search-history']])assert.equal(findSettings(query)[0].id,id,query);
   assert.equal(findSettings('ＭＡＸ records')[0].id,'clipboard-records');assert.deepEqual(findSettings('不存在的随机字段'),[]);assert.ok(findSettings('').some(item=>item.id==='page:extensions'));assert.ok(findSettings('设置').length<=60);
 });
 test('every indexed target resolves on its host page, including collapsed menu options',async()=>{

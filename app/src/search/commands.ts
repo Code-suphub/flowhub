@@ -4,12 +4,13 @@ import type { SearchSnapshot } from './types';
 export interface LauncherPlugin {id:string;name:string;description?:string}
 export interface LauncherCommand {
   id:string;label:string;description:string;keywords:string;kind:'搜索范围'|'设置'|'插件'|'窗口';
-  target:{type:'scope';id:string}|{type:'settings';module:string}|{type:'local';action:'preview'|'pin'|'clear'};
+  target:{type:'scope';id:string}|{type:'settings';module:string}|{type:'local';action:'preview'|'pin'|'clear'|'history'};
   shortcut?:string;disabled?:boolean;
 }
 export function launcherCommands(snapshot:SearchSnapshot,{plugins=[],readonly=false,previewable=false,previewOpen=false,pinAvailable=false}: {plugins?:LauncherPlugin[];readonly?:boolean;previewable?:boolean;previewOpen?:boolean;pinAvailable?:boolean}):LauncherCommand[] {
   const commands:LauncherCommand[]=[
     {id:'scope:all',label:'搜索全部结果',description:'使用当前关键词搜索所有已启用来源',keywords:'全部 搜索 all search',kind:'搜索范围',target:{type:'scope',id:'all'}},
+    {id:'local:history',label:'搜索历史与补全',description:'查找以前使用的查询，只回填搜索条件',keywords:'历史 记录 回填 补全 最近 history query completion',kind:'窗口',target:{type:'local',action:'history'}},
     {id:'settings:extensions',label:'打开插件市场',description:'浏览、安装与管理插件',keywords:'插件 安装 扩展 市场 已安装 卸载 marketplace extension plugin',kind:'插件',target:{type:'settings',module:'extensions'}},
     ...navigationItems.map(page=>({id:`settings:${page.id}`,label:page.label,description:`前往设置 · ${page.group}`,keywords:page.keywords,kind:'设置' as const,target:{type:'settings' as const,module:page.id}})),
     ...(snapshot.state.plugins || []).filter((plugin:{enabled:boolean;available:boolean;searchable:boolean})=>plugin.enabled && plugin.available && plugin.searchable).map((plugin:{id:string;name:string;description?:string})=>({id:`scope:${plugin.id}`,label:`搜索${plugin.name}`,description:'切换搜索范围，保留当前关键词',keywords:`搜索 范围 ${plugin.id} ${plugin.description || ''}`,kind:'搜索范围' as const,target:{type:'scope' as const,id:plugin.id}})),

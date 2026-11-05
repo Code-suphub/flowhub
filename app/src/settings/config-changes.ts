@@ -27,6 +27,7 @@ const labels: Record<string, string> = {
   hotkey: '唤出快捷键', launchAtLogin: '开机自动启动', configPath: '配置文件位置', storagePath: '数据库与剪贴板目录',
   reuseBrowserTabs: '优先复用浏览器标签页', searchResultOrder: '搜索来源顺序', webBeforeClipboard: '网页优先于剪贴板',
   autoPreviewLongContent: '长内容自动预览',
+  searchHistoryEnabled: '记录搜索历史',
   autoUpdateCheck: '自动检查正式版', autoUpdateInstall: '自动下载并重启安装',
   notifications: '通知', menuBar: '菜单栏', enabled: '启用状态', updates: '更新通知',
   showOpenLauncher: '显示启动器入口', showOpenSettings: '显示设置入口', showVersion: '显示版本', showQuit: '显示退出入口',
@@ -39,7 +40,7 @@ const pages: Record<string, string> = { core:'通用设置', data:'数据与诊�
 const sources: Record<string, string> = { all:'全部', app:'应用', web:'网页目录', clipboard:'剪贴板', memo:'备忘录', twofa:'验证码' };
 export function changeGroup(path: string[]): { page: PageId | null; label: string } {
   let page: string | undefined;
-  if (path[0] === 'core') page = path[1] === 'configPath' ? 'data' : path[1] === 'menuBar' ? 'menubar' : ['scopeShortcuts','searchResultOrder','webBeforeClipboard','reuseBrowserTabs','autoPreviewLongContent'].includes(path[1]) ? 'search' : ['autoUpdateCheck','autoUpdateInstall'].includes(path[1]) ? 'updates' : 'core';
+  if (path[0] === 'core') page = path[1] === 'configPath' ? 'data' : path[1] === 'menuBar' ? 'menubar' : ['scopeShortcuts','searchResultOrder','webBeforeClipboard','reuseBrowserTabs','autoPreviewLongContent','searchHistoryEnabled'].includes(path[1]) ? 'search' : ['autoUpdateCheck','autoUpdateInstall'].includes(path[1]) ? 'updates' : 'core';
   else if (path[0] === 'plugins') page = path[2] === 'settings' && path[3] === 'storagePath' ? 'data' : path[1] === 'tools' && path[3] === 'proxyAdapter' ? 'core' : path[1];
   return { page: page && pages[page] ? page as PageId : null, label: page ? pages[page] || `插件 ${page}` : '其他配置' };
 }
@@ -53,6 +54,7 @@ const sensitive = (path: string[]) => path.some(part => /password|secret|token|c
 const defaults: Record<string,string> = {
   'core.hotkey':'默认（Alt+Space）', 'core.launchAtLogin':'关闭（默认）', 'core.reuseBrowserTabs':'关闭（默认）',
   'core.autoPreviewLongContent':'开启（默认）',
+  'core.searchHistoryEnabled':'开启（默认）',
   'core.autoUpdateCheck':'开启（默认）', 'core.autoUpdateInstall':'关闭（默认）', 'core.searchResultOrder':'默认顺序',
   'core.configPath':'默认位置', 'plugins.clipboard.settings.storagePath':'默认位置',
   'plugins.clipboard.settings.capturePaused':'关闭（默认）', 'plugins.clipboard.settings.protectSensitive':'开启（默认）',
