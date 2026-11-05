@@ -5,6 +5,7 @@ import { Help, Tooltip } from '../shared/controls';
 import { CornerUpLeft, CornerDownLeft, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { useMediaQuery } from '../shared/useMediaQuery';
 import { Results, resultActions } from './Results';
+import { ActionPanel, actionIdentity, availableActions, type ResultAction } from './ActionPanel';
 import { Preview, canPreview, previewNeighbor, primaryLabel } from './Preview';
 import { isLongPreviewContent, previewIdentity, readPreviewExpanded, rememberPreviewExpanded } from './preview-layout';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
@@ -12,38 +13,18 @@ import './search.css';
 
 function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNavigation?:boolean}) {
   const hints:string[]=[];
-  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮','⌘K 返回搜索框');
+  hints.push('Tab 切换范围','F6 / ⇧F6 切换操作按钮，末尾 F6 进入操作面板','⌘K 返回搜索框');
   if(selected?.type==='clipboard') {
     if(selected.kind!=='image')hints.push('⇧⏎ 纯文本粘贴');
     hints.push('⌘D 置顶');
     if(selected.kind==='text')hints.push('⌘E 编辑副本');
     if(document.documentElement.dataset.weborgReadonly!=='true')hints.push('⌥⌫ 删除');
   }
-  if(selected && !selected.usageSection && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 更多操作');
+  if(selected && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 搜索结果操作');
   const action=primaryLabel(selected);
   hints.push('单击选择 · 双击或回车执行');
   if(canPreview(selected))hints.push('⌘I 展开／收起预览','预览中 ⌥↑ / ⌥↓ 切换结果');
   return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?'↑↓ 选择 · ↵ '+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
-}
-
-function ActionMenu({item,index,x,y,onDismiss,onAction}: {item:SearchItem;index:number;x:number;y:number;onDismiss:()=>void;onAction:React.MouseEventHandler<HTMLDivElement>}) {
-  return <div className="search-context-menu" role="menu" aria-label="搜索结果操作" style={{left:x,top:y}} onClickCapture={onDismiss} onClick={onAction} onKeyDown={event => {
-    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();onDismiss();return;}
-    const buttons=[...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')], position=buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
-      event.preventDefault();
-      const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(position+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;
-      buttons[next]?.focus();
-    }
-  }}>
-    {item.type==='clipboard' ? <>
-      {item.kind!=='image'?<Button className="tool-action" role="menuitem" data-result-action="copy" data-result-index={index}>{item.kind==='file'?'复制文件名':'复制全文'}</Button>:null}
-      <Button className="tool-action" role="menuitem" data-clipboard-action="pin" data-clipboard-id={item.id}>{item.pinnedAt?'取消置顶（⌘D）':'置顶（⌘D）'}</Button>
-      {['text','file'].includes(item.kind)?<Button className="tool-action" role="menuitem" data-clipboard-action="plain" data-clipboard-id={item.id}>纯文本粘贴（⇧↩）</Button>:null}
-      {item.kind==='text'?<Button className="tool-action" role="menuitem" data-clipboard-action="edit" data-clipboard-id={item.id}>编辑副本（⌘E）</Button>:null}
-      {document.documentElement.dataset.weborgReadonly!=='true'?<Button className="tool-action" role="menuitem" data-clipboard-action="delete" data-clipboard-id={item.id}>删除记录（⌥⌫）</Button>:null}
-    </> : resultActions(item).map(([action,label])=><Button key={action} className="tool-action" role="menuitem" data-result-action={action} data-result-index={index}>{label}</Button>)}
-  </div>;
 }
 
 function Search() {
@@ -91,18 +72,27 @@ function Search() {
     const input=root.current?.querySelector<HTMLInputElement>('#q');
     if(!input)return;input.value='';controller.current?.handlers['input:input']?.();input.focus({preventScroll:true});
   },[]);
-  const [actionMenu,setActionMenu]=useState<{index:number;key:string;x:number;y:number}|null>(null);
-  const menuKey=(item:SearchItem)=>`${item.type}:${item.id ?? ''}:${item.path ?? ''}:${item.url ?? ''}`;
+  const [actionKey,setActionKey]=useState<string|null>(null);
+  const actionFrame=useRef<number|undefined>(undefined);
+  const cancelActionWork=useCallback(()=>{
+    if(actionFrame.current!==undefined){cancelAnimationFrame(actionFrame.current);actionFrame.current=undefined;}
+  },[]);
+  const closeActions=useCallback(()=>{
+    cancelActionWork();
+    setActionKey(null);
+    // Wait for the modal focus trap to unmount before returning to the query.
+    actionFrame.current=requestAnimationFrame(()=>{actionFrame.current=undefined;controller.current?.returnToSearch();});
+  },[cancelActionWork]);
   useLayoutEffect(()=>{
     const c=host.createFlowHubSearchController(root.current!,setSnapshot); controller.current=c;
-    return ()=>{controller.current=null;c.dispose();if(previewFrame.current!==undefined)cancelAnimationFrame(previewFrame.current);};
-  },[]);
+    return ()=>{controller.current=null;c.dispose();cancelActionWork();if(previewFrame.current!==undefined)cancelAnimationFrame(previewFrame.current);};
+  },[cancelActionWork]);
   useEffect(()=>{
     const node=root.current;
     const preview=(event:Event)=>{
       const mode=(event as CustomEvent<string>).detail;
-      if(mode==='dismiss-actions'){setActionMenu(null);return;}
-      if(mode==='reset'){cancelPreviewFocus();setDetailOpen(false);setActionMenu(null);return;}
+      if(mode==='dismiss-actions'){cancelActionWork();setActionKey(null);return;}
+      if(mode==='reset'){cancelActionWork();cancelPreviewFocus();setDetailOpen(false);setActionKey(null);return;}
       if(mode==='selection'){if(narrow)setDetailOpen(true);return;}
       if(mode==='close'){
         if(narrow && detailOpen){event.preventDefault();closePreview();}
@@ -115,7 +105,7 @@ function Search() {
     };
     node?.addEventListener('flowhub:preview',preview);
     return ()=>node?.removeEventListener('flowhub:preview',preview);
-  },[detailOpen,widePreview,narrow,openPreview,closePreview,cancelPreviewFocus]);
+  },[detailOpen,widePreview,narrow,openPreview,closePreview,cancelPreviewFocus,cancelActionWork]);
   useLayoutEffect(()=>{
     if(snapshot?.timing) host.flowhubSearchTiming?.commit(snapshot.timing.run,snapshot.timing.startedAt);
   },[snapshot]);
@@ -142,35 +132,27 @@ function Search() {
     return ()=>{observer.disconnect();if(frame!==undefined)cancelAnimationFrame(frame);};
   },[snapshot?.plan]);
   const dispatch=(name:string)=>(event:React.SyntheticEvent)=>controller.current?.handlers[name]?.(event);
-  useEffect(()=>{
-    if(!actionMenu)return;
-    const close=(event?:PointerEvent)=>{if(event?.target instanceof Element && event.target.closest('.search-context-menu'))return;setActionMenu(null);};
-    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')close();};
-    document.addEventListener('pointerdown',close);
-    document.addEventListener('keydown',escape);
-    return ()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',escape);};
-  },[actionMenu]);
-  useLayoutEffect(()=>{if(actionMenu)root.current?.querySelector<HTMLElement>('.search-context-menu .tool-action')?.focus();},[actionMenu]);
   useLayoutEffect(()=>{
     const results=root.current?.querySelector('#results');
     const open=(event:Event)=>{
       const index=(event as CustomEvent<{index:number}>).detail?.index;
       const item=snapshot?.items[index];
       if(!item || (item.type!=='clipboard' && !resultActions(item).length))return;
-      const row=results?.querySelector<HTMLElement>(`.result[data-i="${index}"]`),rect=row?.getBoundingClientRect();
-      setActionMenu({index,key:menuKey(item),x:Math.max(8,Math.min(rect?.left ?? 8,window.innerWidth-220)),y:Math.max(8,Math.min(rect?.bottom ?? 8,window.innerHeight-176))});
+      cancelActionWork();cancelPreviewFocus();setActionKey(actionIdentity(item));
     };
     results?.addEventListener('flowhub:open-action-menu',open);
     return ()=>results?.removeEventListener('flowhub:open-action-menu',open);
-  },[snapshot?.items]);
+  },[snapshot?.items,cancelPreviewFocus,cancelActionWork]);
   function contextMenu(event:React.MouseEvent<HTMLDivElement>) {
-    if((event.target as HTMLElement).closest('.search-context-menu,[data-clipboard-editor]'))return;
+    if((event.target as HTMLElement).closest('[data-clipboard-editor]'))return;
     const row=(event.target as HTMLElement).closest<HTMLElement>('.result');
     const item=row && snapshot?.items[Number(row.dataset.i)];
-    if(!item || (item.type!=='clipboard' && !resultActions(item).length)) {setActionMenu(null);controller.current?.handlers['results:contextmenu']?.(event);return;}
+    if(!item || !availableActions(item,false).length) {setActionKey(null);controller.current?.handlers['results:contextmenu']?.(event);return;}
     event.preventDefault();
+    if(state?.editingClipboard || state?.deletingClipboard)return;
+    cancelActionWork();cancelPreviewFocus();
     controller.current?.selectResult(Number(row!.dataset.i));
-    setActionMenu({index:Number(row!.dataset.i),key:menuKey(item),x:Math.max(8,Math.min(event.clientX,window.innerWidth-220)),y:Math.max(8,Math.min(event.clientY,window.innerHeight-176))});
+    setActionKey(actionIdentity(item));
   }
   const activate=(event:React.MouseEvent<HTMLButtonElement>)=>{setDetailOpen(false);controller.current?.activateScopeControl(event.currentTarget);};
   const press=(event:React.MouseEvent)=>controller.current?.preserveSearchFocus(event);
@@ -178,7 +160,8 @@ function Search() {
   // The result list is virtualized: the active option leaves the DOM once the
   // user scrolls past it. Only reference an option that is actually rendered.
   const activeRendered=Boolean(selected)&&(!plan||(activeIndex>=plan.from&&activeIndex<plan.to));
-  const menuItem=actionMenu && snapshot?.items[actionMenu.index];
+  const actionItem=actionKey?snapshot?.items.find(item=>actionIdentity(item)===actionKey):undefined;
+  useEffect(()=>{if(actionKey && !actionItem)closeActions();},[actionKey,actionItem,closeActions]);
   const version=String(snapshot?.updateState?.currentVersion || ''), hasUpdate=['available','downloaded'].includes(snapshot?.updateState?.status || '');
   const placeholders:Record<string,string>={app:'搜索已安装的应用…',web:'搜索网页与书签…',clipboard:'搜索剪贴板历史…',memo:'搜索命令备忘…',twofa:'搜索验证码账户…'};
   const placeholder=placeholders[state?.scope || ''] || '搜索应用、网页、剪贴板…';
@@ -203,10 +186,21 @@ function Search() {
       if(!document.hidden && document.hasFocus())root.current?.querySelector<HTMLElement>('.search-preview-body')?.focus({preventScroll:true});
     });
   });
-  const openActions=(event:React.MouseEvent<HTMLButtonElement>)=>{
+  const openActions=()=>{
     if(!selected)return;
-    const rect=event.currentTarget.getBoundingClientRect();
-    setActionMenu({index:activeIndex,key:menuKey(selected),x:Math.max(8,Math.min(rect.right-210,window.innerWidth-220)),y:Math.max(8,rect.top-190)});
+    cancelActionWork();cancelPreviewFocus();setActionKey(actionIdentity(selected));
+  };
+  const chooseAction=(action:ResultAction)=>{
+    if(!actionKey || action.disabled || actionFrame.current!==undefined)return;
+    // The controller resolves the same identity against its latest results.
+    // A refresh or reorder must never redirect an action to another record.
+    const key=actionKey;
+    setActionKey(null);
+    actionFrame.current=requestAnimationFrame(()=>{
+      actionFrame.current=undefined;
+      const c=controller.current;if(!c)return;
+      c.returnToSearch();c.executeAction(key,action.kind,action.action);
+    });
   };
   const readonly=document.documentElement.dataset.weborgReadonly==='true';
   return <div ref={root} className="fh-root search-shell flex flex-col h-full" onFocusCapture={event=>{previewFocused.current=Boolean((event.target as HTMLElement).closest('.search-preview'));}} onLoadCapture={dispatch('results:load')} onErrorCapture={dispatch('results:error')}>
@@ -231,12 +225,12 @@ function Search() {
       </div>
       {previewVisible && selected && snapshot?<Preview item={selected} index={activeIndex} snapshot={snapshot} onAction={dispatch('results:click')} onBack={closePreview} onNavigate={direction=>{const next=previewNeighbor(snapshot.items,activeIndex,direction);if(next>=0)openPreview(next,true);}}/>:null}
     </div>
-    {menuItem && actionMenu?.key===menuKey(menuItem)?<ActionMenu item={menuItem} index={actionMenu.index} x={actionMenu.x} y={actionMenu.y} onAction={dispatch('results:click')} onDismiss={()=>{controller.current?.returnToSearch();setActionMenu(null);}}/>:null}
+    {actionItem?<ActionPanel key={actionKey} item={actionItem} onClose={closeActions} onChoose={chooseAction}/>:null}
     <footer className="search-footer" onClick={dispatch('results:click')}>
       <div className="search-footer-message"><span id="actionStatus" role="status">{snapshot?.statusText}</span>{!snapshot?.statusText?<KeyboardHint selected={selected} usageNavigation={Boolean(selected?.usageSection && state?.query==='')}/>:null}</div>
       <div className="search-footer-actions">
         {previewable?<Button variant="ghost" size="sm" aria-label={previewVisible?'收起预览':'展开预览'} aria-expanded={previewVisible} aria-controls={previewVisible?'search-preview':undefined} aria-keyshortcuts="Meta+I" onClick={()=>previewVisible?closePreview():openPreview(activeIndex)}>{previewVisible?<PanelRightClose data-icon="inline-start"/>:<PanelRight data-icon="inline-start"/>}<span className="preview-toggle-label">{previewVisible?'收起预览':'预览'}</span><kbd>⌘I</kbd></Button>:null}
-        {selected && (selected.type==='clipboard' || resultActions(selected).length)?<Button id="resultActionsBtn" variant="ghost" size="sm" aria-label="更多结果操作" onClick={openActions}>操作<MoreHorizontal data-icon="inline-end"/></Button>:null}
+        {selected && availableActions(selected,readonly).length?<Tooltip content="搜索当前结果的操作；F6 也可进入"><Button id="resultActionsBtn" variant="ghost" size="sm" aria-label="搜索当前结果的操作" aria-haspopup="dialog" aria-expanded={Boolean(actionItem)} disabled={Boolean(state?.editingClipboard || state?.deletingClipboard)} onClick={openActions}>操作<MoreHorizontal data-icon="inline-end"/></Button></Tooltip>:null}
         {selected?<Button id="activateResultBtn" className="tool-action" variant="default" size="sm" data-result-action="open" data-result-index={activeIndex} disabled={Boolean(state?.editingClipboard || state?.deletingClipboard || readonly && ['clipboard','memo'].includes(selected.type))}>{primaryLabel(selected)}<CornerDownLeft data-icon="inline-end"/></Button>:null}
       </div>
     </footer>

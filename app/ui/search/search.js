@@ -753,6 +753,22 @@ function runResultAction(action, item) {
   return copyText(text).then(() => showActionStatus(message)).catch(() => showActionStatus("复制失败"));
 }
 
+// Resolve against current data, never against a row index captured before a
+// background refresh. This also distinguishes the frequent and recent slots.
+const actionIdentity = item => JSON.stringify([item.type,item.id ?? null,item.path ?? null,item.url ?? null,item.usageSection ?? null]);
+function executeAction(key, kind, action) {
+  if (disposed || externalActivation || state.editingClipboard || state.deletingClipboard || document.documentElement.dataset.weborgReadonly === 'true') return;
+  const item = matches().find(item => actionIdentity(item) === key);
+  if (!item) return;
+  if (kind === 'clipboard') {
+    if (item.type !== 'clipboard') return;
+    const actions = {pin:toggleClipboardPin,plain:pasteClipboardPlain,edit:startClipboardEdit,delete:requestClipboardDelete};
+    if (Object.hasOwn(actions,action)) void Promise.resolve(actions[action](item)).catch(error=>showActionStatus(error?.message || '操作失败'));
+  } else if (kind === 'result' && ['open','copy','copy-query','edit'].includes(action)) {
+    void Promise.resolve(runResultAction(action,item)).catch(error=>showActionStatus(error?.message || '操作失败'));
+  }
+}
+
 const resultWindow = new window.FlowHubResultWindow();
 let windowedResults = false;
 let windowRenderFrame = 0;
@@ -783,8 +799,7 @@ function renderSnapshot(options = {}) {
 function focusResultAction(direction = 1) {
   const previewVisible=root.querySelector('.search-workbench')?.dataset.previewOpen==='true';
   const inlineActions = [...(previewVisible?root.querySelectorAll('.search-preview-actions .tool-action'):[]),...root.querySelectorAll('#activateResultBtn'),...root.querySelectorAll('.search-recovery .tool-action'),...resultsEl.querySelectorAll(".result.active .tool-action:not(.result-preview-button)")].filter(button=>!button.disabled);
-  const menuActions = [...root.querySelectorAll(".search-context-menu .tool-action")].filter(button=>!button.disabled);
-  const resultActions = [...inlineActions,...menuActions];
+  const resultActions = inlineActions;
   const selected = matches()[state.index];
   const current = typeof document.activeElement === "undefined" ? null : document.activeElement;
   const clear = root.querySelector('.search-clear');
@@ -792,7 +807,7 @@ function focusResultAction(direction = 1) {
   if (clear && current === clear && direction < 0) { returnToSearch(); return; }
   const hasMenu = selected && ["app","page","web","web-add","memo","twofa","calculation","timestamp","jwt","dns","ip","clipboard"].includes(selected.type);
   const leavingInline = direction>0 && inlineActions.length>0 && inlineActions.indexOf(current)===inlineActions.length-1;
-  if (hasMenu && !menuActions.length && (!inlineActions.length || leavingInline)) {
+  if (hasMenu && (!inlineActions.length || leavingInline)) {
     const row = resultsEl.querySelector(".result.active");
     if (row) {
       resultsEl.dispatchEvent(new CustomEvent("flowhub:open-action-menu", { detail: { index: Number(row.dataset.i) } }));
@@ -1191,6 +1206,9 @@ function returnToSearch() {
 
 
 bind(document, "keydown", (e) => {
+  // The searchable action dialog owns input, navigation and Escape. Its portal
+  // is outside the search root; launcher shortcuts must not reach through it.
+  if (document.querySelector('.search-actions-dialog')) return;
   if (externalActivation && e.key!=="Escape") {e.preventDefault();return;}
   // The shared Dialog owns Escape, Enter and its focus trap while confirming.
   if (state.deletingClipboard) return;
@@ -1223,7 +1241,7 @@ bind(document, "keydown", (e) => {
     e.preventDefault();
     if (!previewEvent('close')) return;
     // 焦点在结果操作栏里时先回到搜索框，再按一次才隐藏窗口。
-    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest('.search-preview,.search-footer,.search-context-menu')) { returnToSearch(); return; }
+    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest('.search-preview,.search-footer')) { returnToSearch(); return; }
     if (window.weborg?.hideMain) void window.weborg.hideMain();
     else window.close();
     return;
@@ -1236,7 +1254,7 @@ bind(document, "keydown", (e) => {
   }
   if (e.key === "Tab") {
     // 焦点已经在结果操作栏里：交给浏览器的顺序，Tab 不再切换范围。
-    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest('.search-preview,.search-footer,.search-context-menu')) return;
+    if (resultsEl.contains(document.activeElement) || document.activeElement?.closest('.search-preview,.search-footer')) return;
     e.preventDefault();
     if (!scopeTabHeld) {
       scopeTabHeld = true;
@@ -1298,6 +1316,7 @@ bind(document, "keydown", (e) => {
 });
 
 bind(document, "keyup", (e) => {
+  if (document.querySelector('.search-actions-dialog')) {scopeTabHeld=false;scopeTabUsedWithArrow=false;return;}
   if (e.key !== "Tab" || !scopeTabHeld) return;
   e.preventDefault();
   if (!scopeTabUsedWithArrow) moveScope(scopeTabTapOffset);
@@ -2059,7 +2078,7 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, setScope, setClipboardKind, selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});} catch(error){showActionStatus(error.message);}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());

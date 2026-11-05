@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { setup, wait, delay } = require('./search-react-harness.cjs');
 
-const dialog = s => s.w.document.querySelector('[role="dialog"]');
+const dialog = s => [...s.w.document.querySelectorAll('[role="dialog"]')].find(node=>!node.classList.contains('search-actions-dialog')) || null;
 const button = (s, label) => [...s.w.document.querySelectorAll('[role="dialog"] button')]
   .find(node => node.textContent === label);
 const actions = s => s.calls.filter(call => call[0] === 'action');
@@ -101,6 +101,7 @@ test('clipboard delete: read-only shortcuts/context menu and read-only change be
     new preview.w.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   await delay(20);
   assert.equal(dialog(preview), null);
+  assert.equal(preview.w.document.querySelector('[data-command-id="clipboard:delete"]'),null);
   assert.equal(actions(preview).length, 0);
 
   const s = await setup(t);

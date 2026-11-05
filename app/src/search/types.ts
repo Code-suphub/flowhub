@@ -18,6 +18,7 @@ export interface SearchController {
   state: Data; resultWindow: {heights: Map<string,number>};
   render(options?: {preserveScroll?: boolean}): void;
   returnToSearch(): void; setScope(scope:string): void; setClipboardKind(kind:string): void;
+  executeAction(key:string,kind:'result'|'clipboard',action:string):void;
   preserveSearchFocus(event: any): void; activateScopeControl(button: HTMLElement): void;
   selectResult(index: number, options?: {reveal?: boolean}): void;
   togglePin(): Promise<void>; dispose(): void;

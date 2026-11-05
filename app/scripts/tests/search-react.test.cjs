@@ -152,8 +152,8 @@ test('clipboard copy editor uses shared Textarea and keeps cancel behavior',asyn
   const {w,scope}=await setup(t);
   await scope('clipboard');
   w.document.querySelector('.clipboard-result').dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
-  await wait(()=>w.document.querySelector('[data-clipboard-action="edit"]'));
-  w.document.querySelector('[data-clipboard-action="edit"]').click();
+  await wait(()=>w.document.querySelector('[data-command-id="clipboard:edit"]'));
+  w.document.querySelector('[data-command-id="clipboard:edit"]').click();
   await wait(()=>w.document.querySelector('[data-clipboard-editor]'));
   const editor=w.document.querySelector('[data-clipboard-editor]');
   assert.equal(editor.getAttribute('data-slot'),'textarea');
@@ -233,9 +233,9 @@ test('narrow preview returns to results on Escape or input and keeps menus outsi
   const {w,q,key,scope,input}=await setup(t,{width:390});await scope('clipboard');
   const workbench=w.document.querySelector('.search-workbench');
   w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');
-  w.document.getElementById('resultActionsBtn').click();await wait(()=>w.document.querySelector('[role="menu"]'));
-  assert.equal(w.document.querySelector('[role="menu"]').closest('#results'),null);
-  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait(()=>!w.document.querySelector('[role="menu"]'));assert.equal(workbench.dataset.detailOpen,'true','Escape closes only the top layer');assert.equal(w.document.activeElement,q);
+  w.document.getElementById('resultActionsBtn').click();await wait(()=>w.document.querySelector('.search-actions-dialog'));
+  assert.equal(w.document.querySelector('.search-actions-dialog').closest('#results'),null);
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait(()=>!w.document.querySelector('.search-actions-dialog') && w.document.activeElement===q);assert.equal(workbench.dataset.detailOpen,'true','Escape closes only the top layer');assert.equal(w.document.activeElement,q);
   key('Escape');await wait(()=>workbench.dataset.detailOpen==='false');
   key('F6');assert.equal(w.document.activeElement.id,'activateResultBtn','hidden preview actions cannot trap keyboard focus');
   q.focus();w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');await input('new');

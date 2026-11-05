@@ -120,20 +120,24 @@ test('both usage rows filter by source and keep recent entries when frequent is 
   frequentOnly.key('ArrowUp');await wait(()=>frequentOnly.w.document.querySelector('.usage-tile.active h3')?.textContent==='Frequent only');
 });
 
-test('F6 cycles preview, primary and menu actions for apps, usage and clipboard then returns to search',async t=>{
+test('F6 visits preview and primary actions then opens the searchable panel; F6 returns to search',async t=>{
   for(const target of ['app','usage','clipboard']) {
     const {w,q,key,scope}=await setup(t,{previewExpanded:true,...(target==='usage'?{usage:{frequent:[appItem('A')],recent:[]}}:{})});
     if(target!=='usage')await scope(target);
     const seen=[];key('F6');
-    for(let i=0;i<18 && w.document.activeElement!==q;i++) {
+    for(let i=0;i<18 && !w.document.querySelector('.search-actions-dialog');i++) {
       const current=w.document.activeElement;
       assert.ok(current.classList.contains('tool-action'));
       seen.push(current.dataset.resultAction || current.dataset.clipboardAction);
       current.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));await delay(5);
     }
-    assert.equal(w.document.activeElement,q,'the action cycle terminates at search');
+    await wait(()=>w.document.activeElement.getAttribute('aria-label')==='搜索结果操作');
+    assert.ok(w.document.querySelector('[data-command-id="result:copy"]'));
+    if(target==='clipboard'){assert.ok(w.document.querySelector('[data-command-id="clipboard:edit"]'));assert.ok(w.document.querySelector('[data-command-id="clipboard:delete"]'));}
+    w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+    await wait(()=>w.document.activeElement===q && !w.document.querySelector('.search-actions-dialog'));
     assert.ok(seen.includes('copy'));assert.ok(seen.includes('open'));
-    if(target==='clipboard'){assert.ok(seen.includes('edit'));assert.ok(seen.includes('delete'));}
+    if(target==='clipboard')assert.ok(seen.includes('edit'));
   }
 });
 test('application metadata updates per query; native icon hydration stays asynchronous and ignores stale replies',async t=>{
