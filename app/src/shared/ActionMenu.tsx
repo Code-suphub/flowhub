@@ -4,10 +4,10 @@ import { Button } from './ui';
 
 export type ActionMenuItem = { id: string; label: string; disabled?: boolean; checked?: boolean; onSelect?(): void };
 /** Shared menu semantics: keyboard movement, Escape, outside dismissal and focus return. */
-export function ActionMenu({ label, icon, items, triggerClassName, popupClassName, disabled = false }: {
-  label: string; icon: ReactNode; items: ActionMenuItem[]; triggerClassName?: string; popupClassName?: string; disabled?: boolean;
+export function ActionMenu({ label, icon, items, triggerClassName, popupClassName, disabled = false, tabIndex }: {
+  label: string; icon: ReactNode; items: ActionMenuItem[]; triggerClassName?: string; popupClassName?: string; disabled?: boolean; tabIndex?:number;
 }) {
-  return <Menu.Root><Menu.Trigger disabled={disabled} render={<Button variant="ghost" className={triggerClassName} aria-label={label} disabled={disabled} />}>{icon}</Menu.Trigger>
+  return <Menu.Root><Menu.Trigger disabled={disabled} tabIndex={tabIndex} render={<Button variant="ghost" className={triggerClassName} aria-label={label} disabled={disabled} />}>{icon}</Menu.Trigger>
     <Menu.Portal><Menu.Positioner sideOffset={6} align="end" className="z-50"><Menu.Popup className={popupClassName} aria-label={label}>
       <Menu.Group>{items.map(item => item.checked === undefined ? <Menu.Item key={item.id} disabled={item.disabled} onClick={item.onSelect}>{item.label}</Menu.Item> : <Menu.CheckboxItem key={item.id} checked={item.checked} disabled={item.disabled} onCheckedChange={item.onSelect}><Menu.CheckboxItemIndicator>✓</Menu.CheckboxItemIndicator>{item.label}</Menu.CheckboxItem>)}</Menu.Group>
     </Menu.Popup></Menu.Positioner></Menu.Portal>

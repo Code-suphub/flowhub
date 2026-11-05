@@ -10,7 +10,7 @@ export function PluginDetails({item,source,installed,disabled,onClose,onInstall,
   const {manifest}=item, action=installLabel(item,installed), same=action==='管理', official=isOfficialSource(source);
   const published=item.publishedAt && Number.isFinite(Date.parse(item.publishedAt))?new Date(item.publishedAt).toLocaleDateString():null;
   const target=item.target==='macos-aarch64'?'macOS · Apple Silicon':item.target==='macos-x86_64'?'macOS · Intel':item.target;
-  return <Dialog title={`${manifest.name}详情`} className="fh-market-dialog market-detail-dialog" busy={false} onClose={onClose}>
+  return <Dialog title={`${manifest.name}详情`} className="fh-market-dialog market-detail-dialog" busy={false} restoreFocus={false} onClose={onClose}>
     <div className="market-detail-body">
     <div className="market-detail-identity"><PluginIcon manifest={manifest}/><div className="min-w-0"><h3>{manifest.name}</h3><p className="market-meta">{official?'FlowHub 官方':source?.name || '未知来源'} · v{manifest.version}</p></div>{installed?<Badge variant="secondary">已安装</Badge>:null}</div>
     <p className="market-detail-description">{manifest.description || '此插件尚未提供功能介绍。'}</p>
