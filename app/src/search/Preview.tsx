@@ -1,7 +1,6 @@
 import { useEffect, useRef, type MouseEventHandler } from 'react';
-import { ArrowLeft, ChevronUp, ChevronDown, Clipboard, FileText, Image, Pin } from 'lucide-react';
+import { ArrowLeft, Clipboard, FileText, Image, Pin } from 'lucide-react';
 import { Button } from '../shared/ui';
-import { Tooltip } from '../shared/controls';
 import { ResultIcon } from './Results';
 import type { SearchItem, SearchSnapshot } from './types';
 
@@ -47,11 +46,7 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
   }}>
     <div className="search-preview-toolbar">
       <Button variant="ghost" size="sm" className="preview-back" onClick={onBack}><ArrowLeft data-icon="inline-start"/>返回结果</Button>
-      <span className="preview-type">{typeNames[item.type]}</span><span className="preview-position">{index + 1} / {snapshot.items.length}</span>
-      <div className="preview-navigation flex gap-1">
-        <Tooltip content="上一个结果（⌥↑）"><Button variant="ghost" size="icon-sm" aria-label="上一个结果" aria-keyshortcuts="Alt+ArrowUp" disabled={previewNeighbor(snapshot.items,index,-1)<0} onClick={()=>onNavigate(-1)}><ChevronUp aria-hidden="true"/></Button></Tooltip>
-        <Tooltip content="下一个结果（⌥↓）"><Button variant="ghost" size="icon-sm" aria-label="下一个结果" aria-keyshortcuts="Alt+ArrowDown" disabled={previewNeighbor(snapshot.items,index,1)<0} onClick={()=>onNavigate(1)}><ChevronDown aria-hidden="true"/></Button></Tooltip>
-      </div>
+      <span className="preview-type">{typeNames[item.type]}</span>
     </div>
     <div ref={body} className="search-preview-body" tabIndex={0} aria-label="预览内容">
       <div className="preview-identity"><ResultIcon item={item} snapshot={snapshot}/><div>{clipboard ? <p className="preview-eyebrow">{ ({text:`${content.length.toLocaleString()} 字符`, image:'图片记录', file:'文件记录'}[item.kind as string] || '剪贴板记录')}</p> : null}<h2>{itemTitle(item)}</h2></div></div>

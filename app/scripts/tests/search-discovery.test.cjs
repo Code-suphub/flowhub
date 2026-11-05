@@ -46,29 +46,34 @@ test('F6 includes empty-state recovery actions and returns to search after the f
   advance();assert.equal(w.document.activeElement,q);
 });
 
-test('preview navigation and Option arrows preserve the query and never execute results',async t=>{
+test('preview Option arrows preserve the query, stop at list boundaries and never execute results',async t=>{
   const apps=Array.from({length:3},(_,i)=>({id:String(i),title:`App ${i}`,path:`/Applications/App${i}.app`}));
   const {w,q,scope,input,key,calls}=await setup(t,{search:(id,args,fixture)=>id==='app'?apps:fixture[id]||[]});
   await scope('app');await input('App');q.setSelectionRange(1,1);
   Object.defineProperty(w.document,'hasFocus',{configurable:true,value:()=>true});
-  const previous=()=>w.document.querySelector('[aria-label="上一个结果"]'),next=()=>w.document.querySelector('[aria-label="下一个结果"]');
-  assert.equal(previous().disabled,true);next().click();await wait(()=>w.document.querySelector('.app-result.active h3').textContent==='App 1');
+  key('i',{metaKey:true,code:'KeyI'});
   await wait(()=>w.document.activeElement.matches('.search-preview-body'));
+  const navigate=key=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key,altKey:true,bubbles:true,cancelable:true}));
+  navigate('ArrowUp');await delay(10);assert.equal(w.document.querySelector('.app-result.active h3').textContent,'App 0');
+  navigate('ArrowDown');await wait(()=>w.document.querySelector('.app-result.active h3').textContent==='App 1');
   assert.equal(q.value,'App');assert.equal(q.selectionStart,1);
-  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowUp',altKey:true,bubbles:true,cancelable:true}));
+  navigate('ArrowUp');
   await wait(()=>w.document.querySelector('.app-result.active h3').textContent==='App 0');
-  next().click();await delay(10);next().click();await wait(()=>next().disabled);
-  assert.equal(w.document.querySelector('.preview-position').textContent,'3 / 3');
+  navigate('ArrowDown');await wait(()=>w.document.querySelector('.app-result.active h3').textContent==='App 1');
+  navigate('ArrowDown');await wait(()=>w.document.querySelector('.app-result.active h3').textContent==='App 2');
+  navigate('ArrowDown');await delay(10);assert.equal(w.document.querySelector('.app-result.active h3').textContent,'App 2');
   assert.equal(calls.filter(call=>call[0]==='action').length,0);
   q.focus();assert.equal(key('ArrowUp',{altKey:true}),false,'existing query navigation remains handled by the controller');
 });
 
-test('explicit preview navigation reveals the active option in a virtualized list',async t=>{
+test('keyboard preview navigation reveals the active option in a virtualized list',async t=>{
   const {w,key,scope,calls}=await setup(t,{search:(id,args,fixture)=>id==='app'?Array.from({length:120},(_,i)=>({id:String(i),title:`App ${i}`,path:`/Applications/${i}.app`})):fixture[id]||[]});
   await scope('app');
   for(let i=0;i<25;i++){key('ArrowDown');await delay(3);}
   await wait(()=>w.document.querySelector('.app-result.active')?.dataset.i==='25');
-  w.document.querySelector('[aria-label="下一个结果"]').click();
+  key('i',{metaKey:true,code:'KeyI'});
+  await wait(()=>w.document.activeElement.matches('.search-preview-body'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowDown',altKey:true,bubbles:true,cancelable:true}));
   await wait(()=>w.document.querySelector('.app-result.active')?.dataset.i==='26');
   assert.equal(w.document.querySelector('#q').getAttribute('aria-activedescendant'),'search-result-26');
   assert.ok(w.document.querySelectorAll('.result').length<80);assert.equal(calls.filter(call=>call[0]==='action').length,0);
