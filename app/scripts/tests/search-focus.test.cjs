@@ -1,6 +1,17 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
+test('scope bindings share Command aliases and preserve physical punctuation and numpad keys',async t=>{
+  const {w,key,events}=await setup(t);
+  Object.defineProperty(w.navigator,'platform',{configurable:true,value:'MacIntel'});
+  await events.onConfig({core:{scopeShortcuts:{app:'Super+Numpad1',web:'Option+Shift+Equal',memo:'CmdOrCtrl+KeyM'}},plugins:{tools:{settings:{}}}});
+  key('1',{code:'Digit1',metaKey:true});
+  assert.notEqual(w.document.querySelector('[data-scope="app"]').getAttribute('aria-pressed'),'true');
+  key('1',{code:'Numpad1',metaKey:true});await wait(()=>w.document.querySelector('[data-scope="app"]').getAttribute('aria-pressed')==='true');
+  key('+',{code:'Equal',altKey:true,shiftKey:true});await wait(()=>w.document.querySelector('[data-scope="web"]').getAttribute('aria-pressed')==='true');
+  key('m',{code:'KeyM',ctrlKey:true});assert.notEqual(w.document.querySelector('[data-scope="memo"]').getAttribute('aria-pressed'),'true');
+  key('m',{code:'KeyM',metaKey:true});await wait(()=>w.document.querySelector('[data-scope="memo"]').getAttribute('aria-pressed')==='true');
+});
 test('scope primary press deduplicates click, F6/Escape, IME and bare cursor arrows preserve focus contracts',async t=>{
   const {w,q,scope,key,calls}=await setup(t);
   q.focus();q.value='preserve';

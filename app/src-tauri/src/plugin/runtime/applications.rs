@@ -68,7 +68,7 @@ fn resolve_applications(index: &[Value], paths: &[String]) -> Vec<(String, Value
     // The launcher index is intentionally scoped to its search directories and
     // may still be refreshing. Resolve exact missing bundle paths with the same
     // scanner rather than guessing by executable name or adding launcher entries.
-    let supplemental = crate::scan_application_paths(&missing);
+    let supplemental = crate::application_index::scan_application_paths(&missing);
     matched.extend(match_index(&supplemental, &missing));
     matched
 }
@@ -105,7 +105,7 @@ pub(super) async fn metadata(app: tauri::AppHandle, params: &Value) -> Result<Va
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<crate::AppState>();
         let empty = state.application_index.read().unwrap().is_empty();
-        if empty { crate::refresh_application_index(&app); }
+        if empty { crate::application_index::check(&app); }
         let index = state.application_index.read().unwrap().clone();
         let matched = resolve_applications(&index, &paths);
         let mut teams = HashMap::new();

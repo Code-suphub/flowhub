@@ -7,7 +7,7 @@ pub(crate) mod tests;
 
 mod usage;
 use crate::{
-    application_fingerprint, config_save, load_application_cache, AppPaths, AppState,
+    config_save, application_index::load_application_cache, AppPaths, AppState,
     DEFAULT_CONFIG,
 };
 use chrono::Utc;
@@ -18,7 +18,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
+        atomic::{AtomicU64, Ordering as AtomicOrdering},
         Mutex, RwLock,
     },
     time::{SystemTime, UNIX_EPOCH},
@@ -175,7 +175,6 @@ pub(crate) fn initialize_state() -> Result<AppState, String> {
     fs::create_dir_all(&application_icon_cache_dir).map_err(|error| error.to_string())?;
     let (cached_application_index, cached_fingerprint) =
         load_application_cache(&application_index_path);
-    let current_fingerprint = application_fingerprint();
     let default_config_path = root_dir.join("config.json");
     let default_storage_dir = root_dir.join("clipboard");
     let locator_path = root_dir.join("config-location.json");
@@ -243,8 +242,7 @@ pub(crate) fn initialize_state() -> Result<AppState, String> {
         }),
         application_index: RwLock::new(cached_application_index),
         application_index_path,
-        application_index_needs_refresh: AtomicBool::new(cached_fingerprint != current_fingerprint),
-        application_index_refreshing: AtomicBool::new(false),
+        application_fingerprint: Mutex::new(cached_fingerprint),
         application_icon_cache: Mutex::new(HashMap::new()),
         application_icon_cache_dir,
     };

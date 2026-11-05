@@ -75,7 +75,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`.github/workflows/release-macos.yml` 会测试并构建 Apple Silicon 和 Intel 两套 DMG，上传签名后的更新包与 `latest.json`。已安装版本启动 5 秒后自动检查 GitHub Release，也可在“配置管理 → 通用设置”中手动检查、下载并重启安装。
+`.github/workflows/release-macos.yml` 目前测试并构建 Apple Silicon DMG（Intel 暂停），上传签名后的更新包与 `latest.json`。已安装版本启动 5 秒后自动检查 GitHub Release，也可在“配置管理 → 通用设置”中手动检查、下载并重启安装。
+
+Actions 不可用时，可在本机运行 `pnpm test`、`node scripts/build/verify-release-tag.mjs v<版本>` 和 `pnpm run build`，沿用同一应用代码签名证书和 Tauri 更新签名密钥。将 DMG、应用更新压缩包、更新签名及匹配该版本的 `latest.json` 上传到 GitHub Release；先建立草稿，核对签名、校验值和下载地址后再公开。手动发布提交可使用 `[skip ci]` 避免重复触发 Actions，本地测试仍须通过。正式包使用正常版本号，不使用 `build:local` 的 `-local` 后缀，也不覆盖旧版本标签或公开产物。
 
 ### 本地迭代与回退
 

@@ -1,4 +1,5 @@
 // Configuration preserves unknown plugin fields; the native adapter owns their schema.
+import { shortcutKeys } from '../shared/shortcuts';
 export type Bag = Record<string, any>;
 export interface WebNode extends Bag { id: string; title?: string; url?: string; children?: WebNode[] }
 export interface Memo extends Bag { id: string; title: string; category?: string; content?: string; tags?: string[] }
@@ -9,7 +10,7 @@ export function clipboardLimit(value: unknown, key: string) { const number = Num
 export function hasExclusions(config: Config | null) { const value = config?.plugins.clipboard?.settings?.excludedApps; return Array.isArray(value) ? value.some(v => typeof v !== 'string' || v.trim()) : value != null; }
 export const tools = { ping: 'Ping 连通性', curl: 'HTTP 请求', port: '端口与进程', calculator: '计算表达式', timestamp: '时间戳转换', jwt: 'JWT 解析', json: 'JSON 格式化', url: 'URL 解析与编解码', dns: 'DNS 解析', dnsIpGeo: 'DNS 自动查询 IP 归属地', cloudflare: 'Cloudflare 检测', localIp: '本机 IP 查询', proxy: '代理信息检测', ip: 'IP 识别与归属地', commandHistory: '命令历史' };
 export const shortcuts: Record<string, string> = { all: 'Shift+1', clipboard: 'Shift+2', app: 'Shift+3', web: 'Shift+4', memo: 'Shift+5' };
-export const canonical = (text: string) => text.toLowerCase().replace(/\s/g, '').split('+').map(p => ({ option: 'alt', control: 'ctrl', cmd: 'meta', command: 'meta', cmdorctrl: 'commandorcontrol' }[p] || p)).sort().join('+');
+export const canonical = shortcutKeys.canonical;
 export function normalize(value: unknown): Config {
   const c = clone(value) as Config;
   if (!c || typeof c !== 'object' || Array.isArray(c) || !c.core || !c.plugins) throw new Error('配置必须包含 core 和 plugins 对象');
@@ -24,7 +25,7 @@ export function normalize(value: unknown): Config {
     if (typeof raw !== 'string') throw new Error('范围快捷键必须是字符串');
     if (!raw) continue;
     const parts = canonical(raw).split('+'), keys = parts.filter(p => !['shift', 'alt', 'ctrl', 'meta', 'commandorcontrol'].includes(p));
-    if (keys.length !== 1 || (parts.length === 1 && !/^\d$|^f([1-9]|1\d|2[0-4])$/.test(keys[0]))) throw new Error(`无效快捷键：${raw}`);
+    if (keys.length !== 1 || !keys[0] || (parts.length === 1 && !/^(?:\d|numpad\d|f([1-9]|1\d|2[0-4]))$/.test(keys[0]))) throw new Error(`无效快捷键：${raw}`);
     if (used.has(canonical(raw))) c.core.scopeShortcuts[id] = ''; else used.add(canonical(raw));
   }
   for (const id of ['memo', 'tools', 'clipboard', 'app']) { c.plugins[id] ||= { enabled: true, settings: {} }; c.plugins[id].settings ||= {}; }
