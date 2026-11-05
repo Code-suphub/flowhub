@@ -83,6 +83,8 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-memo-tree-row:hover .settings-memo-drag-handle,.settings-memo-drag-handle:focus-visible { opacity:1; }
 .settings-plugin-frame { width:100%; min-height:70vh; border:0; background:var(--fh-surface); }
 .settings-error { color:var(--fh-danger); }
+.settings-main :is(p,summary,[data-slot=alert-title],[data-slot=alert-description]) {min-width:0;overflow-wrap:anywhere;}
+.settings-main [data-slot=alert] {min-width:0;}
 .settings-drag-handle { touch-action:none; cursor:grab; }
 .settings-catalog .settings-tree { max-height:min(65vh,720px); padding:0 4px 0 0; border:0; border-radius:0; }
 .settings-catalog .settings-tree-row { min-height:36px; gap:6px; margin:1px 0; padding-block:3px; padding-inline-end:6px; border-radius:6px; color:var(--fh-text); font-size:14px; line-height:21px; cursor:pointer; user-select:none; }
