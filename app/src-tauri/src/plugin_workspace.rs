@@ -33,7 +33,7 @@ fn builder<'a>(app: &'a tauri::AppHandle, label: &'a str, mode: &str) -> Webview
     WebviewWindowBuilder::new(app, label, WebviewUrl::App(format!("plugin-workspace.html?view={mode}").into()))
         .title(if label == DOCK { "FlowHub 插件栏" } else { "FlowHub 插件面板" })
         .decorations(false).transparent(true).background_color(tauri::window::Color(0,0,0,0))
-        .resizable(false).always_on_top(false).skip_taskbar(true).accept_first_mouse(true).visible(false)
+        .resizable(false).always_on_top(false).skip_taskbar(true).accept_first_mouse(true).visible(false).focused(false)
 }
 
 // Geometry is in physical pixels, including negative monitor origins.

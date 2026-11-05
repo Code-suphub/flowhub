@@ -744,6 +744,9 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
         }
     });
     plugin_workspace::show_dock(&app)?;
+    // Creating the companion dock must not take the new settings window's
+    // keyboard focus. Match the existing-window path after both are ready.
+    window.set_focus().map_err(|error| error.to_string())?;
     Ok(json!({ "ok": true }))
 }
 
