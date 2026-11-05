@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef, useState, type ComponentProps, type Dispatch, type SetStateAction } from 'react';
 
 // Per-window presentation memory. It is never serialized into user configuration
 // or shared between settings windows / different data locations.
@@ -15,4 +15,13 @@ export function useViewScroll(key:string) {
   const memory=useViewMemory(), ref=useRef<HTMLDivElement>(null);
   useLayoutEffect(()=>{if(ref.current)ref.current.scrollTop=(memory?.get(key) as number) || 0;},[memory,key]);
   return {ref,onScroll:()=>{if(ref.current)memory?.set(key,ref.current.scrollTop);}};
+}
+
+type ViewDetailsProps=Omit<ComponentProps<'details'>,'open'|'defaultOpen'|'onToggle'> & {memoryKey:string};
+export function ViewDetails(props:ViewDetailsProps) {
+  return <RememberedDetails key={props.memoryKey} {...props} />;
+}
+function RememberedDetails({memoryKey,...props}:ViewDetailsProps) {
+  const [open,setOpen]=useViewState(memoryKey,false);
+  return <details {...props} open={open} onToggle={event=>setOpen(event.currentTarget.open)} />;
 }

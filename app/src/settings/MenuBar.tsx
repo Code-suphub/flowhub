@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { AppWindowIcon, ClipboardIcon, CommandIcon, Layers2Icon, PackageOpenIcon, ShieldIcon } from 'lucide-react';
 import { Button, Tabs } from '../shared/ui';
 import { Switch } from '../shared/controls';
@@ -7,6 +6,7 @@ import { Toggle } from './fields';
 import { readonly, write } from './api';
 import { SettingsStore, useSettings } from './store';
 import type { Bag } from './model';
+import { ViewDetails, useViewState } from './view-state';
 
 const examples = [
   { windowId: 1, displayName: 'FlowHub', section: 'visible', hideable: true, detail: '随时唤起你的工作空间', Icon: Layers2Icon },
@@ -18,8 +18,8 @@ const examples = [
 
 export function MenuBar({ store }: { store: SettingsStore }) {
   const s = useSettings(store), core = s.config!.core, preview = readonly();
-  const [filter, setFilter] = useState('all');
-  const [demo, setDemo] = useState(() => examples.map(item => ({ ...item })));
+  const [filter, setFilter] = useViewState('menubar:filter','all');
+  const [demo, setDemo] = useViewState('menubar:preview',() => examples.map(item => ({ ...item })));
   const items: Bag[] = preview ? demo : s.menuItems;
   const shown = items.filter(item => item.section === 'visible' || item.section === 'hidden');
   const filtered = filter === 'visible' ? shown : items;
@@ -41,9 +41,9 @@ export function MenuBar({ store }: { store: SettingsStore }) {
       </label>;
     })}{!filtered.length ? <p className="settings-menu-empty">{filter === 'visible' ? '暂无可显示项目' : core.menuBar.organizerEnabled ? '授权辅助功能后，扫描菜单栏图标。' : '在下方开启隐藏分区，开始整理菜单栏。'}</p> : null}</div>
     <div className="settings-menu-foot"><p>{preview ? '切换开关，预览菜单栏变化；刷新后复原。' : '逐项开关即时生效；隐藏分区中的项目随箭头展开或收起。'}</p>{preview ? <Button variant="ghost" onClick={() => { setDemo(examples.map(item => ({ ...item }))); setFilter('all'); }}>恢复默认</Button> : <Button variant="ghost" disabled={s.busy || !core.menuBar.organizerEnabled} onClick={() => void store.run(() => store.refreshMenu())}>扫描图标</Button>}</div>
-    <details className="settings-menu-options" data-setting-label="菜单栏设置与权限" tabIndex={-1}><summary>菜单栏设置与权限</summary><fieldset className="settings-fieldset" disabled={preview || s.busy || s.conflict}>
+    <ViewDetails memoryKey="menubar:options" className="settings-menu-options" data-setting-label="菜单栏设置与权限" tabIndex={-1}><summary>菜单栏设置与权限</summary><fieldset className="settings-fieldset" disabled={preview || s.busy || s.conflict}>
       {Object.entries({ enabled: '显示 FlowHub 图标', showOpenLauncher: '打开启动器', showOpenSettings: '打开设置', showVersion: '显示版本', showQuit: '退出菜单', organizerEnabled: '启用菜单栏隐藏分区', collapseOnLaunch: '启动时收起隐藏分区' }).map(([key, label]) => <Toggle key={key} label={label} checked={core.menuBar[key] === true} disabled={key === 'collapseOnLaunch' ? !core.menuBar.organizerEnabled : ['showOpenLauncher', 'showOpenSettings', 'showVersion', 'showQuit'].includes(key) && !core.menuBar.enabled} onChange={v => store.edit(c => { c.core.menuBar[key] = v; })} />)}
       <div className="settings-menu-native-actions"><Button disabled={!core.menuBar.organizerEnabled} onClick={() => void store.run(async () => { await write('toggleMenuBarItems'); })}>展开 / 收起</Button><Button onClick={() => void store.run(async () => { await write('requestMenuBarManagementPermission'); await store.refreshMenu(); })}>授权辅助功能</Button></div>
-    </fieldset><p className="settings-menu-permission" role="status">{preview ? '此处为交互演示，不会修改 Mac 菜单栏或保存配置。' : s.management.supported === false ? '当前系统不支持菜单栏图标管理。' : s.management.trusted ? '辅助功能已授权；可按住 ⌘ 拖动图标调整分区。' : '辅助功能未授权，扫描和逐项管理图标需授权。'}</p></details>
+    </fieldset><p className="settings-menu-permission" role="status">{preview ? '此处为交互演示，不会修改 Mac 菜单栏或保存配置。' : s.management.supported === false ? '当前系统不支持菜单栏图标管理。' : s.management.trusted ? '辅助功能已授权；可按住 ⌘ 拖动图标调整分区。' : '辅助功能未授权，扫描和逐项管理图标需授权。'}</p></ViewDetails>
   </div>;
 }

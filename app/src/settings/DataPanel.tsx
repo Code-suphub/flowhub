@@ -11,6 +11,7 @@ import { clone, imported, same, type Bag, type Config } from './model';
 import { historyConfiguration } from './config-changes';
 import { ConfigChanges } from './ConfigChanges';
 import { SettingsStore, useSettings } from './store';
+import { useViewState } from './view-state';
 import './data.css';
 
 const names: Record<string,string> = { all:'全部配置', core:'全局设置', web:'网页目录设置', app:'应用', clipboard:'剪贴板', memo:'备忘录', tools:'工具' };
@@ -55,7 +56,8 @@ interface ImportReview { payload: Bag; base: Config }
 
 export function DataPanel({ store }: { store: SettingsStore }) {
   const s=useSettings(store), preview=readonly();
-  const [scope,setScope]=useState('all'), [pending,setPending]=useState<ImportReview|null>(null), [mode,setMode]=useState('merge'), [transferError,setTransferError]=useState(''), [transferring,setTransferring]=useState(false);
+  const [storedScope,setScope]=useViewState('data:export-scope','all'), [pending,setPending]=useState<ImportReview|null>(null), [mode,setMode]=useState('merge'), [transferError,setTransferError]=useState(''), [transferring,setTransferring]=useState(false);
+  const scope=storedScope==='all' || storedScope==='core' || Object.hasOwn(s.config!.plugins,storedScope)?storedScope:'all';
   const [history,setHistory]=useState<HistoryReview|null>(null), [refreshing,setRefreshing]=useState(false);
   const [report,setReport]=useState(''), [clearSampling,setClearSampling]=useState(false), [diagnosing,setDiagnosing]=useState(false), [diagnosticError,setDiagnosticError]=useState('');
   const alive=useRef(true), historyRequest=useRef(0), refreshingRef=useRef(false), transferRef=useRef(false), diagnosticRef=useRef(false);

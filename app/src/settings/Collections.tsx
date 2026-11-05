@@ -11,7 +11,7 @@ import { clone, entries, importWeb, moveNodes, moveMemo, removeNodes, webSelecti
 import { useTreeView } from './useTreeView';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { SettingsStore, useSettings } from './store';
-import { useViewScroll, useViewState } from './view-state';
+import { ViewDetails, useViewScroll, useViewState } from './view-state';
 
 export function WebCatalog({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), sourceNodes: WebNode[] = s.config!.plugins.web.settings.items;
@@ -180,10 +180,10 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
           </CollectionHeading>
           <FieldGroup className="settings-collection-fields" key={node.id}>
             {(['title','url','note'] as const).map((key,i)=><CollectionField key={key} label={['标题','页面链接','备注'][i]} value={node[key]} readOnly={preview} multiline={key==='note'} onChange={value=>store.edit(c=>{const target=entries(c.plugins.web.settings.items).find(e=>e.node.id===node.id);if(target)target.node[key]=value;},`web:${node.id}:${key}`)} help={key==='url'?'留空作为目录，填写后可直接打开，也可保留子节点。':undefined} />)}
-            <details className="settings-collection-advanced"><summary>图标与高级属性</summary><FieldGroup className="pt-4">
+            <ViewDetails memoryKey={`web:advanced:${node.id}`} className="settings-collection-advanced"><summary>图标与高级属性</summary><FieldGroup className="pt-4">
               {(['icon','accent'] as const).map((key,i)=><CollectionField key={key} label={['图标（Emoji / 图片 URL）','强调色'][i]} value={node[key]} readOnly={preview} onChange={value=>store.edit(c=>{const target=entries(c.plugins.web.settings.items).find(e=>e.node.id===node.id);if(target)target.node[key]=value;},`web:${node.id}:${key}`)} />)}
               <div className="settings-catalog-metadata"><span>节点 ID</span><code>{node.id}</code><Help label="节点 ID说明">节点的内部唯一标识，用于保存、移动和关联。日常使用无需修改。</Help></div>
-            </FieldGroup></details>
+            </FieldGroup></ViewDetails>
           </FieldGroup>
         </> : <CollectionEmpty title="选择一个目录或网页" icon={<FolderIcon />} onBack={()=>pane.back('','data-node-id')} backLabel="返回网页列表" />}
       </div>
@@ -336,10 +336,10 @@ export function Memos({ store }: { store: SettingsStore }) {
           <CollectionField label="标题" value={current.title} readOnly={preview} onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.title=value;},`memo:${current.id}:title`)} />
           {!preview ? <div onBlur={event=>{if(event.currentTarget.contains(event.relatedTarget as Node))return;if(category!==null && category!==current.category){const before=current.category || '';edit(list=>{const item=list.find(value=>value.id===current.id);if(!item)return;item.category=category;renameCategory(list,before,category,item.id);},`memo:${current.id}:category`);setCollapsed(previous=>new Set([...previous].map(path=>path===before || path.startsWith(before+' / ')?category+path.slice(before.length):path)));setCategory(null);}}}><CollectionField label="分类路径" value={category ?? current.category} readOnly={preview} onChange={setCategory} help="使用 / 分层；离开输入框时同步修改后代分类路径。" /></div> : null}
           <CollectionField label="命令或备忘内容" value={current.content} readOnly={preview} multiline code onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.content=value;},`memo:${current.id}:content`)} />
-          <details className="settings-collection-advanced"><summary>说明与搜索标签</summary><FieldGroup className="pt-4">
+          <ViewDetails memoryKey={`memo:advanced:${current.id}`} className="settings-collection-advanced"><summary>说明与搜索标签</summary><FieldGroup className="pt-4">
             <CollectionField label="说明" value={current.description} readOnly={preview} multiline onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.description=value;},`memo:${current.id}:description`)} />
             <div onBlur={()=>{if(preview || tags===null)return;edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.tags=tags.split(/[,，]/).map(value=>value.trim()).filter(Boolean);},`memo:${current.id}:tags`);setTags(null);}}><CollectionField label="搜索标签" value={tags ?? (Array.isArray(current.tags)?current.tags.join(', '):current.tags || '')} readOnly={preview} onChange={setTags} help="使用逗号分隔多个标签。" /></div>
-          </FieldGroup></details>
+          </FieldGroup></ViewDetails>
         </FieldGroup>
       </> : <CollectionEmpty title="暂无备忘录" icon={<TerminalSquareIcon />} onBack={()=>pane.back('','data-memo-key')} backLabel="返回备忘列表" />}</div>
     </div>
