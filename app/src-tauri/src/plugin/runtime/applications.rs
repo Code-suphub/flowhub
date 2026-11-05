@@ -1,8 +1,9 @@
 //! Reuse the launcher's application index and native icon cache for the monitor.
 use serde_json::{json, Value};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Component, Path},
+    process::Command,
 };
 use tauri::Manager;
 
@@ -72,6 +73,33 @@ fn resolve_applications(index: &[Value], paths: &[String]) -> Vec<(String, Value
     matched
 }
 
+// This relationship is display metadata only. Each bundle keeps its own path,
+// process group and quit targets, even when a copied helper belongs to a product.
+fn related_application<'a>(index: &'a [Value], item: &Value, mut team: impl FnMut(&str) -> Option<String>) -> Option<&'a Value> {
+    let bundle_id = item["bundleId"].as_str()?;
+    let path = item["path"].as_str()?;
+    let mut candidates: Vec<_> = index.iter().filter(|parent| {
+        let id = parent["bundleId"].as_str().unwrap_or("");
+        id.split('.').count() >= 3 && parent["path"].as_str() != Some(path)
+            && bundle_id.strip_prefix(id).is_some_and(|suffix| suffix.starts_with('.'))
+    }).collect();
+    let longest = candidates.iter().map(|item| item["bundleId"].as_str().unwrap().len()).max()?;
+    candidates.retain(|item| item["bundleId"].as_str().unwrap().len() == longest);
+    // Multiple installations are ambiguous; do not guess which copy owns it.
+    if candidates.len() != 1 { return None; }
+    let parent = candidates[0];
+    let child_team = team(path)?;
+    (team(parent["path"].as_str()?).as_ref() == Some(&child_team)).then_some(parent)
+}
+
+fn signing_team(path: &str) -> Option<String> {
+    let output = Command::new("/usr/bin/codesign").args(["-d", "--verbose=4", path]).output().ok()?;
+    if !output.status.success() { return None; }
+    let details = String::from_utf8_lossy(&output.stderr);
+    let team = details.lines().find_map(|line| line.strip_prefix("TeamIdentifier="))?;
+    (team.len() == 10 && team.bytes().all(|c| c.is_ascii_alphanumeric())).then(|| team.to_owned())
+}
+
 pub(super) async fn metadata(app: tauri::AppHandle, params: &Value) -> Result<Value, String> {
     let paths = requested_paths(params)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -80,11 +108,18 @@ pub(super) async fn metadata(app: tauri::AppHandle, params: &Value) -> Result<Va
         if empty { crate::refresh_application_index(&app); }
         let index = state.application_index.read().unwrap().clone();
         let matched = resolve_applications(&index, &paths);
-        let icon_paths: Vec<_> = matched.iter().filter_map(|(_, item)| item["path"].as_str().map(str::to_string)).collect();
+        let mut teams = HashMap::new();
+        let related: Vec<_> = matched.iter().map(|(_, item)| related_application(&index, item,
+            |path| teams.entry(path.to_string()).or_insert_with(|| signing_team(path)).clone())).collect();
+        let icon_paths: Vec<_> = matched.iter().map(|(_, item)| item).chain(related.iter().filter_map(|item| *item))
+            .filter_map(|item| item["path"].as_str().map(str::to_string)).collect();
         let icons = crate::application_icon_data_urls(&state, &icon_paths);
-        json!({"applications": matched.iter().map(|(requested, item)| json!({
+        json!({"applications": matched.iter().zip(related).map(|((requested, item), related)| json!({
             "path": requested, "name": item["title"], "bundleId": item["bundleId"],
-            "iconUrl": item["path"].as_str().and_then(|path| icons.get(path)).cloned().unwrap_or_default()
+            "iconUrl": item["path"].as_str().and_then(|path| icons.get(path)).cloned().unwrap_or_default(),
+            "relatedApplication": related.map(|parent| json!({"path": parent["path"], "name": parent["title"],
+                "bundleId": parent["bundleId"], "evidence": "bundle-id-and-signing-team",
+                "iconUrl": parent["path"].as_str().and_then(|path| icons.get(path)).cloned().unwrap_or_default()}))
         })).collect::<Vec<_>>()})
     }).await.map_err(|_| "应用信息读取失败".into())
 }
@@ -92,6 +127,19 @@ pub(super) async fn metadata(app: tauri::AppHandle, params: &Value) -> Result<Va
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn related_helpers_require_a_unique_product_identifier_and_the_same_signing_team() {
+        let index = vec![json!({"path":"/Applications/QQ.app", "title":"QQ", "bundleId":"com.tencent.qq"})];
+        let helper = json!({"path":"/private/QQUpdate.app", "bundleId":"com.tencent.qq.qqupdate"});
+        assert_eq!(related_application(&index, &helper, |_| Some("FN2V63AD2J".into())).unwrap()["title"], "QQ");
+        assert!(related_application(&index, &helper, |path| Some(if path.starts_with("/Applications") {"different"} else {"team"}.into())).is_none());
+        assert!(related_application(&index, &helper, |_| None).is_none());
+        assert!(related_application(&index, &json!({"path":"/WeChat.app", "bundleId":"com.tencent.wechat"}), |_| Some("FN2V63AD2J".into())).is_none());
+        assert!(related_application(&index, &json!({"path":"/Other.app", "bundleId":"com.tencent.qqevil.helper"}), |_| Some("FN2V63AD2J".into())).is_none());
+        let mut duplicate = index.clone();
+        duplicate.push(json!({"path":"/Elsewhere/QQ.app", "bundleId":"com.tencent.qq"}));
+        assert!(related_application(&duplicate, &helper, |_| Some("FN2V63AD2J".into())).is_none());
+    }
     #[cfg(target_os = "macos")]
     #[test]
     fn unindexed_input_method_uses_localized_bundle_metadata_by_exact_path() {
@@ -138,6 +186,13 @@ mod tests {
         assert!(!matched[0].1["bundleId"].as_str().unwrap().is_empty());
         let icons = crate::clipboard::native_icon_data_urls(&paths);
         assert!(icons[&path].starts_with("data:image/png;base64,"));
+        if let Ok(owner) = std::env::var("FLOWHUB_METADATA_SMOKE_OWNER") {
+            let parents = resolve_applications(&[], &[owner.clone()]);
+            let index: Vec<_> = parents.into_iter().map(|(_, item)| item).collect();
+            let related = related_application(&index, &matched[0].1, signing_team).expect("signed product relationship");
+            assert_eq!(related["path"], owner);
+            eprintln!("Related product: {} (independent bundle/action path retained)", related["title"]);
+        }
         eprintln!(
             "Resolved {} ({}) with native PNG icon",
             expected, matched[0].1["bundleId"]
