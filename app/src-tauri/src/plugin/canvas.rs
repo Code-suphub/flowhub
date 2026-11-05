@@ -86,7 +86,13 @@ pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
         let details=state.details.lock().unwrap();
         if !details.owns(window.label(),&id){return Err("组件调用来源无效".into());}
     }
-    app.state::<crate::plugin::runtime::Runtime>().widget_call(&id,params).await
+    let runtime=app.state::<crate::plugin::runtime::Runtime>();
+    if params["action"]=="management" && params["method"]=="application_metadata" {
+        if params.to_string().len()>65536{return Err("组件请求过大".into());}
+        runtime.widget(&id)?;
+        return runtime.application_metadata(&app,&id,&params["params"]).await;
+    }
+    runtime.widget_call(&id,params).await
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Card { id:String, plugin:String, title:String, view:String, size:String, #[serde(default)] row:Option<String>, #[serde(default)] width:Option<u32>, #[serde(default)] height:Option<u32>, #[serde(default)] break_before:bool, #[serde(default)] x:Option<u32>, #[serde(default)] y:Option<u32>, #[serde(default)] metrics:Option<Vec<String>>, #[serde(default)] config:Value }

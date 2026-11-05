@@ -392,6 +392,14 @@ fn reconcile(state: &AppState, roots: &[PathBuf], force: bool) -> Result<bool, S
     Ok(true)
 }
 
+/// Resolve exact bundles outside launcher roots without changing the search index.
+pub(crate) fn scan_paths(paths: &[PathBuf]) -> Vec<Value> {
+    let mut seen = HashSet::new();
+    let valid: Vec<_> = paths.iter().filter(|path| is_bundle(path) && path.is_dir()
+        && path.join("Contents/Info.plist").is_file() && seen.insert((*path).clone())).cloned().collect();
+    scan_applications(&valid)
+}
+
 fn scan_applications(paths: &[PathBuf]) -> Vec<Value> {
     let mut applications: Vec<Value> = paths
         .iter()
