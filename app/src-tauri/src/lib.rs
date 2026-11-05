@@ -716,7 +716,9 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
         .background_color(tauri::window::Color(0, 0, 0, 0))
         .inner_size(980.0, 720.0)
         .min_inner_size(640.0, 360.0)
-        .center();
+        .center()
+        .visible(false)
+        .focused(false);
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
     let window = builder.build()
@@ -743,6 +745,9 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             let _ = close_window.eval("(() => { let attempts = 0; const request = () => { if (window.requestSettingsClose) { window.requestSettingsClose(); } else if (++attempts < 200) { setTimeout(request, 50); } else { window.__TAURI__?.core?.invoke('close_settings'); } }; request(); })();");
         }
     });
+    // Explicitly show before requesting focus: on macOS Tao ignores focus
+    // requests for windows that have not become visible yet.
+    window.show().map_err(|error| error.to_string())?;
     plugin_workspace::show_dock(&app)?;
     // Creating the companion dock must not take the new settings window's
     // keyboard focus. Match the existing-window path after both are ready.
