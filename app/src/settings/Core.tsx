@@ -126,6 +126,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
         </div>;
       })}</div>
       <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} disabled={readonly()} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
+      <Toggle label="长内容自动预览" checked={core.autoPreviewLongContent !== false} disabled={readonly()} onChange={v => setCore('autoPreviewLongContent', v)} help="默认开启。宽窗口中选中超过 80 个字符或至少 3 行的剪贴板文本、命令备忘时自动展开详情，并保留搜索框焦点。手动收起只影响当前记录；窄窗口仍手动进入详情。" />
     </> : null}
     {activeSection === 'menubar' ? <MenuBar store={store} /> : null}
     {activeSection === 'data' ? <DataPanel store={store} /> : null}

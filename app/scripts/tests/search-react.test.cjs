@@ -203,7 +203,7 @@ test('multi-line commands are readable and copyable without pasting or expanding
 });
 test('clipboard full-text previews remain read-only and bounded; copy obtains the entire record',async t=>{
   const contents=['first\n'+('line\n'.repeat(5000))+'CLIP-END','other\nsecond\n<script>unsafe()</script>\nOTHER-END'];
-  const {w,scope,key,calls}=await setup(t,{readonly:true,search:(id,args,fixture)=>id==='clipboard'?(args.offset?[]:contents.map((content,i)=>({id:i+1,kind:'text',content}))):fixture[id]||[]});await scope('clipboard');
+  const {w,scope,key,calls}=await setup(t,{readonly:true,autoPreviewLongContent:false,search:(id,args,fixture)=>id==='clipboard'?(args.offset?[]:contents.map((content,i)=>({id:i+1,kind:'text',content}))):fixture[id]||[]});await scope('clipboard');
   key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.preview-content'));w.document.getElementById('q').focus();
   const rows=[...w.document.querySelectorAll('.clipboard-result')];assert.ok(rows[0].querySelector('.clipboard-title').textContent.length<=100);
   assert.equal(w.document.querySelector('.preview-content').textContent.length,20000);
@@ -216,7 +216,7 @@ test('clipboard full-text previews remain read-only and bounded; copy obtains th
 });
 
 test('preview shortcuts preserve focus, native Tab order and pending input',async t=>{
-  const {w,q,key,input,calls}=await setup(t);await input('query');
+  const {w,q,key,input,calls}=await setup(t,{autoPreviewLongContent:false});await input('query');
   Object.defineProperty(w.document,'hasFocus',{configurable:true,value:()=>true});
   key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.activeElement.matches('.search-preview-body'));
   const body=w.document.activeElement,scope=w.document.querySelector('[data-scope][aria-pressed="true"]').dataset.scope;

@@ -2,6 +2,55 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 
+test('long clipboard text and commands auto-preview by default without taking focus or persisting a manual choice',async t=>{
+  const clips=[{id:1,kind:'text',content:'短文本'},{id:2,kind:'text',content:'长'.repeat(81)},{id:3,kind:'text',content:'第一行\r\n第二行\r\n第三行'},{id:4,kind:'text',content:'短'.repeat(80)},{id:5,kind:'file',content:'文件路径'.repeat(50),fileNames:['fixture.txt']}];
+  const {w,q,key,input,scope,calls}=await setup(t,{search:id=>id==='clipboard'?clips:id==='memo'?[{id:'memo',title:'长命令',content:'echo fixture\n'.repeat(10)}]:id==='app'?[{id:'app',title:'长标题'.repeat(40),path:'/Applications/Fixture.app'}]:[]});
+  await scope('clipboard');await input('query');q.setSelectionRange(2,2);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  key('ArrowDown');await wait(()=>w.document.querySelector('.preview-content')?.textContent===clips[1].content);
+  assert.equal(w.document.activeElement,q);assert.equal(q.value,'query');assert.equal(q.selectionStart,2);
+  key('ArrowDown');await wait(()=>w.document.querySelector('.preview-content')?.textContent===clips[2].content);
+  key('ArrowDown');await wait(()=>!w.document.querySelector('.search-preview'));
+  key('ArrowDown');await delay(20);assert.equal(w.document.querySelector('.search-preview'),null,'file content does not trigger text preview');
+  await scope('memo');assert.ok(w.document.querySelector('.preview-content'));assert.equal(w.document.activeElement,q);
+  await scope('app');assert.equal(w.document.querySelector('.search-preview'),null,'long app names keep the compact layout');
+  assert.equal(w.localStorage.length,0);assert.equal(calls.some(call=>call[0]==='action'||call[0]==='copy'),false);
+});
+
+test('closing an automatic preview suppresses the current record across refreshes, then another selection re-enables automatic preview',async t=>{
+  const clips=[{id:1,kind:'text',content:'A'.repeat(100)},{id:2,kind:'text',content:'B'.repeat(100)}];
+  const {w,q,key,input,scope,events}=await setup(t,{search:id=>id==='clipboard'?clips:[]});await scope('clipboard');
+  await wait(()=>w.document.querySelector('.preview-content')?.textContent===clips[0].content);
+  w.document.querySelector('[aria-label="收起预览"]').click();await wait(()=>!w.document.querySelector('.search-preview'));
+  clips[0]={...clips[0],copyCount:2};events.onClipboardUpdated();await delay(120);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  await input('same record');assert.equal(w.document.querySelector('.search-preview'),null);
+  key('ArrowDown');await wait(()=>w.document.querySelector('.preview-content')?.textContent===clips[1].content);
+  assert.equal(w.document.activeElement,q);assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'false');
+  key('ArrowUp');await wait(()=>w.document.querySelector('.preview-content')?.textContent===clips[0].content);
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>!w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q);
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
+  assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
+});
+
+test('automatic preview honors live configuration and narrow layout, while explicit preview remains available',async t=>{
+  const {w,q,key,scope,events,resize}=await setup(t,{autoPreviewLongContent:false,search:id=>id==='clipboard'?[{id:1,kind:'text',content:'long '.repeat(30)}]:[]});await scope('clipboard');
+  const config=value=>({core:{autoPreviewLongContent:value},plugins:{tools:{settings:{}}}});
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  await events.onConfig(config(true));await wait(()=>w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q);assert.equal(w.localStorage.length,0);
+  w.document.querySelector('.search-preview-body').focus();
+  await events.onConfig(config(false));await wait(()=>!w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q,'disappearing auto-preview cannot strand keyboard focus');
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
+  await events.onConfig(config(false));assert.ok(w.document.querySelector('.search-preview'),'explicit expansion overrides automatic behavior');
+  await resize(640);await events.onConfig(config(true));assert.equal(w.document.querySelector('.search-preview'),null);
+  w.document.querySelector('.result-preview-button').click();await wait(()=>w.document.querySelector('.search-preview'));
+  w.document.querySelector('.preview-back').click();await wait(()=>!w.document.querySelector('.search-preview'));
+  assert.equal(w.document.activeElement,q);assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
+});
+
 test('preview starts collapsed; explicit toggles preserve the query, caret and selected record without execution',async t=>{
   const apps=['A','B'].map(id=>({id,title:`App ${id}`,path:`/Applications/${id}.app`}));
   const {w,q,key,input,scope,calls}=await setup(t,{search:id=>id==='app'?apps:[]});
@@ -30,7 +79,7 @@ test('preview starts collapsed; explicit toggles preserve the query, caret and s
 });
 
 test('wide preview preference survives input, scopes, reopening and remounting, including temporary tool results',async t=>{
-  const {w,q,key,input,scope,unmount,remount}=await setup(t);
+  const {w,q,key,input,scope,unmount,remount}=await setup(t,{autoPreviewLongContent:false});
   key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
   assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
   await scope('app');await input('Application');assert.ok(w.document.querySelector('.search-preview'));
@@ -74,7 +123,7 @@ test('narrow detail navigation and resizing preserve the wide preference and nev
 });
 
 test('read-only preview layout changes stay in memory and do not persist across remounts',async t=>{
-  const {w,key,unmount,remount}=await setup(t,{readonly:true});
+  const {w,key,unmount,remount}=await setup(t,{readonly:true,autoPreviewLongContent:false});
   key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.search-preview'));
   assert.equal(w.localStorage.length,0);
   unmount();const dispose=remount();t.after(dispose);
@@ -84,7 +133,7 @@ test('read-only preview layout changes stay in memory and do not persist across 
 });
 
 test('unavailable presentation storage cannot prevent mounting or toggling the preview',async t=>{
-  const {w,unmount,remount}=await setup(t);
+  const {w,unmount,remount}=await setup(t,{autoPreviewLongContent:false});
   w.Storage.prototype.getItem=()=>{throw Error('storage unavailable');};
   w.Storage.prototype.setItem=()=>{throw Error('storage unavailable');};
   unmount();const dispose=remount();t.after(dispose);

@@ -2,6 +2,28 @@ const { test } = require('node:test'), assert = require('node:assert/strict');
 const h = require('./settings-harness.test.cjs');
 const { Settings } = require('../../src/settings/index.tsx');
 const { Core } = require('../../src/settings/Core.tsx');
+test('long content preview defaults on and its saved setting, change review and read-only boundary remain consistent',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  const searchPage=()=>h.click(view.container.querySelector('[data-page="search"]'));
+  await searchPage();const toggle=()=>view.container.querySelector('[aria-label="长内容自动预览"]');
+  assert.equal(toggle().getAttribute('aria-checked'),'true');assert.equal(store.dirty,false);
+  await h.click(toggle());assert.equal(store.snapshot().config.core.autoPreviewLongContent,false);
+  await h.click(view.container.querySelector('[data-page="core"]'));await searchPage();
+  assert.equal(toggle().getAttribute('aria-checked'),'false');assert.equal(store.dirty,true);
+  const {configChanges,changeGroup,changeLabel}=require('../../src/settings/config-changes.ts');
+  const change=configChanges(h.fixture(),store.snapshot().config).find(change=>change.path.join('.')==='core.autoPreviewLongContent');
+  assert.equal(change.before,true);assert.equal(change.after,false);
+  assert.equal(changeLabel(change.path),'长内容自动预览');assert.equal(changeGroup(change.path).page,'search');
+  await h.act(async()=>store.save());assert.equal(writes.length,1);assert.equal(writes[0].core.autoPreviewLongContent,false);
+  await view.unmount();store.dispose();
+  const preview=await h.loaded({},true),readonlyView=await h.mount(Settings,{store:preview.store});
+  await h.click(readonlyView.container.querySelector('[data-page="search"]'));
+  const readonlyToggle=readonlyView.container.querySelector('[aria-label="长内容自动预览"]');
+  assert.equal(readonlyToggle.getAttribute('aria-disabled'),'true');assert.equal(readonlyToggle.getAttribute('aria-checked'),'true');
+  await h.click(readonlyToggle);assert.equal(readonlyToggle.getAttribute('aria-checked'),'true');
+  assert.equal(preview.store.dirty,false);assert.equal(preview.writes.length,0);
+  await readonlyView.unmount();preview.store.dispose();
+});
 test('menu-bar preview filters and toggles only temporary examples, leaving config and native APIs untouched', async () => {
   const calls=[];
   const {store}=await h.loaded({setMenuBarItemHidden:async(...args)=>calls.push(args)},true);

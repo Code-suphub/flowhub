@@ -6,7 +6,7 @@ import { CornerUpLeft, CornerDownLeft, MoreHorizontal, PanelRight, PanelRightClo
 import { useMediaQuery } from '../shared/useMediaQuery';
 import { Results, resultActions } from './Results';
 import { Preview, canPreview, previewNeighbor, primaryLabel } from './Preview';
-import { readPreviewExpanded, rememberPreviewExpanded } from './preview-layout';
+import { isLongPreviewContent, previewIdentity, readPreviewExpanded, rememberPreviewExpanded } from './preview-layout';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
 
@@ -49,13 +49,17 @@ function ActionMenu({item,index,x,y,onDismiss,onAction}: {item:SearchItem;index:
 function Search() {
   const root=useRef<HTMLDivElement>(null), controller=useRef<SearchController | null>(null);
   const [snapshot,setSnapshot]=useState<SearchSnapshot | null>(null), [pinBusy,setPinBusy]=useState(false);
+  const state=snapshot?.state, activeIndex=state?.index || 0, selected=snapshot?.items[activeIndex];
+  const selectedKey=previewIdentity(selected);
   const [detailOpen,setDetailOpen]=useState(false);
   const [widePreview,setWidePreview]=useState(readPreviewExpanded);
+  const [dismissedPreview,setDismissedPreview]=useState<string|null>(null);
   const narrow=useMediaQuery('(max-width: 719px)');
   const previousNarrow=useRef(narrow), previewFocused=useRef(false);
   const previewFrame=useRef<number | undefined>(undefined);
   const pendingPreviewFocus=useRef(false);
   const openPreview=useCallback((index:number,reveal=false)=>{
+    setDismissedPreview(null);
     controller.current?.selectResult(index,{reveal});
     if(narrow)setDetailOpen(true);
     else if(!widePreview){setWidePreview(true);rememberPreviewExpanded(true);}
@@ -68,9 +72,12 @@ function Search() {
   const closePreview=useCallback(()=>{
     cancelPreviewFocus();
     if(narrow)setDetailOpen(false);
-    else {setWidePreview(false);rememberPreviewExpanded(false);}
+    else {setWidePreview(false);setDismissedPreview(selectedKey);rememberPreviewExpanded(false);}
     root.current?.querySelector<HTMLInputElement>('#q')?.focus({preventScroll:true});
-  },[narrow,cancelPreviewFocus]);
+  },[narrow,selectedKey,cancelPreviewFocus]);
+  useEffect(()=>{
+    setDismissedPreview(current=>current===selectedKey?current:null);
+  },[selectedKey]);
   // Resizing returns a narrow detail view to the list. Never leave focus on an
   // unmounted preview, or turn a temporary narrow view into a saved preference.
   useLayoutEffect(()=>{
@@ -102,7 +109,7 @@ function Search() {
         return;
       }
       if(mode==='toggle'){
-        if(narrow?detailOpen:widePreview)closePreview();
+        if(narrow?detailOpen:node?.querySelector('.search-workbench')?.getAttribute('data-preview-open')==='true')closePreview();
         else openPreview(controller.current?.state.index || 0);
       }
     };
@@ -167,8 +174,7 @@ function Search() {
   }
   const activate=(event:React.MouseEvent<HTMLButtonElement>)=>{setDetailOpen(false);controller.current?.activateScopeControl(event.currentTarget);};
   const press=(event:React.MouseEvent)=>controller.current?.preserveSearchFocus(event);
-  const state=snapshot?.state, selected=snapshot?.items[state?.index || 0];
-  const activeIndex=state?.index || 0, plan=snapshot?.plan;
+  const plan=snapshot?.plan;
   // The result list is virtualized: the active option leaves the DOM once the
   // user scrolls past it. Only reference an option that is actually rendered.
   const activeRendered=Boolean(selected)&&(!plan||(activeIndex>=plan.from&&activeIndex<plan.to));
@@ -177,7 +183,14 @@ function Search() {
   const placeholders:Record<string,string>={app:'搜索已安装的应用…',web:'搜索网页与书签…',clipboard:'搜索剪贴板历史…',memo:'搜索命令备忘…',twofa:'搜索验证码账户…'};
   const placeholder=placeholders[state?.scope || ''] || '搜索应用、网页、剪贴板…';
   const previewable=canPreview(selected) && !state?.editingClipboard;
-  const previewVisible=Boolean(previewable && (narrow?detailOpen:widePreview));
+  const autoPreview=state?.config?.core?.autoPreviewLongContent !== false && isLongPreviewContent(selected) && dismissedPreview !== selectedKey;
+  const previewVisible=Boolean(previewable && (narrow?detailOpen:widePreview || autoPreview));
+  useLayoutEffect(()=>{
+    if(previewVisible || !previewFocused.current)return;
+    cancelPreviewFocus();
+    if(!state?.editingClipboard && !state?.deletingClipboard && !document.hidden && document.hasFocus())root.current?.querySelector<HTMLInputElement>('#q')?.focus({preventScroll:true});
+    previewFocused.current=false;
+  },[previewVisible,state?.editingClipboard,state?.deletingClipboard,cancelPreviewFocus]);
   // A collapsed preview has no DOM. Wait for its committed mount before
   // scheduling focus; reset/input/resize can still cancel this explicit intent.
   useLayoutEffect(()=>{

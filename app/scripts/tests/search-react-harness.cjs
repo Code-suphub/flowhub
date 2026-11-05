@@ -6,7 +6,7 @@ const app=path.resolve(__dirname,'../..');
 const bundle=buildSync({stdin:{contents:"export {mountSearch} from './src/search';",resolveDir:app,loader:'tsx'},bundle:true,write:false,format:'iife',globalName:'SearchTest',loader:{'.css':'empty'},define:{'process.env.NODE_ENV':'"production"'}}).outputFiles[0].text;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function wait(fn){for(let i=0;i<150;i++){if(fn())return;await delay(10);}assert.ok(fn(),'search did not settle');}
-async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,beforeReady,previewExpanded,width=1024}={}) {
+async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,beforeReady,previewExpanded,width=1024,autoPreviewLongContent}={}) {
   const dom=new JSDOM('<div id="search-root"></div>',{url:'http://localhost',runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window, calls=[], events={};
   Object.defineProperty(w,'innerWidth',{configurable:true,value:width});
@@ -25,7 +25,7 @@ async function setup(t,{readonly=false,search,native=false,usage,loadAppIcons,be
   if(native)w.__TAURI__={core:{invoke:async()=>{}}};
   const plugins=['clipboard','app','web','memo','twofa','tools'].map((id,order)=>({id,name:id,order,enabled:true,available:true,searchable:id!=='tools'}));
   const fixture={clipboard:[{id:1,kind:'text',content:'<script>danger()</script>\n'+'text line\n'.repeat(40),hash:'123456789012345',copyCount:2}],app:[{id:'app',title:'Application',path:'/Applications/Test.app'}],web:[{id:'web',title:'Website',url:'https://example.com'}],memo:[{id:'memo',title:'Memo',category:'开发',content:'echo fixture'}],twofa:[{id:'otp',title:'OTP',issuer:'Fixture'}]};
-  w.weborg={listPlugins:async()=>plugins,getConfig:async()=>({core:{},plugins:{tools:{settings:{}}}}),getUpdateState:async()=>({currentVersion:'1.0-local.test'}),
+  w.weborg={listPlugins:async()=>plugins,getConfig:async()=>({core:{...(autoPreviewLongContent===undefined?{}:{autoPreviewLongContent})},plugins:{tools:{settings:{}}}}),getUpdateState:async()=>({currentVersion:'1.0-local.test'}),
     pluginSearch:async(id,args)=>{calls.push(['search',id,args]);return search?search(id,args,fixture):args.offset?[]:fixture[id]||[];},
     pluginAction:async(...args)=>{calls.push(['action',...args]);return args[0]==='twofa'?{code:'123456'}:{ok:true};},
     searchUsage:async()=>usage || {frequent:[],recent:[]},loadAppIcons,
