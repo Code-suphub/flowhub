@@ -70,6 +70,16 @@ test('install is explicit, cancellation makes no call and confirmation installs 
   await wait(()=>ui.w.document.querySelectorAll('.market-installed-row').length===2);
   assert.equal(mock.calls.filter(call=>call.action==='installCandidate').length,1);assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'local:0:fresh');
 });
+test('system monitor install confirmation discloses the privileged read-only service before any installation',async t=>{
+  const monitor={...fresh,permissions:['native-process','system-process-monitor']};
+  const mock=backend({}, {catalog:[manifest,monitor]}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.button('安装',ui.article(monitor.name)).click();await wait(()=>ui.button('确认'));
+  const detail=ui.w.document.querySelector('[role="dialog"]').textContent;
+  for(const disclosure of [/root 身份/,/所有用户进程/,/UID/,/父进程/,/内存足迹/,/CPU 时间/,/不读取命令行或环境变量/,/不能结束进程/,/macOS 会请求管理员认证/])assert.match(detail,disclosure);
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+  ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+});
 test('same-version reinstallation remains an explicit advanced action',async t=>{
   const mock=backend(),ui=setup(t,mock.invoke);await ready(ui);
   assert.equal(ui.button('重新安装'),undefined);

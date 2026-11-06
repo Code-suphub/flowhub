@@ -3,7 +3,9 @@ const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 test('React owns all sources, escaped previews, independent detail previews, clipboard edit cancellation and read-only actions',async t=>{
   const {w,q,scope,key,calls}=await setup(t,{readonly:true});
-  for(const id of ['app','web','memo','twofa','clipboard']){await scope(id);assert.ok(w.document.querySelector('.result'),id);}
+  for(const [id,type] of [['app','app'],['web','page'],['memo','memo'],['twofa','twofa'],['clipboard','clipboard']]){
+    await scope(id);await wait(()=>w.document.querySelector(`.${type}-result`));
+  }
   const row=w.document.querySelector('.clipboard-result');
   assert.equal(row.querySelector('script'),null);assert.match(row.textContent,/<script>/);
   row.querySelector('.result-preview-button').click();await wait(()=>w.document.querySelector('.preview-content'));assert.equal(w.document.querySelector('.clipboard-result'),row);assert.equal(w.document.querySelector('.preview-content script'),null);assert.match(w.document.querySelector('.preview-content').textContent,/<script>/);

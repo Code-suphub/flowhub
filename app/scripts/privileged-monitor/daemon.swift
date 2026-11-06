@@ -2,6 +2,7 @@ import Foundation
 import Darwin
 
 private let socketPath = "/var/run/cn.ac.camellia.flowhub.resource-monitor.sock"
+private let serviceName = "cn.ac.camellia.flowhub.resource-monitor"
 private let maxRequestBytes = 16 * 1024
 
 private func consoleUID() -> uid_t? {
@@ -23,7 +24,8 @@ private func processRecords() -> [[String: Any]] {
         guard pid > 0 else { return nil }
         var bsd = proc_bsdinfo()
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, Int32(MemoryLayout<proc_bsdinfo>.size)) == MemoryLayout<proc_bsdinfo>.size else { return nil }
-        var path = [CChar](repeating: 0, count: 16_384)
+        // libproc rejects buffers larger than PROC_PIDPATHINFO_MAXSIZE.
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let pathLength = path.withUnsafeMutableBufferPointer {
             proc_pidpath(pid, $0.baseAddress, UInt32($0.count))
         }
@@ -34,8 +36,11 @@ private func processRecords() -> [[String: Any]] {
         let taskReadable = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, Int32(MemoryLayout<proc_taskinfo>.size)) == MemoryLayout<proc_taskinfo>.size
         var usage = rusage_info_v2()
         let footprintReadable = withUnsafeMutablePointer(to: &usage) { pointer in
-            var rawUsage: rusage_info_t? = UnsafeMutableRawPointer(pointer)
-            return proc_pid_rusage(pid, RUSAGE_INFO_V2, &rawUsage) == 0
+            // Despite its pointer-to-pointer declaration, libproc writes the
+            // output structure directly at this address.
+            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                proc_pid_rusage(pid, RUSAGE_INFO_V2, $0) == 0
+            }
         }
         var verified = proc_bsdinfo()
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &verified, Int32(MemoryLayout<proc_bsdinfo>.size)) == MemoryLayout<proc_bsdinfo>.size,
@@ -73,6 +78,9 @@ private func sendJSON(_ value: [String: Any], to fd: Int32) {
 
 private func handle(_ client: Int32) {
     defer { close(client) }
+    var timeout = timeval(tv_sec: 2, tv_usec: 0)
+    _ = setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    _ = setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     var peerUID: uid_t = 0
     var peerGID: gid_t = 0
     guard getpeereid(client, &peerUID, &peerGID) == 0,
@@ -91,12 +99,18 @@ private func handle(_ client: Int32) {
     }
     guard request.count < maxRequestBytes,
           let newline = request.firstIndex(of: 10),
-          let body = try? JSONSerialization.jsonObject(with: request[..<newline]) as? [String: Any],
-          body["method"] as? String == "snapshot" else {
+          let body = try? JSONSerialization.jsonObject(with: request[..<newline]) as? [String: Any] else {
         sendJSON(["error": "只支持只读快照请求"], to: client)
         return
     }
-    sendJSON(["processes": processRecords()], to: client)
+    switch body["method"] as? String {
+    case "status":
+        sendJSON(["service": serviceName, "protocolVersion": 1, "uid": Int(geteuid())], to: client)
+    case "snapshot":
+        sendJSON(["processes": processRecords()], to: client)
+    default:
+        sendJSON(["error": "只支持只读快照请求"], to: client)
+    }
 }
 
 private func runDaemon() -> Never {
@@ -136,5 +150,20 @@ private func runDaemon() -> Never {
 
 @main
 struct ResourceMonitorDaemon {
-    static func main() { runDaemon() }
+    static func main() {
+        if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--self-check" {
+            let records = processRecords()
+            guard let current = records.first(where: { $0["pid"] as? Int == Int(getpid()) }),
+                  let memory = current["memory"] as? Int, memory > 0,
+                  let footprint = current["footprint"] as? Int, footprint > 0,
+                  let data = try? JSONSerialization.data(withJSONObject: [
+                    "processCount": records.count, "selfMemory": memory, "selfFootprint": footprint
+                  ]) else { exit(EXIT_FAILURE) }
+            FileHandle.standardOutput.write(data)
+            return
+        }
+        guard geteuid() == 0 else { exit(EXIT_FAILURE) }
+        signal(SIGPIPE, SIG_IGN)
+        runDaemon()
+    }
 }

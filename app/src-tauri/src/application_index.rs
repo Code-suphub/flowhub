@@ -392,12 +392,15 @@ fn reconcile(state: &AppState, roots: &[PathBuf], force: bool) -> Result<bool, S
     Ok(true)
 }
 
-/// Resolve exact bundles outside launcher roots without changing the search index.
-pub(crate) fn scan_paths(paths: &[PathBuf]) -> Vec<Value> {
+/// Read exact runtime bundle paths outside launcher roots without changing the
+/// launcher catalog, loading application code, or starting another catalog walk.
+pub(crate) fn scan_application_paths(paths: &[String]) -> Vec<Value> {
     let mut seen = HashSet::new();
-    let valid: Vec<_> = paths.iter().filter(|path| is_bundle(path) && path.is_dir()
-        && path.join("Contents/Info.plist").is_file() && seen.insert((*path).clone())).cloned().collect();
-    scan_applications(&valid)
+    let paths: Vec<_> = paths.iter().map(PathBuf::from).filter(|path| {
+        path.is_dir() && is_bundle(path) && path.join("Contents/Info.plist").is_file()
+            && seen.insert(path.clone())
+    }).collect();
+    scan_applications(&paths)
 }
 
 fn scan_applications(paths: &[PathBuf]) -> Vec<Value> {
@@ -543,6 +546,22 @@ mod tests {
         let path = root.join(name);
         fs::create_dir_all(path.join("Contents")).unwrap();
         path
+    }
+
+    #[test]
+    fn runtime_bundle_metadata_accepts_exact_outside_paths_without_expanding_the_catalog() {
+        let f = Fixture::new();
+        let outside = bundle(&f.root, "Input Methods/Example.app");
+        fs::write(outside.join("Contents/Info.plist"), b"<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>").unwrap();
+        let incomplete = bundle(&f.root, "Incomplete.app");
+        let not_bundle = f.root.join("ordinary-directory");
+        fs::create_dir(&not_bundle).unwrap();
+        let paths = [&outside, &outside, &incomplete, &not_bundle, &f.root.join("missing.app")]
+            .into_iter().map(|path| path.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        let found = scan_application_paths(&paths);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0]["path"], outside.to_string_lossy().as_ref());
+        assert!(f.state.application_index.read().unwrap().is_empty());
     }
 
     #[test]

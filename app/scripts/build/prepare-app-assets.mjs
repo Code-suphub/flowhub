@@ -1,6 +1,10 @@
 import {spawnSync} from 'node:child_process';
 
 const environment={...process.env};
+if(environment.APPLE_CERTIFICATE&&!environment.APPLE_SIGNING_IDENTITY?.trim()){
+  console.error('APPLE_SIGNING_IDENTITY must be set with APPLE_CERTIFICATE so the FlowHub app and resource-monitor daemon use the same identity.');
+  process.exit(1);
+}
 for(const key of [
   'APPLE_CERTIFICATE','APPLE_CERTIFICATE_PASSWORD','APPLE_ID','APPLE_PASSWORD','APPLE_TEAM_ID',
   'APPLE_API_KEY','APPLE_API_ISSUER','APPLE_API_KEY_PATH','TAURI_SIGNING_PRIVATE_KEY',

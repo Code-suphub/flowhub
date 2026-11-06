@@ -1,11 +1,11 @@
-import {chmodSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
+import {chmodSync,mkdirSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 
 const app=resolve(new URL('../..',import.meta.url).pathname);
+const tauriConfig=JSON.parse(readFileSync(join(app,'src-tauri','tauri.conf.json'),'utf8'));
 const root=join(app,'src-tauri','target','resource-monitor-helper');
 const daemon=join(root,'daemon');
-const plist=join(root,'cn.ac.camellia.flowhub.resource-monitor.plist');
 rmSync(root,{recursive:true,force:true});
 mkdirSync(root,{recursive:true});
 
@@ -18,27 +18,29 @@ const run=(command,args)=>{
 if(process.platform==='darwin'){
   const source=join(app,'scripts','privileged-monitor');
   run('swiftc',['-parse-as-library',join(source,'daemon.swift'),'-o',daemon]);
-  const service=`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>cn.ac.camellia.flowhub.resource-monitor</string>
-<key>BundleProgram</key><string>Contents/Resources/FlowHubResourceMonitorHelper/daemon</string>
-<key>RunAtLoad</key><true/>
-<key>KeepAlive</key><true/>
-<key>ProcessType</key><string>Background</string>
-</dict></plist>
-`;
-  writeFileSync(plist,service);
-  chmodSync(daemon,0o700);
+  chmodSync(daemon,0o755);
 
-  // Sign the daemon before Tauri signs the containing application.
-  const identities=spawnSync('security',['find-identity','-v','-p','codesigning'],{encoding:'utf8'}).stdout??'';
-  const preferred=process.env.APPLE_SIGNING_IDENTITY??process.env.FLOWHUB_MACOS_SIGNING_IDENTITY??'FlowHub Local Development';
-  const available=[...identities.matchAll(/"([^"]+)"/g)].map(match=>match[1]);
-  const identity=available.find(item=>item===preferred||item.includes(preferred))??'-';
-  run('codesign',['--force','--sign',identity,'--options','runtime',daemon]);
+  // The admin-authorized installer supports ad-hoc local builds. Developer ID
+  // is optional here and remains available for signed/notarized releases.
+  const configuredIdentity=tauriConfig.bundle?.macOS?.signingIdentity;
+  const environmentIdentity=process.env.APPLE_SIGNING_IDENTITY;
+  if(environmentIdentity!==undefined&&!environmentIdentity.trim()){
+    throw new Error('APPLE_SIGNING_IDENTITY is set but empty.');
+  }
+  if(process.env.APPLE_CERTIFICATE&&!environmentIdentity){
+    throw new Error('APPLE_SIGNING_IDENTITY must be set when APPLE_CERTIFICATE is used, so the app and daemon use the same identity.');
+  }
+  const identity=environmentIdentity??configuredIdentity??'-';
+  if(typeof identity!=='string'||!identity.trim()){
+    throw new Error('The macOS signing identity must be non-empty. Use "-" for a free local ad-hoc build.');
+  }
+  try{
+    run('codesign',['--force','--sign',identity,'--options','runtime',daemon]);
+  }catch(error){
+    throw new Error(`Could not sign the resource-monitor daemon with "${identity}". Ensure this identity is valid and is also used by Tauri for the app.`,{cause:error});
+  }
+  run(daemon,['--self-check']);
 }else{
   writeFileSync(daemon,'#!/bin/sh\nexit 1\n');
-  writeFileSync(plist,'<?xml version="1.0"?><plist version="1.0"><dict/></plist>\n');
-  chmodSync(daemon,0o700);
+  chmodSync(daemon,0o755);
 }

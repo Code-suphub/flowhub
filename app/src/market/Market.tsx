@@ -91,7 +91,8 @@ export function Market() {
     const previous=installed.find(item=>item.manifest.id===manifest.id);
     const relation=previous?compareVersions(manifest.version,previous.manifest.version):null;
     setNotice('');setNoticeError(false);setProgress(null);
-    setConfirmation({title:previous?(relation===0?'重新安装插件':relation===1?'更新插件':relation===-1?'回退插件版本':'更换插件版本'):'安装插件',detail:`${manifest.name} · v${manifest.version}${previous?`（当前已安装 v${previous.manifest.version}）`:''}${sourceName?` · 来源：${sourceName}`:''}`,warning:`将在本机运行插件进程，可访问当前用户文件和网络。仅安装可信来源的插件。${manifest.permissions?.includes('system-process-monitor')?'此版本还声明了系统进程监控能力。':''}${previous?'更新或回退会保留插件数据与启停状态。':''}`,install:true,action:async()=>{
+    const warning=`将在本机运行插件进程，可访问当前用户文件和网络。${manifest.permissions?.includes('system-process-monitor')?'该插件还可请求安装以 root 身份运行的系统级只读采集服务；启用后会读取所有用户进程的 PID、名称、路径、UID、父进程、RSS、内存足迹和 CPU 时间，不读取命令行或环境变量，也不能结束进程。安装和卸载服务时，macOS 会请求管理员认证。':''}仅安装可信来源的插件。${previous?'更新或回退会保留插件数据与启停状态。':''}`;
+    setConfirmation({title:previous?(relation===0?'重新安装插件':relation===1?'更新插件':relation===-1?'回退插件版本':'更换插件版本'):'安装插件',detail:`${manifest.name} · v${manifest.version}${previous?`（当前已安装 v${previous.manifest.version}）`:''}${sourceName?` · 来源：${sourceName}`:''}`,warning,install:true,action:async()=>{
       setProgress({phase:'preparing'});
       await action();if(!alive.current)return;
       setView('installed');setInstalledFilter('all');setQuery('');setNotice(`${previous?'已更换':'已安装'} ${manifest.name} 至 v${manifest.version}。${previous && !previous.enabled?'插件保持停用，可在列表中启用。':'可从插件栏或下方按钮打开。'}`);setCompleted({id:manifest.id,name:manifest.name});focusAfterInstall.current=true;

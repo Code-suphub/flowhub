@@ -1,11 +1,7 @@
 use serde_json::Value;
 #[cfg(target_os = "macos")]
-use std::ffi::{CStr, CString};
-
-#[cfg(target_os = "macos")]
-unsafe extern "C" {
-    fn flowhub_privileged_monitor(action: *const std::ffi::c_char, output: *mut std::ffi::c_char, capacity: usize) -> i32;
-}
+#[path = "admin_monitor.rs"]
+mod macos;
 
 pub(crate) async fn invoke(action: &str) -> Result<Value, String> {
     if !matches!(action, "status" | "enable" | "disable") {
@@ -16,13 +12,9 @@ pub(crate) async fn invoke(action: &str) -> Result<Value, String> {
 
     #[cfg(target_os = "macos")]
     {
-        let action = CString::new(action).map_err(|error| error.to_string())?;
-        let mut output = vec![0i8; 8192];
-        let result = unsafe { flowhub_privileged_monitor(action.as_ptr(), output.as_mut_ptr(), output.len()) };
-        if result != 0 {
-            return Err("系统进程授权服务返回无效结果。".into());
-        }
-        let response = unsafe { CStr::from_ptr(output.as_ptr()) }.to_bytes();
-        serde_json::from_slice(response).map_err(|error| format!("系统进程授权服务返回无效状态：{error}"))
+        let action = action.to_owned();
+        tauri::async_runtime::spawn_blocking(move || macos::invoke(&action))
+            .await
+            .map_err(|error| format!("系统进程授权任务失败：{error}"))?
     }
 }

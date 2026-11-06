@@ -57,10 +57,7 @@
       "minimumSystemVersion": "10.15",
       "infoPlist": "Info.plist",
       "entitlements": "Entitlements.plist",
-      "signingIdentity": "FlowHub Local Development",
-      "files": {
-        "Library/LaunchDaemons/cn.ac.camellia.flowhub.resource-monitor.plist": "target/resource-monitor-helper/cn.ac.camellia.flowhub.resource-monitor.plist"
-      }
+      "signingIdentity": "-"
     }
   },
   "plugins": {

@@ -68,7 +68,7 @@ fn resolve_applications(index: &[Value], paths: &[String]) -> Vec<(String, Value
     // The launcher index is intentionally scoped to its search directories and
     // may still be refreshing. Resolve exact missing bundle paths with the same
     // scanner rather than guessing by executable name or adding launcher entries.
-    let supplemental = crate::application_index::scan_paths(&missing.iter().map(std::path::PathBuf::from).collect::<Vec<_>>());
+    let supplemental = crate::application_index::scan_application_paths(&missing);
     matched.extend(match_index(&supplemental, &missing));
     matched
 }
