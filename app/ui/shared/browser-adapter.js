@@ -22,7 +22,16 @@ if (!window.weborg) {
     id: `demo-web-${index}`, title, url: `https://example.com/teams/flowhub/documentation/interaction-and-layout-review/${index}`, icon: demoIcon
   }));
   const demoMemos = Array.from({length:8}, (_, index) => ({id:`demo-memo-${index}`, title:index ? `开发命令 ${index}` : "查看所有服务日志并定位较长的异常上下文", category:"演示 / 开发 / 排查", content:`docker compose --project-name flowhub-preview --file /Users/demo/Projects/FlowHub/deployment/compose.production.yml logs --tail 200 --follow service-${index}`}));
-  const demoClipboard = Array.from({length:8}, (_, index) => ({id:index+1, kind:"text", content:`演示剪贴板 ${index+1}：用于验证长文本展开、键盘选择和滚动保持。\n${"这一段包含较长的工作记录与界面验收说明，展开后应完整呈现且保持选中对象。\n".repeat(8)}`, hash:`demo-clipboard-${index}`, copyCount:index+1, createdAt:"2026-10-16T08:00:00Z", lastSeenAt:"2026-10-16T08:00:00Z"}));
+  const demoClipboard = [
+    "本周迭代安排\n\n周三完成搜索与剪贴板的交互调整，周四进行联调，周五整理发布说明。\n\n待办事项\n• 核对常用入口和最近使用的顺序\n• 整理设计评审中的修改意见\n• 与团队确认下周的优先级\n\n发布前预留半天回归，发现的问题统一记录到项目看板。",
+    "会议记录：下周产品评审\n时间：周一 14:00—15:00\n议题：搜索体验、信息布局、快捷键约定\n会前请补齐各自的设计稿和使用反馈。",
+    "git log --oneline --max-count=20",
+    "https://example.com/design/components",
+    "{\n  \"project\": \"FlowHub\",\n  \"theme\": \"system\",\n  \"language\": \"zh-CN\"\n}",
+    "发布说明草稿\n优化搜索和内容预览，补充常用操作的键盘入口。",
+    "待回复：设计稿已更新，下午一起看一下。",
+    "参考资料\n组件设计规范\n键盘交互约定\n产品反馈汇总"
+  ].map((content, index) => ({id:index+1,kind:"text",content,sourceName:index%2?"Safari":"Notes",hash:`demo-clipboard-${index}`,copyCount:index+1,createdAt:"2026-10-16T08:00:00Z",lastSeenAt:"2026-10-16T08:00:00Z"}));
   const demoConfig = {core:{},plugins:{
     app:{enabled:true,settings:{}}, web:{enabled:true,settings:{items:[{id:"demo-folder",title:"演示 / 团队资料 / 较长的目录路径",children:demoPages}]}},
     clipboard:{enabled:true,settings:{}}, memo:{enabled:true,settings:{items:demoMemos}}, tools:{enabled:false,settings:{}}
@@ -203,8 +212,8 @@ if (!window.weborg) {
     const query = String(request.query || "").trim().toLowerCase();
     const limit = Number(request.limit) || (id === "clipboard" ? 30 : 12);
     if (id === "clipboard") {
-      if (demo) return demoClipboard.filter(item=>(!query || item.content.toLowerCase().includes(query)) && (!request.kind || request.kind==="all" || item.kind===request.kind)).slice(Number(request.offset)||0,(Number(request.offset)||0)+limit).map(record=>({...record,pluginId:id}));
-      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(request.query || "")}&kind=${encodeURIComponent(request.kind || "all")}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(request.offset || 0)}`, { cache: "no-store" });
+      if (demo) return demoClipboard.filter(item=>(!query || `${item.content} ${item.note || ''}`.toLowerCase().includes(query)) && (!request.kind || request.kind==="all" || item.kind===request.kind) && (request.source==null || (item.sourceName || '').trim()===request.source) && (!request.pinnedOnly || item.pinnedAt)).slice(Number(request.offset)||0,(Number(request.offset)||0)+limit).map(record=>({...record,pluginId:id}));
+      const response = await fetch(`/__weborg/clipboard/records?q=${encodeURIComponent(request.query || "")}&kind=${encodeURIComponent(request.kind || "all")}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(request.offset || 0)}${request.source==null?'':`&source=${encodeURIComponent(request.source)}`}&pinnedOnly=${request.pinnedOnly?'1':'0'}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.reason || `读取剪切板失败：${response.status}`);
       return (result.records || []).map((record) => ({ ...record, pluginId: id }));
@@ -256,10 +265,13 @@ if (!window.weborg) {
     inspectCloudflare,
     lookupProxy,
     pluginAction,
+    async listClipboardSources(){if(demo){const counts=new Map();for(const row of demoClipboard)counts.set(row.sourceName || '',(counts.get(row.sourceName || '') || 0)+1);return [...counts].map(([name,count])=>({name,count}));}const response=await fetch('/__weborg/clipboard/sources',{cache:'no-store'}),result=await response.json();if(!response.ok || !result.ok)throw Error(result.reason || '来源读取失败');return result.sources || [];},
+    async setClipboardNote(){return {ok:false,readonly:true,reason:'浏览器预览不能修改备注'};},
     searchUsage: usageSections,
     async openSettings(options = {}) {
       const url = String(options.initialUrl || "").trim();
-      const query = url ? `?addUrl=${encodeURIComponent(url)}` : "";
+      const module = String(options.initialModule || "").trim();
+      const query = url ? `?addUrl=${encodeURIComponent(url)}` : module ? `?module=${encodeURIComponent(module)}` : "";
       const settingsPath = `/settings.html${query}`;
       // The in-app browser preview does not expose window.open. Fall back to
       // same-tab navigation there; desktop Tauri keeps using its native window.
@@ -270,6 +282,7 @@ if (!window.weborg) {
       window.location.assign(settingsPath);
       return { ok: true, preview: true };
     },
+    async listLauncherPlugins() { return []; },
     async openAccessibilitySettings() {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开系统辅助功能设置" };
     },
@@ -280,6 +293,7 @@ if (!window.weborg) {
       return { ok: false, trusted: false, preview: true, reason: "请在 FlowHub App 中授权辅助功能" };
     },
     async getConfigPathInfo() {
+      if (demo) return { available:false,configuredPath:'',defaultPath:'示例配置目录/config.json',resolvedPath:'示例配置目录/config.json',activePath:'' };
       try {
         const response = await fetch("/__weborg/config/location", { cache: "no-store" });
         const result = await response.json();
@@ -295,9 +309,17 @@ if (!window.weborg) {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中选择配置文件位置" };
     },
     async listConfigHistory() {
+      if (demo) return { entries: [0, 1].map(index => ({id: `demo-history-${index}`, created_at: Date.UTC(2026, 10, 4, 8 - index * 3), bytes: 2048 + index * 512, catalog_count: 0})), limit: 20, available: true, demo: true };
       return { entries: [], limit: 0, directory: "", available: false };
     },
-    async previewConfigHistory() {
+    async previewConfigHistory(id) {
+      if (demo && ["demo-history-0", "demo-history-1"].includes(id)) {
+        const config = JSON.parse(JSON.stringify(demoConfig));
+        config.core = {hotkey: "Ctrl+Space", launchAtLogin: true, notifications: {enabled: false, updates: true}};
+        config.plugins.clipboard.settings.retentionDays = id === "demo-history-0" ? 7 : 14;
+        config.plugins.web.settings.items = [];
+        return {id, config};
+      }
       throw new Error("浏览器预览不支持配置历史");
     },
     async restoreConfigHistory() {
@@ -316,6 +338,7 @@ if (!window.weborg) {
       return { ok: false, preview: true, reason: "请在 FlowHub App 中打开配置文件位置" };
     },
     async getClipboardStorageInfo() {
+      if (demo) return { available:false,configuredPath:'',defaultPath:'示例数据目录/clipboard',resolvedPath:'示例数据目录/clipboard',activePath:'' };
       try {
         const response = await fetch("/__weborg/clipboard/storage", { cache: "no-store" });
         const result = await response.json();

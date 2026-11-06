@@ -20,10 +20,10 @@ test('selection reveals only when changed; repeated selection respects user scro
 });
 test('web tree search, keyboard selection, multi-selection and resize operate on React controls',async()=>{
  const {store}=await h.loaded(),{WebCatalog}=require('../../src/settings/Collections.tsx'),view=await h.mount(WebCatalog,{store});
- assert.equal(view.container.querySelector('.settings-catalog-actions'),null);
+ assert.equal(view.container.querySelector('[aria-label="节点操作"]'),null);
  const row=view.container.querySelector('[data-node-id="a1"]');await h.key(row,'Enter');assert.equal(row.getAttribute('aria-selected'),'true');
- assert.ok(view.container.querySelector('.settings-catalog-actions'));
- await h.key(view.container.querySelector('[data-node-id="b"]'),'Enter',{ctrlKey:true});assert.match(view.container.textContent,/删除 2/);
+ assert.ok(view.container.querySelector('[aria-label="节点操作"]'));
+ await h.key(view.container.querySelector('[data-node-id="b"]'),'Enter',{ctrlKey:true});assert.match(view.container.textContent,/已选择 2 项/);assert.equal(view.container.querySelector('input[aria-label="标题"]'),null);
  const divider=view.container.querySelector('[role=separator]');await h.key(divider,'End');assert.equal(divider.getAttribute('aria-valuenow'),'380');await h.key(divider,'Home');assert.equal(divider.getAttribute('aria-valuenow'),'220');
  await h.input(view.container.querySelector('[aria-label="筛选网页目录"]'),'A1');assert.deepEqual([...view.container.querySelectorAll('[data-node-id]')].map(e=>e.dataset.nodeId),['a','a1']);
  await view.unmount();store.dispose();
@@ -32,7 +32,7 @@ test('browser preview reorders only its in-memory tree and keeps editing unavail
  const {store,writes}=await h.loaded({},true),{WebCatalog}=require('../../src/settings/Collections.tsx'),view=await h.mount(WebCatalog,{store});
  const roots=()=>[...view.container.querySelectorAll('[role=treeitem][aria-level="1"]')].map(row=>row.dataset.nodeId);
  assert.deepEqual(roots(),['a','b','c','d','p']);
- assert.equal(h.button(view.container,'＋ 添加节点').disabled,true);
+ assert.equal(h.button(view.container,'新建节点').disabled,true);
  assert.equal(view.container.querySelector('[aria-label="筛选网页目录"]').disabled,false);
  assert.equal(view.container.querySelector('[data-node-id="b"]').draggable,false);
  assert.ok(view.container.querySelector('[data-node-id="p"] .settings-tree-leaf svg'));

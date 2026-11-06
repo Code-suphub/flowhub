@@ -20,6 +20,8 @@ export function normalize(value: unknown): Config {
   c.core.menuBar = { enabled: true, showOpenLauncher: true, showOpenSettings: true, showVersion: true, showQuit: true, organizerEnabled: false, collapseOnLaunch: false, ...c.core.menuBar };
   c.core.notifications = { enabled: true, updates: true, ...c.core.notifications };
   c.core.scopeShortcuts = { ...shortcuts, ...c.core.scopeShortcuts };
+  c.core.autoPreviewLongContent = c.core.autoPreviewLongContent !== false;
+  c.core.searchHistoryEnabled = c.core.searchHistoryEnabled !== false;
   const used = new Set<string>();
   for (const [id, raw] of Object.entries(c.core.scopeShortcuts)) {
     if (typeof raw !== 'string') throw new Error('范围快捷键必须是字符串');
@@ -44,6 +46,19 @@ export function normalize(value: unknown): Config {
 }
 export function entries(nodes: WebNode[], parent: WebNode | null = null, depth = 0): { node: WebNode; parent: WebNode | null; depth: number }[] {
   return nodes.flatMap(node => [{ node, parent, depth }, ...entries(node.children || [], node, depth + 1)]);
+}
+export function webSelection(nodes: WebNode[], ids: string[]) {
+  const selected = new Set(ids), roots: WebNode[] = [], blocked = new Set<string>();
+  function visit(items: WebNode[], covered = false) {
+    for (const node of items) {
+      const included = selected.has(node.id);
+      if (included && !covered) roots.push(node);
+      if (covered || included) blocked.add(node.id);
+      visit(node.children || [], covered || included);
+    }
+  }
+  visit(nodes);
+  return { roots, blocked, count: blocked.size, descendants: blocked.size - roots.length };
 }
 export function moveNodes(nodes: WebNode[], ids: string[], targetId: string, position: 'before' | 'after' | 'inside' = 'inside'): WebNode[] {
   const next = clone(nodes), all = entries(next), selected = new Set(ids);

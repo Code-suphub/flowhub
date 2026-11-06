@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../../ui/search/search.js'), 'utf8');
 const renderSlice = source.slice(source.indexOf('function runResultAction('), source.indexOf('const resultWindow = new window.FlowHubResultWindow();'));
-const focusSlice = source.slice(source.indexOf('function focusResultAction('), source.indexOf('function choose('));
+const focusSlice = source.slice(source.indexOf('function focusResultAction('), source.indexOf('function rememberQuery('));
 
 function harness() {
   const copied = [];
@@ -64,6 +64,7 @@ function harness() {
     getComputedStyle: () => ({ marginTop: '0', marginBottom: '0' }),
     copyText: (text) => { copied.push(text); return Promise.resolve(); },
     choose: (item) => { opened.push(item); },
+    rememberQuery: () => {},
     showActionStatus: (message) => status.push(message),
     returnToSearch: () => { returned += 1; },
     render: () => {},
@@ -131,8 +132,7 @@ const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://e
     assert.equal(h.menuRequests[0].index,0);
     h.ctx.matches = () => [{type:'app',path:'/Applications/App.app',usageSection:'recent'}];
     h.ctx.focusResultAction(1);
-    assert.equal(h.menuRequests.length,1,'usage entry does not request a regular-result menu');
-    assert.equal(h.returned(),3,'usage entry returns directly to search');
+    assert.equal(h.menuRequests.length,2,'usage entries expose the same explicit actions as other applications');
   }
 
   console.log('PASS: result actions and F6/Tab/Escape follow one focus order');

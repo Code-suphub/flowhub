@@ -2,6 +2,38 @@ const { test } = require('node:test'), assert = require('node:assert/strict');
 const h = require('./settings-harness.test.cjs');
 const { Settings } = require('../../src/settings/index.tsx');
 const { Core } = require('../../src/settings/Core.tsx');
+test('search history defaults on and participates in drafts, saved settings, review and readonly boundaries',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[data-page="search"]'));
+  const toggle=view.container.querySelector('[aria-label="记录搜索历史"]');assert.equal(toggle.getAttribute('aria-checked'),'true');assert.equal(store.dirty,false);
+  await h.click(toggle);assert.equal(store.snapshot().config.core.searchHistoryEnabled,false);
+  const {configChanges,changeGroup,changeLabel}=require('../../src/settings/config-changes.ts'),change=configChanges(h.fixture(),store.snapshot().config).find(change=>change.path.join('.')==='core.searchHistoryEnabled');
+  assert.equal(changeLabel(change.path),'记录搜索历史');assert.equal(changeGroup(change.path).page,'search');assert.equal(change.before,true);assert.equal(change.after,false);
+  await h.act(async()=>store.save());assert.equal(writes[0].core.searchHistoryEnabled,false);await view.unmount();store.dispose();
+  const preview=await h.loaded({},true),readView=await h.mount(Settings,{store:preview.store});await h.click(readView.container.querySelector('[data-page="search"]'));
+  const readonlyToggle=readView.container.querySelector('[aria-label="记录搜索历史"]');assert.equal(readonlyToggle.getAttribute('aria-disabled'),'true');await h.click(readonlyToggle);assert.equal(preview.store.dirty,false);assert.equal(preview.writes.length,0);await readView.unmount();preview.store.dispose();
+});
+test('long content preview defaults on and its saved setting, change review and read-only boundary remain consistent',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  const searchPage=()=>h.click(view.container.querySelector('[data-page="search"]'));
+  await searchPage();const toggle=()=>view.container.querySelector('[aria-label="长内容自动预览"]');
+  assert.equal(toggle().getAttribute('aria-checked'),'true');assert.equal(store.dirty,false);
+  await h.click(toggle());assert.equal(store.snapshot().config.core.autoPreviewLongContent,false);
+  await h.click(view.container.querySelector('[data-page="core"]'));await searchPage();
+  assert.equal(toggle().getAttribute('aria-checked'),'false');assert.equal(store.dirty,true);
+  const {configChanges,changeGroup,changeLabel}=require('../../src/settings/config-changes.ts');
+  const change=configChanges(h.fixture(),store.snapshot().config).find(change=>change.path.join('.')==='core.autoPreviewLongContent');
+  assert.equal(change.before,true);assert.equal(change.after,false);
+  assert.equal(changeLabel(change.path),'长内容自动预览');assert.equal(changeGroup(change.path).page,'search');
+  await h.act(async()=>store.save());assert.equal(writes.length,1);assert.equal(writes[0].core.autoPreviewLongContent,false);
+  await view.unmount();store.dispose();
+  const preview=await h.loaded({},true),readonlyView=await h.mount(Settings,{store:preview.store});
+  await h.click(readonlyView.container.querySelector('[data-page="search"]'));
+  const readonlyToggle=readonlyView.container.querySelector('[aria-label="长内容自动预览"]');
+  assert.equal(readonlyToggle.getAttribute('aria-disabled'),'true');assert.equal(readonlyToggle.getAttribute('aria-checked'),'true');
+  await h.click(readonlyToggle);assert.equal(readonlyToggle.getAttribute('aria-checked'),'true');
+  assert.equal(preview.store.dirty,false);assert.equal(preview.writes.length,0);
+  await readonlyView.unmount();preview.store.dispose();
+});
 test('menu-bar preview filters and toggles only temporary examples, leaving config and native APIs untouched', async () => {
   const calls=[];
   const {store}=await h.loaded({setMenuBarItemHidden:async(...args)=>calls.push(args)},true);
@@ -40,7 +72,7 @@ const pointer = (type, element, x, y, pointerId = 1) => { const event = new wind
 test('compact settings groups sources and data; unsupported updates have no progress bar', async () => {
   const { store } = await h.loaded({ getUpdateState: async () => ({ status:'unsupported', currentVersion:'0.1.0', percent:0 }) }, true);
   const view = await h.mount(Settings, { store });
-  const select = async id => { if (id === 'search') await h.click(h.button(view.container, '搜索')); else { await h.click(h.button(view.container, '通用设置')); await h.click(view.container.querySelector(`#tab-${id}`)); } };
+  const select = async id => { await h.click(view.container.querySelector(`[data-page="${id}"]`)); };
   await select('search');
   const sources = [...view.container.querySelectorAll('.settings-search-item')];
   assert.equal(sources.length, store.snapshot().plugins.length);
@@ -54,10 +86,10 @@ test('compact settings groups sources and data; unsupported updates have no prog
   assert.ok(view.container.querySelector('.settings-search-item[data-source=app] [aria-label="应用范围键"]'));
   await select('data');
   assert.equal(view.container.querySelectorAll('.settings-data-panel > .settings-group').length,4);
-  const path = view.container.querySelector('[aria-label="路径"]');
-  assert.ok(path); assert.equal(path.closest('.settings-row').querySelectorAll('.settings-row').length,0);
+  const locations = view.container.querySelectorAll('.settings-storage-control');
+  assert.equal(locations.length,2);assert.match(locations[0].textContent,/配置文件位置/);assert.match(locations[1].textContent,/数据库与剪贴板目录/);
   await select('updates');
-  assert.match(view.container.querySelector('[role=tabpanel]').textContent,/当前环境不支持更新/);
+  assert.match(view.container.querySelector('#panel-updates').textContent,/当前环境不支持更新/);
   assert.equal(view.container.querySelector('progress'),null);
   await h.act(async () => store.patch({update:{status:'downloading',percent:42}}));
   assert.equal(view.container.querySelector('progress').value,42);
@@ -171,18 +203,29 @@ test('unavailable search source shows its reason inline without a redundant help
   assert.equal(row.querySelector('[role=switch]').getAttribute('aria-disabled'), 'true');
   await view.unmount(); store.dispose();
 });
-test('general settings has only three tabs; dedicated search and menu navigation remain accessible', async () => {
+test('settings use one navigation level for general, data and updates with keyboard focus movement', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  const tabs = [...view.container.querySelectorAll('[role=tab]')]; assert.deepEqual(tabs.map(tab => tab.id.slice(4)), ['general','data','updates']);
-  assert.equal(tabs.length, 3);
-  await h.key(tabs[0], 'ArrowRight'); assert.equal(tabs[1].getAttribute('aria-selected'), 'true'); assert.equal(document.activeElement, tabs[1]);
-  await h.key(tabs[1], 'End'); assert.equal(tabs[2].getAttribute('aria-selected'), 'true');
-  await h.key(tabs[2], 'Home'); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
-  await h.key(tabs[0], 'ArrowLeft'); assert.equal(tabs[2].getAttribute('aria-selected'), 'true');
-  for (const tab of tabs) { await h.click(tab); assert.ok(view.container.querySelector(`#panel-${tab.id.slice(4)}`)); }
+  assert.equal(view.container.querySelector('[aria-label="通用设置分类"]'),null);
+  const buttons=[...view.container.querySelectorAll('.settings-sidebar [data-page]')];
+  await h.key(buttons[0],'ArrowDown');assert.equal(document.activeElement,buttons[1]);assert.equal(view.container.querySelector('h1').textContent,'通用设置');
+  await h.key(buttons[1],'End');assert.equal(document.activeElement,buttons.at(-1));
+  await h.key(buttons.at(-1),'Home');assert.equal(document.activeElement,buttons[0]);
+  for (const [id,panel] of [['core','general'],['data','data'],['updates','updates']]) {await h.click(view.container.querySelector(`[data-page="${id}"]`));assert.ok(view.container.querySelector(`#panel-${panel}`));}
   for (const label of ['搜索', '菜单栏']) { await h.click(h.button(view.container, label)); assert.equal(view.container.querySelector('[aria-label="通用设置分类"]'),null); }
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
   await view.unmount(); store.dispose();
+});
+test('clipboard and tool groups retain every setting, drafts and explicit history confirmation',async()=>{
+  let clears=0;const {store,writes}=await h.loaded();window.FlowHubCommandStore={counts:()=>({total:4,templates:2}),clearAll:()=>clears++};
+  const view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[data-page=clipboard]'));
+  assert.deepEqual([...view.container.querySelectorAll('.settings-section>legend')].map(node=>node.textContent),['采集与隐私','历史保留','存储位置']);
+  await h.input(view.container.querySelector('[aria-label="留存天数"]'),'21');await h.click(view.container.querySelector('[data-page=tools]'));
+  const names=[...view.container.querySelectorAll('.settings-tools-grid [role=switch]')].map(node=>node.getAttribute('aria-label'));
+  assert.deepEqual(names.sort(),Object.values(h.model.tools).sort());assert.equal(new Set(names).size,names.length);
+  await h.click(view.container.querySelector('[role=switch][aria-label="计算表达式"]'));assert.equal(store.snapshot().config.plugins.tools.settings.calculator,false);
+  await h.click(h.button(view.container,'清空历史与模板'));assert.equal(clears,0);await h.key(document.querySelector('[role=dialog] button'),'Escape');assert.equal(clears,0);
+  await h.click(view.container.querySelector('[data-page=clipboard]'));assert.equal(view.container.querySelector('[aria-label="留存天数"]').value,'21');assert.equal(store.dirty,true);assert.equal(writes.length,0);
+  await view.unmount();store.dispose();delete window.FlowHubCommandStore;
 });
 test('tools use a compact grid and memos keep navigation separate from details', async () => {
   const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
@@ -212,11 +255,11 @@ test('application options group the draft toggle and system permission action wi
 test('settings sidebar separates built-ins from plugins and preview keeps canvas control read-only', async () => {
   const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
   const groups=[...view.container.querySelectorAll('.settings-nav-group')];
-  assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['工作空间','目录与工具']);
+  assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['系统设置','工作空间','目录与工具']);
   assert.ok(h.button(groups[0],'通用设置'));
   assert.ok(view.container.querySelector('.settings-plugin-dock [aria-label="插件市场"]'));
-  assert.equal(h.button(view.container.querySelector('.settings-sidebar'),'插件市场'),undefined);
-  await h.click(h.button(groups[0],'桌面组件'));
+  assert.ok(h.button(view.container.querySelector('.settings-sidebar'),'插件市场'));
+  await h.click(h.button(groups[1],'桌面组件'));
   assert.equal(view.container.querySelector('.settings-canvas [role=switch]').getAttribute('aria-disabled'),'true');
   assert.equal(h.button(view.container,'打开桌面组件').disabled,true);
   await view.unmount();store.dispose();
@@ -244,7 +287,7 @@ test('native canvas setting saves view-only immediately and opens the widget sur
 });
 test('read-only general keeps adapter options inspectable while shortcuts and notifications stay disabled', async () => {
   const { store, writes } = await h.loaded({}, true), view = await h.mount(Settings, { store });
-  await h.click(view.container.querySelector('#tab-general'));
+  await h.click(view.container.querySelector('[data-page="core"]'));
   const before = store.snapshot().config.plugins.tools.settings.proxyAdapter;
   const select = view.container.querySelector('[aria-label="代理检测适配器"]');
   assert.equal(select.disabled, false);
@@ -260,11 +303,11 @@ test('read-only general keeps adapter options inspectable while shortcuts and no
   assert.equal(writes.length, 0);
   await view.unmount(); store.dispose();
 });
-test('legacy network and notifications section names resolve to the general tab', async () => {
+test('legacy network and notifications section names resolve to the general page', async () => {
   const { store } = await h.loaded({}, true);
   for (const section of ['network','notifications']) {
     const view = await h.mount(Core, { store, section, onSection: () => {} });
-    assert.equal(view.container.querySelector('#tab-general').getAttribute('aria-selected'), 'true');
+    assert.equal(view.container.querySelector('[aria-label="通用设置分类"]'),null);
     assert.ok(view.container.querySelector('#panel-general [aria-label="代理检测适配器"]'));
     assert.ok(view.container.querySelector('#panel-general [role=switch]'));
     await view.unmount();
@@ -308,7 +351,16 @@ test('core tabs do not repeat their labels in hover descriptions', async () => {
 });
 test('module queries select requested section and reject unknown module values', async () => {
   const { bindNativeSettings } = require('../../src/settings/native.ts');
-  for (const [query, expected] of [['clipboard','clipboard'], ['canvas','canvas'], ['not-a-module','core']]) { const { store } = await h.loaded(); window.history.replaceState({}, '', '/settings.html?module='+query); let module; const dispose = bindNativeSettings(store, v => { module=v; }, () => {}); assert.equal(module, expected); dispose(); store.dispose(); }
+  for (const [query, expected] of [['clipboard','clipboard'], ['canvas','canvas'], ['data','data'], ['updates','updates'], ['not-a-module','core']]) { const { store } = await h.loaded(); window.history.replaceState({}, '', '/settings.html?module='+query); let module; const dispose = bindNativeSettings(store, v => { module=v; }, () => {}); assert.equal(module, expected); dispose(); store.dispose(); }
+});
+test('launcher module links queue until settings load, keep the latest request while busy, and never write drafts',async()=>{
+  const {bindNativeSettings}=require('../../src/settings/native.ts');
+  const {store,writes}=await h.loaded();store.patch({config:null});window.history.replaceState({},'','/settings.html?module=plugin%3Aexample');
+  const visited=[],dispose=bindNativeSettings(store,id=>{visited.push(id);return true;},()=>{});
+  assert.equal(visited.length,0);store.patch({config:h.fixture()});await Promise.resolve();assert.equal(visited.at(-1),'plugin:example');
+  store.patch({busy:true});window.switchModule('appearance');window.switchModule('search');assert.equal(visited.length,1);
+  store.patch({busy:false});await Promise.resolve();assert.deepEqual(visited,['plugin:example','search']);assert.equal(writes.length,0);
+  store.patch({busy:true});window.switchModule('clipboard');dispose();store.patch({busy:false});await Promise.resolve();assert.equal(visited.length,2);store.dispose();
 });
 test('theme Select writes shared theme preference and follows host theme events', async () => {
   h.environment(); let theme = 'system'; window.FlowHubTheme = { get: () => theme, set: value => { theme = value; } };
@@ -349,5 +401,97 @@ test('menu-bar settings expose real sections and names, retain failed scans, and
   assert.equal(store.snapshot().menuItems,previous);assert.match(store.snapshot().notice,/扫描失败/);
   failure=false;rejectMove=false;await h.click(row('隐藏图标').querySelector('[role=switch]'));
   assert.deepEqual(moves,[[1,true],[2,false]]);assert.match(row('隐藏图标').textContent,/随箭头展开／收起/);
+  await view.unmount();store.dispose();
+});
+
+test('page lookup matches setting keywords, keeps IME and caret keys, and navigates without configuration writes',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  const search=view.container.querySelector('[aria-label="查找页面"]');
+  await h.input(search,'备份');assert.equal(view.container.querySelectorAll('.settings-sidebar [data-page]').length,1);
+  await h.key(search,'Enter',{isComposing:true});assert.equal(view.container.querySelector('h1').textContent,'通用设置');
+  let prevented;await h.act(async()=>{const event=new window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true});search.dispatchEvent(event);prevented=event.defaultPrevented;});assert.equal(prevented,false);
+  await h.key(search,'Enter');assert.equal(view.container.querySelector('h1').textContent,'数据与诊断');assert.equal(search.value,'');
+  await h.input(search,'未找到的页面');assert.match(view.container.querySelector('.settings-navigation-empty').textContent,/没有匹配页面/);await h.key(search,'Escape');assert.equal(search.value,'');
+  assert.equal(store.dirty,false);assert.equal(writes.length,0);await view.unmount();store.dispose();
+});
+test('back and forward preserve collection filters, selection, scroll and global draft without saving',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  await h.act(async()=>store.edit(config=>{config.core.launchAtLogin=true;}));
+  const go=async id=>h.click(view.container.querySelector(`[data-page="${id}"]`));
+  await go('web');await h.input(view.container.querySelector('[aria-label="筛选网页目录"]'),'Page');await h.click(view.container.querySelector('[data-node-id="p"]'));
+  const main=view.container.querySelector('main'),tree=view.container.querySelector('.settings-tree');
+  await h.act(async()=>{main.scrollTop=88;main.dispatchEvent(new window.Event('scroll'));tree.scrollTop=123;tree.dispatchEvent(new window.Event('scroll'));});
+  await go('memo');await h.input(view.container.querySelector('[aria-label="筛选备忘录"]'),'select 2');
+  await h.click(view.container.querySelector('[aria-label="返回上一页"]'));
+  assert.equal(view.container.querySelector('h1').textContent,'网页目录');assert.equal(view.container.querySelector('[aria-label="筛选网页目录"]').value,'Page');assert.equal(view.container.querySelector('[data-node-id="p"]').getAttribute('aria-selected'),'true');assert.equal(view.container.querySelector('main').scrollTop,88);assert.equal(view.container.querySelector('.settings-tree').scrollTop,123);
+  await h.click(view.container.querySelector('[aria-label="前进下一页"]'));assert.equal(view.container.querySelector('[aria-label="筛选备忘录"]').value,'select 2');
+  await h.click(view.container.querySelector('[aria-label="返回上一页"]'));await go('app');assert.equal(view.container.querySelector('[aria-label="前进下一页"]').disabled,true);
+  assert.equal(store.snapshot().config.core.launchAtLogin,true);assert.equal(store.dirty,true);assert.equal(h.button(view.container,'保存').disabled,false);assert.equal(writes.length,0);
+  await view.unmount();store.dispose();
+});
+test('presentation state resets for a different configuration source and a new window',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[data-page="web"]'));await h.input(view.container.querySelector('[aria-label="筛选网页目录"]'),'Page');
+  await h.act(async()=>store.patch({configPath:{resolvedPath:'/other/config.json'}}));
+  assert.equal(view.container.querySelector('[aria-label="筛选网页目录"]').value,'');
+  await h.input(view.container.querySelector('[aria-label="筛选网页目录"]'),'A1');await view.unmount();
+  const next=await h.mount(Settings,{store});await h.click(next.container.querySelector('[data-page="web"]'));assert.equal(next.container.querySelector('[aria-label="筛选网页目录"]').value,'');assert.equal(writes.length,0);
+  await next.unmount();store.dispose();
+});
+test('an explicit external web target clears a retained filter once and later manual selection remains intact',async()=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  await h.click(view.container.querySelector('[data-page="web"]'));await h.input(view.container.querySelector('[aria-label="筛选网页目录"]'),'Page');await h.click(view.container.querySelector('[data-page="core"]'));
+  await h.act(async()=>{window.prepareAddWebUrl('https://new.example.test/');await new Promise(resolve=>setImmediate(resolve));});
+  assert.equal(view.container.querySelector('h1').textContent,'网页目录');assert.equal(view.container.querySelector('[aria-label="筛选网页目录"]').value,'');
+  const target=[...view.container.querySelectorAll('[data-node-id]')].find(node=>node.textContent.includes('new.example.test'));assert.equal(target.getAttribute('aria-selected'),'true');assert.equal(store.snapshot().webSelection,undefined);
+  await h.input(view.container.querySelector('[aria-label="筛选网页目录"]'),'Page');await h.click(view.container.querySelector('[data-node-id="p"]'));await h.click(view.container.querySelector('[data-page="memo"]'));await h.click(view.container.querySelector('[aria-label="返回上一页"]'));
+  assert.equal(view.container.querySelector('[aria-label="筛选网页目录"]').value,'Page');assert.equal(view.container.querySelector('[data-node-id="p"]').getAttribute('aria-selected'),'true');assert.equal(writes.length,0);
+  await view.unmount();store.dispose();
+});
+test('native navigation and update requests respect malformed JSON without changing history or starting an update',async()=>{
+  let checks=0;
+  const {store}=await h.loaded({getUpdateState:async()=>{checks++;return {status:'idle'};}}),view=await h.mount(Settings,{store});
+  const baseline=checks;
+  await h.act(async()=>store.setJson('{ invalid'));
+  await h.act(async()=>window.switchModule('web'));assert.equal(view.container.querySelector('h1').textContent,'通用设置');
+  await h.act(async()=>window.runMenuUpdate());assert.equal(checks,baseline);assert.equal(view.container.querySelector('h1').textContent,'通用设置');assert.equal(view.container.querySelector('[aria-label="返回上一页"]').disabled,true);assert.equal(store.snapshot().jsonText,'{ invalid');
+  await view.unmount();store.dispose();
+});
+test('navigation retains lookup, scroll and focus across breakpoints without stealing field focus',async()=>{
+  const previous=window.matchMedia,listeners=new Set(),media={matches:false,addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)};
+  window.matchMedia=query=>query==='(max-width: 699px)'?media:{matches:false,addEventListener(){},removeEventListener(){}};
+  const resize=async narrow=>h.act(async()=>{media.matches=narrow;for(const listener of listeners)listener();});
+  try {
+    const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+    const lookup=()=>view.container.querySelector('[aria-label="查找页面"]');
+    await h.input(lookup(),'备份');lookup().focus();await resize(true);
+    assert.equal(document.activeElement,view.container.querySelector('[aria-label="切换页面"]'));
+    await resize(false);assert.equal(lookup().value,'备份');assert.equal(document.activeElement,lookup());
+    await h.input(lookup(),'未匹配页面');await h.click(h.button(view.container,'显示全部页面'));assert.equal(lookup().value,'');assert.equal(document.activeElement,lookup());
+    const scroll=view.container.querySelector('.settings-navigation-scroll');await h.act(async()=>{scroll.scrollTop=180;scroll.dispatchEvent(new window.Event('scroll'));});
+    await resize(true);await resize(false);assert.equal(view.container.querySelector('.settings-navigation-scroll').scrollTop,180);
+    await h.click(view.container.querySelector('[data-page="clipboard"]'));const input=view.container.querySelector('[aria-label="留存天数"]');input.focus();await h.input(input,'21');
+    await resize(true);assert.equal(document.activeElement,input);await resize(false);assert.equal(document.activeElement,input);assert.equal(store.dirty,true);assert.equal(writes.length,0);
+    await h.input(lookup(),'备份');lookup().focus();await resize(true);await h.act(async()=>window.switchModule('tools'));
+    await h.act(async()=>{const selector=view.container.querySelector('[aria-label="切换页面"]');selector.blur();selector.focus();});await resize(false);
+    assert.equal(view.container.querySelector('h1').textContent,'工具');assert.equal(lookup().value,'备份');assert.equal(document.activeElement===lookup(),true,'a filtered-out current page falls back to lookup focus');
+    await h.act(async()=>store.patch({configPath:{resolvedPath:'/config/B'}}));assert.equal(lookup().value,'');
+    await view.unmount();store.dispose();
+  } finally {window.matchMedia=previous;}
+});
+test('narrow navigation uses one page selector and restores the sidebar without losing the active route',async()=>{
+  const previous=window.matchMedia,listeners=new Set();const media={matches:true,addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)};
+  window.matchMedia=query=>query==='(max-width: 699px)'?media:{matches:false,addEventListener(){},removeEventListener(){}};
+  try {
+    const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});assert.equal(view.container.querySelector('nav[aria-label="设置模块"]'),null);
+    await h.click(view.container.querySelector('[aria-label="切换页面"]'));await h.click([...document.querySelectorAll('[role=option]')].find(node=>node.textContent==='数据与诊断'));
+    assert.equal(view.container.querySelector('h1').textContent,'数据与诊断');
+    await h.act(async()=>{media.matches=false;for(const listener of [...listeners])listener();});
+    assert.ok(view.container.querySelector('nav[aria-label="设置模块"]'));assert.equal(view.container.querySelector('[data-page="data"]').getAttribute('aria-current'),'page');assert.equal(view.container.querySelector('[aria-label="切换页面"]'),null);assert.equal(writes.length,0);
+    await view.unmount();store.dispose();assert.equal(listeners.size,0);
+  } finally {window.matchMedia=previous;}
+});
+test('direct page URLs start at their requested page without an unvisited back entry',async()=>{
+  const {store,writes}=await h.loaded({},true);window.history.replaceState({},'','/settings.html?module=data');
+  const view=await h.mount(Settings,{store});assert.equal(view.container.querySelector('h1').textContent,'数据与诊断');assert.equal(view.container.querySelector('[aria-label="返回上一页"]').disabled,true);assert.equal(writes.length,0);
   await view.unmount();store.dispose();
 });

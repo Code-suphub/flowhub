@@ -13,6 +13,12 @@ pub(crate) async fn begin(app:&tauri::AppHandle)->Result<Option<u64>,String> {
         if !window.is_visible().map_err(|e|e.to_string())? {return Ok(None);}
         let ticket=crate::MAIN_VISIBILITY.lock().unwrap().begin_launch();
         // Await this main-thread operation before spawning browser automation.
+        #[cfg(target_os="macos")]
+        {
+            crate::macos::launcher_activation::hide_panel(app)?;
+            crate::macos::launcher_activation::return_to_source(false, true);
+        }
+        #[cfg(not(target_os="macos"))]
         window.hide().map_err(|e|e.to_string())?;
         crate::diagnostics::focus::record("activation-hide",serde_json::json!({}));
         Ok(Some(ticket))
@@ -22,21 +28,20 @@ pub(crate) async fn begin(app:&tauri::AppHandle)->Result<Option<u64>,String> {
 pub(crate) async fn recover(app:&tauri::AppHandle,ticket:Option<u64>)->Result<(),String> {
     let Some(ticket)=ticket else {return Ok(());};
     on_main(app,move|app| {
-        let Some(window)=app.get_webview_window("main") else {return Ok(());};
+        let Some(_window)=app.get_webview_window("main") else {return Ok(());};
         if !crate::MAIN_VISIBILITY.lock().unwrap().resume_launch(ticket,std::time::Instant::now()) {return Ok(());}
         #[cfg(target_os="macos")]
         {
-            use tauri_nspanel::ManagerExt;
-            let panel=app.get_webview_panel("main").map_err(|e|format!("恢复启动器失败：{e:?}"))?;
-            panel.show_and_make_key();
+            crate::macos::launcher_activation::show(app, false, false);
         }
         #[cfg(not(target_os="macos"))]
         {
-            window.show().map_err(|e|e.to_string())?;
-            window.set_focus().map_err(|e|e.to_string())?;
+            _window.show().map_err(|e|e.to_string())?;
+            _window.set_focus().map_err(|e|e.to_string())?;
         }
         // Keep the failed query and selection so its error is visible and retryable.
-        window.eval("window.focusSearch?.();").map_err(|e|e.to_string())?;
+        #[cfg(not(target_os="macos"))]
+        _window.eval("window.restoreLauncherFocus?.();").map_err(|e|e.to_string())?;
         Ok(())
     }).await
 }

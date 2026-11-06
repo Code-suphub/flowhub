@@ -46,7 +46,8 @@ export class SettingsStore {
     const burst = Boolean(key) && key === this.editKey && now - this.editAt < EDIT_BURST_MS && this.value.undo.length > 0;
     this.editKey = key || ''; this.editAt = now;
     this.configRef = next; this.configText = text;
-    this.patch({ config: next, undo: burst ? this.value.undo : [...this.value.undo.slice(-39), this.value.config], redo: [], revision: this.value.revision + 1, notice: '有未保存修改', jsonText: null }); this.scheduleDraft();
+    this.patch({ config: next, undo: burst ? this.value.undo : [...this.value.undo.slice(-39), this.value.config], redo: [], revision: this.value.revision + 1, notice: text === this.savedText ? '已还原为已保存配置' : '有未保存修改', error: false, jsonText: null });
+    if (this.dirty) this.scheduleDraft(); else this.clearDraft();
   }
   replace(config: Config) { this.edit(next => { for (const key of Object.keys(next)) delete next[key]; Object.assign(next, normalize(config)); }); }
   setJson(text: string) { if (readonly() || this.value.busy || this.value.conflict) return; this.patch({ jsonText: text, revision: this.value.revision + 1 }); this.scheduleDraft(); }
@@ -61,7 +62,8 @@ export class SettingsStore {
     const list = this.value[direction]; if (!list.length) return;
     const other = direction === 'undo' ? 'redo' : 'undo';
     this.resetEditBurst();
-    this.patch({ config: list[list.length - 1], [direction]: list.slice(0, -1), [other]: [...this.value[other], this.value.config], jsonText: null, revision: this.value.revision + 1 }); this.scheduleDraft();
+    this.patch({ config: list[list.length - 1], [direction]: list.slice(0, -1), [other]: [...this.value[other], this.value.config], jsonText: null, revision: this.value.revision + 1, notice: direction === 'undo' ? '已撤销修改' : '已重做修改', error: false });
+    if (this.dirty) this.scheduleDraft(); else this.clearDraft();
   }
   private resetEditBurst() { this.editKey = ''; this.editAt = 0; }
   private scheduleDraft() { clearTimeout(this.timer); this.timer = setTimeout(() => this.persist(), 120); }
@@ -88,7 +90,10 @@ export class SettingsStore {
       const optional = await Promise.allSettled([call('getUpdateState'), call('getDiagnosticsState'), call('getMenuBarManagementState'), call('listConfigHistory')]);
       if (this.disposed || epoch !== this.epoch) return;
       const keys = ['update', 'diagnostics', 'management', 'history'] as const;
-      optional.forEach((result, i) => { if (result.status === 'fulfilled') this.patch({ [keys[i]]: result.value }); });
+      optional.forEach((result, i) => {
+        if (result.status === 'fulfilled') this.patch({ [keys[i]]: result.value });
+        else if (keys[i] === 'history') this.patch({ history: { entries: [], error: result.reason instanceof Error ? result.reason.message : String(result.reason) } });
+      });
       host().flowhubPerformance?.enable(this.value.diagnostics.enabled === true);
     } finally { if (epoch === this.epoch) this.patch({ busy: false }); }
   }
@@ -151,7 +156,7 @@ export class SettingsStore {
       throw error;
     } finally { this.patch({ busy: false }); }
   }
-  async refreshHistory() { try { this.patch({ history: await call('listConfigHistory') }); } catch (e) { this.patch({ history: { entries: [], error: String(e) } }); } }
+  async refreshHistory() { try { this.patch({ history: await call('listConfigHistory') }); } catch (e) { this.patch({ history: { entries: [], error: e instanceof Error ? e.message : String(e) } }); } }
   refreshMenu() {
     if (this.menuRequest) return this.menuRequest;
     this.menuRequest = (async () => { const management = await call('getMenuBarManagementState'); this.patch({ management }); if (!management.trusted || !this.value.config?.core.menuBar.organizerEnabled) return; const result = await call('listMenuBarItems'); this.patch({ menuItems: Array.isArray(result) ? result : result.items || [] }); })().finally(() => { this.menuRequest = null; });

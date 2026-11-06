@@ -1,22 +1,44 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon } from 'lucide-react';
+import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon, MoreHorizontalIcon, PlusIcon, MoveRightIcon, Trash2Icon, ListChecksIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
-import { Textarea } from '../components/ui/textarea';
-import { Help } from '../shared/controls';
-import { Choice, TextField } from './fields';
+import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
+import { ActionMenu } from '../shared/ActionMenu';
+import { CollectionField, CollectionHeading, CollectionEmpty, useCollectionPane } from './collection-ui';
+import { Help, Select } from '../shared/controls';
+import { Choice } from './fields';
 import { host, readonly, write } from './api';
-import { clone, entries, importWeb, moveNodes, moveMemo, removeNodes, renameCategory, memoTree, type MemoBranch, type MemoMoveRef, type MemoDropPosition, type Bag, type Memo, type WebNode } from './model';
+import { clone, entries, importWeb, moveNodes, moveMemo, removeNodes, webSelection, renameCategory, memoTree, type MemoBranch, type MemoMoveRef, type MemoDropPosition, type Bag, type Memo, type WebNode } from './model';
 import { useTreeView } from './useTreeView';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { SettingsStore, useSettings } from './store';
+import { ViewDetails, useViewScroll, useViewState } from './view-state';
 
 export function WebCatalog({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), sourceNodes: WebNode[] = s.config!.plugins.web.settings.items;
-  const [previewNodes, setPreviewNodes] = useState<WebNode[] | null>(null);
+  const [previewNodes, setPreviewNodes] = useViewState<WebNode[] | null>('web:preview',null);
   const nodes = preview && previewNodes ? previewNodes : sourceNodes;
-  const [selected, setSelected] = useState<string[]>([]), [expanded, setExpanded] = useState<Set<string>>(() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useState(''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [deleteOpen, setDeleteOpen] = useState(false), [pendingAdd, setPendingAdd] = useState('');
+  const [selected, setSelected] = useViewState<string[]>('web:selected',[]), [expanded, setExpanded] = useViewState<Set<string>>('web:expanded',() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useViewState('web:filter',''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [selectionMode, setSelectionMode] = useViewState('web:selection-mode',false);
   const deferred = useDeferredValue(filter).trim().toLowerCase(), all = useMemo(() => entries(nodes), [nodes]);
-  const node = all.find(e => e.node.id === selected[0])?.node;
+  const byId = useMemo(() => new Map(all.map(entry => [entry.node.id,entry])), [all]);
+  const activeIds = useMemo(() => selected.filter(id => byId.has(id)), [byId,selected]);
+  const selection = useMemo(() => webSelection(nodes,activeIds), [nodes,activeIds]);
+  const node = byId.get(activeIds[0] || '')?.node;
+  const [action, setAction] = useState<{kind:'delete'|'move';ids:string[];titles:string[];blocked:Set<string>;count:number;descendants:number;snapshot:string}|null>(null);
+  const [moveTarget,setMoveTarget] = useState('root'), [actionError,setActionError] = useState('');
+  function path(id: string) { const parts:string[]=[]; let entry=byId.get(id); while(entry) { parts.unshift(entry.node.title || entry.node.id); entry=entry.parent ? byId.get(entry.parent.id) : undefined; } return parts.join(' / '); }
+  function prepareAction(kind:'delete'|'move') {
+    if(preview || !selection.roots.length) return;
+    setAction({kind,ids:selection.roots.map(node=>node.id),titles:selection.roots.map(node=>node.title || node.id),blocked:new Set(selection.blocked),count:selection.count,descendants:selection.descendants,snapshot:JSON.stringify(nodes)});
+    setMoveTarget('root');setActionError('');
+  }
+  function applyAction() {
+    if(!action || preview) return;
+    const current=store.snapshot().config!.plugins.web.settings.items;
+    if(JSON.stringify(current)!==action.snapshot) { setActionError('目录已变化，请关闭并重新选择后再试。');return; }
+    if(action.kind==='delete') { editNodes(removeNodes(current,action.ids));pane.back('', 'data-node-id'); }
+    else { const target=moveTarget==='root'?'':moveTarget.slice(5);editNodes(moveNodes(current,action.ids,target));setExpanded(previous=>new Set([...previous,...all.filter(entry=>entry.node.id===target || entries(entry.node.children || []).some(child=>child.node.id===target)).map(entry=>entry.node.id)]));setFilter(''); }
+    setAction(null);
+  }
   const stopPointerDrag = useRef<(() => void) | null>(null);
   const suppressClickUntil = useRef(0);
   const [dropTarget, setDropTarget] = useState<{id:string;position:'before'|'inside'|'after'}|null>(null);
@@ -90,7 +112,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     window.addEventListener('keydown', onKey);
     stopPointerDrag.current = cleanup;
   }
-  useEffect(() => { if (s.webSelection) { setSelected([s.webSelection]); setExpanded(prev => new Set([...prev, ...all.filter(e => entries(e.node.children || []).some(child => child.node.id === s.webSelection)).map(e => e.node.id)])); } }, [s.webSelection]);
+  useEffect(() => { if (s.webSelection) { const incoming=s.webSelection;setFilter('');setSelected([incoming]); pane.openDetail(); setExpanded(prev => new Set([...prev, ...all.filter(e => entries(e.node.children || []).some(child => child.node.id === incoming)).map(e => e.node.id)]));store.patch({webSelection:undefined}); } }, [s.webSelection,store]);
   const visible = useMemo(() => {
     const matched = new Set(all.filter(e => [e.node.title, e.node.url, e.node.note, e.node.id].join(' ').toLowerCase().includes(deferred)).map(e => e.node.id));
     const list: typeof all = [];
@@ -100,6 +122,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     }); visit(nodes, 0, null); return list;
   }, [all, nodes, deferred, expanded]);
   const view = useTreeView(visible.map(e => e.node.id), selected[0] || '', deferred);
+  const pane = useCollectionPane('web',view.ref);
   const dragMotion = useCatalogDragMotion();
   const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem('flowhub:web-tree-width')) || 260; } catch { return 260; } });
   const resizing = useRef<{ x: number; width: number } | null>(null);
@@ -115,32 +138,62 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     if (where === 'child' && context) { (context.node.children ||= []).push(added); setExpanded(prev => new Set([...prev, context.node.id])); }
     else if (where === 'sibling' && context) { const siblings = context.parent?.children || next; siblings.splice(siblings.indexOf(context.node) + 1, 0, added); }
     else next.push(added);
-    editNodes(next); setSelected([id]); setPendingAdd(id);
+    editNodes(next); setFilter('');setSelectionMode(false);setSelected([id]);setExpanded(previous=>new Set([...previous,...entries(next).filter(entry=>entries(entry.node.children || []).some(child=>child.node.id===id)).map(entry=>entry.node.id)]));pane.openDetail(true);
   }
-  function select(id: string, multi: boolean) { setSelected(prev => multi ? prev.includes(id) ? prev.filter(v => v !== id) : [id, ...prev] : [id]); }
-  return <div className="settings-catalog">
-    <div className="settings-catalog-toolbar">
-      <div className="settings-catalog-toolbar-main"><Button className="primary settings-catalog-primary" disabled={preview} onClick={() => add('root')}>＋ 添加节点</Button><Button disabled={preview || !node} onClick={() => add('child')}>添加子节点</Button><Button disabled={preview || !node} onClick={() => add('sibling')}>添加同级</Button>{pendingAdd ? <Button disabled={preview} onClick={() => { editNodes(removeNodes(nodes, [pendingAdd])); setPendingAdd(''); setSelected([]); }}>取消添加</Button> : null}<Button disabled={preview} onClick={() => void store.run(async () => { const result = await write('pickWebImport'); if (!result.canceled) { if (!result.items?.length) throw new Error('导入文件里没有网页节点'); setPending(result); } })}>导入…</Button></div>
-      <div className="settings-catalog-toolbar-view"><Button onClick={() => setExpanded(new Set(all.map(e => e.node.id)))}>全部展开</Button><Button onClick={() => setExpanded(new Set())}>全部收起</Button><Help label="网页目录拖拽与多选">⌘ / Ctrl / Shift 点击多选。拖到目标行上方或下方调整顺序，拖到行中央可移入对应目录。</Help></div>
+  function select(id: string, multi: boolean) { setSelected(prev => multi || selectionMode ? prev.includes(id) ? prev.filter(v => v !== id) : [id, ...prev] : [id]); if(!multi && !selectionMode) pane.openDetail(); }
+  return <div ref={pane.ref} className="settings-catalog settings-collection-page">
+    <div className="settings-collection-toolbar flex flex-wrap items-center justify-between gap-3">
+      <span className="settings-collection-count">{all.length} 个节点{preview ? ' · 只读预览' : ''}</span>
+      <div className="flex items-center gap-2"><Button className="primary" disabled={preview} onClick={() => add('root')}><PlusIcon data-icon="inline-start" />新建节点</Button>
+        <ActionMenu label="目录操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
+          {id:'import',label:'导入目录…',disabled:preview,onSelect:()=>void store.run(async()=>{const result=await write('pickWebImport');if(!result.canceled){if(!result.items?.length)throw new Error('导入文件里没有网页节点');setPending(result);}})},
+          {id:'expand',label:'全部展开',onSelect:()=>setExpanded(new Set(all.map(e=>e.node.id)))},
+          {id:'collapse',label:'全部收起',onSelect:()=>setExpanded(new Set())}
+        ]} />
+      </div>
     </div>
-    <div className="settings-collection grid" style={{ '--settings-tree-width': `${width}px` } as CSSProperties}>
-      <aside className="settings-catalog-nav min-w-0">
-        <div className="settings-catalog-search"><Input aria-label="筛选网页目录" type="search" placeholder="搜索标题、域名或 ID" value={filter} onChange={e => setFilter(e.target.value)} /><span>{visible.length} 项</span></div>
-        <div ref={view.ref} onScroll={view.capture} role="tree" aria-label="网页目录" aria-multiselectable="true" className="settings-tree">{visible.map(({ node: item, depth }) => <div key={item.id} role="treeitem" aria-level={depth + 1} aria-selected={selected.includes(item.id)} aria-expanded={item.children?.length ? expanded.has(item.id) : undefined} tabIndex={0} data-node-id={item.id} data-drop-position={dropTarget?.id===item.id?dropTarget.position:undefined} className={`settings-tree-row flex items-center ${depth === 0 ? 'settings-tree-root' : ''}`} style={{ paddingInlineStart: 10 + depth * 16 }} onClick={e => { if (Date.now() >= suppressClickUntil.current) select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); }} onPointerDown={e => { if (!(e.target instanceof Element) || !e.target.closest('button,input,select,textarea')) beginPointerDrag(item.id, e); }} onKeyDown={e => { if (['Enter', ' '].includes(e.key)) { e.preventDefault(); select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); } if (e.key === 'ArrowRight') setExpanded(prev => new Set([...prev, item.id])); if (e.key === 'ArrowLeft') setExpanded(prev => { const next = new Set(prev); next.delete(item.id); return next; }); if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); const rows = e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role=treeitem]'); const index = visible.findIndex(n => n.node.id === item.id); rows?.[index + (e.key === 'ArrowDown' ? 1 : -1)]?.focus(); } }}>
+    <div className="settings-collection grid" data-detail-open={pane.detailOpen} style={{ '--settings-tree-width': `${width}px` } as CSSProperties}>
+      <aside className="settings-catalog-nav min-w-0" data-collection-list onFocusCapture={pane.onListFocus}>
+        <div className="settings-catalog-search"><Input aria-label="筛选网页目录" type="search" placeholder="搜索目录或网页…" value={filter} onChange={e => setFilter(e.target.value)} /></div>
+        <div className="settings-collection-list-meta flex flex-wrap items-center justify-between gap-2"><span>{deferred ? `匹配 ${visible.length} 项` : '全部节点'}</span><div className="flex items-center gap-1"><Button variant="ghost" size="sm" aria-pressed={selectionMode} onClick={()=>{setSelectionMode(!selectionMode);if(selectionMode)setSelected(activeIds.slice(0,1));}}>{selectionMode ? '结束多选' : '多选'}</Button><Help label="网页目录拖拽与多选">可使用多选按钮，或 ⌘ / Ctrl / Shift 点击多选。拖到行上方或下方调整顺序，拖到中央移入目录。</Help></div></div>
+        {activeIds.length ? <Button className="settings-selection-review" onClick={()=>pane.openDetail()}>管理所选 {activeIds.length} 项</Button> : null}
+        <div ref={view.ref} onScroll={view.capture} role="tree" aria-label="网页目录" aria-multiselectable="true" className="settings-tree">{visible.map(({ node: item, depth }) => <div key={item.id} role="treeitem" aria-level={depth + 1} aria-selected={selected.includes(item.id)} aria-expanded={item.children?.length ? expanded.has(item.id) : undefined} tabIndex={0} data-node-id={item.id} data-drop-position={dropTarget?.id===item.id?dropTarget.position:undefined} className={`settings-tree-row flex items-center ${depth === 0 ? 'settings-tree-root' : ''}`} style={{ paddingInlineStart: 10 + depth * 16 }} onClick={e => { if (Date.now() >= suppressClickUntil.current) select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); }} onPointerDown={e => { if (!(e.target instanceof Element) || !e.target.closest('button,input,select,textarea')) beginPointerDrag(item.id, e); }} onKeyDown={e => { if(e.target!==e.currentTarget)return; if (['Enter', ' '].includes(e.key)) { e.preventDefault(); select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); } if (e.key === 'ArrowRight') setExpanded(prev => new Set([...prev, item.id])); if (e.key === 'ArrowLeft') setExpanded(prev => { const next = new Set(prev); next.delete(item.id); return next; }); if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); const rows = e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role=treeitem]'); const index = visible.findIndex(n => n.node.id === item.id); rows?.[index + (e.key === 'ArrowDown' ? 1 : -1)]?.focus(); } }}>
           {item.children?.length ? <Button aria-label={`${expanded.has(item.id) ? '收起' : '展开'} ${item.title}`} className="settings-tree-toggle" onClick={e => { e.stopPropagation(); setExpanded(prev => { const next = new Set(prev); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); }}>{expanded.has(item.id) ? <FolderOpenIcon size={15} strokeWidth={1.8} aria-hidden="true" /> : <FolderIcon size={15} strokeWidth={1.8} aria-hidden="true" />}</Button> : <span className="settings-tree-leaf" aria-hidden="true">{item.url ? <Globe2Icon size={15} strokeWidth={1.8} /> : <FolderIcon size={15} strokeWidth={1.8} />}</span>}
           <span className="settings-tree-title truncate">{item.title || item.id}</span>
           <Button aria-label={`拖动 ${item.title || item.id}`} className="settings-drag-handle" onClick={e => e.stopPropagation()} onPointerDown={e => { e.preventDefault(); e.stopPropagation(); beginPointerDrag(item.id, e, true); }}>⠿</Button>
-        </div>)}{!visible.length ? <p className="settings-tree-empty">没有匹配的目录</p> : null}</div>
+        </div>)}{!visible.length ? <CollectionEmpty title={deferred ? "没有匹配的目录" : "暂无网页目录"} icon={<FolderIcon />}>{deferred ? <Button onClick={()=>setFilter('')}>清除筛选</Button> : <Button disabled={preview} onClick={()=>add('root')}>新建节点</Button>}</CollectionEmpty> : null}</div>
       </aside>
       <div className="settings-divider" role="separator" tabIndex={0} aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={380} aria-valuenow={width} onPointerDown={e => { resizing.current = { x: e.clientX, width }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (resizing.current) resize(resizing.current.width + e.clientX - resizing.current.x); }} onPointerUp={() => { resizing.current = null; }} onPointerCancel={() => { resizing.current = null; }} onDoubleClick={() => resize(260)} onKeyDown={e => { const value = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: 220, End: 380 }[e.key]; if (value !== undefined) { e.preventDefault(); resize(value); } }} />
-      <div className="settings-catalog-detail min-w-0">
-        {node ? <>
-          <div className="settings-catalog-fields">{(['title', 'url', 'icon', 'accent', 'note'] as const).map((key, i) => <TextField key={key} label={['标题', '页面链接', '图标（Emoji / 图片 URL）', '强调色', '备注'][i]} value={node[key]} readOnly={preview} onChange={v => store.edit(c => { const target = entries(c.plugins.web.settings.items).find(e => e.node.id === node.id); if (target) target.node[key] = v; }, `web:${node.id}:${key}`)} help={key === 'url' ? '留空作为目录，填写后可直接打开，也可保留子节点。' : undefined} />)}</div>
-          <div className="settings-catalog-actions">{selected.length > 1 ? <span className="settings-catalog-selection-count">已选择 {selected.length} 项</span> : <div className="settings-catalog-metadata"><span>节点 ID</span><code>{node.id}</code><Help label="节点 ID说明">节点的内部唯一标识，用于保存、移动和关联节点。日常使用无需修改，可选择文字复制。</Help></div>}<Button className="danger settings-catalog-delete" disabled={preview} onClick={() => setDeleteOpen(true)}>删除{selected.length > 1 ? ` ${selected.length} 项` : ''}</Button></div>
-        </> : <div className="settings-catalog-empty"><span aria-hidden="true">↖</span><strong>选择一个目录或网页</strong><p>在左侧查看结构与节点属性。</p></div>}
+      <div className="settings-catalog-detail min-w-0" data-collection-detail onFocusCapture={pane.onDetailFocus}>
+        {activeIds.length > 1 ? <>
+          <CollectionHeading title={`已选择 ${activeIds.length} 项`} location={`${selection.roots.length} 个独立分支 · 含子节点共 ${selection.count} 个节点`} icon={<ListChecksIcon />} onBack={()=>pane.back(activeIds[0],'data-node-id')} backLabel="返回网页列表" />
+          <div className="settings-collection-bulk-actions flex flex-wrap gap-2"><Button disabled={preview} onClick={()=>prepareAction('move')}><MoveRightIcon data-icon="inline-start" />移动所选…</Button><Button variant="destructive" disabled={preview} onClick={()=>prepareAction('delete')}><Trash2Icon data-icon="inline-start" />删除所选…</Button></div>
+          <ul className="settings-selection-list">{selection.roots.map(item=><li key={item.id}><FolderIcon aria-hidden="true" /><span>{path(item.id)}</span></li>)}</ul>
+        </> : node ? <>
+          <CollectionHeading title={node.title || '未命名节点'} location={`${node.url ? '网页' : '目录'} · ${byId.get(node.id)?.parent ? path(byId.get(node.id)!.parent!.id) : '根目录'}`} icon={node.url ? <Globe2Icon /> : <FolderIcon />} onBack={()=>pane.back(node.id,'data-node-id')} backLabel="返回网页列表">
+            <ActionMenu label="节点操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
+              {id:'child',label:'添加子节点',disabled:preview,onSelect:()=>add('child')},
+              {id:'sibling',label:'添加同级节点',disabled:preview,onSelect:()=>add('sibling')},
+              {id:'move',label:'移动到…',disabled:preview,onSelect:()=>prepareAction('move')},
+              {id:'delete',label:'删除节点…',disabled:preview,onSelect:()=>prepareAction('delete')}
+            ]} />
+          </CollectionHeading>
+          <FieldGroup className="settings-collection-fields" key={node.id}>
+            {(['title','url','note'] as const).map((key,i)=><CollectionField key={key} label={['标题','页面链接','备注'][i]} value={node[key]} readOnly={preview} multiline={key==='note'} onChange={value=>store.edit(c=>{const target=entries(c.plugins.web.settings.items).find(e=>e.node.id===node.id);if(target)target.node[key]=value;},`web:${node.id}:${key}`)} help={key==='url'?'留空作为目录，填写后可直接打开，也可保留子节点。':undefined} />)}
+            <ViewDetails memoryKey={`web:advanced:${node.id}`} className="settings-collection-advanced"><summary>图标与高级属性</summary><FieldGroup className="pt-4">
+              {(['icon','accent'] as const).map((key,i)=><CollectionField key={key} label={['图标（Emoji / 图片 URL）','强调色'][i]} value={node[key]} readOnly={preview} onChange={value=>store.edit(c=>{const target=entries(c.plugins.web.settings.items).find(e=>e.node.id===node.id);if(target)target.node[key]=value;},`web:${node.id}:${key}`)} />)}
+              <div className="settings-catalog-metadata"><span>节点 ID</span><code>{node.id}</code><Help label="节点 ID说明">节点的内部唯一标识，用于保存、移动和关联。日常使用无需修改。</Help></div>
+            </FieldGroup></ViewDetails>
+          </FieldGroup>
+        </> : <CollectionEmpty title="选择一个目录或网页" icon={<FolderIcon />} onBack={()=>pane.back('','data-node-id')} backLabel="返回网页列表" />}
       </div>
     </div>
-    {deleteOpen ? <Dialog title="删除节点" busy={false} onClose={() => setDeleteOpen(false)}><p>删除选中的 {selected.length} 个节点及其子节点？保存前可撤销。</p><Button onClick={() => { editNodes(removeNodes(nodes, selected)); setSelected([]); setDeleteOpen(false); }}>确认删除</Button></Dialog> : null}
+    {action ? <Dialog title={action.kind==='delete'?'删除节点':'移动节点'} busy={false} onClose={()=>setAction(null)} notice={actionError}>
+      <p>{action.kind==='delete'?`将删除 ${action.titles.length} 个分支，共 ${action.count} 个节点（含 ${action.descendants} 个子节点）。保存前可撤销。`:`将移动 ${action.titles.length} 个分支，子节点保持原有层级。`}</p>
+      <ul className="settings-confirm-list">{action.titles.map((title,i)=><li key={action.ids[i]}>{title}</li>)}</ul>
+      {action.kind==='move'?<FieldGroup><Field><FieldLabel>目标目录</FieldLabel><Select label="目标目录" value={moveTarget} onChange={setMoveTarget} options={[{value:'root',label:'根目录'},...all.filter(entry=>!action.blocked.has(entry.node.id)&&(!entry.node.url || entry.node.children?.length)).map(entry=>({value:`node:${entry.node.id}`,label:path(entry.node.id)}))]} /></Field></FieldGroup>:null}
+      <div className="settings-dialog-actions"><Button onClick={()=>setAction(null)}>取消</Button><Button variant={action.kind==='delete'?'destructive':'default'} disabled={Boolean(actionError)} onClick={applyAction}>{action.kind==='delete'?'确认删除':'确认移动'}</Button></div>
+    </Dialog> : null}
     {pending && plan ? <Dialog title="核对目录导入" busy={false} onClose={() => setPending(null)}><p>{pending.path}</p><Choice label="重复 ID" value={overwrite} options={[{ value: 'skip', label: '跳过' }, { value: 'overwrite', label: '覆盖属性并合并子节点' }]} onChange={setOverwrite} /><pre className="settings-code">{plan.changes.join('\n')}</pre><Button onClick={() => { editNodes(plan.nodes); setPending(null); }}>应用为草稿</Button></Dialog> : null}
   </div>;
 }
@@ -206,9 +259,11 @@ function MemoTreeView({ branch, depth, collapsed, forceOpen, selected, onSelect,
 export function Memos({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), configured = s.config!.plugins.memo.settings.items;
   const defaults = useMemo(() => host().FlowHubMemoCatalog?.cloneDefaults() || [], []);
-  const [previewItems, setPreviewItems] = useState<Memo[] | null>(null);
+  const [previewItems, setPreviewItems] = useViewState<Memo[] | null>('memo:preview',null);
   const items: Memo[] = preview && previewItems ? previewItems : configured || defaults;
-  const [selected, setSelected] = useState(''), [filter, setFilter] = useState(''), [collapsed, setCollapsed] = useState(new Set<string>()), [category, setCategory] = useState<string | null>(null), [tags, setTags] = useState<string | null>(null), [confirm, setConfirm] = useState<'reset' | 'delete' | null>(null);
+  const [selected, setSelected] = useViewState('memo:selected',''), [filter, setFilter] = useViewState('memo:filter',''), [collapsed, setCollapsed] = useViewState('memo:collapsed',()=>new Set<string>()), [category, setCategory] = useState<string | null>(null), [tags, setTags] = useState<string | null>(null), [confirm, setConfirm] = useState<{kind:'reset'|'delete';id:string;title:string;count:number;snapshot:string}|null>(null), [confirmError,setConfirmError] = useState('');
+  const memoScroll=useViewScroll('memo:scroll');
+  const pane=useCollectionPane('memo',memoScroll.ref);
   const dragging = useRef<MemoMoveRef | null>(null);
   const [dropTarget, setDropTarget] = useState<MemoDropTarget | null>(null);
   const deferred = useDeferredValue(filter).trim().toLowerCase();
@@ -221,7 +276,7 @@ export function Memos({ store }: { store: SettingsStore }) {
     return paths;
   }, [allTree]);
   const current = items.find(item => item.id === selected) || items[0];
-  function selectMemo(id: string) { setSelected(id); setCategory(null); setTags(null); }
+  function selectMemo(id: string) { setSelected(id); setCategory(null); setTags(null);pane.openDetail(); }
   function edit(action: (items: Memo[]) => void, key?: string) { store.edit(c => { c.plugins.memo.settings.items ||= clone(defaults); action(c.plugins.memo.settings.items); }, key); }
   function finishDrag() { dragging.current = null; setDropTarget(null); }
   function dropAt(row: HTMLElement, y: number): MemoDropTarget | null {
@@ -258,26 +313,45 @@ export function Memos({ store }: { store: SettingsStore }) {
     clearTarget() { setDropTarget(null); },
     end: finishDrag
   };
-  return <>
-    <div className="settings-memo-toolbar"><div><span>{items.length} 条 · {previewItems ? '临时预览' : configured ? '自定义库' : '内置命令库'}</span></div><div className="flex gap-2"><Button className="primary" disabled={preview} onClick={() => { const id = 'memo-' + crypto.randomUUID(); edit(list => list.push({ id, title: '新备忘', category: '其他', content: '', tags: [] })); setSelected(id); }}>新增备忘</Button><Button disabled={preview} onClick={() => setConfirm('reset')}>恢复内置</Button></div></div>
-    <div className="settings-memo-workspace">
-      <aside className="settings-memo-nav">
-        <div className="settings-memo-search"><Input aria-label="筛选备忘录" value={filter} onChange={event => setFilter(event.target.value)} placeholder="搜索备忘…" /><Button onClick={() => setCollapsed(new Set())}>展开</Button><Button onClick={() => setCollapsed(new Set(tree.children.map(child => child.path)))}>收起</Button></div>
-        <div className="settings-memo-tree" role="tree" aria-label="备忘录分类">{!tree.children.length && !tree.items.length ? <p className="settings-memo-empty">{deferred ? '没有匹配的备忘' : '暂无备忘录'}</p> : <MemoTreeView branch={tree} depth={1} collapsed={collapsed} forceOpen={Boolean(deferred)} selected={current?.id || ''} onSelect={selectMemo} onToggle={path => setCollapsed(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; })} onSetOpen={(path, open) => setCollapsed(previous => { const next = new Set(previous); if (open) next.delete(path); else next.add(path); return next; })} drag={drag} />}</div>
+  function prepareConfirm(kind:'reset'|'delete') { setConfirm({kind,id:current?.id || '',title:current?.title || '',count:items.length,snapshot:JSON.stringify(items)});setConfirmError(''); }
+  function addMemo() {
+    const id='memo-'+crypto.randomUUID();edit(list=>list.push({id,title:'新备忘',category:'其他',content:'',tags:[]}));
+    setFilter('');setSelected(id);setCategory(null);setTags(null);setCollapsed(previous=>{const next=new Set(previous);next.delete('其他');return next;});pane.openDetail(true);
+  }
+  return <div ref={pane.ref} className="settings-collection-page settings-memos">
+    <div className="settings-collection-toolbar flex flex-wrap items-center justify-between gap-3"><span className="settings-collection-count">{items.length} 条 · {previewItems ? '临时预览' : configured ? '自定义库' : '内置命令库'}</span><div className="flex items-center gap-2"><Button className="primary" disabled={preview} onClick={addMemo}><PlusIcon data-icon="inline-start" />新增备忘</Button><ActionMenu label="备忘录操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
+      {id:'expand',label:'全部展开',onSelect:()=>setCollapsed(new Set())},
+      {id:'collapse',label:'全部收起',onSelect:()=>setCollapsed(new Set(tree.children.map(child=>child.path)))},
+      {id:'reset',label:'恢复内置备忘录…',disabled:preview,onSelect:()=>prepareConfirm('reset')}
+    ]} /></div></div>
+    <div className="settings-memo-workspace grid" data-detail-open={pane.detailOpen}>
+      <aside className="settings-memo-nav min-w-0" data-collection-list onFocusCapture={pane.onListFocus}>
+        <div className="settings-memo-search"><Input aria-label="筛选备忘录" type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="搜索标题、分类或内容…" /></div>
+        <div className="settings-collection-list-meta"><span>{deferred ? `匹配 ${tree.count} 条` : '全部分类'}</span></div>
+        <div ref={memoScroll.ref} onScroll={memoScroll.onScroll} className="settings-memo-tree" role="tree" aria-label="备忘录分类">{!tree.children.length && !tree.items.length ? <CollectionEmpty title={deferred ? "没有匹配的备忘" : "暂无备忘录"} icon={<TerminalSquareIcon />}>{deferred ? <Button onClick={()=>setFilter('')}>清除筛选</Button> : null}</CollectionEmpty> : <MemoTreeView branch={tree} depth={1} collapsed={collapsed} forceOpen={Boolean(deferred)} selected={current?.id || ''} onSelect={selectMemo} onToggle={path => setCollapsed(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; })} onSetOpen={(path, open) => setCollapsed(previous => { const next = new Set(previous); if (open) next.delete(path); else next.add(path); return next; })} drag={drag} />}</div>
       </aside>
-      <div className="settings-memo-detail min-w-0">{current ? <>
-        <div className="settings-memo-fields"><TextField label="标题" value={current.title} readOnly={preview} onChange={value => edit(list => { list.find(item => item.id === current.id)!.title = value; }, `memo:${current.id}:title`)} />
-          {!preview ? <div onBlur={event => { if (preview || event.currentTarget.contains(event.relatedTarget as Node)) return; if (category !== null && category !== current.category) { const before = current.category || ''; edit(list => { const item = list.find(value => value.id === current.id)!; item.category = category; renameCategory(list, before, category, item.id); }, `memo:${current.id}:category`); setCollapsed(previous => new Set([...previous].map(path => path === before || path.startsWith(before + ' / ') ? category + path.slice(before.length) : path))); setCategory(null); } }}>
-            <TextField label="分类路径" value={category ?? current.category} readOnly={preview} onChange={setCategory} help="使用 / 分层；离开输入框时同步修改后代分类路径。" />
-          </div> : null}
-        </div>
-        <div className="settings-memo-content-fields"><label className="grid gap-2">命令或备忘内容<Textarea className="settings-code" rows={12} spellCheck={false} readOnly={preview} value={current.content || ''} onChange={event => edit(list => { list.find(item => item.id === current.id)!.content = event.target.value; }, `memo:${current.id}:content`)} /></label></div>
-        <div className="settings-memo-meta-fields"><TextField label="说明" value={current.description} readOnly={preview} onChange={value => edit(list => { list.find(item => item.id === current.id)!.description = value; }, `memo:${current.id}:description`)} />
-          <div onBlur={() => { if (preview) return; if (tags !== null) { edit(list => { list.find(item => item.id === current.id)!.tags = tags.split(/[,，]/).map(value => value.trim()).filter(Boolean); }, `memo:${current.id}:tags`); setTags(null); } }}><TextField label="搜索标签" value={tags ?? (Array.isArray(current.tags) ? current.tags.join(', ') : current.tags || '')} readOnly={preview} onChange={setTags} /></div>
-        </div>
-        <Button className="danger settings-memo-delete" disabled={preview} onClick={() => setConfirm('delete')}>删除备忘</Button>
-      </> : <p>暂无备忘录</p>}</div>
+      <div className="settings-memo-detail min-w-0" data-collection-detail onFocusCapture={pane.onDetailFocus}>{current ? <>
+        <CollectionHeading title={current.title || '未命名备忘'} location={current.category || '未分类'} icon={<TerminalSquareIcon />} onBack={()=>pane.back(current.id,'data-memo-key')} backLabel="返回备忘列表"><ActionMenu label="备忘操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[{id:'delete',label:'删除备忘…',disabled:preview,onSelect:()=>prepareConfirm('delete')}]} /></CollectionHeading>
+        <FieldGroup className="settings-collection-fields" key={current.id}>
+          <CollectionField label="标题" value={current.title} readOnly={preview} onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.title=value;},`memo:${current.id}:title`)} />
+          {!preview ? <div onBlur={event=>{if(event.currentTarget.contains(event.relatedTarget as Node))return;if(category!==null && category!==current.category){const before=current.category || '';edit(list=>{const item=list.find(value=>value.id===current.id);if(!item)return;item.category=category;renameCategory(list,before,category,item.id);},`memo:${current.id}:category`);setCollapsed(previous=>new Set([...previous].map(path=>path===before || path.startsWith(before+' / ')?category+path.slice(before.length):path)));setCategory(null);}}}><CollectionField label="分类路径" value={category ?? current.category} readOnly={preview} onChange={setCategory} help="使用 / 分层；离开输入框时同步修改后代分类路径。" /></div> : null}
+          <CollectionField label="命令或备忘内容" value={current.content} readOnly={preview} multiline code onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.content=value;},`memo:${current.id}:content`)} />
+          <ViewDetails memoryKey={`memo:advanced:${current.id}`} className="settings-collection-advanced"><summary>说明与搜索标签</summary><FieldGroup className="pt-4">
+            <CollectionField label="说明" value={current.description} readOnly={preview} multiline onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.description=value;},`memo:${current.id}:description`)} />
+            <div onBlur={()=>{if(preview || tags===null)return;edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.tags=tags.split(/[,，]/).map(value=>value.trim()).filter(Boolean);},`memo:${current.id}:tags`);setTags(null);}}><CollectionField label="搜索标签" value={tags ?? (Array.isArray(current.tags)?current.tags.join(', '):current.tags || '')} readOnly={preview} onChange={setTags} help="使用逗号分隔多个标签。" /></div>
+          </FieldGroup></ViewDetails>
+        </FieldGroup>
+      </> : <CollectionEmpty title="暂无备忘录" icon={<TerminalSquareIcon />} onBack={()=>pane.back('','data-memo-key')} backLabel="返回备忘列表" />}</div>
     </div>
-    {confirm ? <Dialog title={confirm === 'reset' ? '恢复内置备忘录' : '删除备忘'} busy={false} onClose={() => setConfirm(null)}><p>{confirm === 'reset' ? '当前自定义备忘录将替换为内置库；保存前可撤销。' : '删除当前备忘录？保存前可撤销。'}</p><Button onClick={() => { if (confirm === 'reset') store.edit(c => { delete c.plugins.memo.settings.items; }); else if (current) edit(list => { const index = list.findIndex(item => item.id === current.id); if (index >= 0) list.splice(index, 1); }); setConfirm(null); }}>确认</Button></Dialog> : null}
-  </>;
+    {confirm ? <Dialog title={confirm.kind==='reset'?'恢复内置备忘录':'删除备忘'} busy={false} onClose={()=>setConfirm(null)} notice={confirmError}>
+      <p>{confirm.kind==='reset'?`当前 ${confirm.count} 条自定义备忘将替换为内置库；保存前可撤销。`:`删除“${confirm.title}”？保存前可撤销。`}</p>
+      <div className="settings-dialog-actions"><Button onClick={()=>setConfirm(null)}>取消</Button><Button variant="destructive" disabled={Boolean(confirmError)} onClick={()=>{
+        const currentItems=store.snapshot().config!.plugins.memo.settings.items || defaults;
+        if(JSON.stringify(currentItems)!==confirm.snapshot){setConfirmError('备忘录已变化，请关闭并重新选择后再试。');return;}
+        if(confirm.kind==='reset')store.edit(c=>{delete c.plugins.memo.settings.items;});
+        else {const index=items.findIndex(item=>item.id===confirm.id),nextId=(items[index+1] || items[index-1])?.id || '';edit(list=>{const target=list.findIndex(item=>item.id===confirm.id);if(target>=0)list.splice(target,1);});setSelected(nextId);pane.back(nextId,'data-memo-key');}
+        setCategory(null);setTags(null);setConfirm(null);
+      }}>{confirm.kind==='reset'?'确认恢复':'确认删除'}</Button></div>
+    </Dialog> : null}
+  </div>;
 }

@@ -18,12 +18,17 @@ export interface SearchController {
   state: Data; resultWindow: {heights: Map<string,number>};
   render(options?: {preserveScroll?: boolean}): void;
   returnToSearch(): void; setScope(scope:string): void; setClipboardKind(kind:string): void;
+  setClipboardFilters(filters:{kind?:string;source?:string|null;pinnedOnly?:boolean}):void;refreshClipboard():Promise<void>;
+  executeAction(key:string,kind:'result'|'clipboard',action:string):void;
+  requestCommands():void;
+  requestQueryHistory():void;recallQuery(entry:import('./query-history').QueryConditions):void;
   preserveSearchFocus(event: any): void; activateScopeControl(button: HTMLElement): void;
-  togglePin(): Promise<void>; dispose(): void;
+  selectResult(index: number, options?: {reveal?: boolean}): void;
+  togglePin(): Promise<boolean>; dispose(): void;
   confirmClipboardDelete(): Promise<void>; cancelClipboardDelete():void;
 }
 export type SearchHost = Window & {
-  createFlowHubSearchController(root: HTMLElement, publish: (snapshot: SearchSnapshot) => void): SearchController;
+  createFlowHubSearchController(root: HTMLElement, publish: (snapshot: SearchSnapshot) => void,integration?:{onQueryUsed(entry:import('./query-history').QueryConditions):void}): SearchController;
   weborg: Data; FlowHubCommandStore?: Data;
   flowhubSearchTiming?: {commit(run:unknown, startedAt:number):void};
   FlowHubMemoCatalog?: {categorySegments(category:string): string[]};

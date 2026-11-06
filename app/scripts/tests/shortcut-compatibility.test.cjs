@@ -3,6 +3,14 @@ const assert=require('node:assert/strict');
 const keys=require('../../ui/shared/shortcuts.js');
 const stroke=(code,key,extra={})=>({code,key,ctrlKey:false,altKey:false,shiftKey:false,metaKey:false,...extra});
 
+test('platform discovery recognizes macOS client hints as well as legacy MacIntel',()=>{
+  const vm=require('node:vm'),fs=require('node:fs'),source=fs.readFileSync(require.resolve('../../ui/shared/shortcuts.js'),'utf8');
+  for(const [navigator,mac] of [[{userAgentData:{platform:'macOS'},platform:'MacIntel'},true],[{platform:'MacIntel'},true],[{platform:'iPad'},true],[{userAgentData:{platform:'Windows'},platform:'Win32'},false],[{userAgentData:{platform:'Linux'}},false]]){
+    const window={navigator};vm.runInNewContext(source,{window});const discovered=window.FlowHubShortcuts;
+    assert.equal(discovered.isMac(),mac);assert.equal(discovered.matches(stroke('KeyK','k',mac?{metaKey:true}:{ctrlKey:true}),'CommandOrControl+K'),true);
+  }
+});
+
 test('Command capture uses the native spelling and formats legacy Meta as the macOS key',()=>{
   const event=stroke('Space',' ',{metaKey:true});
   assert.deepEqual(keys.capture(event,false,true),{value:'Command+Space'});

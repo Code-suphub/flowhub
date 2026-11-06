@@ -1,0 +1,23 @@
+.settings-data-panel { container:settings-data / inline-size; }
+.settings-data-panel>.settings-group { min-width:0; padding-bottom:24px; border-bottom:1px solid var(--fh-border); }
+.settings-data-panel>.settings-group:last-of-type { border-bottom:0; padding-bottom:0; }
+.settings-data-heading { margin-bottom:16px; }
+.settings-data-heading h2 { margin:0; font-size:15px; font-weight:600; }
+.settings-data-heading svg,.settings-storage-control>header>svg { width:17px; height:17px; flex:none; color:var(--fh-accent); }
+.settings-storage-control { padding:16px; border:1px solid var(--fh-border); border-radius:10px; background:var(--fh-study-card); }
+.settings-storage-control h3 { margin:0; font-size:13px; font-weight:500; }
+.settings-storage-path { min-width:0; }
+.settings-storage-path>span,.settings-storage-path>label { display:block; margin-bottom:5px; color:var(--fh-muted); font-size:12px; }
+.settings-storage-path code { display:block; user-select:text; color:var(--fh-text); font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+.settings-storage-control .fh-button { font-size:12px; min-height:32px; padding-inline:9px; }
+.settings-storage-control [data-slot=input] { width:100%; font-size:12px; }
+.settings-history-list { margin:0; padding:0; list-style:none; }
+.settings-history-list>li { padding:14px 0; border-bottom:1px solid var(--fh-border); }
+.settings-history-list>li:first-child { padding-top:0; }
+.settings-history-list>li:last-child { border-bottom:0; padding-bottom:0; }
+.settings-history-list h3 { margin:0 0 4px; font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.settings-history-list span { color:var(--fh-muted); font-size:12px; }
+.settings-history-empty { min-height:130px; padding:16px; }
+.settings-diagnostic-path,.settings-export-note { margin:12px 0; color:var(--fh-muted); font-size:12px; overflow-wrap:anywhere; }
+.settings-diagnostic-report { margin:14px 0 0; padding:14px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-canvas); font-size:12px; }
+@container settings-data (min-width:720px) { .settings-storage-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }

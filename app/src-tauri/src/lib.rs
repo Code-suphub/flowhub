@@ -8,6 +8,7 @@ use storage::{
 mod config_history;
 mod config_save;
 mod config_transfer;
+mod settings_navigation;
 mod web_open;
 mod launcher;
 mod shortcut;
@@ -32,7 +33,7 @@ use std::{
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{
-    tauri_panel, CollectionBehavior, ManagerExt as PanelManagerExt, PanelLevel, StyleMask,
+    tauri_panel, CollectionBehavior, ManagerExt as PanelManagerExt, PanelLevel,
     WebviewWindowExt,
 };
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
@@ -505,10 +506,21 @@ fn application_icon_cache_path(state: &AppState, application_path: &str) -> Path
 }
 
 pub(crate) fn hide_main(app: &tauri::AppHandle) {
+    hide_main_with_return(app, true);
+}
+
+fn hide_main_with_return(app: &tauri::AppHandle, restore: bool) {
     MAIN_VISIBILITY.lock().unwrap().dismiss();
+    #[cfg(target_os = "macos")]
+    if let Err(error) = crate::macos::launcher_activation::hide(app, restore) {
+        eprintln!("[flowhub-tauri] 收起启动器并交还焦点失败：{error}");
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = restore;
 }
 
 static LAUNCHER_PINNED: AtomicBool = AtomicBool::new(false);
@@ -656,23 +668,30 @@ fn close_settings(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_settings(app: tauri::AppHandle, initial_url: Option<String>) -> Result<Value, String> {
-    open_settings_window(app, initial_url, false)
+fn open_settings(app: tauri::AppHandle, initial_url: Option<String>, initial_module: Option<String>) -> Result<Value, String> {
+    if initial_url.is_some() && initial_module.is_some() { return Err("一次只能选择一个设置目标".into()); }
+    open_settings_window_target(app, initial_url, false, initial_module)
 }
 
 pub(crate) fn open_settings_window(app: tauri::AppHandle, initial_url: Option<String>, update: bool) -> Result<Value, String> {
-    open_settings_window_target(app, initial_url, update, false)
+    open_settings_window_target(app, initial_url, update, None)
 }
 
 pub(crate) fn open_canvas_settings(app: tauri::AppHandle) -> Result<Value, String> {
-    open_settings_window_target(app, None, false, true)
+    open_settings_window_target(app, None, false, Some("canvas".into()))
 }
 
-fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String>, update: bool, canvas: bool) -> Result<Value, String> {
+fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String>, update: bool, initial_module: Option<String>) -> Result<Value, String> {
+    if let Some(module)=&initial_module {
+        if !settings_navigation::valid_module(module) {return Err("未知设置入口".into());}
+        if let Some(id)=module.strip_prefix("plugin:") {
+            if !app.state::<crate::plugin::runtime::Runtime>().has_launcher_entry(id) {return Err("插件已停用或卸载，请重新查找命令".into());}
+        }
+    }
     // Opening settings from the launcher is an in-app navigation. Workspace
     // activation notifications do not fire because both windows belong to
     // FlowHub, so explicitly dismiss the launcher before bringing settings up.
-    hide_main(&app);
+    hide_main_with_return(&app, false);
     let initial_url = initial_url.and_then(|value| {
         let value = value.trim().to_string();
         match url::Url::parse(&value) {
@@ -688,8 +707,8 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             window.eval("(() => { let attempts = 0; const run = () => { if (window.runMenuUpdate) { window.runMenuUpdate(); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
                 .map_err(|error| error.to_string())?;
         }
-        if canvas {
-            window.eval("(() => { let attempts = 0; const run = () => { if (window.switchModule) { window.switchModule('canvas'); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
+        if let Some(module)=&initial_module {
+            window.eval(&settings_navigation::script(module))
                 .map_err(|error| error.to_string())?;
         }
         if let Some(url) = initial_url {
@@ -709,14 +728,16 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             query.append_pair("addUrl", url);
             format!("settings.html?{}", query.finish())
         })
-        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if canvas { "settings.html?module=canvas".to_string() } else { "settings.html".to_string() });
+        .unwrap_or_else(|| if update { "settings.html?update=1".to_string() } else if let Some(module)=&initial_module { settings_navigation::path(module) } else { "settings.html".to_string() });
     let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(settings_path.into()))
         .title("FlowHub 设置")
         .transparent(true)
         .background_color(tauri::window::Color(0, 0, 0, 0))
         .inner_size(980.0, 720.0)
         .min_inner_size(640.0, 360.0)
-        .center();
+        .center()
+        .visible(false)
+        .focused(false);
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
     let window = builder.build()
@@ -743,7 +764,13 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
             let _ = close_window.eval("(() => { let attempts = 0; const request = () => { if (window.requestSettingsClose) { window.requestSettingsClose(); } else if (++attempts < 200) { setTimeout(request, 50); } else { window.__TAURI__?.core?.invoke('close_settings'); } }; request(); })();");
         }
     });
+    // Explicitly show before requesting focus: on macOS Tao ignores focus
+    // requests for windows that have not become visible yet.
+    window.show().map_err(|error| error.to_string())?;
     plugin_workspace::show_dock(&app)?;
+    // Creating the companion dock must not take the new settings window's
+    // keyboard focus. Match the existing-window path after both are ready.
+    window.set_focus().map_err(|error| error.to_string())?;
     Ok(json!({ "ok": true }))
 }
 
@@ -1021,7 +1048,7 @@ fn toggle_main(app: &tauri::AppHandle) {
         return;
     }
     application_index::check(app);
-    // macOS uses a non-activating fullscreen-compatible panel. Select the
+    // macOS uses a fullscreen-compatible panel. Select the
     // pointer's NSScreen and position it on the main thread immediately before
     // showing; NSWindow::center does not explicitly choose the pointer screen.
     #[cfg(not(target_os = "macos"))]
@@ -1030,9 +1057,9 @@ fn toggle_main(app: &tauri::AppHandle) {
     let _ = window.set_always_on_top(true);
     #[cfg(not(target_os = "macos"))]
     let _ = window.center();
-    MAIN_VISIBILITY.lock().unwrap().show(Instant::now());
+    let session = MAIN_VISIBILITY.lock().unwrap().show(Instant::now());
     #[cfg(target_os = "macos")]
-    show_macos_window(&window);
+    show_macos_window(&window, session);
     #[cfg(not(target_os = "macos"))]
     {
         if let Err(error) = window.show() {
@@ -1041,10 +1068,11 @@ fn toggle_main(app: &tauri::AppHandle) {
         if let Err(error) = window.set_focus() {
             eprintln!("[flowhub-tauri] 聚焦主窗口失败：{error}");
         }
+        let _ = window.eval("window.prepareForShow?.(); window.restoreLauncherFocus?.();");
     }
     // Showing and focusing are dispatched to the windowing system. A second
-    // focus request is only needed for regular windows; the macOS NSPanel is
-    // non-activating and makes itself key without switching Spaces.
+    // focus request is only needed for regular windows; macOS performs explicit
+    // process activation and the native key request together below.
     #[cfg(not(target_os = "macos"))]
     let focus_window = window.clone();
     #[cfg(not(target_os = "macos"))]
@@ -1061,49 +1089,51 @@ fn toggle_main(app: &tauri::AppHandle) {
             focus_window.outer_position().ok()
         );
     });
-    // macOS performs the reset/focus after `show_and_make_key` below. Calling
+    // macOS performs the reset/focus after the native key request below. Calling
     // it here races native first-responder assignment and can send the first
     // typed characters back to the previously active application.
 }
 
 #[cfg(target_os = "macos")]
-fn show_macos_window(window: &tauri::WebviewWindow) {
+fn show_macos_window(window: &tauri::WebviewWindow, session: u64) {
     let handle = window.app_handle().clone();
     let panel_handle = handle.clone();
-    let queued_at = std::time::Instant::now();
-    let _ = handle.run_on_main_thread(move || {
-        let queue_ms = queued_at.elapsed().as_secs_f64() * 1000.0;
-        let mut detail = match panel_handle.get_webview_panel("main") {
-            Ok(panel) => {
-                let mut detail = objc2::MainThreadMarker::new()
-                    .map(|mtm| crate::macos::launcher_position::position_at_pointer(panel.as_panel(), mtm))
-                    .unwrap_or_else(|| json!({"status": "missing-main-thread"}));
-                panel.show_and_make_key();
-                // `show_and_make_key` changes the native first responder. The
-                // earlier call from `toggle_main` can race that transition.
-                // Re-apply launcher state after the panel is key so the first
-                // keystroke is delivered to the search field.
-                if let Some(main) = panel_handle.get_webview_window("main") {
-                    let _ = main.eval(
-                        "window.prepareForShow?.(); window.focusSearch?.();",
-                    );
+    tauri::async_runtime::spawn(async move {
+        let queued_at = std::time::Instant::now();
+        let _ = handle.run_on_main_thread(move || {
+            if !MAIN_VISIBILITY.lock().unwrap().is_current_show(session) {
+                return;
+            }
+            let queue_ms = queued_at.elapsed().as_secs_f64() * 1000.0;
+            let mut detail = match panel_handle.get_webview_panel("main") {
+                Ok(panel) => {
+                    let mut detail = objc2::MainThreadMarker::new()
+                        .map(|mtm| crate::macos::launcher_position::position_at_pointer(panel.as_panel(), mtm))
+                        .unwrap_or_else(|| json!({"status": "missing-main-thread"}));
+                    if crate::diagnostics::focus::focus_diagnostics_enabled() {
+                        detail["beforeFocus"] = crate::diagnostics::focus::native_window_state(panel.as_panel());
+                    }
+                    crate::macos::launcher_activation::show(&panel_handle, true, true);
+                    if crate::diagnostics::focus::focus_diagnostics_enabled() {
+                        detail["afterFocus"] = crate::diagnostics::focus::native_window_state(panel.as_panel());
+                    }
+                    detail["visible"] = json!(panel.as_panel().isVisible());
+                    detail["keyWindow"] = json!(panel.as_panel().isKeyWindow());
+                    detail
                 }
-                detail["visible"] = json!(panel.as_panel().isVisible());
-                detail["keyWindow"] = json!(panel.as_panel().isKeyWindow());
-                detail
-            }
-            Err(error) => {
-                eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}");
-                json!({"status": "panel-error", "error": format!("{error:?}")})
-            }
-        };
-        crate::diagnostics::focus::record("native-show", detail.clone());
-        detail["mainThreadQueueMs"] = json!(queue_ms);
-        detail["nativeShowMs"] = json!(queued_at.elapsed().as_secs_f64() * 1000.0);
-        // Disk access must not delay the panel's first frame. Diagnostics retain
-        // the existing opt-in setting and contain geometry, never search text.
-        tauri::async_runtime::spawn_blocking(move || {
-            diagnostics::record_event(&panel_handle, "launcher-show", detail);
+                Err(error) => {
+                    eprintln!("[flowhub-tauri] 显示 macOS Panel 失败：{error:?}");
+                    json!({"status": "panel-error", "error": format!("{error:?}")})
+                }
+            };
+            crate::diagnostics::focus::record("native-show", detail.clone());
+            detail["mainThreadQueueMs"] = json!(queue_ms);
+            detail["nativeShowMs"] = json!(queued_at.elapsed().as_secs_f64() * 1000.0);
+            // Disk access must not delay the panel's first frame. Diagnostics retain
+            // the existing opt-in setting and contain geometry, never search text.
+            tauri::async_runtime::spawn_blocking(move || {
+                diagnostics::record_event(&panel_handle, "launcher-show", detail);
+            });
         });
     });
 }
@@ -1115,15 +1145,16 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     panel.set_level(PanelLevel::PopUpMenu.value());
     panel.set_floating_panel(true);
-    // Do not rely on NSPanel's hidesOnDeactivate here. A non-activating panel
-    // can be considered deactivated immediately after show, which would hide
-    // the launcher before the first frame is usable. App-switch dismissal is
-    // handled by the workspace activation observer installed at startup.
+    // App-switch dismissal is session-guarded by the workspace observer.
+    // Native automatic hiding would bypass that lifecycle and its return target.
     panel.set_hides_on_deactivate(false);
-    // A non-activating NSPanel can become the key window and receive search
-    // input without activating FlowHub or switching away from another app's
-    // fullscreen Space.
-    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+    // Explicit application activation must use an activating panel. Keeping
+    // NonactivatingPanel would leave a second WindowServer input handoff active
+    // alongside NSRunningApplication's activation/return lifecycle.
+    // Preserve Tauri's structural styles and synchronize the native system tag.
+    panel
+        .set_style_mask(panel.as_panel().styleMask() & !objc2_app_kit::NSWindowStyleMask::NonactivatingPanel)
+        .map_err(|error| format!("配置启动器激活面板失败：{error}"))?;
     panel.set_collection_behavior(
         CollectionBehavior::new()
             .full_screen_auxiliary()
@@ -1138,19 +1169,47 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn install_launcher_activation_observer(app: &tauri::AppHandle) {
     use block2::RcBlock;
-    use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
+    use objc2_app_kit::{
+        NSRunningApplication, NSWorkspace, NSWorkspaceApplicationKey,
+        NSWorkspaceDidActivateApplicationNotification,
+    };
     use objc2_foundation::{NSNotification, NSOperationQueue};
     use std::ptr::NonNull;
 
     let app = app.clone();
-    let activation = RcBlock::new(move |_: NonNull<NSNotification>| {
-        if LAUNCHER_PINNED.load(AtomicOrdering::Acquire) {
-            return;
-        }
-        if NSWorkspace::sharedWorkspace()
-            .frontmostApplication()
-            .is_some_and(|application| application.processIdentifier() != std::process::id() as i32)
+    let activation = RcBlock::new(move |notification: NonNull<NSNotification>| {
+        // Read the application carried by this event. Querying frontmost here
+        // can still return the previous application during our activation turn.
+        let application = unsafe {
+            notification
+                .as_ref()
+                .userInfo()
+                .and_then(|info| info.objectForKey(NSWorkspaceApplicationKey))
+        };
+        let own = application
+            .as_ref()
+            .and_then(|value| value.downcast_ref::<NSRunningApplication>())
+            .is_some_and(|application| {
+                application.processIdentifier() == std::process::id() as i32
+            });
+        let dismiss =
+            !own && crate::macos::launcher_activation::should_dismiss_for_external_activation();
+        crate::diagnostics::focus::record(
+            "native-workspace-activation",
+            json!({"own":own,"pending":crate::macos::launcher_activation::pending(),"dismiss":dismiss}),
+        );
+        if own {
+            crate::macos::launcher_activation::schedule_finish(&app);
+        } else if LAUNCHER_PINNED.load(AtomicOrdering::Acquire) {
+            // Pinned search remains visible while the user works elsewhere.
+            // Keep its paste/return source current before a native click activates us.
+            crate::macos::launcher_activation::remember_pinned_source();
+        } else if !LAUNCHER_PINNED.load(AtomicOrdering::Acquire)
+            && MAIN_VISIBILITY.lock().unwrap().active_session().is_some()
+            && dismiss
         {
+            // A launch or paste already dismissed the panel before returning
+            // to its source. Do not invalidate that handoff or consume its target.
             hide_main(&app);
         }
     });
@@ -1377,6 +1436,8 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 configure_macos_panel(&window).map_err(std::io::Error::other)?;
                 #[cfg(target_os = "macos")]
+                crate::macos::launcher_activation::install(app.handle());
+                #[cfg(target_os = "macos")]
                 install_launcher_activation_observer(app.handle());
                 #[cfg(target_os = "macos")]
                 crate::diagnostics::focus::install_native_monitor();
@@ -1386,11 +1447,17 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let _ = main_window.hide();
+                        hide_main(main_window.app_handle());
                     } else if let WindowEvent::Focused(true) = event {
                         crate::diagnostics::focus::record("native-focus", json!({"focused": true}));
                         eprintln!("[flowhub-tauri] 主窗口获得焦点");
                         MAIN_VISIBILITY.lock().unwrap().invalidate();
+                        #[cfg(target_os = "macos")]
+                        crate::macos::launcher_activation::reclaim(main_window.app_handle());
+                        #[cfg(target_os = "macos")]
+                        if !crate::macos::launcher_activation::pending() {
+                            crate::macos::launcher_focus::restore(&main_window, false);
+                        }
                     } else if let WindowEvent::Focused(false) = event {
                         crate::diagnostics::focus::record("native-focus", json!({"focused": false}));
                         eprintln!("[flowhub-tauri] 主窗口失去焦点");
@@ -1414,13 +1481,12 @@ pub fn run() {
                     }
                 });
                 if std::env::var("FLOWHUB_TAURI_SHOW_ON_START").as_deref() == Ok("1") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    toggle_main(app.handle());
                 }
             }
 
             if std::env::var("FLOWHUB_TAURI_SHOW_SETTINGS_ON_START").as_deref() == Ok("1") {
-                open_settings(app.handle().clone(), None).map_err(std::io::Error::other)?;
+                open_settings(app.handle().clone(), None, None).map_err(std::io::Error::other)?;
             }
 
             if std::env::var("FLOWHUB_TAURI_SMOKE_TEST").as_deref() == Ok("1") {
@@ -1454,6 +1520,7 @@ pub fn run() {
             get_proxy_info,
             search_usage,
             open_settings,
+            crate::plugin::runtime::launcher_plugin_entries,
             plugin_workspace::plugin_workspace,
             crate::plugin::runtime::plugin_api,
             crate::plugin::runtime::plugin_search_call,
@@ -1486,6 +1553,8 @@ pub fn run() {
             open_config_path,
             open_storage_path,
             clipboard::search_clipboard,
+            clipboard::organization::clipboard_sources,
+            clipboard::organization::set_clipboard_note,
             clipboard::load_clipboard_assets,
             clipboard::activate_clipboard,
             clipboard::copy_text,

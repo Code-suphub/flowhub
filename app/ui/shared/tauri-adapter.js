@@ -70,7 +70,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     const limit = Math.max(1, Number(request.limit) || 12);
     const offset = Math.max(0, Number(request.offset) || 0);
     if (id === "clipboard") {
-      return invoke("search_clipboard", { query, kind: request.kind || "all", limit, offset });
+      return invoke("search_clipboard", { query, kind: request.kind || "all", limit, offset, source:request.source ?? null, pinnedOnly:request.pinnedOnly===true });
     }
     if (id === "app") {
       return (await invoke("search_applications", { query, limit, offset, includeIcons: request.includeIcons !== false })).map((record) => ({ ...record, pluginId: id }));
@@ -240,12 +240,15 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     inspectCloudflare,
     lookupProxy,
     pluginAction,
+    listClipboardSources: () => invoke("clipboard_sources"),
+    setClipboardNote: (id,note,expectedNote) => document.documentElement.dataset.weborgReadonly==='true'?Promise.resolve({ok:false,reason:'只读预览不能修改备注'}):invoke("set_clipboard_note",{id:Number(id),note:String(note),expectedNote:String(expectedNote)}),
     getLauncherPinned: () => invoke("get_launcher_pinned"),
     setLauncherPinned: (pinned) => invoke("set_launcher_pinned", { pinned }),
     hideMain: () => invoke("hide_main_window"),
     searchUsage: (scope = "all") => invoke("search_usage", { scope }),
     closeSettings: () => invoke("close_settings"),
-    openSettings: (options = {}) => invoke("open_settings", { initialUrl: options.initialUrl || null }),
+    openSettings: (options = {}) => invoke("open_settings", { initialUrl: options.initialUrl || null, initialModule: options.initialModule || null }),
+    listLauncherPlugins: () => invoke("launcher_plugin_entries"),
     openAccessibilitySettings: () => invoke("open_accessibility_settings"),
     getMenuBarManagementState: () => invoke("get_menu_bar_management_state"),
     requestMenuBarManagementPermission: () => invoke("request_menu_bar_management_permission"),

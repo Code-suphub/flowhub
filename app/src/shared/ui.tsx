@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentProps, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Tooltip } from './controls';
 import { Button as ShadcnButton } from '../components/ui/button';
 import { Input as ShadcnInput } from '../components/ui/input';
@@ -6,7 +6,7 @@ import { Tabs as ShadcnTabs, TabsList, TabsTrigger } from '../components/ui/tabs
 import { Dialog as ShadcnDialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { cn } from '../lib/utils';
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
+type ButtonProps = ComponentProps<'button'> & Pick<ComponentProps<typeof ShadcnButton>, 'variant' | 'size'>;
 export function Button({ className = '', variant, size = 'lg', type = 'button', ...props }: ButtonProps) {
   const classes = className.split(/\s+/);
   const legacyVariant = classes.includes('primary') ? 'default' : classes.includes('danger') ? 'destructive' : 'outline';
@@ -24,14 +24,18 @@ export function Tabs({ items, value, onChange, label }: { items: readonly Tab[];
     </TabsList>
   </ShadcnTabs>;
 }
-export function Dialog({ title, onClose, busy, children, notice, className, modal = true }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string; modal?: boolean }) {
+export function Dialog({ title, onClose, busy, children, notice, className, modal = true, initialFocus, restoreFocus=true }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string; modal?: boolean; initialFocus?: ComponentProps<typeof DialogContent>['initialFocus'];restoreFocus?:boolean }) {
   const previousFocus = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   useEffect(() => () => {
-    const previous = previousFocus.current;
-    if (previous?.isConnected) requestAnimationFrame(() => { if (previous.isConnected) previous.focus(); });
-  }, []);
+    if(!restoreFocus)return;
+    const previous = previousFocus.current, closingFocus = document.activeElement;
+    if (previous?.isConnected) requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (previous.isConnected && (active === document.body || active === closingFocus || active?.hasAttribute('data-base-ui-focus-guard'))) previous.focus();
+    });
+  }, [restoreFocus]);
   return <ShadcnDialog open modal={modal} onOpenChange={open => { if (!open && !busy) onClose(); }} disablePointerDismissal>
-    <DialogContent className={cn('fh-dialog gap-0', className)} showCloseButton={false} showBackdrop={modal} aria-busy={busy}>
+    <DialogContent className={cn('fh-dialog gap-0', className)} showCloseButton={false} showBackdrop={modal} aria-busy={busy} initialFocus={initialFocus} finalFocus={false}>
       <DialogHeader className="mb-4 flex-row items-center justify-between gap-4">
         <DialogTitle>{title}</DialogTitle>
         <DialogClose render={<Button disabled={busy} aria-label="关闭" />}>×</DialogClose>

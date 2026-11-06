@@ -1,0 +1,13 @@
+.clipboard-filters { padding-top:0; padding-bottom:8px; }
+.clipboard-filters>button[aria-pressed=true] { color:var(--fh-accent); background:var(--fh-accent-soft); border-color:var(--fh-border); }
+.clipboard-filters .clipboard-source-select { width:158px; min-width:0; }
+.clipboard-filters [data-slot=select-trigger] { min-height:28px; height:28px; font-size:12px; padding:4px 8px; }
+.clipboard-filters svg { width:14px; height:14px; }
+.clipboard-filter-error { color:var(--fh-danger); font-size:11px; }
+.clipboard-note-target { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:0 0 16px; color:var(--fh-muted); font-size:12px; }
+.clipboard-note-dialog label { display:block; margin-bottom:8px; }
+.clipboard-note-dialog textarea { min-height:110px; max-height:35vh; resize:vertical; }
+.clipboard-note-help { margin-top:8px; color:var(--fh-muted); font-size:11px; }
+.preview-clipboard-note { padding:12px; margin:16px 0; border:1px solid var(--fh-border); border-radius:var(--fh-radius-md); }
+.preview-clipboard-note>span { color:var(--fh-muted); font-size:11px; }
+.preview-clipboard-note>p { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.65; }

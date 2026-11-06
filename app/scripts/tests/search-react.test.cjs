@@ -3,6 +3,31 @@ const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const app=path.resolve(__dirname,'../..');
+for(const scopeId of ['clipboard','all'])for(const query of ['', 'fixture'])test(`clipboard updates reorder ${scopeId} results and retain record selection with query ${JSON.stringify(query)}`,async t=>{
+  const record=(id,content,pinnedAt='')=>({id,kind:'text',content,hash:String(id),pinnedAt,copyCount:1});
+  const pinned=record(1,'fixture pinned','2026-09-01T00:00:00Z'),recent=record(2,'fixture recent'),old=record(3,'fixture reused');
+  let records=[pinned,recent,old];
+  const {w,q,input,scope,key,calls,events}=await setup(t,{previewExpanded:true,search:id=>id==='clipboard'?records:[]});
+  await scope(scopeId);if(query)await input(query);
+  const titles=()=>[...w.document.querySelectorAll('.clipboard-result h3')].map(row=>row.textContent);
+  await wait(()=>titles().length===3);
+  key('ArrowDown');key('ArrowDown');
+  await wait(()=>w.document.querySelector('.result.active h3')?.textContent===old.content);
+  const searchesBefore=calls.filter(call=>call[0]==='search').length;
+  records=[pinned,{...old,copyCount:2,lastSeenAt:'2026-09-03T00:00:00Z'},recent];
+  events.onClipboardUpdated();
+  await wait(()=>titles()[1]===old.content);
+  assert.deepEqual(titles(),[pinned.content,old.content,recent.content]);
+  assert.equal(w.document.querySelector('.result.active h3').textContent,old.content);
+  assert.equal(w.document.querySelector('.preview-content').textContent,old.content);
+  assert.equal(w.document.querySelector('.preview-properties').textContent.includes('2 次'),true);
+  assert.equal(q.value,query);assert.equal(w.document.activeElement,q);
+  assert.deepEqual(calls.filter(call=>call[0]==='search').slice(searchesBefore).map(call=>call[1]),['clipboard']);
+  assert.equal(calls.some(call=>call[0]==='action'||call[0]==='copy'),false);
+  w.prepareForShow();
+  await wait(()=>w.document.querySelector('.result.active h3')?.textContent===pinned.content);
+  assert.equal(q.value,'');
+});
 test('slow external opens freeze usage reordering and hover, deduplicate activation, and recover on failure',async t=>{
   const page=id=>({type:'page',id,title:id,url:`https://example.com/${id}`});
   const {w,key,events}=await setup(t,{usage:{frequent:[page('A'),page('B')],recent:[]}});
@@ -10,7 +35,7 @@ test('slow external opens freeze usage reordering and hover, deduplicate activat
   let rejectOpen,opened=0;
   w.weborg.pluginAction=()=>{opened++;return new Promise((_,reject)=>{rejectOpen=reject;});};
   const rows=[...w.document.querySelectorAll('.usage-tile')];
-  rows[0].click();await wait(()=>opened===1);
+  rows[0].dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true,button:0}));await wait(()=>opened===1);
   const before=w.document.getElementById('results').textContent;
   w.weborg.searchUsage=async()=>({frequent:[page('B'),page('A')],recent:[]});
   events.onUsageUpdated();await delay(30);
@@ -23,7 +48,7 @@ test('slow external opens freeze usage reordering and hover, deduplicate activat
   await wait(()=>w.document.getElementById('actionStatus').textContent==='Browser fixture failed');
   assert.equal(active(),'A','the original target remains selected even if usage order changed');
   w.weborg.pluginAction=async()=>{opened++;return {ok:true};};
-  w.document.querySelector('.usage-tile').click();await wait(()=>opened===2);
+  w.document.querySelector('.usage-tile').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true,button:0}));await wait(()=>opened===2);
 });
 test('a reopened launcher ignores a previous activation failure without unlocking the new activation',async t=>{
   const {w,input,scope,key}=await setup(t);
@@ -86,7 +111,7 @@ test('pagination updates the accessible set size on retained and virtualized opt
   }
 });
 test('clear search participates in the F6 cycle and returns focus without switching scope or activating results',async t=>{
-  const {w,q,input,scope,key,calls}=await setup(t);
+  const {w,q,input,scope,key,calls}=await setup(t,{previewExpanded:true});
   await scope('web');await input('Website');
   const clear=w.document.querySelector('.search-clear');
   const press=(element,value,extra={})=>element.dispatchEvent(new w.KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true,...extra}));
@@ -97,7 +122,7 @@ test('clear search participates in the F6 cycle and returns focus without switch
   assert.equal(w.document.activeElement,q);
   assert.equal(w.document.querySelector('[data-scope="web"]').getAttribute('aria-pressed'),'true');
   key('F6');press(clear,'F6');
-  await wait(()=>w.document.activeElement.matches('[role="menuitem"]'));
+  await wait(()=>w.document.activeElement.matches('.search-preview-actions .tool-action'));
   press(w.document.activeElement,'F6',{shiftKey:true});assert.equal(w.document.activeElement,clear);
   press(clear,'Escape');assert.equal(w.document.activeElement,q);
   assert.equal(calls.filter(call=>call[0]==='hide').length,0);
@@ -115,8 +140,8 @@ test('clear search participates in the F6 cycle and returns focus without switch
 test('clear search remains reachable with no result actions',async t=>{
   const {w,q,input,scope,key}=await setup(t,{search:()=>[]});
   await scope('web');await input('missing');
-  key('F6',{shiftKey:true});assert.ok(w.document.activeElement.matches('.search-clear'));
-  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+  key('F6');assert.ok(w.document.activeElement.matches('.search-clear'));
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',shiftKey:true,bubbles:true,cancelable:true}));
   assert.equal(w.document.activeElement,q);
 });
 test('search migration contains no HTML proxy or legacy result markup renderer',()=>{
@@ -127,8 +152,8 @@ test('clipboard copy editor uses shared Textarea and keeps cancel behavior',asyn
   const {w,scope}=await setup(t);
   await scope('clipboard');
   w.document.querySelector('.clipboard-result').dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
-  await wait(()=>w.document.querySelector('[data-clipboard-action="edit"]'));
-  w.document.querySelector('[data-clipboard-action="edit"]').click();
+  await wait(()=>w.document.querySelector('[data-command-id="clipboard:edit"]'));
+  w.document.querySelector('[data-command-id="clipboard:edit"]').click();
   await wait(()=>w.document.querySelector('[data-clipboard-editor]'));
   const editor=w.document.querySelector('[data-clipboard-editor]');
   assert.equal(editor.getAttribute('data-slot'),'textarea');
@@ -154,36 +179,65 @@ test('mount/dispose removes subscriptions and the native diagnostic bridge; remo
   const dispose=remount();t.after(dispose);await wait(()=>w.FlowHubSearchDiagnostics?.inspect().initialized);
 });
 
-test('long app titles and paths collapse until selected or explicitly expanded without activating the row',async t=>{
+test('long application details move to the preview while list summaries stay bounded',async t=>{
   const apps=['A','B'].map(id=>({id,title:`${id} ${'长应用名称'.repeat(28)} TITLE-END-${id}`,path:`/Applications/${'Long Directory/'.repeat(25)}${id}-PATH-END.app`}));
-  const {w,scope,key,calls}=await setup(t,{search:(id,args,fixture)=>id==='app'?(args.offset?[]:apps):fixture[id]||[]});await scope('app');
+  const {w,scope,key,calls,q}=await setup(t,{previewExpanded:true,search:(id,args,fixture)=>id==='app'?(args.offset?[]:apps):fixture[id]||[]});await scope('app');
   const rows=[...w.document.querySelectorAll('.app-result')];assert.equal(rows.length,2);
-  assert.equal(rows[0].querySelector('h3').textContent,apps[0].title);assert.match(rows[0].textContent,/A-PATH-END/);
-  assert.doesNotMatch(rows[1].textContent,/B-PATH-END/);assert.equal(rows[1].dataset.fullContent,'false');
+  for(const row of rows)assert.doesNotMatch(row.querySelector('.search-meta').textContent,/PATH-END/);
+  assert.match(w.document.querySelector('.search-preview').textContent,/A-PATH-END/);
   key('ArrowDown');await wait(()=>rows[1].getAttribute('aria-selected')==='true');
-  assert.equal(rows[1].querySelector('h3').textContent,apps[1].title);assert.match(rows[1].textContent,/B-PATH-END/);assert.doesNotMatch(rows[0].textContent,/A-PATH-END/);
-  const before=calls.filter(call=>call[0]==='action').length;
-  rows[0].querySelector('.search-content-toggle').click();await wait(()=>rows[0].dataset.fullContent==='true');
-  assert.match(rows[0].textContent,/A-PATH-END/);assert.equal(calls.filter(call=>call[0]==='action').length,before);
-  key('Enter');await wait(()=>calls.some(call=>call[0]==='action'&&call[3].path===apps[1].path));
+  assert.match(w.document.querySelector('.search-preview').textContent,/B-PATH-END/);assert.equal(w.document.activeElement,q);
+  rows[0].querySelector('.result-preview-button').click();await wait(()=>rows[0].getAttribute('aria-selected')==='true');
+  assert.match(w.document.querySelector('.search-preview').textContent,/A-PATH-END/);assert.equal(calls.filter(c=>c[0]==='action').length,0);
+  q.focus();key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path===apps[0].path));
 });
-
-test('multi-line commands preserve complete selected content and explicit expansion across unrelated renders',async t=>{
+test('multi-line commands are readable and copyable without pasting or expanding list rows',async t=>{
   const command='first line\nsecond line\nthird line\nCOMMAND-END';
   const memos=['a','b'].map(id=>({id,title:'命令 '+id,category:'测试',content:command}));
-  const {w,scope,calls,input}=await setup(t,{search:(id,args,fixture)=>id==='memo'?(args.offset?[]:memos):fixture[id]||[]});await scope('memo');
-  const rows=[...w.document.querySelectorAll('.memo-result')];assert.equal(rows[0].querySelector('code').textContent,command);assert.doesNotMatch(rows[1].querySelector('code').textContent,/COMMAND-END/);
-  rows[1].querySelector('.search-content-toggle').click();await wait(()=>rows[1].querySelector('code').textContent===command);
-  assert.equal(calls.filter(call=>call[0]==='action').length,0);
-  await input('命令');assert.equal(w.document.querySelectorAll('.memo-result')[1],rows[1]);assert.equal(rows[1].querySelector('code').textContent,command);
+  const {w,scope,calls,input}=await setup(t,{previewExpanded:true,search:(id,args,fixture)=>id==='memo'?(args.offset?[]:memos):fixture[id]||[]});await scope('memo');
+  const rows=[...w.document.querySelectorAll('.memo-result')];assert.ok(!rows[0].textContent.includes('COMMAND-END'));
+  rows[1].click();await wait(()=>rows[1].getAttribute('aria-selected')==='true');assert.equal(w.document.querySelector('.preview-content').textContent,command);
+  w.document.querySelector('.search-preview-actions [data-result-action="copy"]').click();await wait(()=>calls.some(c=>c[0]==='copy'&&c[1]===command));
+  assert.equal(calls.filter(c=>c[0]==='action').length,0);
+  await input('命令');assert.equal(w.document.querySelectorAll('.memo-result')[1],rows[1]);assert.equal(w.document.querySelector('.preview-content').textContent,command);
+});
+test('clipboard full-text previews remain read-only and bounded; copy obtains the entire record',async t=>{
+  const contents=['first\n'+('line\n'.repeat(5000))+'CLIP-END','other\nsecond\n<script>unsafe()</script>\nOTHER-END'];
+  const {w,scope,key,calls}=await setup(t,{readonly:true,autoPreviewLongContent:false,search:(id,args,fixture)=>id==='clipboard'?(args.offset?[]:contents.map((content,i)=>({id:i+1,kind:'text',content}))):fixture[id]||[]});await scope('clipboard');
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.querySelector('.preview-content'));w.document.getElementById('q').focus();
+  const rows=[...w.document.querySelectorAll('.clipboard-result')];assert.ok(rows[0].querySelector('.clipboard-title').textContent.length<=100);
+  assert.equal(w.document.querySelector('.preview-content').textContent.length,20000);
+  assert.equal(w.document.querySelector('.search-preview-actions [data-result-action="copy"]').disabled,true);
+  key('ArrowDown');await wait(()=>rows[1].getAttribute('aria-selected')==='true');assert.equal(w.document.querySelector('.preview-content').textContent,contents[1]);
+  assert.equal(w.document.querySelector('.search-preview script'),null);assert.equal(w.document.querySelector('#activateResultBtn').disabled,true);
+  assert.equal(calls.filter(c=>c[0]==='action').length,0);assert.equal(w.localStorage.length,0);
+  const native=await setup(t,{previewExpanded:true,search:(id,args,fixture)=>id==='clipboard'?[{id:1,kind:'text',content:contents[0]}]:fixture[id]||[]});await native.scope('clipboard');
+  native.w.document.querySelector('.search-preview-actions [data-result-action="copy"]').click();await wait(()=>native.calls.some(c=>c[0]==='copy'&&c[1]===contents[0]));
 });
 
-test('clipboard previews use two lines before selection and expose the full original only on explicit expansion',async t=>{
-  const contents=['first\nsecond\nthird\nfourth\nfifth\nCLIP-END','other\nsecond\nthird\nfourth\nfifth\nOTHER-END'];
-  const {w,scope,key,calls}=await setup(t,{readonly:true,search:(id,args,fixture)=>id==='clipboard'?(args.offset?[]:contents.map((content,i)=>({id:i+1,kind:'text',content}))):fixture[id]||[]});await scope('clipboard');
-  const rows=[...w.document.querySelectorAll('.clipboard-result')];assert.match(rows[0].querySelector('.clipboard-title').textContent,/fifth/);assert.doesNotMatch(rows[1].querySelector('.clipboard-title').textContent,/third/);
-  key('ArrowDown');await wait(()=>rows[1].getAttribute('aria-selected')==='true');assert.match(rows[1].querySelector('.clipboard-title').textContent,/fifth/);assert.doesNotMatch(rows[0].querySelector('.clipboard-title').textContent,/third/);
-  rows[1].querySelector('[data-clipboard-toggle]').click();await wait(()=>rows[1].querySelector('.clipboard-title').textContent==='other\nsecond\nthird\nfourth\nfifth\nOTHER-END');
-  assert.equal(calls.filter(call=>call[0]==='action').length,0);assert.equal(w.localStorage.length,0);
-  assert.doesNotMatch(rows[1].querySelector('.clipboard-meta').textContent,/·\s*·/);
+test('preview shortcuts preserve focus, native Tab order and pending input',async t=>{
+  const {w,q,key,input,calls}=await setup(t,{autoPreviewLongContent:false});await input('query');
+  Object.defineProperty(w.document,'hasFocus',{configurable:true,value:()=>true});
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>w.document.activeElement.matches('.search-preview-body'));
+  const body=w.document.activeElement,scope=w.document.querySelector('[data-scope][aria-pressed="true"]').dataset.scope;
+  assert.equal(body.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})),true);
+  w.dispatchEvent(new w.Event('focus'));await delay(25);assert.equal(w.document.activeElement,body);
+  body.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert.equal(w.document.activeElement,q);
+  assert.equal(w.document.querySelector('[data-scope][aria-pressed="true"]').dataset.scope,scope);assert.equal(calls.filter(c=>c[0]==='hide').length,0);
+  key('i',{metaKey:true,code:'KeyI'});await wait(()=>!w.document.querySelector('.search-preview'));
+  key('i',{metaKey:true,code:'KeyI'});q.value='new typing';q.dispatchEvent(new w.Event('input',{bubbles:true}));await delay(35);
+  assert.equal(w.document.activeElement,q,'an obsolete preview focus frame cannot steal new input');assert.equal(q.value,'new typing');
+});
+
+test('narrow preview returns to results on Escape or input and keeps menus outside the hidden list',async t=>{
+  const {w,q,key,scope,input}=await setup(t,{width:390});await scope('clipboard');
+  const workbench=w.document.querySelector('.search-workbench');
+  w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');
+  w.document.getElementById('resultActionsBtn').click();await wait(()=>w.document.querySelector('.search-actions-dialog'));
+  assert.equal(w.document.querySelector('.search-actions-dialog').closest('#results'),null);
+  w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await wait(()=>!w.document.querySelector('.search-actions-dialog') && w.document.activeElement===q);assert.equal(workbench.dataset.detailOpen,'true','Escape closes only the top layer');assert.equal(w.document.activeElement,q);
+  key('Escape');await wait(()=>workbench.dataset.detailOpen==='false');
+  key('F6');assert.equal(w.document.activeElement.id,'activateResultBtn','hidden preview actions cannot trap keyboard focus');
+  q.focus();w.document.querySelector('.clipboard-result').click();await wait(()=>workbench.dataset.detailOpen==='true');await input('new');
+  assert.equal(workbench.dataset.detailOpen,'false');assert.equal(w.document.activeElement,q);
 });

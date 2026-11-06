@@ -1175,8 +1175,10 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-web-kit",
  "reqwest",
  "rusqlite",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -4347,7 +4349,7 @@ dependencies = [
 [[package]]
 name = "tauri-nspanel"
 version = "2.1.0"
-source = "git+https://github.com/ahkohd/tauri-nspanel?rev=c9ec2130422200f0863b23dfdad02b133a529b07#c9ec2130422200f0863b23dfdad02b133a529b07"
+source = "git+https://github.com/ahkohd/tauri-nspanel?rev=854634cc4b4a6a01caef464d2de83efae42403a2#854634cc4b4a6a01caef464d2de83efae42403a2"
 dependencies = [
  "objc2",
  "objc2-app-kit",

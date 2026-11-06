@@ -6,8 +6,8 @@ use tauri::Manager;
 use tokio::io::{AsyncBufReadExt,AsyncWriteExt};
 use tauri_plugin_dialog::DialogExt;
 mod sources;
-mod privileged_monitor;
 mod applications;
+mod privileged_monitor;
 
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default)] searchable:bool, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }
@@ -16,7 +16,7 @@ pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub det
 fn is_false(value:&bool)->bool{!*value}
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool, #[serde(default,rename="lastLoadedAt",skip_serializing_if="Option::is_none")] last_loaded_at:Option<i64> }
-pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>> }
+pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>>,package_lock:tokio::sync::Mutex<()> }
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
 fn valid_permissions(id:&str, permissions:&[String])->bool {
@@ -38,6 +38,8 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None})
 }
 impl Runtime {
+    pub(crate) fn has_launcher_entry(&self,id:&str)->bool { self.get(id).is_ok() }
+    fn launcher_entries(&self)->Value { Value::Array(self.installed.lock().unwrap().iter().filter_map(launcher_entry).collect()) }
     pub(crate) async fn application_metadata(&self,app:&tauri::AppHandle,id:&str,params:&Value)->Result<Value,String>{
         self.get(id)?;
         if id!="resource-monitor" {return Err("此插件未提供应用监控能力".into());}
@@ -80,7 +82,7 @@ impl Runtime {
     pub(crate) fn new(root:PathBuf)->Result<Self,String> {
         let installed=match std::fs::read(root.join("plugins.json")) { Ok(data)=>serde_json::from_slice(&data).map_err(|e|format!("插件清单损坏：{e}"))?, Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Vec::new(),Err(e)=>return Err(e.to_string()) };
         let sources=sources::load(&root)?;
-        Ok(Self{root,installed:Mutex::new(installed),sessions:tokio::sync::Mutex::new(HashMap::new()),sources:Mutex::new(sources),candidates:Mutex::new(HashMap::new())})
+        Ok(Self{root,installed:Mutex::new(installed),sessions:tokio::sync::Mutex::new(HashMap::new()),sources:Mutex::new(sources),candidates:Mutex::new(HashMap::new()),package_lock:tokio::sync::Mutex::new(())})
     }
     pub(crate) fn loaded_at(&self,id:&str)->Option<i64>{self.get(id).ok().and_then(|p|p.last_loaded_at)}
     fn list(&self)->Value { json!(self.installed.lock().unwrap().clone()) }
@@ -158,9 +160,22 @@ pub(crate) fn asset_csp(id: &str) -> String {
     format!("default-src 'none'; script-src {source}; style-src {source} 'unsafe-inline'; img-src {source} data:; font-src {source}; connect-src 'none'; base-uri 'none'; form-action 'none'")
 }
 fn trusted(window:&tauri::WebviewWindow)->Result<(),String>{if matches!(window.label(),"settings"|"plugin-panel"){Ok(())}else{Err("仅宿主插件面板可管理插件".into())}}
+fn launcher_entry(plugin:&Installed)->Option<Value> {
+    plugin.enabled.then(||json!({"id":plugin.manifest.id,"name":plugin.manifest.name,"description":plugin.manifest.description}))
+}
+#[tauri::command]
+pub(crate) fn launcher_plugin_entries(window:tauri::WebviewWindow,app:tauri::AppHandle)->Result<Value,String> {
+    if window.label()!="main" {return Err("仅启动器可读取命令入口".into());}
+    Ok(app.state::<Runtime>().launcher_entries())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn launcher_catalog_exposes_enabled_names_without_paths_or_permissions() {
+        let mut plugin:Installed=serde_json::from_value(json!({"manifest":{"schema":2,"id":"example","name":"示例插件","version":"1.0.0","ui":"ui/index.html","executable":"bin/secret","permissions":["native-process"],"description":"测试"},"directory":"/private/plugin","enabled":true})).unwrap();
+        assert_eq!(launcher_entry(&plugin),Some(json!({"id":"example","name":"示例插件","description":"测试"})));
+        plugin.enabled=false;assert!(launcher_entry(&plugin).is_none());
+    }
     #[test]
     fn widget_timer_bootstrap_precedes_package_scripts_and_preserves_doctype() {
         for html in ["<!DOCTYPE html><HTML><HEAD lang=\"zh\"><script src=\"app.js\"></script></HEAD></HTML>","<!doctype html><script src=\"app.js\"></script>","<script src=\"app.js\"></script>"] {
@@ -251,8 +266,13 @@ pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     // The dock can read names, but cannot install, manage or execute plugins.
     if window.label()=="plugin-dock" && action=="list" {return Ok(app.state::<Runtime>().list());}
     trusted(&window)?;let rt=app.state::<Runtime>();let id=payload["id"].as_str().unwrap_or("");
+    let _mutation=if matches!(action.as_str(),"installCandidate"|"install"|"reload"|"enable"|"uninstall"){Some(rt.package_lock.try_lock().map_err(|_|"其他插件操作尚未完成，请稍后重试")?)}else{None};
+    let progress=if action=="installCandidate" && !payload["onProgress"].is_null(){
+        let channel:tauri::ipc::JavaScriptChannelId=serde_json::from_value(payload["onProgress"].clone()).map_err(|_|"安装进度通道无效")?;
+        Some(channel.channel_on::<_,Value>(window.as_ref().clone()))
+    }else{None};
     match action.as_str(){
-        "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"=>sources::api(&rt,&app,&action,&payload).await,
+        "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"=>sources::api(&rt,&app,&action,&payload,progress.as_ref()).await,
         "list"=>Ok(rt.list()),
         "choose"=>{let (tx,rx)=tokio::sync::oneshot::channel();app.dialog().file().set_title("选择独立插件目录").pick_folder(move |p|{let _=tx.send(p);});
             match rx.await.map_err(|e|e.to_string())?{Some(p)=>Ok(json!(package(p.into_path().map_err(|e|e.to_string())?)?)),None=>Ok(Value::Null)}},

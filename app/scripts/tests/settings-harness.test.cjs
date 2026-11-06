@@ -27,6 +27,7 @@ function environment(overrides = {}, preview = false) {
     getConfigPathInfo: async () => ({ activePath: '/config/A', configuredPath: '' }), getClipboardStorageInfo: async () => ({ activePath: '/db/A', configuredPath: '' }),
     getUpdateState: async () => ({ status: 'idle', currentVersion: '1.0' }), getDiagnosticsState: async () => ({}), getMenuBarManagementState: async () => ({ trusted: false }), listMenuBarItems: async () => ({ items: [] }), listConfigHistory: async () => ({ entries: [], available: !preview }),
     saveConfig: async value => { writes.push(value); config = model.clone(value); return { ok: true, config }; },
+    previewConfigHistory: async id => ({ id, config: model.clone(config) }),
     onConfig: fn => { events.config.add(fn); return () => events.config.delete(fn); }, onUpdateState: fn => { events.update.add(fn); return () => events.update.delete(fn); }, closeSettings: async () => ({}), ...overrides
   };
   window.FlowHubMemoCatalog = { cloneDefaults: () => [{ id: 'builtin', title: '默认', category: '内置', content: 'pwd' }] };

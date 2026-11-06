@@ -1,10 +1,11 @@
 use super::*;
 use sha2::{Digest,Sha256};
 use base64::Engine;
+mod official;
 #[derive(Clone,Serialize,Deserialize)]
 pub(super) struct Source {id:String,name:String,kind:String,location:String,#[serde(default)] key:String}
 #[derive(Clone,Serialize,Deserialize)]
-pub(super) struct Candidate {token:String,source:String,manifest:Manifest,#[serde(default)]directory:Option<PathBuf>,#[serde(default)]url:String,#[serde(default)]sha256:String,#[serde(default)]signature:String,#[serde(default)]target:String}
+pub(super) struct Candidate {token:String,source:String,manifest:Manifest,#[serde(default)]directory:Option<PathBuf>,#[serde(default)]url:String,#[serde(default)]sha256:String,#[serde(default)]signature:String,#[serde(default)]target:String,#[serde(default,rename="releaseNotes")]release_notes:String,#[serde(default,rename="publishedAt")]published_at:String}
 fn digest(bytes:&[u8])->String{format!("{:x}",Sha256::digest(bytes))}
 // Plugin releases use native minisign text; retain compatibility with sources
 // that wrap their keys/signatures in Base64 like Tauri updater metadata.
@@ -31,10 +32,18 @@ pub(super) fn load(root:&Path)->Result<Vec<Source>,String>{
 }
 fn validate_url(value:&str)->Result<(),String>{let url=reqwest::Url::parse(value).map_err(|_|"仓库地址无效")?;if url.scheme()!="https"||!url.username().is_empty()||url.password().is_some(){return Err("仓库和下载地址必须使用无嵌入凭据的 HTTPS URL".into());}Ok(())}
 async fn download(url:&str,limit:usize)->Result<Vec<u8>,String>{
+    download_progress(url,limit,|_,_|{}).await
+}
+async fn download_progress(url:&str,limit:usize,mut progress:impl FnMut(usize,Option<u64>))->Result<Vec<u8>,String>{
     validate_url(url)?;
-    let client=reqwest::Client::builder().https_only(true).redirect(reqwest::redirect::Policy::limited(5)).timeout(std::time::Duration::from_secs(90)).build().map_err(|e|e.to_string())?;
-    let mut response=client.get(url).send().await.map_err(|e|e.to_string())?.error_for_status().map_err(|e|e.to_string())?;
-    let mut bytes=Vec::new();while let Some(chunk)=response.chunk().await.map_err(|e|e.to_string())?{if bytes.len()+chunk.len()>limit{return Err("仓库或插件包超过大小限制".into());}bytes.extend_from_slice(&chunk);}Ok(bytes)
+    let _=rustls::crypto::ring::default_provider().install_default();
+    let client=reqwest::Client::builder().user_agent("FlowHub/plugin-market").https_only(true).redirect(reqwest::redirect::Policy::limited(5)).timeout(std::time::Duration::from_secs(90)).build().map_err(|e|e.to_string())?;
+    let response=client.get(url).send().await.map_err(|e|e.to_string())?;
+    if matches!(response.status().as_u16(),403|429){return Err("公开目录或安装包访问受限，请稍后重试（HTTP 403/429）".into());}
+    let mut response=response.error_for_status().map_err(|e|e.to_string())?;
+    let total=response.content_length();if total.is_some_and(|n|n>limit as u64){return Err("仓库或插件包超过大小限制".into());}
+    let mut last=std::time::Instant::now();progress(0,total);
+    let mut bytes=Vec::new();while let Some(chunk)=response.chunk().await.map_err(|e|e.to_string())?{if bytes.len()+chunk.len()>limit{return Err("仓库或插件包超过大小限制".into());}bytes.extend_from_slice(&chunk);if last.elapsed().as_millis()>=150{progress(bytes.len(),total);last=std::time::Instant::now();}}progress(bytes.len(),total);Ok(bytes)
 }
 fn validate_manifest(m:&Manifest)->Result<(),String>{
     if m.schema!=2||!safe_id(&m.id)||!super::valid_permissions(&m.id,&m.permissions){return Err("插件需要 schema 2 原生进程格式".into());}
@@ -42,7 +51,32 @@ fn validate_manifest(m:&Manifest)->Result<(),String>{
 }
 fn candidate(source:&Source,manifest:Manifest,directory:Option<PathBuf>)->Candidate {
     let token=digest(format!("{}:{}:{}:{:?}",source.id,manifest.id,manifest.version,directory).as_bytes());
-    Candidate{token,source:source.id.clone(),manifest,directory,url:String::new(),sha256:String::new(),signature:String::new(),target:String::new()}
+    Candidate{token,source:source.id.clone(),manifest,directory,url:String::new(),sha256:String::new(),signature:String::new(),target:String::new(),release_notes:String::new(),published_at:String::new()}
+}
+fn parse_catalog(source:&Source,catalog:&Value,target:&str)->Result<(Vec<Candidate>,Vec<String>),String>{
+    if catalog["schema"]!=2{return Err("此来源需要 schema 2 独立插件索引".into());}
+    let entries=catalog["plugins"].as_array().ok_or("索引缺少 plugins")?;if entries.len()>500{return Err("仓库插件过多".into());}
+    let mut found=Vec::new();let mut warnings=Vec::new();
+    for entry in entries {
+        let manifest:Manifest=serde_json::from_value(entry["manifest"].clone()).map_err(|_|"仓库插件清单无效")?;validate_manifest(&manifest)?;
+        if entry["target"].as_str()!=Some(target){warnings.push(format!("{}：无适用于 {target} 的安装包",manifest.name));continue;}
+        let mut c=candidate(source,manifest,None);c.url=entry["url"].as_str().ok_or("缺少下载地址")?.into();validate_url(&c.url)?;
+        c.sha256=entry["sha256"].as_str().ok_or("缺少包校验值")?.into();c.signature=entry["signature"].as_str().ok_or("缺少包签名")?.into();c.target=target.into();c.token=digest(format!("{}:{}:{}",c.token,c.url,c.sha256).as_bytes());
+        c.release_notes=entry["releaseNotes"].as_str().unwrap_or("").chars().take(20_000).collect();c.published_at=entry["publishedAt"].as_str().unwrap_or("").into();found.push(c);
+    }Ok((found,warnings))
+}
+fn report(progress:Option<&tauri::ipc::Channel<Value>>,phase:&str,received:usize,total:Option<u64>){if let Some(channel)=progress{let _=channel.send(json!({"phase":phase,"received":received,"total":total}));}}
+// Every error after extraction (including changed sources and failed persistence)
+// removes the uncommitted directory. The previous installed record stays intact.
+struct StagedDirectory(Option<PathBuf>);
+impl Drop for StagedDirectory {fn drop(&mut self){if let Some(path)=self.0.take(){let _=std::fs::remove_dir_all(path);}}}
+fn commit_package(rt:&Runtime,source:&Source,expected:&Manifest,package:Installed,staged:&mut StagedDirectory)->Result<Value,String>{
+    // Hold source configuration stable through the atomic manifest replacement.
+    let sources=rt.sources.lock().unwrap();
+    if !sources.iter().any(|s|s.id==source.id && s.location==source.location && s.key==source.key){return Err("来源已变更，请重新扫描后安装".into());}
+    if serde_json::to_value(&package.manifest).unwrap()!=serde_json::to_value(expected).unwrap(){return Err("安装包与索引清单不一致，请重新扫描".into());}
+    let result=rt.update(|items|{let mut package=package;if let Some(old)=items.iter().find(|p|p.manifest.id==package.manifest.id){package.enabled=old.enabled;}items.retain(|p|p.manifest.id!=package.manifest.id);items.push(package);})?;
+    staged.0=None;Ok(result)
 }
 fn scan_local(source:&Source)->Result<(Vec<Candidate>,Vec<String>),String>{
     let root=PathBuf::from(&source.location).canonicalize().map_err(|e|e.to_string())?;
@@ -67,7 +101,7 @@ fn unpack(bytes:&[u8],directory:&Path)->Result<(),String>{
         let mut f=std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(target).map_err(|e|e.to_string())?;f.write_all(&bytes).map_err(|e|e.to_string())?;
     }Ok(())
 }
-pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)->Result<Value,String>{
+pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value,progress:Option<&tauri::ipc::Channel<Value>>)->Result<Value,String>{
     match action{
         "sources"=>Ok(json!(rt.sources.lock().unwrap().clone())),
         "chooseSource"=>{let(tx,rx)=tokio::sync::oneshot::channel();app.dialog().file().set_title("选择插件来源目录").pick_folder(move|path|{let _=tx.send(path);});Ok(match rx.await.map_err(|e|e.to_string())?{Some(path)=>json!(path.into_path().map_err(|e|e.to_string())?),None=>Value::Null})},
@@ -84,17 +118,9 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)-
         }
         "scanSource"=>{
             let source=rt.sources.lock().unwrap().iter().find(|s|Some(s.id.as_str())==p["id"].as_str()).cloned().ok_or("来源不存在")?;
-            let (found,warnings)=if source.kind=="local"{scan_local(&source)?}else{
+            let (found,warnings)=if source.kind=="local"{scan_local(&source)?}else if source.location==official::INDEX{tokio::time::timeout(std::time::Duration::from_secs(120),official::scan(&source)).await.map_err(|_|"官方库读取超时，请稍后重试")??}else{
                 let bytes=download(&source.location,2*1024*1024).await?;let catalog:Value=serde_json::from_slice(&bytes).map_err(|_|"仓库索引格式无效")?;
-                if catalog["schema"]!=2{return Err("此来源是旧版声明式仓库，需要发布 schema 2 独立插件索引".into());}
-                let entries=catalog["plugins"].as_array().ok_or("索引缺少 plugins")?;if entries.len()>500{return Err("仓库插件过多".into());}
-                let mut found=Vec::new();let mut warnings=Vec::new();let target=format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH);
-                for entry in entries {
-                    let manifest:Manifest=serde_json::from_value(entry["manifest"].clone()).map_err(|_|"仓库插件清单无效")?;validate_manifest(&manifest)?;
-                    if entry["target"].as_str()!=Some(&target){warnings.push(format!("{}：无适用于 {target} 的安装包",manifest.name));continue;}
-                    let mut c=candidate(&source,manifest,None);c.url=entry["url"].as_str().ok_or("缺少下载地址")?.into();validate_url(&c.url)?;
-                    c.sha256=entry["sha256"].as_str().ok_or("缺少包校验值")?.into();c.signature=entry["signature"].as_str().ok_or("缺少包签名")?.into();c.target=target.clone();c.token=digest(format!("{}:{}:{}",c.token,c.url,c.sha256).as_bytes());found.push(c);
-                }(found,warnings)
+                parse_catalog(&source,&catalog,&format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH))?
             };
             if !rt.sources.lock().unwrap().iter().any(|s|s.id==source.id && s.location==source.location && s.key==source.key){return Err("来源已更改，请重新扫描".into());}
             let mut candidates=rt.candidates.lock().unwrap();candidates.retain(|_,c|c.source!=source.id);for c in &found{candidates.insert(c.token.clone(),c.clone());}Ok(json!({"plugins":found,"warnings":warnings}))
@@ -102,15 +128,21 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)-
         "installCandidate"=>{
             let c=rt.candidates.lock().unwrap().get(p["token"].as_str().unwrap_or("")).cloned().ok_or("安装候选已失效，请重新扫描")?;
             let source=rt.sources.lock().unwrap().iter().find(|s|s.id==c.source).cloned().ok_or("来源已移除")?;
+            let mut staged=StagedDirectory(None);report(progress,"preparing",0,None);
             let package=if let Some(directory)=c.directory{package(directory)?}else{
-                let bytes=download(&c.url,192*1024*1024).await?;if digest(&bytes)!=c.sha256{return Err("插件包校验失败".into());}verify_package(&bytes,&c.signature,&source.key)?;
+                let bytes=download_progress(&c.url,192*1024*1024,|received,total|report(progress,"downloading",received,total)).await?;
+                report(progress,"verifying",bytes.len(),None);if digest(&bytes)!=c.sha256{return Err("插件包校验失败".into());}verify_package(&bytes,&c.signature,&source.key).map_err(|error|format!("安装包签名验证失败：{error}"))?;
+                report(progress,"extracting",0,None);
                 let directory=rt.root.join("plugin-packages").join(format!("{}-{}",c.manifest.id,chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&directory).map_err(|e|e.to_string())?;
+                staged.0=Some(directory.clone());
                 let result=(||{unpack(&bytes,&directory)?;let p=package(directory.clone())?;use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(inside(&p.directory,&p.manifest.executable)?,std::fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?;Ok::<_,String>(p)})();
                 match result{Ok(p)=>p,Err(e)=>{let _=std::fs::remove_dir_all(directory);return Err(e);}}
             };
             if !rt.sources.lock().unwrap().iter().any(|s|s.id==source.id && s.location==source.location && s.key==source.key){return Err("来源已变更，请重新扫描后安装".into());}
             if serde_json::to_value(&package.manifest).unwrap()!=serde_json::to_value(&c.manifest).unwrap(){return Err("安装包与索引清单不一致，请重新扫描".into());}
-            rt.stop(&package.manifest.id).await;rt.update(|items|{items.retain(|p|p.manifest.id!=package.manifest.id);items.push(package);})
+            report(progress,"applying",0,None);rt.stop(&package.manifest.id).await;
+            let result=commit_package(rt,&source,&c.manifest,package,&mut staged)?;
+            report(progress,"complete",0,None);Ok(result)
         }
         _=>Err("未知来源操作".into())
     }
@@ -119,6 +151,37 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value)-
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn updates_preserve_disabled_state_and_data_and_failed_commits_remove_staging(){
+        let root=std::env::temp_dir().join(format!("plugin-update-test-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&root).unwrap();
+        let rt=Runtime::new(root.clone()).unwrap();
+        let source=Source{id:"test".into(),name:"test".into(),kind:"https".into(),location:"https://example.test/catalog.json".into(),key:"pinned".into()};rt.sources.lock().unwrap().push(source.clone());
+        let manifest:Manifest=serde_json::from_value(json!({"schema":2,"id":"example","name":"Example","version":"1.0.0","ui":"ui/index.html","executable":"bin/run","permissions":["native-process"]})).unwrap();
+        let old=root.join("old-package");std::fs::create_dir_all(&old).unwrap();std::fs::write(old.join("keep"),"old executable").unwrap();
+        let data=root.join("example");std::fs::create_dir_all(&data).unwrap();std::fs::write(data.join("config.json"),"user data").unwrap();
+        rt.update(|items|items.push(Installed{manifest:manifest.clone(),directory:old.clone(),enabled:false,last_loaded_at:None})).unwrap();
+        let mut next=manifest.clone();next.version="2.0.0".into();
+        let prepare=|name:&str|{let path=root.join(name);std::fs::create_dir_all(&path).unwrap();(Installed{manifest:next.clone(),directory:path.clone(),enabled:true,last_loaded_at:None},StagedDirectory(Some(path)))};
+        {
+            let (package,mut staged)=prepare("mismatch");assert!(commit_package(&rt,&source,&manifest,package,&mut staged).is_err());
+        }
+        assert!(!root.join("mismatch").exists());assert_eq!(rt.list()[0]["manifest"]["version"],"1.0.0");
+        {
+            let (package,mut staged)=prepare("changed-source");rt.sources.lock().unwrap().clear();assert!(commit_package(&rt,&source,&next,package,&mut staged).is_err());rt.sources.lock().unwrap().push(source.clone());
+        }
+        assert!(!root.join("changed-source").exists());
+        std::fs::remove_file(root.join("plugins.json")).unwrap();std::fs::create_dir(root.join("plugins.json")).unwrap();
+        {
+            let (package,mut staged)=prepare("failed-write");assert!(commit_package(&rt,&source,&next,package,&mut staged).is_err());
+        }
+        assert!(!root.join("failed-write").exists());assert_eq!(rt.list()[0]["manifest"]["version"],"1.0.0");assert!(old.join("keep").exists());
+        std::fs::remove_dir(root.join("plugins.json")).unwrap();
+        {
+            let (package,mut staged)=prepare("success");commit_package(&rt,&source,&next,package,&mut staged).unwrap();
+        }
+        assert!(root.join("success").exists());assert_eq!(rt.list()[0]["manifest"]["version"],"2.0.0");assert_eq!(rt.list()[0]["enabled"],false);assert_eq!(std::fs::read_to_string(data.join("config.json")).unwrap(),"user data");
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn plugin_signatures_accept_native_and_encoded_minisign_but_reject_tampering(){
         // Public test vector from minisign-verify 0.2.5 (MIT), also used by the updater tests.

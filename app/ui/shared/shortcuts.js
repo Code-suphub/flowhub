@@ -14,7 +14,7 @@
   const keyNames = Object.fromEntries([...named, ...Object.keys(punctuation)].map(key => [key.toLowerCase(),key]));
   const symbolKeys = Object.fromEntries(Object.entries(punctuation).map(([key,value]) => [value,key.toLowerCase()]));
   const own = (object,key) => Object.prototype.hasOwnProperty.call(object,key)?object[key]:undefined;
-  function isMac() { const n=root.navigator; return /Mac|iPhone|iPad/.test(n?.userAgentData?.platform || n?.platform || n?.userAgent || ''); }
+  function isMac() { const n=root.navigator; return /mac|iphone|ipad/i.test(n?.userAgentData?.platform || n?.platform || n?.userAgent || ''); }
   function keyName(key) {
     key=key.toLowerCase();
     if (/^key[a-z]$/.test(key)) return key.slice(3);

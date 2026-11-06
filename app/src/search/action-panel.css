@@ -1,0 +1,15 @@
+.fh-dialog.search-actions-dialog { display:flex; flex-direction:column; overflow:hidden; width:min(480px,calc(100vw - 24px)); max-height:calc(100vh - 24px); }
+.search-actions-dialog>[data-slot=dialog-header] { flex-shrink:0; margin-bottom:12px; }
+.search-action-target { flex-shrink:0; margin-bottom:16px; font-size:12px; }
+.search-action-target>span { flex:none; color:var(--fh-muted); }
+.search-action-target strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.search-actions-dialog .fh-command-input { flex-shrink:0; }
+.search-actions-dialog .fh-command-list { flex:1; max-height:320px; }
+.search-actions-dialog .fh-command-item { gap:10px; min-height:40px; font-size:13px; }
+.search-actions-dialog .fh-command-item>svg { flex:none; width:16px; height:16px; color:var(--fh-muted); }
+.search-actions-dialog .fh-command-item[data-command-id="clipboard:delete"] { color:var(--fh-danger); }
+.search-actions-dialog kbd { flex:none; color:var(--fh-muted); font:11px/1.5 -apple-system,sans-serif; }
+.search-action-help { flex-shrink:0; margin-top:12px; padding-top:12px; border-top:1px solid var(--fh-border); color:var(--fh-muted); font-size:11px; }
+.search-action-help kbd { margin-right:2px; }
+.search-action-empty { margin:0; padding:24px 10px; color:var(--fh-muted); font-size:12px; }
+@media(max-height:440px) { .fh-dialog.search-actions-dialog { padding:12px; } .search-action-target { margin-bottom:8px; } .search-actions-dialog .fh-command-input { padding-bottom:8px; } .search-action-help { margin-top:8px; padding-top:8px; } }

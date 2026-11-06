@@ -32,6 +32,9 @@ enigo = "0.6.1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 # The updater disables reqwest defaults; restore macOS/Windows system proxy discovery.
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
+# The updater's rustls-no-provider client initializes ring only when checking
+# host updates. Plugin downloads must also work before that first update check.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -60,6 +63,9 @@ core-graphics = { version = "0.25.0", features = ["elcapitan"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSApplication", "NSButton", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSImage", "NSImageView", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSScreen", "NSScrollView", "NSClipView", "NSVisualEffectView", "NSResponder", "NSRunningApplication", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSSwitch", "NSText", "NSTextField", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["block2", "NSBundle", "NSURL", "NSNotification", "NSOperation", "NSArray", "NSDate", "NSObjCRuntime", "NSRunLoop", "NSProcessInfo", "NSObject", "NSString", "NSUserDefaults"] }
-tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "c9ec2130422200f0863b23dfdad02b133a529b07" }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "WKWebView"] }
+# Includes upstream #139: converted panels must synchronize WindowServer's
+# activation-prevention state as well as the public nonactivating style flag.
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "854634cc4b4a6a01caef464d2de83efae42403a2" }
 tray-icon = "0.24.2"
 window-vibrancy = "0.6"

@@ -100,7 +100,10 @@ pub fn start(app: &tauri::AppHandle) {
     ));
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "macos")]
-        crate::show_macos_window(&window);
+        {
+            let session = crate::MAIN_VISIBILITY.lock().unwrap().show(std::time::Instant::now());
+            crate::show_macos_window(&window, session);
+        }
         #[cfg(not(target_os = "macos"))]
         if window.show().is_err() {
             finish(id);

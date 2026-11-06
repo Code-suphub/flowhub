@@ -2,35 +2,27 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const appItem=title=>({type:'app',title,path:`/Applications/${title}.app`});
-test('keyboard result selection ignores stationary pointer events after reflow and resumes on real movement',async t=>{
+test('hover never changes selection; click previews and double-click executes exactly once',async t=>{
   const clips=[1,2,3].map(id=>({id,kind:'text',content:`clipboard ${id}\n`+'long line\n'.repeat(10)}));
-  const {w,q,key,scope,calls}=await setup(t,{native:true,search:(id,args,fixture)=>id==='clipboard'?clips:fixture[id]||[]});await scope('clipboard');q.focus();
-  const row=index=>w.document.querySelector(`.result[data-i="${index}"]`),active=()=>Number(w.document.querySelector('.result.active').dataset.i),root=w.document.querySelector('.search-shell');
-  const move=(index,x,y)=>row(index).dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:y}));
-  move(0,50,150);key('ArrowDown');await wait(()=>active()===1);
-  move(0,50,150);assert.equal(active(),1);assert.equal(root.dataset.resultInput,'keyboard');
-  w.document.getElementById('results').dispatchEvent(new w.Event('scroll'));await delay(20);move(0,50,150);assert.equal(active(),1,'scroll and reflow cannot revive the old hovered row');
-  q.dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:80,clientY:40}));
-  key('ArrowDown');await wait(()=>active()===2);
-  move(0,80,40);assert.equal(active(),2,'a row reflowing under a pointer last seen outside the list cannot steal keyboard selection');
-  move(2,81,40);await wait(()=>active()===2);assert.equal(root.dataset.resultInput,'pointer');
-  key('ArrowUp');await wait(()=>active()===1);move(2,81,40);assert.equal(active(),1);assert.equal(root.dataset.resultInput,'keyboard');
-  row(0).dispatchEvent(new w.MouseEvent('mousedown',{button:0,bubbles:true,clientX:51,clientY:150}));row(0).click();
-  await wait(()=>calls.some(call=>call[0]==='action'&&call[3].id===1));assert.equal(root.dataset.resultInput,'pointer','explicit click remains available at stationary coordinates');
-  w.prepareForShow();await wait(()=>active()===0);key('ArrowDown');await wait(()=>active()===1);
-  move(0,80,100);assert.equal(active(),1,'first position after reopen only establishes a new baseline');
-  move(0,80,100);assert.equal(active(),1);move(0,81,100);await wait(()=>active()===0);
+  const {w,q,key,scope,calls}=await setup(t,{native:true,previewExpanded:true,search:(id,args,fixture)=>id==='clipboard'?clips:fixture[id]||[]});await scope('clipboard');
+  const row=index=>w.document.querySelector(`.result[data-i="${index}"]`),active=()=>Number(w.document.querySelector('.result.active').dataset.i);
+  key('ArrowDown');await wait(()=>active()===1);
+  for(const x of [50,50,51])row(0).dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:150}));
+  assert.equal(active(),1);assert.match(w.document.querySelector('.preview-content').textContent,/clipboard 2/);
+  row(0).click();await wait(()=>active()===0);assert.equal(w.document.activeElement,q);
+  assert.equal(calls.filter(c=>c[0]==='action').length,0);
+  row(0).dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true,button:0}));
+  await wait(()=>calls.filter(c=>c[0]==='action').length===1);
+  assert.equal(calls.find(c=>c[0]==='action')[3].id,1);
 });
-test('unknown pointer events cannot undo shortcut navigation or overwrite its preferred column',async t=>{
-  const {w,key,scope,input}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
+test('hover preserves the preferred usage column until an explicit click',async t=>{
+  const {w,key}=await setup(t,{usage:{frequent:['A','B','C'].map(appItem),recent:['D','E'].map(appItem)}});
   const active=()=>w.document.querySelector('.result.active h3')?.textContent;
-  const move=(title,x)=>[...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent===title).dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:x,clientY:100}));
-  key('ArrowRight');await wait(()=>active()==='B');move('A',50);assert.equal(active(),'B','unknown first pointer event does not undo Right');
-  key('ArrowDown');await wait(()=>active()==='E');move('A',50);assert.equal(active(),'E');key('ArrowUp');await wait(()=>active()==='B');
-  key('ArrowLeft');await wait(()=>active()==='A');move('C',50);assert.equal(active(),'A');move('C',51);await wait(()=>active()==='C');
-  key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='C','real movement updates the preferred usage column');
-  await scope('app');key('ArrowRight');await wait(()=>active()==='B');move('A',51);assert.equal(active(),'B','scope reordering does not revive stationary hover');
-  await input('query');await input('');key('ArrowRight');await wait(()=>active()==='B');move('A',51);assert.equal(active(),'B','query rerender does not revive stationary hover');
+  const c=[...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C');
+  key('ArrowRight');await wait(()=>active()==='B');
+  c.dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:100,clientY:100}));assert.equal(active(),'B');
+  key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='B');
+  c.click();await wait(()=>active()==='C');key('ArrowDown');await wait(()=>active()==='E');key('ArrowUp');await wait(()=>active()==='C');
 });
 test('empty-input usage horizontal navigation stays in its row and updates vertical preference in every source scope',async t=>{
   for(const id of ['all','app','web']) {
@@ -73,7 +65,7 @@ test('usage arrows move between rows at the preferred column and preserve input 
     key('ArrowUp');assert.equal(active(),'A','first usage row is an upper boundary');
     key('ArrowDown');await wait(()=>active()==='D');
     key('ArrowUp');await wait(()=>active()==='A');
-    [...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:80,clientY:50}));
+    [...w.document.querySelectorAll('.usage-tile')].find(row=>row.querySelector('h3').textContent==='C').click();
     await wait(()=>active()==='C');
     key('ArrowDown');await wait(()=>active()==='E');key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/E.app'));
     // Navigation resumes after the opener settles, rather than when it is called.
@@ -86,7 +78,7 @@ test('usage arrows move between rows at the preferred column and preserve input 
     key('Enter');await wait(()=>calls.some(c=>c[0]==='action'&&c[3].path==='/Applications/C.app'));
     await delay(0);
     key('ArrowDown');await wait(()=>active()==='E');
-    w.document.querySelector('.usage-tile.active').dispatchEvent(new w.MouseEvent('mousemove',{bubbles:true,clientX:90,clientY:100}));
+    w.document.querySelector('.usage-tile.active').click();
     key('ArrowUp');await wait(()=>active()==='B','mouse selection replaces the preferred column even on the selected tile');
   }
   for(const modifier of ['metaKey','ctrlKey','altKey','shiftKey']) {
@@ -128,39 +120,25 @@ test('both usage rows filter by source and keep recent entries when frequent is 
   frequentOnly.key('ArrowUp');await wait(()=>frequentOnly.w.document.querySelector('.usage-tile.active h3')?.textContent==='Frequent only');
 });
 
-test('F6 on a usage entry returns to search without opening a result menu',async t=>{
-  const {w,q,key}=await setup(t,{usage:{frequent:[],recent:[appItem('Recent only')]}});
-  await wait(()=>w.document.querySelector('.usage-tile.active h3')?.textContent==='Recent only');
-  key('F6');assert.equal(w.document.activeElement,q);assert.equal(w.document.querySelector('.search-context-menu'),null);
-});
-
-test('F6 cycles selected clipboard inline and menu actions then returns to search',async t=>{
-  const {w,q,key}=await setup(t);
-  await wait(()=>w.document.querySelector('.clipboard-result.active [data-clipboard-toggle]'));
-  key('F6');assert.ok(w.document.activeElement.matches('[data-clipboard-toggle]'));
-  const advance=()=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
-  advance();await wait(()=>w.document.activeElement.matches('.search-context-menu .tool-action'));
-  assert.equal(w.document.activeElement.dataset.clipboardAction,'pin');
-  advance();assert.equal(w.document.activeElement.dataset.clipboardAction,'plain');
-  advance();assert.equal(w.document.activeElement.dataset.clipboardAction,'edit');
-  advance();assert.equal(w.document.activeElement.dataset.clipboardAction,'delete');
-  advance();assert.equal(w.document.activeElement,q);
-});
-test('F6 opens a regular application menu and returns after its final action',async t=>{
-  const {w,q,key,scope}=await setup(t);await scope('app');q.focus();
-  key('F6');await wait(()=>w.document.activeElement.matches('.search-context-menu .tool-action'));
-  assert.equal(w.document.activeElement.dataset.resultAction,'open');
-  const advance=()=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
-  advance();assert.equal(w.document.activeElement.dataset.resultAction,'copy');
-  advance();assert.equal(w.document.activeElement,q);
-});
-test('F6 reaches long application expansion and menu actions before returning to search',async t=>{
-  const {w,q,key,scope}=await setup(t,{search:(id,args,fixture)=>id==='app'?[{id:'long',title:'Long app',path:'/Applications/'+('Long Directory/'.repeat(30))+'End.app'}]:fixture[id]||[]});await scope('app');q.focus();
-  key('F6');assert.ok(w.document.activeElement.matches('.search-content-toggle'));
-  const advance=()=>w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
-  advance();await wait(()=>w.document.activeElement.dataset.resultAction==='open');
-  advance();assert.equal(w.document.activeElement.dataset.resultAction,'copy');
-  advance();assert.equal(w.document.activeElement,q);
+test('F6 visits preview and primary actions then opens the searchable panel; F6 returns to search',async t=>{
+  for(const target of ['app','usage','clipboard']) {
+    const {w,q,key,scope}=await setup(t,{previewExpanded:true,...(target==='usage'?{usage:{frequent:[appItem('A')],recent:[]}}:{})});
+    if(target!=='usage')await scope(target);
+    const seen=[];key('F6');
+    for(let i=0;i<18 && !w.document.querySelector('.search-actions-dialog');i++) {
+      const current=w.document.activeElement;
+      assert.ok(current.classList.contains('tool-action'));
+      seen.push(current.dataset.resultAction || current.dataset.clipboardAction);
+      current.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));await delay(5);
+    }
+    await wait(()=>w.document.activeElement.getAttribute('aria-label')==='搜索结果操作');
+    assert.ok(w.document.querySelector('[data-command-id="result:copy"]'));
+    if(target==='clipboard'){assert.ok(w.document.querySelector('[data-command-id="clipboard:edit"]'));assert.ok(w.document.querySelector('[data-command-id="clipboard:delete"]'));}
+    w.document.activeElement.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F6',bubbles:true,cancelable:true}));
+    await wait(()=>w.document.activeElement===q && !w.document.querySelector('.search-actions-dialog'));
+    assert.ok(seen.includes('copy'));assert.ok(seen.includes('open'));
+    if(target==='clipboard')assert.ok(seen.includes('edit'));
+  }
 });
 test('application metadata updates per query; native icon hydration stays asynchronous and ignores stale replies',async t=>{
   let resolveOld;const iconCalls=[];
@@ -177,25 +155,26 @@ test('application metadata updates per query; native icon hydration stays asynch
   assert.equal(w.document.querySelector('.app-result h3').textContent,'new');assert.ok(!w.document.querySelector('.app-result img').src.includes('STALE'));
   assert.ok(iconCalls.some(paths=>paths[0]==='/new.app'));
 });
-test('native first activation focuses after two paints and reopening resets query without losing navigation',async t=>{
+test('native activation restores input without selecting typing; reopening resets query and retains navigation',async t=>{
   const {w,q,input,key,calls}=await setup(t,{native:true});
-  await input('previous');q.blur();const frames=[],original=w.requestAnimationFrame;
-  w.requestAnimationFrame=callback=>{frames.push(callback);return frames.length;};
-  w.dispatchEvent(new w.Event('focus'));assert.notEqual(w.document.activeElement,q);
-  frames.shift()();assert.notEqual(w.document.activeElement,q);frames.shift()();assert.equal(w.document.activeElement,q);
-  assert.equal(q.selectionStart,0);assert.equal(q.selectionEnd,q.value.length);w.requestAnimationFrame=original;
+  await input('previous');q.blur();
+  Object.defineProperty(w.document,'hasFocus',{configurable:true,value:()=>true});
+  w.dispatchEvent(new w.Event('focus'));await wait(()=>w.document.activeElement===q);
+  await delay(50);
+  assert.equal(q.selectionStart,q.value.length);assert.equal(q.selectionEnd,q.value.length);
   w.prepareForShow();await wait(()=>q.value==='');assert.equal(w.document.activeElement,q);
   key('Tab');q.dispatchEvent(new w.KeyboardEvent('keyup',{key:'Tab',bubbles:true}));await wait(()=>w.document.querySelector('[data-scope="clipboard"]').getAttribute('aria-pressed')==='true');
   assert.equal(calls.filter(c=>c[0]==='hide').length,0);
 });
-test('app click recovery ignores stale/mismatched releases and never turns clipboard press into paste',async t=>{
-  const {w,scope,calls}=await setup(t);await scope('app');
-  const row=w.document.querySelector('.app-result');
-  const send=(target,type,timeStamp,extra={})=>{const e=new w.MouseEvent(type,{bubbles:true,button:0,detail:1,cancelable:true,...extra});Object.defineProperty(e,'timeStamp',{value:timeStamp});target.dispatchEvent(e);};
-  send(row,'mousedown',100);assert.equal(calls.filter(c=>c[0]==='action').length,0);
-  send(row,'mouseup',180);send(row,'click',180);await wait(()=>calls.filter(c=>c[0]==='action').length===1);
-  send(row,'mouseup',480);send(row,'mousedown',400);send(row,'click',480);await delay(20);assert.equal(calls.filter(c=>c[0]==='action').length,2);
-  send(row,'mouseup',780);await delay(120);send(row,'mousedown',700);assert.equal(calls.filter(c=>c[0]==='action').length,2);
-  await scope('clipboard');const clipboard=w.document.querySelector('.clipboard-result');send(clipboard,'mouseup',1180);send(clipboard,'mousedown',1100);assert.equal(calls.filter(c=>c[0]==='action').length,2);
-  send(clipboard,'click',1300,{detail:0});await wait(()=>calls.filter(c=>c[0]==='action').length===3);
+test('out-of-order presses and single clicks never execute applications or clipboard records',async t=>{
+  const {w,scope,calls}=await setup(t);
+  for(const target of ['app','clipboard']) {
+    await scope(target);await wait(()=>w.document.querySelector(`.${target}-result`));
+    const row=w.document.querySelector(`.${target}-result`);
+    for(const type of ['mouseup','mousedown','click','mouseup','mousedown','click'])row.dispatchEvent(new w.MouseEvent(type,{bubbles:true,button:0,cancelable:true}));
+    await delay(20);assert.equal(calls.filter(c=>c[0]==='action').length,0);
+    row.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true,button:0}));
+    await wait(()=>calls.some(c=>c[0]==='action'&&c[1]===target));
+    calls.length=0;
+  }
 });

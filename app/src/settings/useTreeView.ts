@@ -1,16 +1,21 @@
 import { useLayoutEffect, useRef } from 'react';
+import { useViewMemory } from './view-state';
 // Keep presentation state outside the configuration. Field typing does not measure layout.
 export function useTreeView(ids: string[], selected: string, filter: string) {
   const ref = useRef<HTMLDivElement>(null), anchor = useRef<{ id: string; offset: number } | null>(null);
+  const memory=useViewMemory(), initial=useRef(true);
   const previous = useRef({ ids: '', selected: '', filter: '' }), signature = ids.join('\u0000');
   function capture() {
     const tree = ref.current; if (!tree) return;
     const rows = [...tree.querySelectorAll<HTMLElement>('[data-node-id]')];
     const row = rows.find(row => row.offsetTop - tree.offsetTop + row.offsetHeight > tree.scrollTop);
     anchor.current = row ? { id: row.dataset.nodeId!, offset: row.offsetTop - tree.offsetTop - tree.scrollTop } : null;
+    memory?.set('web:scroll',tree.scrollTop);
   }
   useLayoutEffect(() => {
     const tree = ref.current; if (!tree) return;
+    if(initial.current && memory?.has('web:scroll')){initial.current=false;tree.scrollTop=(memory.get('web:scroll') as number) || 0;previous.current={ids:signature,selected,filter};capture();return;}
+    initial.current=false;
     const before = previous.current;
     if (filter !== before.filter || !ids.length) { tree.scrollTop = 0; anchor.current = null; }
     else if (signature !== before.ids && anchor.current) {
@@ -22,6 +27,7 @@ export function useTreeView(ids: string[], selected: string, filter: string) {
       if (row) { const top = row.offsetTop - tree.offsetTop, bottom = top + row.offsetHeight; if (top < tree.scrollTop) tree.scrollTop = top; else if (bottom > tree.scrollTop + tree.clientHeight) tree.scrollTop = Math.max(0, bottom - tree.clientHeight); }
     }
     previous.current = { ids: signature, selected, filter };
+    memory?.set('web:scroll',tree.scrollTop);
   }, [signature, selected, filter]);
   return { ref, capture };
 }

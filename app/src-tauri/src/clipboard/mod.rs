@@ -1,8 +1,11 @@
 
 pub(crate) mod privacy;
+pub(crate) mod organization;
 
 use crate::storage::database;
-use crate::{application_icon_data_urls, hide_main, AppState};
+use crate::{application_icon_data_urls, AppState};
+#[cfg(not(target_os = "macos"))]
+use crate::hide_main;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::Utc;
 use clipboard_rs::{
@@ -162,14 +165,26 @@ fn add_text(
     now: &str,
 ) -> Result<(), String> {
     let connection = timing.measure("dbOpen", || database(state))?;
-    timing.measure("dbExecute", || connection.execute(
-            "INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at, copy_count)
-             VALUES ('text', ?, ?, ?, ?, ?, 1)
-             ON CONFLICT(kind, hash) DO UPDATE SET last_seen_at = excluded.last_seen_at, copy_count = clipboard_records.copy_count + 1",
-            params![hash, text, text.len() as i64, now, now],
-        ))
+    timing.measure("dbExecute", || write_text_record(&connection, text, hash, now))
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn write_text_record(
+    connection: &rusqlite::Connection,
+    text: &str,
+    hash: &str,
+    now: &str,
+) -> rusqlite::Result<usize> {
+    connection.execute(
+        "INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at, copy_count)
+             VALUES ('text', ?, ?, ?, ?, ?, 1)
+             ON CONFLICT(kind, hash) DO UPDATE SET content = excluded.content, size = excluded.size,
+               last_seen_at = CASE WHEN julianday(excluded.last_seen_at) >= COALESCE(julianday(clipboard_records.last_seen_at), 0)
+                 THEN excluded.last_seen_at ELSE clipboard_records.last_seen_at END,
+               copy_count = clipboard_records.copy_count + 1",
+        params![hash, text, text.len() as i64, now, now],
+    )
 }
 
 fn add_image(state: &AppState, bytes: &[u8], hash: &str, now: &str) -> Result<(), String> {
@@ -185,7 +200,10 @@ fn add_image(state: &AppState, bytes: &[u8], hash: &str, now: &str) -> Result<()
         .execute(
             "INSERT INTO clipboard_records(kind, hash, file_name, size, created_at, last_seen_at, copy_count)
              VALUES ('image', ?, ?, ?, ?, ?, 1)
-             ON CONFLICT(kind, hash) DO UPDATE SET last_seen_at = excluded.last_seen_at, copy_count = clipboard_records.copy_count + 1",
+             ON CONFLICT(kind, hash) DO UPDATE SET
+               last_seen_at = CASE WHEN julianday(excluded.last_seen_at) >= COALESCE(julianday(clipboard_records.last_seen_at), 0)
+                 THEN excluded.last_seen_at ELSE clipboard_records.last_seen_at END,
+               copy_count = clipboard_records.copy_count + 1",
             params![hash, file_name, bytes.len() as i64, now, now],
         )
         .map_err(|error| error.to_string())?;
@@ -213,7 +231,10 @@ fn add_files(state: &AppState, paths: &[String], hash: &str, now: &str) -> Resul
             "INSERT INTO clipboard_records(kind, hash, file_paths, file_types, size, created_at, last_seen_at, copy_count)
              VALUES ('file', ?, ?, ?, ?, ?, ?, 1)
              ON CONFLICT(kind, hash) DO UPDATE SET file_paths = excluded.file_paths, file_types = excluded.file_types,
-               size = excluded.size, last_seen_at = excluded.last_seen_at, copy_count = clipboard_records.copy_count + 1",
+               size = excluded.size,
+               last_seen_at = CASE WHEN julianday(excluded.last_seen_at) >= COALESCE(julianday(clipboard_records.last_seen_at), 0)
+                 THEN excluded.last_seen_at ELSE clipboard_records.last_seen_at END,
+               copy_count = clipboard_records.copy_count + 1",
             params![
                 hash,
                 serde_json::to_string(paths).map_err(|error| error.to_string())?,
@@ -766,14 +787,17 @@ pub async fn search_clipboard(
     kind: String,
     limit: usize,
     offset: usize,
+    source: Option<String>,
+    pinned_only: Option<bool>,
 ) -> Result<Vec<Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        search_clipboard_records(&app.state::<AppState>(), &query, &kind, limit, offset)
+        search_clipboard_filtered(&app.state::<AppState>(), &query, &kind, limit, offset, source.as_deref(), pinned_only.unwrap_or(false))
     })
     .await
     .map_err(|error| error.to_string())?
 }
 
+#[cfg(test)]
 fn search_clipboard_records(
     state: &AppState,
     query: &str,
@@ -781,6 +805,10 @@ fn search_clipboard_records(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<Value>, String> {
+    search_clipboard_filtered(state,query,kind,limit,offset,None,false)
+}
+fn search_clipboard_filtered(state:&AppState,query:&str,kind:&str,limit:usize,offset:usize,source:Option<&str>,pinned_only:bool)->Result<Vec<Value>,String> {
+    if source.is_some_and(|value|value.chars().count()>512){return Err("来源名称过长".into());}
     let connection = database(state)?;
     let policy = CleanupPolicy::from_config(
         &crate::storage::read_json(&state.paths().config_path).unwrap_or_default(),
@@ -789,7 +817,7 @@ fn search_clipboard_records(
     let mut statement = connection
         .prepare(
             "SELECT id, kind, hash, content, file_name, source_name, file_paths, file_types,
-                    size, created_at, last_seen_at, copy_count, pinned_at
+                    size, created_at, last_seen_at, copy_count, pinned_at, COALESCE(note,'')
              FROM clipboard_records
              WHERE (
                ?1 = 'all'
@@ -807,11 +835,13 @@ fn search_clipboard_records(
              AND (
                ?2 = '' OR instr(lower(
                  COALESCE(content, '') || ' ' || COALESCE(source_name, '') || ' '
-                 || COALESCE(file_paths, '') || ' ' || hash
+                 || COALESCE(file_paths, '') || ' ' || hash || ' ' || COALESCE(note, '')
                ), ?2) > 0
              )
              AND (?5 = 0 OR pinned_at IS NOT NULL OR julianday(last_seen_at) >= julianday(?6))
-             ORDER BY CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, last_seen_at DESC
+             AND (?7 IS NULL OR trim(COALESCE(source_name, '')) = ?7)
+             AND (?8 = 0 OR pinned_at IS NOT NULL)
+             ORDER BY CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, julianday(last_seen_at) DESC, id DESC
              LIMIT ?3 OFFSET ?4",
         )
         .map_err(|error| error.to_string())?;
@@ -829,7 +859,9 @@ fn search_clipboard_records(
                 page_limit as i64,
                 offset as i64,
                 policy.days,
-                cutoff
+                cutoff,
+                source.map(str::trim),
+                pinned_only
             ],
             |row| {
                 Ok((
@@ -846,6 +878,7 @@ fn search_clipboard_records(
                     row.get::<_, String>(10)?,
                     row.get::<_, i64>(11)?,
                     row.get::<_, Option<String>>(12)?,
+                    row.get::<_, String>(13)?,
                 ))
             },
         )
@@ -866,6 +899,7 @@ fn search_clipboard_records(
             last_seen_at,
             copy_count,
             pinned_at,
+            note,
         ) = row.map_err(|error| error.to_string())?;
         let paths = parse_string_array(file_paths);
         let types = parse_string_array(file_types);
@@ -890,6 +924,7 @@ fn search_clipboard_records(
             "hash": hash,
             "content": content.unwrap_or_default(),
             "sourceName": source_name.unwrap_or_default(),
+            "note": note,
             "filePaths": paths,
             "fileNames": file_names,
             "fileCount": paths.len(),
@@ -974,8 +1009,71 @@ pub async fn load_clipboard_assets(
     .map_err(|error| error.to_string())?
 }
 
-fn send_paste() -> Result<(), String> {
+fn touch_copied_record(connection: &rusqlite::Connection, id: i64, at: &str) -> rusqlite::Result<usize> {
+    connection.execute(
+        "UPDATE clipboard_records SET
+           last_seen_at = CASE WHEN julianday(?2) >= COALESCE(julianday(last_seen_at), 0)
+             THEN ?2 ELSE last_seen_at END,
+           copy_count = copy_count + 1 WHERE id = ?1",
+        params![id, at],
+    )
+}
+
+fn record_copy_recency(app: &tauri::AppHandle, connection: &rusqlite::Connection, id: i64) {
+    match touch_copied_record(connection, id, &Utc::now().to_rfc3339()) {
+        Ok(count) if count > 0 => {
+            let _ = app.emit("flowhub:clipboard-updated", ());
+        }
+        Ok(_) => {}
+        Err(_) => crate::diagnostics::record_event(app, "clipboard_recency_failed", json!({})),
+    }
+}
+
+fn record_existing_text_copy(app: &tauri::AppHandle, hash: &str) {
+    // A suppressed self-write must update an existing history entry explicitly.
+    // Do not add new memo/tool contents or bypass clipboard capture privacy.
+    let state = app.state::<AppState>();
+    let Ok(connection) = database(&state) else {
+        return;
+    };
+    let existing_id = connection
+        .query_row(
+            "SELECT id FROM clipboard_records WHERE kind='text' AND hash=?1",
+            [hash],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional();
+    if let Ok(Some(id)) = existing_id {
+        record_copy_recency(app, &connection, id);
+    }
+}
+
+fn paste_source_generation() -> u64 {
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::launcher_activation::source_generation()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        0
+    }
+}
+
+fn send_paste(
+    app: &tauri::AppHandle,
+    show_session: Option<u64>,
+    source_generation: u64,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let receipt = crate::macos::launcher_activation::prepare_paste(app, show_session, source_generation)?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (show_session, source_generation);
+        hide_main(app);
+    }
     thread::sleep(Duration::from_millis(70));
+    #[cfg(target_os = "macos")]
+    crate::macos::launcher_activation::verify_paste_target(app, receipt)?;
     let mut enigo = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
     let modifier = Key::Meta;
@@ -995,6 +1093,8 @@ fn send_paste() -> Result<(), String> {
 }
 
 pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
+    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
+    let source_generation = paste_source_generation();
     if text.trim().is_empty() {
         return Ok(json!({ "ok": false, "reason": "内容为空" }));
     }
@@ -1007,8 +1107,8 @@ pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
             .and_then(|context| context.set_text(text))
             .map_err(|error| error.to_string())
     })??;
-    hide_main(app);
-    let paste = send_paste();
+    record_existing_text_copy(app, &hash);
+    let paste = send_paste(app, show_session, source_generation);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "pasteReason": reason }),
@@ -1030,6 +1130,8 @@ pub fn activate_clipboard(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<Value, String> {
+    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
+    let source_generation = paste_source_generation();
     let connection = database(&state)?;
     let record = connection
         .query_row(
@@ -1087,8 +1189,8 @@ pub fn activate_clipboard(
         }
         .map_err(|error| error.to_string())
     })??;
-    hide_main(&app);
-    let paste = send_paste();
+    record_copy_recency(&app, &connection, id);
+    let paste = send_paste(&app, show_session, source_generation);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "pasteReason": reason }),
@@ -1222,21 +1324,24 @@ pub fn paste_clipboard_text(
     state: State<'_, AppState>,
     id: i64,
 ) -> Result<Value, String> {
+    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
+    let source_generation = paste_source_generation();
     let text = match plain_text(&state, id)? {
         PlainText::Text(text) => text,
         PlainText::Unavailable(reason) => return Ok(json!({ "ok": false, "reason": reason })),
     };
     // 纯文本是以应用自己写入剪贴板的，按新文本指纹抑制回采，避免多出一条重复记录。
+    let hash = sha256(text.as_bytes());
     app.state::<ClipboardRuntime>()
-        .suppress(signature("text", &sha256(text.as_bytes())));
+        .suppress(signature("text", &hash));
     run_on_main_thread(&app, move || {
         ClipboardContext::new()
             .map_err(|error| error.to_string())?
             .set_text(text)
             .map_err(|error| error.to_string())
     })??;
-    hide_main(&app);
-    let paste = send_paste();
+    record_existing_text_copy(&app, &hash);
+    let paste = send_paste(&app, show_session, source_generation);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true, "plain": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "plain": true, "pasteReason": reason }),
@@ -1263,14 +1368,7 @@ fn edited_copy(state: &AppState, id: i64, content: &str) -> Result<Value, String
     }
     let hash = sha256(text.as_bytes());
     let now = Utc::now().to_rfc3339();
-    connection
-        .execute(
-            "INSERT INTO clipboard_records(kind, hash, content, size, created_at, last_seen_at, copy_count)
-             VALUES ('text', ?, ?, ?, ?, ?, 1)
-             ON CONFLICT(kind, hash) DO UPDATE SET content = excluded.content, size = excluded.size,
-               last_seen_at = excluded.last_seen_at, copy_count = clipboard_records.copy_count + 1",
-            params![hash, text, text.len() as i64, now, now],
-        )
+    write_text_record(&connection, &text, &hash, &now)
         .map_err(|error| error.to_string())?;
     let new_id: i64 = connection
         .query_row(
@@ -1912,6 +2010,89 @@ mod record_tests {
             .iter()
             .map(|record| record["id"].as_i64().unwrap())
             .collect()
+    }
+
+    #[test]
+    fn organization_filters_compose_before_pagination_and_notes_preserve_original_records() {
+        let f=fixture();let a=insert_text(&f,"a","original","2026-09-01T00:00:00Z");
+        let b=insert_text(&f,"b","other","2026-09-02T00:00:00Z");
+        let c=insert_text(&f,"c","third","2026-09-03T00:00:00Z");
+        let db=database(&f.state).unwrap();db.execute("UPDATE clipboard_records SET source_name=' Editor ' WHERE id IN (?1,?2)",params![a,c]).unwrap();set_pinned(&f.state,a,true).unwrap();
+        organization::set_note(&f.state,a," 发布步骤 ","").unwrap();
+        let rows=search_clipboard_filtered(&f.state,"发布","text",1,0,Some("Editor"),true).unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0]["id"],a);assert_eq!(rows[0]["content"],"original");assert_eq!(rows[0]["note"],"发布步骤");assert_eq!(rows[0]["copyCount"],1);
+        assert_eq!(search_clipboard_filtered(&f.state,"","all",1,1,Some("Editor"),false).unwrap()[0]["id"],c);
+        assert_eq!(search_clipboard_filtered(&f.state,"","all",10,0,Some(""),false).unwrap()[0]["id"],b);
+        assert!(search_clipboard_filtered(&f.state,"发布","image",10,0,None,false).unwrap().is_empty());
+        assert_eq!(organization::sources(&f.state).unwrap()[0],json!({"name":"Editor","count":2}));
+        write_text_record(&db,"original","a","2026-09-04T00:00:00Z").unwrap();let row=search_clipboard_filtered(&f.state,"发布","all",10,0,None,true).unwrap();assert_eq!(row[0]["note"],"发布步骤");assert_eq!(row[0]["id"],a);assert_eq!(row[0]["copyCount"],2);
+    }
+    #[test]
+    fn note_updates_reject_stale_missing_or_oversized_targets_and_can_clear() {
+        let f=fixture();let id=insert_text(&f,"note","body","2026-09-01T00:00:00Z");
+        organization::set_note(&f.state,id,"first","").unwrap();
+        assert!(organization::set_note(&f.state,id,"stale","").is_err());assert!(organization::set_note(&f.state,999,"missing","").is_err());assert!(organization::set_note(&f.state,id,&"x".repeat(501),"first").is_err());assert!(organization::set_note(&f.state,id,"bad\0value","first").is_err());
+        organization::set_note(&f.state,id,"","first").unwrap();assert_eq!(search_clipboard_records(&f.state,"", "all",1,0).unwrap()[0]["note"],"");
+    }
+
+    #[test]
+    fn recopy_promotes_the_existing_record_below_pins_and_delayed_capture_cannot_demote_it() {
+        let f = fixture();
+        let original_at = "2026-09-01T00:00:00Z";
+        let old = insert_text(&f, "old", "reused text", original_at);
+        let pinned = insert_text(&f, "pin", "pinned text", original_at);
+        let recent = insert_text(&f, "recent", "recent text", "2026-09-02T00:00:00Z");
+        set_pinned(&f.state, pinned, true).unwrap();
+        let db = database(&f.state).unwrap();
+        write_text_record(&db, "reused text", "old", "2026-09-03T00:00:00Z").unwrap();
+        assert_eq!(ids(&f.state), vec![pinned, old, recent]);
+        // A suppressed history paste counts as a new copy without adding a row.
+        assert_eq!(touch_copied_record(&db, old, "2026-09-05T00:00:00Z").unwrap(), 1);
+        write_text_record(&db, "reused text", "old", "2026-09-04T00:00:00Z").unwrap();
+        let listed = search_clipboard_records(&f.state, "", "all", 20, 0).unwrap();
+        assert_eq!(listed.len(), 3);
+        assert_eq!(listed[1]["id"], json!(old));
+        assert_eq!(listed[1]["createdAt"], json!(original_at));
+        assert_eq!(listed[1]["lastSeenAt"], json!("2026-09-05T00:00:00Z"));
+        assert_eq!(listed[1]["copyCount"], json!(4));
+        assert_eq!(listed[1]["content"], json!("reused text"));
+        assert_eq!(listed[1]["pinnedAt"], json!(""));
+        let pin_time = listed[0]["pinnedAt"].clone();
+        touch_copied_record(&db, pinned, "2026-09-06T00:00:00Z").unwrap();
+        assert_eq!(touch_copied_record(&db, 9999, original_at).unwrap(), 0);
+        let listed = search_clipboard_records(&f.state, "", "all", 20, 0).unwrap();
+        assert_eq!(listed[0]["pinnedAt"], pin_time);
+        assert_eq!(listed.len(), 3);
+    }
+
+    #[test]
+    fn image_and_file_recopies_keep_identity_and_latest_time_after_delayed_capture() {
+        let f = fixture();
+        let image_hash = "a".repeat(64);
+        let file_hash = "b".repeat(64);
+        let paths = vec![f.root.join("fixture.txt").to_string_lossy().into_owned()];
+        add_image(&f.state, b"fixture", &image_hash, "2026-09-01T00:00:00Z").unwrap();
+        add_files(&f.state, &paths, &file_hash, "2026-09-02T00:00:00Z").unwrap();
+        let original_ids = ids(&f.state);
+        let db = database(&f.state).unwrap();
+        for id in &original_ids {
+            touch_copied_record(&db, *id, "2026-09-05T00:00:00Z").unwrap();
+        }
+        add_image(&f.state, b"fixture", &image_hash, "2026-09-03T00:00:00Z").unwrap();
+        add_files(&f.state, &paths, &file_hash, "2026-09-04T00:00:00Z").unwrap();
+        assert_eq!(ids(&f.state), original_ids);
+        for record in search_clipboard_records(&f.state, "", "all", 20, 0).unwrap() {
+            assert_eq!(record["lastSeenAt"], json!("2026-09-05T00:00:00Z"));
+            assert_eq!(record["copyCount"], json!(3));
+        }
+    }
+
+    #[test]
+    fn recency_uses_actual_time_and_breaks_equal_timestamp_ties_by_id() {
+        let f = fixture();
+        let older = insert_text(&f, "older", "offset time", "2026-09-02T08:00:00+08:00");
+        let newer = insert_text(&f, "newer", "UTC time", "2026-09-02T01:00:00Z");
+        let tied = insert_text(&f, "tied", "same UTC time", "2026-09-02T01:00:00Z");
+        assert_eq!(ids(&f.state), vec![tied, newer, older]);
     }
 
     #[test]

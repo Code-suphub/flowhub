@@ -256,6 +256,8 @@ function browserClipboardRecord(row) {
     hash: row.hash,
     content: row.content || "",
     sourceName: row.source_name || "",
+    note: row.note || "",
+    pinnedAt: row.pinned_at || "",
     filePaths,
     fileNames: filePaths.map((filePath) => basename(filePath)),
     fileCount: filePaths.length,
@@ -338,7 +340,7 @@ async function hydrateWebCatalog(config) {
   return config;
 }
 
-async function searchClipboardRecords(query = "", limit = 30, kind = "all", offset = 0) {
+async function searchClipboardRecords(query = "", limit = 30, kind = "all", offset = 0, source = null, pinnedOnly = false) {
   const keyword = String(query || "").trim();
   const normalizedKeyword = keyword.toLowerCase();
   const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
@@ -346,14 +348,16 @@ async function searchClipboardRecords(query = "", limit = 30, kind = "all", offs
   const safeKind = ["text", "image", "file"].includes(kind) ? kind : "all";
   return withClipboardDatabase((database) => {
     const total = Number(databaseRows(database, "SELECT COUNT(*) AS total FROM clipboard_records")[0]?.total || 0);
+    const columns=databaseRows(database,'PRAGMA table_info(clipboard_records)').map(row=>row.name);
     const conditions = [];
     const parameters = [];
     if (keyword) {
-      const like = `%${keyword}%`;
       const imageKeyword = ["图片", "图像", "image"].includes(normalizedKeyword) ? keyword : "";
-      conditions.push("(content LIKE ? OR source_name LIKE ? OR hash LIKE ? OR (kind = 'image' AND ? <> ''))");
-      parameters.push(like, like, like, imageKeyword);
+      conditions.push(`(instr(lower(COALESCE(content,'') || ' ' || COALESCE(source_name,'') || ' ' || hash || ' ' || COALESCE(file_paths,'')${columns.includes('note')?" || ' ' || COALESCE(note,'')":""}),?)>0 OR (kind='image' AND ?<>''))`);
+      parameters.push(normalizedKeyword,imageKeyword);
     }
+    if(source!==null){conditions.push("trim(COALESCE(source_name,''))=?");parameters.push(String(source).trim());}
+    if(pinnedOnly)conditions.push(columns.includes('pinned_at')?'pinned_at IS NOT NULL':'0');
     if (safeKind === "text") conditions.push("kind = 'text'");
     if (safeKind === "image") conditions.push("kind IN ('image', 'file')");
     if (safeKind === "file") conditions.push("kind = 'file'");
@@ -363,7 +367,7 @@ async function searchClipboardRecords(query = "", limit = 30, kind = "all", offs
       database,
       `SELECT * FROM clipboard_records
        ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
-       ORDER BY last_seen_at DESC
+       ORDER BY ${columns.includes('pinned_at')?'CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, ':''}julianday(last_seen_at) DESC, id DESC
        ${requiresFileClassification ? "" : "LIMIT ? OFFSET ?"}`,
       parameters
     );
@@ -375,6 +379,10 @@ async function searchClipboardRecords(query = "", limit = 30, kind = "all", offs
     }).slice(requiresFileClassification ? safeOffset : 0, requiresFileClassification ? safeOffset + safeLimit : safeLimit);
     return { total, records: publicRecords };
   });
+}
+
+async function clipboardSources() {
+  return withClipboardDatabase(database=>databaseRows(database,"SELECT trim(COALESCE(source_name,'')) AS name,count(*) AS count FROM clipboard_records GROUP BY name ORDER BY count(*) DESC,name LIMIT 200"));
 }
 
 async function clipboardImage(recordId) {
@@ -523,6 +531,7 @@ export {
   readWebCatalog,
   hydrateWebCatalog,
   searchClipboardRecords,
+  clipboardSources,
   clipboardImage,
   readNativeApplicationIconBatch,
   readNativeApplicationIcons,

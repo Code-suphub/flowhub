@@ -1,8 +1,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');const h=require('./settings-harness.test.cjs');
 test('history list, preview, restore, unchanged results and restart/path warnings remain visible',async()=>{
- let restored=[],unchanged=false;const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1758096000000,bytes:2048,catalog_count:7}],limit:20}),previewConfigHistory:async()=>({config:{core:{hotkey:'Other'}}}),restoreConfigHistory:async id=>{restored.push(id);return {unchanged,warnings:['存储位置不同']};}});
- const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});assert.match(view.container.textContent,/7 项/);assert.match(view.container.textContent,/2048 B/);
- await h.click(h.button(view.container,'预览'));assert.match(document.querySelector('[role="dialog"]').textContent,/Other/);await h.click(document.querySelector('[role="dialog"] [aria-label="关闭"]'));
+ let restored=[],unchanged=false;const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1758096000000,bytes:2048,catalog_count:7}],limit:20}),previewConfigHistory:async()=>{const config=h.fixture();config.core.hotkey='Other';return {config};},restoreConfigHistory:async id=>{restored.push(id);return {unchanged,warnings:['存储位置不同']};}});
+ const {DataPanel}=require('../../src/settings/Core.tsx'),view=await h.mount(DataPanel,{store});assert.match(view.container.textContent,/7 项/);assert.match(view.container.textContent,/2 KB/);
+ await h.click(h.button(view.container,'查看差异'));assert.match(document.querySelector('[role="dialog"]').textContent,/Other/);await h.click(document.querySelector('[role="dialog"] [aria-label="关闭"]'));
  await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.deepEqual(restored,['one']);assert.match(store.snapshot().notice,/重启/);assert.match(store.snapshot().notice,/存储位置/);
  unchanged=true;await h.click(h.button(view.container,'恢复'));await h.click(h.button(document.body,'确认恢复'));assert.match(store.snapshot().notice,/相同/);
  await view.unmount();store.dispose();

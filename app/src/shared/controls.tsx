@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import { observePopupOwner } from '../../../../common-components/packages/frontend/dom/popup';
 import { cn } from '../lib/utils';
 import { InfoIcon } from 'lucide-react';
@@ -26,7 +26,7 @@ export function Help({label = '说明', children}: {label?: string; children: Re
 }
 
 export interface SelectOption {value: string; label: string; disabled?: boolean}
-export function Select({value, options, onChange, label, disabled, id, labelledBy, popupClassName}: {value: string; options: readonly SelectOption[]; onChange: (value: string) => void; label: string; disabled?: boolean; id?: string; labelledBy?: string; popupClassName?: string}) {
+export function Select({value, options, onChange, label, disabled, id, labelledBy, popupClassName,finalFocus}: {value: string; options: readonly SelectOption[]; onChange: (value: string) => void; label: string; disabled?: boolean; id?: string; labelledBy?: string; popupClassName?: string;finalFocus?:ComponentProps<typeof SelectContent>['finalFocus']}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const actions = useRef<{ unmount(): void } | null>(null);
@@ -41,7 +41,7 @@ export function Select({value, options, onChange, label, disabled, id, labelledB
   }, [open, disabled]);
   return <ShadcnSelect actionsRef={actions} open={open} onOpenChange={changeOpen} items={options.map(({value, label}) => ({value, label}))} value={value} onValueChange={next => { if (typeof next === 'string') onChange(next); }} disabled={disabled}>
     <SelectTrigger ref={trigger} id={id} aria-label={label} aria-labelledby={labelledBy}><SelectValue>{() => options.find(option => option.value === value)?.label || '请选择'}</SelectValue></SelectTrigger>
-    <SelectContent className={cn('fh-select-popup', popupClassName)} side="bottom" align="start" alignItemWithTrigger={false} aria-label={label}>
+    <SelectContent className={cn('fh-select-popup', popupClassName)} side="bottom" align="start" alignItemWithTrigger={false} aria-label={label} finalFocus={finalFocus}>
       <SelectGroup>
         {options.map(option => <SelectItem key={option.value} value={option.value} disabled={option.disabled} title={option.label}>{option.label}</SelectItem>)}
       </SelectGroup>

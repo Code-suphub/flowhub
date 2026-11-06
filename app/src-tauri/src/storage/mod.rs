@@ -337,6 +337,7 @@ pub(crate) fn initialize_schema(connection: &Connection) -> Result<(), String> {
               last_seen_at TEXT NOT NULL,
               copy_count INTEGER NOT NULL DEFAULT 1,
               pinned_at TEXT,
+              note TEXT NOT NULL DEFAULT '',
               UNIQUE(kind, hash)
             );
             CREATE INDEX IF NOT EXISTS clipboard_records_recent ON clipboard_records(last_seen_at DESC);
@@ -373,6 +374,9 @@ fn ensure_columns(connection: &Connection) -> Result<(), String> {
         connection
             .execute("ALTER TABLE clipboard_records ADD COLUMN pinned_at TEXT", [])
             .map_err(|error| error.to_string())?;
+    }
+    if !existing.iter().any(|name| name == "note") {
+        connection.execute("ALTER TABLE clipboard_records ADD COLUMN note TEXT NOT NULL DEFAULT ''", []).map_err(|error|error.to_string())?;
     }
     Ok(())
 }

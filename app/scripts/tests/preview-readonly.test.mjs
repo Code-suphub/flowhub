@@ -185,9 +185,11 @@ test('explicit search demo supplies local searchable fixtures without requests o
   const config=await api.getConfig();config.plugins.app.enabled=false;
   assert.equal((await api.getConfig()).plugins.app.enabled,true,'returned config is an isolated copy');
   assert.ok((await api.listPlugins()).some(plugin=>plugin.id==='memo'));
+  assert.equal((await api.getConfigPathInfo()).resolvedPath,'示例配置目录/config.json');
+  assert.equal((await api.getClipboardStorageInfo()).resolvedPath,'示例数据目录/clipboard');
   for(const id of ['app','web','memo','clipboard']) {
     const items=await api.pluginSearch(id,{query:'',limit:30});assert.ok(items.length>5,id);
-    const query={app:'Visual',web:'设计规范',memo:'service-3',clipboard:'剪贴板 3'}[id];
+    const query={app:'Visual',web:'设计规范',memo:'service-3',clipboard:'git log'}[id];
     assert.ok((await api.pluginSearch(id,{query,limit:30})).length,id+' search');
   }
   for(const scope of ['all','app','web']) {

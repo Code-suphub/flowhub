@@ -1,0 +1,18 @@
+.fh-dialog.settings-review-dialog { width:min(800px,calc(100vw - 32px)); }
+.settings-review-context { margin:0 0 18px; color:var(--fh-muted); font-size:12px; overflow-wrap:anywhere; }
+.settings-changes-count { margin:0; color:var(--fh-muted); font-size:12px; }
+.settings-changes-group { min-width:0; }
+.settings-changes-group>header { margin-bottom:8px; }
+.settings-changes-group h3 { margin:0; font-size:14px; font-weight:600; }
+.settings-changes-list { list-style:none; margin:0; padding:0; border:1px solid var(--fh-border); border-radius:10px; overflow:hidden; }
+.settings-changes-list>li { min-width:0; padding:14px 16px; }
+.settings-changes-list>li+li { border-top:1px solid var(--fh-border); }
+.settings-changes-list strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.settings-change-path { display:block; margin:3px 0 10px; color:var(--fh-muted); font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+.settings-change-values { margin:0; }
+.settings-change-values>div { min-width:0; padding:9px 11px; border-radius:6px; background:var(--fh-canvas); }
+.settings-change-values>div:last-child { background:var(--fh-accent-soft); }
+.settings-change-values dt { color:var(--fh-muted); font-size:11px; }
+.settings-change-values dd { margin:4px 0 0; color:var(--fh-text); font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.settings-collection-change { margin:8px 0 0; color:var(--fh-muted); font-size:12px; overflow-wrap:anywhere; }
+.settings-changes-empty { min-height:150px; }
