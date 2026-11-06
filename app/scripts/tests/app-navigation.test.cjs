@@ -169,7 +169,8 @@ test('native activation restores input without selecting typing; reopening reset
 test('out-of-order presses and single clicks never execute applications or clipboard records',async t=>{
   const {w,scope,calls}=await setup(t);
   for(const target of ['app','clipboard']) {
-    await scope(target);const row=w.document.querySelector(`.${target}-result`);
+    await scope(target);await wait(()=>w.document.querySelector(`.${target}-result`));
+    const row=w.document.querySelector(`.${target}-result`);
     for(const type of ['mouseup','mousedown','click','mouseup','mousedown','click'])row.dispatchEvent(new w.MouseEvent(type,{bubbles:true,button:0,cancelable:true}));
     await delay(20);assert.equal(calls.filter(c=>c[0]==='action').length,0);
     row.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true,button:0}));
