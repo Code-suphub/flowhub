@@ -70,11 +70,12 @@
 - [x] 两插件已从独立工作树的 build 目录安装并重新加载。2FA 原有 3 个账户可读，安装前后加密文件／本地密钥哈希一致；未确认保存公开测试账户。
 - [x] 原生 WebKit 图片粘贴：从「预览」复制公开 public.png，⌘V 后显示 Example／SHA1／6 位／30 秒、名称 public，焦点自动转到名称，仍显示尚未保存。证据：仓库外 `plugin-comparison/twofa-installed-paste-preview.png`。
 - [x] 原生截图发现名称聚焦后仍可能位于正文可视范围下方，已移除此次聚焦的 preventScroll。2FA 专项及构建再次通过；800 × 420 后台页面确认名称、元数据和底部操作同时可见，证据为 `plugin-comparison/twofa-preview-focus-short.png`。新产物已重建至当前安装引用的 build 目录，重新打开插件加载；原生滚动效果复测仍待完成。
+- [x] 随后重新从插件栏打开 2FA，在原生文件选择器选择公开二维码，未经手动滚动，元数据、public 名称和底部操作自动可见，名称获焦；原生自动滚动通过。证据为 `plugin-comparison/twofa-native-auto-scroll.png`，未确认导入。
 - [x] Docker 原生只读检查：Colima 的 3 个已停止容器、11 个镜像可见；镜像拉取表单输入测试名称、Escape 关闭并返回触发按钮。未向真实引擎提交拉取、创建、启停或删除；证据为 `plugin-comparison/docker-installed-pull-form.png`。
 - [x] 屏幕权限关闭时出现明确提示；用户授权后系统设置显示 FlowHub 权限开启，扫描能启动系统截图进程。未完成选区时 75 秒后恢复控件、聚焦链接、保留草稿。
 - [x] 用户手动框选公开 public.png 后，读取原生结果为已解析／尚未保存、Example／public、SHA1／6 位／30 秒，与测试二维码一致；未确认导入。正文手动滚动后的原生截图为 `plugin-comparison/twofa-installed-screen-preview.png`，不是模拟 PNG 结果。
 - [x] Esc 取消按用户明确的安装版实测反馈通过留档；自动输入工具没有重放系统截图层操作。
-- [ ] 双屏选区和重新打开插件后自动滚动仍待验，手动滚动看到结果不代替自动滚动验收。
+- [ ] 双屏选区待验：已将 FlowHub 移到外接 DELL P2419H，公开二维码留在内建 Retina 屏，开始选区前自动锁屏；请求解锁后继续，不将窗口移动记为跨屏选区通过。
 - [ ] 真实输入法、系统主题、最小窗口、测试账户持久化／验证码复制／启动器搜索，以及专用 Docker 实际测试引擎的写入结果，继续留在各插件验收清单。
 
 ## 后续各批验收与交付模板
