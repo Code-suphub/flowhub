@@ -26,7 +26,7 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-installed-badge {margin-left:auto;flex:none;}
 .market-catalog-card>.market-description {display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:46px;}
 .market-plugin-identity {display:flex;align-items:center;gap:12px;min-width:0;}
-.market-plugin-icon {display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border:1px solid var(--fh-border);border-radius:12px;background:var(--fh-surface-soft);color:var(--fh-accent);}
+.market-plugin-icon {display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:12px;}
 .market-plugin-icon svg {width:23px;height:23px;stroke-width:1.5;}
 .market-description {margin:0;color:var(--fh-muted);font-size:13px;line-height:1.75;overflow-wrap:anywhere;}
 .market-features {display:flex;flex-wrap:wrap;gap:5px 12px;color:var(--fh-muted);font-size:11px;}
@@ -48,7 +48,6 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-collection-tools li {display:flex;align-items:center;gap:10px;min-width:0;}
 .market-collection-tools li>div>span {font-size:13px;font-weight:500;overflow-wrap:anywhere;}
 .market-collection-tools small {display:block;color:var(--fh-muted);font-size:11px;margin-top:2px;}
-.market-collection-tools .market-plugin-icon {background:var(--fh-surface);}
 .market-custom-source {display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:24px 0;}
 .fh-dialog.market-detail-dialog {display:flex;flex-direction:column;width:min(640px,calc(100vw - 32px));overflow:hidden;}
 .market-detail-body {min-height:0;overflow:auto;padding-right:4px;}

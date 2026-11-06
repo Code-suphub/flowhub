@@ -1,5 +1,6 @@
 import { Fragment, memo, useMemo } from 'react';
 import { AppWindow, Clipboard as ClipboardIcon, File, FileText, Folder, Globe, Link2, Plus, ShieldCheck, PanelRight } from 'lucide-react';
+import { FeatureIcon } from '../shared/FeatureIcon';
 import { Button } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { ToolContent } from './Tools';
@@ -29,7 +30,8 @@ export function ResultIcon({item,snapshot}: {item: SearchItem; snapshot: SearchS
   if (web && (snapshot.failedWebIcons.has(url) || (!snapshot.showUncachedWebIcons && !snapshot.loadedWebIcons.has(url)))) url = '';
   const Glyph = item.type === 'app' ? AppWindow : item.type === 'memo' ? FileText : item.type === 'clipboard' ? item.kind === 'file' ? item.fileType === 'folder' ? Folder : File : ClipboardIcon : item.type === 'web-add' ? Plus : web ? Globe : item.type === 'twofa' ? ShieldCheck : Link2;
   const customIcon = !imageUrl(item.icon) && item.icon ? String(item.icon) : '';
-  return <span className="search-icon" aria-hidden="true">{url ? <img src={url} {...(web ? {'data-web-icon':url} : {})} loading="lazy" decoding="async" alt=""/> : customIcon || <Glyph strokeWidth={1.65}/>}</span>;
+  const tone=item.type==='clipboard'?'orange':item.type==='memo'?'amber':item.type==='twofa'?'violet':item.type==='app'?'blue':'sky';
+  return <span className="search-icon" aria-hidden="true">{url ? <img src={url} {...(web ? {'data-web-icon':url} : {})} loading="lazy" decoding="async" alt=""/> : customIcon || <FeatureIcon icon={Glyph} tone={tone} size="small"/>}</span>;
 }
 export function resultActions(item: SearchItem): [string,string][] {
   const actions: [string,string][] = [];

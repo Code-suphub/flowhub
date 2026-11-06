@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { FolderIcon, GlobeIcon } from 'lucide-react';
+import { FeatureIcon } from '../shared/FeatureIcon';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
@@ -22,7 +23,7 @@ export function SourceDialog({sources,states,available,busy,locking,error,onClos
       <div className="market-source-heading"><p className="market-meta">插件库决定“发现”中可安装的内容。移除来源会保留已安装插件。</p>{available?<Button size="sm" disabled={busy || Boolean(editing)} onClick={e=>edit(blank(),e.currentTarget)}>添加来源</Button>:null}</div>
       <div className="market-source-list">{sources.map(source=>{
         const status=states[source.id],Icon=source.kind==='local'?FolderIcon:GlobeIcon;
-        return <article key={source.id} className="market-source-row" aria-label={source.name}><div className="market-source-identity"><Icon aria-hidden="true"/><div className="min-w-0"><h3>{source.name}</h3><p className="market-meta">{source.kind==='local'?'本地目录':'HTTPS 仓库'} · {status?.loading?'刷新中…':status?.error?'刷新失败':status?.count!==undefined?`${status.count} 个插件`:'尚未刷新'}</p></div></div>
+        return <article key={source.id} className="market-source-row" aria-label={source.name}><div className="market-source-identity"><FeatureIcon icon={Icon} tone="teal"/><div className="min-w-0"><h3>{source.name}</h3><p className="market-meta">{source.kind==='local'?'本地目录':'HTTPS 仓库'} · {status?.loading?'刷新中…':status?.error?'刷新失败':status?.count!==undefined?`${status.count} 个插件`:'尚未刷新'}</p></div></div>
           <details className="market-location"><summary>来源位置</summary><code>{source.location}</code></details>
           {isOfficialSource(source)?<p className="market-meta">{source.location===officialSource.location?'统一官方库 · 刷新会检查适用于当前设备的新版本，更新需确认。':'旧版固定目录 · 仅刷新此版本；可在发现页连接统一官方库。'}</p>:null}
           {status?.error?<p role="alert" className="market-source-error">{status.error}</p>:null}

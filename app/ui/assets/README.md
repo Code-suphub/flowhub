@@ -1,4 +1,18 @@
-# Web catalog icons
+# Application and catalog icons
+
+`flowhub.svg` is the source for FlowHub's blue faceted-diamond app mark. Settings,
+updates and the menu-bar preview use this same file. Regenerate native app icons
+from `app/` with `pnpm exec tauri icon ui/assets/flowhub.svg --output src-tauri/icons`.
+The native macOS menu-bar template in `src-tauri/src/menu_bar/icon.rs` uses the same
+diamond silhouette, with a transparent seam instead of color to distinguish its facets.
+
+UI feature artwork lives in `src/shared/FeatureIcon.tsx` and `feature-icons.css`:
+blue for apps/links, orange for clipboard, amber for notes, violet for extensions,
+and green for widgets/machines. These are product-specific icons, not new controls.
+Unknown plugins keep the violet puzzle fallback. User-supplied web and app icons
+continue to take precedence over search fallback artwork.
+
+## Web catalog icons
 
 `web-icons/*.png` are 72×72 favicons imported with the uTools links (commit `cae835b`)
 and referenced by **catalog data**, not by code.

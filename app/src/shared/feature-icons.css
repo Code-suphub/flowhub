@@ -1,0 +1,28 @@
+/* Product artwork, shared by settings, the floating workspace and the market. */
+.flowhub-logo { display:block; flex:none; width:40px; height:40px; object-fit:contain; user-select:none; }
+.fh-feature-icon { --fh-icon-top:#4599ff; --fh-icon-bottom:#1461ed; display:inline-grid; place-items:center; flex:0 0 32px; width:32px; height:32px; border:1px solid rgb(255 255 255 / .24); border-radius:9px; color:#fff; background:linear-gradient(145deg,var(--fh-icon-top),var(--fh-icon-bottom)); box-shadow:0 2px 5px rgb(15 34 70 / .12),inset 0 1px 0 rgb(255 255 255 / .18); vertical-align:middle; }
+.fh-feature-icon[data-tone=sky] { --fh-icon-top:#38b9fa; --fh-icon-bottom:#087bdc; }
+.fh-feature-icon[data-tone=orange] { --fh-icon-top:#ffb14e; --fh-icon-bottom:#f16b27; }
+.fh-feature-icon[data-tone=amber] { --fh-icon-top:#f5cb4a; --fh-icon-bottom:#c58a12; }
+.fh-feature-icon[data-tone=violet] { --fh-icon-top:#a474ff; --fh-icon-bottom:#7137e7; }
+.fh-feature-icon[data-tone=green] { --fh-icon-top:#36cf93; --fh-icon-bottom:#0a9a68; }
+.fh-feature-icon[data-tone=teal] { --fh-icon-top:#38c9c8; --fh-icon-bottom:#078e9f; }
+.fh-feature-icon[data-tone=pink] { --fh-icon-top:#ff7db1; --fh-icon-bottom:#e33780; }
+.fh-feature-icon[data-tone=slate] { --fh-icon-top:#8b9bb1; --fh-icon-bottom:#53647f; }
+.fh-feature-icon[data-size=small] { flex-basis:24px; width:24px; height:24px; border-radius:7px; }
+.fh-feature-icon[data-size=large] { flex-basis:42px; width:42px; height:42px; border-radius:12px; }
+.fh-feature-icon > svg,
+.settings-sidebar .fh-button .fh-feature-icon > svg,
+.settings-plugin-dock .fh-feature-icon > svg { width:64%; height:64%; color:inherit; }
+.settings-brand > .flowhub-logo { width:42px; height:42px; margin:-3px; }
+.settings-update-identity > .flowhub-logo { width:64px; height:64px; }
+.settings-material-sample > .flowhub-logo { width:72px; height:72px; }
+.settings-menu-item > .flowhub-logo { width:44px; height:44px; margin-inline:-1px; }
+.settings-menu-icon > .flowhub-logo { width:100%; height:100%; }
+.settings-menu-demo .flowhub-logo { width:18px; height:18px; }
+.settings-plugin-dock .fh-feature-icon { flex-shrink:0; }
+.settings-dock-plugin .fh-feature-icon { overflow:visible; }
+.settings-plugin-dock .settings-dock-plugin .fh-feature-icon { width:28px; height:28px; flex-basis:28px; }
+@media (forced-colors:active) {
+  .fh-feature-icon { background:Canvas; color:CanvasText; border:1px solid CanvasText; box-shadow:none; }
+}
