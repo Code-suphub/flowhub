@@ -1,5 +1,7 @@
 # FlowHub 项目协作规范
 
+本文件是项目规则的唯一正文；`AGENTS.md`（Codex）与 `CLAUDE.md`（Claude Code）均链接到此文件，修改规则时只编辑本文件。
+
 ## 项目目标
 
 FlowHub 是一个 macOS 本地启动器，提供应用、网页目录、剪贴板历史和命令备忘录搜索。优先保证启动速度、输入响应和本地数据安全。
@@ -37,7 +39,7 @@ FlowHub 是一个 macOS 本地启动器，提供应用、网页目录、剪贴�
 
 ## 测试与验证
 
-在提交前至少执行：
+涉及代码或构建脚本时，在提交前至少执行：
 
 ```bash
 npm test          # 仓库根：legacy server 与 legacy 目录契约
@@ -47,6 +49,8 @@ git diff --check
 ```
 
 涉及页面交互时，使用本地 Web 页面验证真实点击、输入、键盘事件和控制台错误。涉及性能时检查输入期间的布局耗时和长任务，不只依赖静态代码判断。
+
+仅修改文档或规则入口链接时，检查命令与当前代码是否一致、相对链接与符号链接是否有效，并执行 `git diff --check`，无需重跑业务测试。
 
 ## 构建与更新通道
 
@@ -64,7 +68,11 @@ git diff --check
 
 ## CLI
 
-- `npm run cli -- help` displays available data-management commands.
-- The CLI talks to `http://127.0.0.1:4173` by default; override with `FLOWHUB_URL`.
-- `config set` and `config replace` are write operations; validate JSON before sending changes.
-- Keep CLI output JSON-compatible so it can be piped to `jq` or other scripts.
+- 验证优先选择能覆盖目标的项目 CLI、后端测试或隔离页面驱动；涉及正式安装版、系统输入和窗口行为时补原生验收。具体入口、示例和取证要求见 [CLI 与原生验收](docs/architecture/testing/cli-verification.md)。
+- 在 `app/` 执行 `node scripts/dev/flowhub-cli.mjs help` 查看数据与诊断 CLI。HTTP 配置命令默认连接 `http://127.0.0.1:4173`，可用 `FLOWHUB_URL` 指定旧服务；它不操作桌面 SQLite 配置，也不安装插件或点击原生按钮。`config set`／`config replace` 会写配置，`diagnose`／`monitor sample` 会写诊断文件，`monitor enable`／`disable`／`clear` 也有写入，不能当作纯读取。
+- 当前 checkout 若包含 `app/scripts/dev/flowhub-ui-test.mjs`，先读取其配套使用说明并执行 `help`。此驱动只连接专用测试构建与隔离数据目录；`synthetic-dom`、`isTrusted=false` 的结果不能证明普通安装版、实际键盘路由、IME、原生 Tab、全局焦点或多屏通过。缺少该脚本时不能假定入口已合入当前分支。
+- 正常安装版可使用环境已有的 `toolkit desktop` 或 Computer Use 读取窗口、AX 与截图，再操作真实控件。CLI 发起的原生输入仍可能占用系统桌面；后台读取、隔离 DOM 驱动和全局输入要区分，不承诺多会话键鼠操作互不影响。
+- 桌面 CLI 先读当前后端指南，写操作先预演；用新读取的窗口、控件和坐标，不固化 PID／窗口 ID。操作后读回业务结果；退出码、`confirmed` 或截图差分不单独代表成功。超时／疑似未生效时先检查实际状态，不自动重放输入、安装、保存或提交。
+- 用户已授权的替换按既有授权完成，不反复请求同一授权。只更新目标范围；不能因目录框自动化失败而直接改写运行中宿主的注册文件、放宽权限或顺带重启整个应用。锁屏、用户或其他会话打断输入时，该轮标记受干扰；继续不依赖桌面的检查，必要时请求具体的人工协助。
+- 正式替换前备份目标包和注册信息；替换后核对注册版本／目录、包指纹、实际进程路径及界面状态。没有替换并加载的页面不能称为安装版实测；新改动／新构建不能继承旧包的通过结论。
+- CLI 输出保持 JSON 兼容。验收记录分别列出自动检查、隔离宿主、正式安装版和待验项，记录提交／构建版本、驱动方式、结果与证据路径；截图、会话 token、用户数据和机器日志保留在 Git 外。
