@@ -3,7 +3,7 @@ import Darwin
 
 private let socketPath = "/var/run/cn.ac.camellia.flowhub.resource-monitor.sock"
 private let serviceName = "cn.ac.camellia.flowhub.resource-monitor"
-private let maxRequestBytes = 16 * 1024
+private let maxRequestBytes = 64 * 1024
 
 private func consoleUID() -> uid_t? {
     var attributes = stat()
@@ -57,7 +57,8 @@ private func processRecords() -> [[String: Any]] {
             "ppid": Int(bsd.pbi_ppid),
             "memory": taskReadable ? Int(task.pti_resident_size) : NSNull(),
             "footprint": footprintReadable ? Int(usage.ri_phys_footprint) : NSNull(),
-            "cpuTime": taskReadable ? UInt64(task.pti_total_user) &+ UInt64(task.pti_total_system) : 0
+            "cpuTime": taskReadable ? UInt64(task.pti_total_user) &+ UInt64(task.pti_total_system) : 0,
+            "controlEligible": controllableRoot(ProcessIdentity(pid: pid, uid: bsd.pbi_uid, started: started, executable: executable))
         ]
     }
 }
@@ -68,7 +69,13 @@ private func sendJSON(_ value: [String: Any], to fd: Int32) {
     bytes.withUnsafeMutableBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return }
         var offset = 0
+        let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
         while offset < buffer.count {
+            let now = DispatchTime.now().uptimeNanoseconds
+            if now >= deadline { return }
+            let left = deadline - now
+            var timeout = timeval(tv_sec: Int(left / 1_000_000_000), tv_usec: Int32((left % 1_000_000_000) / 1000))
+            _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             let written = Darwin.write(fd, base.advanced(by: offset), buffer.count - offset)
             if written <= 0 { return }
             offset += written
@@ -76,6 +83,21 @@ private func sendJSON(_ value: [String: Any], to fd: Int32) {
     }
 }
 
+private final class SnapshotStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var records = [[String: Any]]()
+    private var at: UInt64 = 0
+    func refresh() {
+        let next = processRecords()
+        lock.lock(); records = next; at = UInt64(Date().timeIntervalSince1970 * 1000); lock.unlock()
+    }
+    func value() -> [String: Any] {
+        lock.lock(); defer { lock.unlock() }
+        return ["processes": records, "at": at]
+    }
+}
+private let snapshots = SnapshotStore()
+private let controlPolicy = ControlPolicy.load()
 private func handle(_ client: Int32) {
     defer { close(client) }
     var timeout = timeval(tv_sec: 2, tv_usec: 0)
@@ -85,13 +107,17 @@ private func handle(_ client: Int32) {
     var peerGID: gid_t = 0
     guard getpeereid(client, &peerUID, &peerGID) == 0,
           peerUID > 0, peerUID == consoleUID() else {
-        sendJSON(["error": "仅当前登录用户可读取资源快照"], to: client)
-        return
+        sendJSON(["error": "仅当前登录用户可访问进程服务"], to: client); return
     }
-
+    let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
     var request = Data()
     var chunk = [UInt8](repeating: 0, count: 4096)
     while request.count < maxRequestBytes {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if now >= deadline { return }
+        let remaining = deadline - now
+        timeout = timeval(tv_sec: Int(remaining / 1_000_000_000), tv_usec: Int32((remaining % 1_000_000_000) / 1000))
+        _ = setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         let length = recv(client, &chunk, chunk.count, 0)
         if length <= 0 { return }
         request.append(contentsOf: chunk.prefix(length))
@@ -100,16 +126,24 @@ private func handle(_ client: Int32) {
     guard request.count < maxRequestBytes,
           let newline = request.firstIndex(of: 10),
           let body = try? JSONSerialization.jsonObject(with: request[..<newline]) as? [String: Any] else {
-        sendJSON(["error": "只支持只读快照请求"], to: client)
-        return
+        sendJSON(["error": "请求无效"], to: client); return
     }
     switch body["method"] as? String {
     case "status":
-        sendJSON(["service": serviceName, "protocolVersion": 1, "uid": Int(geteuid())], to: client)
+        var response: [String: Any] = ["service": serviceName, "protocolVersion": 2, "uid": Int(geteuid()), "capabilities": ["root-process-control"]]
+        if let policy = controlPolicy, let data = try? JSONEncoder().encode(policy), let value = try? JSONSerialization.jsonObject(with: data) { response["controlPolicy"] = value }
+        sendJSON(response, to: client)
     case "snapshot":
-        sendJSON(["processes": processRecords()], to: client)
+        var response = snapshots.value()
+        response["controlAllowed"] = trustedControlPeer(client, uid: peerUID, policy: controlPolicy)
+        sendJSON(response, to: client)
+    case "terminate":
+        guard trustedControlPeer(client, uid: peerUID, policy: controlPolicy) else {
+            sendJSON(["error": "调用方未获准控制 root 进程，请通过 FlowHub 升级授权"], to: client); return
+        }
+        sendJSON(terminateRoots(body), to: client)
     default:
-        sendJSON(["error": "只支持只读快照请求"], to: client)
+        sendJSON(["error": "不支持的请求"], to: client)
     }
 }
 
@@ -142,15 +176,39 @@ private func runDaemon() -> Never {
         exit(EXIT_FAILURE)
     }
 
+    // One bounded collector publishes snapshots; a slow collection or peer
+    // never serializes status requests behind itself.
+    DispatchQueue(label: "cn.ac.camellia.flowhub.resource-sampling").async {
+        while true { snapshots.refresh(); Thread.sleep(forTimeInterval: 2) }
+    }
+    let capacity = DispatchSemaphore(value: 16)
     while true {
         let client = accept(server, nil, nil)
-        if client >= 0 { handle(client) }
+        guard client >= 0 else { continue }
+        guard capacity.wait(timeout: .now()) == .success else { close(client); continue }
+        DispatchQueue.global(qos: .utility).async {
+            defer { capacity.signal() }; handle(client)
+        }
     }
 }
 
 @main
 struct ResourceMonitorDaemon {
     static func main() {
+        #if FLOWHUB_CONTROL_TESTS
+        if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--auth-self-check" {
+            guard peerAuthSelfCheck(client: CommandLine.arguments[2]) else { exit(EXIT_FAILURE) }
+            print("socket audit-token, client signature and host ancestry checks passed"); return
+        }
+        #endif
+        if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--control-self-check" {
+            guard controlSelfCheck() else { exit(EXIT_FAILURE) }; print("control policy checks passed"); return
+        }
+        if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--control-policy" {
+            guard let uid = UInt32(CommandLine.arguments[4]), let policy = ControlPolicy.create(host: CommandLine.arguments[2], client: CommandLine.arguments[3], uid: uid),
+                  let data = try? JSONEncoder().encode(policy) else { exit(EXIT_FAILURE) }
+            FileHandle.standardOutput.write(data); return
+        }
         if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--self-check" {
             let records = processRecords()
             guard let current = records.first(where: { $0["pid"] as? Int == Int(getpid()) }),

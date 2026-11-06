@@ -80,6 +80,17 @@ test('system monitor install confirmation discloses the privileged read-only ser
   ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
   assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
 });
+test('root control install confirmation describes selected targets and protected processes before installation',async t=>{
+  const monitor={...fresh,permissions:['native-process','system-process-monitor','system-process-control']};
+  const mock=backend({}, {catalog:[manifest,monitor]}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.button('安装',ui.article(monitor.name)).click();await wait(()=>ui.button('确认'));
+  const detail=ui.w.document.querySelector('[role="dialog"]').textContent;
+  for(const disclosure of [/确认选择的第三方 root 进程/,/系统核心进程、宿主和采集器本身继续受保护/,/不执行任意管理员命令/,/可能需要重新授权/,/macOS 认证/])assert.match(detail,disclosure);
+  assert.doesNotMatch(detail,/也不能结束进程/);
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+  ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+});
 test('same-version reinstallation remains an explicit advanced action',async t=>{
   const mock=backend(),ui=setup(t,mock.invoke);await ready(ui);
   assert.equal(ui.button('重新安装'),undefined);

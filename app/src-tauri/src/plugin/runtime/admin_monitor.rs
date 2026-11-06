@@ -31,49 +31,60 @@ fn digest(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
-fn running() -> bool {
+fn probe() -> Option<Value> {
     let Ok(mut stream) = UnixStream::connect(SOCKET) else {
-        return false;
+        return None;
     };
     let mut uid = 0;
     let mut gid = 0;
     if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 || uid != 0 {
-        return false;
+        return None;
     }
     let timeout = Some(Duration::from_secs(2));
     if stream.set_read_timeout(timeout).is_err()
         || stream.set_write_timeout(timeout).is_err()
         || stream.write_all(b"{\"method\":\"status\"}\n").is_err()
     {
-        return false;
+        return None;
     }
     let mut response = String::new();
     let mut reader = BufReader::new(std::io::Read::take(stream, 4096));
     if reader.read_line(&mut response).is_err() {
-        return false;
+        return None;
     }
     let Ok(value) = serde_json::from_str::<Value>(&response) else {
-        return false;
+        return None;
     };
-    value["service"] == LABEL && value["protocolVersion"] == 1 && value["uid"] == 0
+    (value["service"] == LABEL && matches!(value["protocolVersion"].as_u64(),Some(1|2)) && value["uid"] == 0).then_some(value)
 }
 
-fn status() -> Value {
-    if running() {
-        let needs_update = bundled_helper().and_then(|source| digest(&source).ok())
-            != digest(Path::new(INSTALLED_HELPER)).ok();
-        if needs_update {
-            return json!({"ok":true,"status":"needsUpdate","message":"系统进程采集服务需要更新。请通过管理员授权安装当前版本。"});
+fn running()->bool {probe().is_some()}
+fn control_policy(client:Option<&Path>)->Result<Option<Value>,String> {
+    let Some(client)=client else{return Ok(None);};
+    let host=std::env::current_exe().and_then(|p|p.canonicalize()).map_err(|_|"无法核验 FlowHub 路径")?;
+    let helper=bundled_helper().ok_or("应用包缺少系统进程采集器")?;
+    let output=Command::new(helper).arg("--control-policy").arg(host).arg(client).arg(unsafe{libc::geteuid()}.to_string()).output().map_err(|_|"无法核验进程控制客户端")?;
+    if !output.status.success() {return Err("宿主或采集插件的代码签名无法核验，请使用完整构建后重新授权。".into());}
+    let value:Value=serde_json::from_slice(&output.stdout).map_err(|_|"进程控制客户端信息无效")?;
+    Ok(Some(value))
+}
+fn status(client:Option<&Path>) -> Value {
+    if let Some(service)=probe() {
+        let needs_update=bundled_helper().and_then(|source|digest(&source).ok())!=digest(Path::new(INSTALLED_HELPER)).ok();
+        let policy=control_policy(client);
+        let control=client.is_some()&&policy.as_ref().ok().and_then(|p|p.as_ref()).is_some_and(|p|p==&service["controlPolicy"]);
+        if needs_update || (client.is_some()&&!control) {
+            return json!({"ok":true,"status":"needsUpdate","rootControl":false,"message":"系统进程服务需要授权升级。升级后可结束所选第三方 root 进程，系统核心进程仍受保护。"});
         }
-        return json!({"ok":true,"status":"enabled","message":"系统进程采集已启用。只读服务以 root 身份运行，可随时停用并卸载。"});
+        return json!({"ok":true,"status":"enabled","rootControl":control,"message":if control {"系统进程采集与第三方 root 进程控制已获准。"} else {"系统进程只读采集已获准。"}});
     }
     if bundled_helper().is_none() {
-        return json!({"ok":false,"status":"missingHelper","message":"当前应用包缺少系统进程采集器，请重新构建或安装包含此功能的 FlowHub。"});
+        return json!({"ok":false,"status":"missingHelper","message":"当前应用包缺少系统进程采集器，请重新构建或安装完整的 FlowHub。"});
     }
-    if Path::new(PLIST).exists() || Path::new(INSTALLED_HELPER).exists() {
-        return json!({"ok":true,"status":"needsRepair","message":"系统进程采集服务未运行。请重新授权以修复，或停用并卸载服务。"});
+    if Path::new(PLIST).exists()||Path::new(INSTALLED_HELPER).exists() {
+        return json!({"ok":false,"status":"unreachable","message":"进程服务暂未响应；正在自动重试，这不表示管理员授权已撤销。"});
     }
-    json!({"ok":true,"status":"notRegistered","message":"启用系统进程采集需管理员授权。macOS 将弹出系统认证窗口，安装只读采集服务。"})
+    json!({"ok":true,"status":"notRegistered","rootControl":false,"message":"系统进程采集与第三方 root 进程控制需要管理员授权安装。"})
 }
 
 fn shell_quote(value: &str) -> String {
@@ -166,7 +177,7 @@ fi
             r#"if /bin/launchctl print "system/$service" >/dev/null 2>&1; then
   /bin/launchctl bootout "system/$service"
 fi
-/bin/rm -f "$plist" "$helper"
+/bin/rm -f "$plist" "$helper" "$helper_dir/control.json"
 if [ -d "$helper_dir" ]; then /bin/rmdir "$helper_dir"; fi
 if [ -S /var/run/cn.ac.camellia.flowhub.resource-monitor.sock ]; then
   /bin/rm -f /var/run/cn.ac.camellia.flowhub.resource-monitor.sock
@@ -179,7 +190,7 @@ fi
 
 fn authorize(script: &str, installing: bool) -> Result<bool, String> {
     let prompt = if installing {
-        "FlowHub 需要安装只读的系统进程采集服务，以查看其他用户和 root 进程的资源占用。"
+        "FlowHub 需要安装进程服务：读取系统进程资源，并允许结束经确认的第三方 root 进程。系统核心进程仍受保护。"
     } else {
         "FlowHub 需要停止并卸载系统进程采集服务。"
     };
@@ -223,9 +234,9 @@ fn authorize(script: &str, installing: bool) -> Result<bool, String> {
     ))
 }
 
-pub(super) fn invoke(action: &str) -> Result<Value, String> {
+pub(super) fn invoke(action: &str, client:Option<&Path>) -> Result<Value, String> {
     if action == "status" {
-        return Ok(status());
+        return Ok(status(client));
     }
     let _guard = INSTALLATION
         .try_lock()
@@ -238,20 +249,27 @@ pub(super) fn invoke(action: &str) -> Result<Value, String> {
     } else {
         None
     };
-    let script = root_script(
+    let policy=if action=="enable" {control_policy(client)?} else {None};
+    let mut script = root_script(
         source
             .as_ref()
             .map(|(path, hash)| (path.as_path(), hash.as_str())),
     );
+    if action=="enable" {
+        let install=if let Some(policy)=policy {
+            format!("/usr/bin/printf '%s\\n' {} > \"$stage/control.json\"\n/usr/bin/install -o root -g wheel -m 0600 \"$stage/control.json\" \"$helper_dir/control.json\"\n",shell_quote(&policy.to_string()))
+        } else {"/bin/rm -f \"$helper_dir/control.json\"\n".into()};
+        script=script.replace("/bin/launchctl bootstrap system \"$plist\"",&format!("{install}/bin/launchctl bootstrap system \"$plist\""));
+    }
     if !authorize(&script, action == "enable")? {
-        let mut value = status();
+        let mut value = status(client);
         value["message"] = "已取消管理员授权。".into();
         return Ok(value);
     }
     if action == "enable" {
         for _ in 0..30 {
             if running() {
-                return Ok(status());
+                return Ok(status(client));
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -260,7 +278,7 @@ pub(super) fn invoke(action: &str) -> Result<Value, String> {
     if running() {
         return Err("采集服务仍在运行，卸载未完成。".into());
     }
-    let mut value = status();
+    let mut value = status(client);
     value["message"] = "系统进程采集服务已停止并卸载，当前使用普通用户权限采集。".into();
     Ok(value)
 }

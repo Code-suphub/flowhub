@@ -20,7 +20,7 @@ pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessi
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
 fn valid_permissions(id:&str, permissions:&[String])->bool {
-    permissions==["native-process"] || (id=="resource-monitor" && permissions.len()==2 && permissions.iter().any(|p|p=="native-process") && permissions.iter().any(|p|p=="system-process-monitor"))
+    permissions==["native-process"] || (id=="resource-monitor" && (permissions.len()==2||permissions.len()==3) && permissions.iter().any(|p|p=="native-process") && permissions.iter().any(|p|p=="system-process-monitor") && permissions.iter().all(|p|matches!(p.as_str(),"native-process"|"system-process-monitor"|"system-process-control")) && permissions.iter().collect::<std::collections::HashSet<_>>().len()==permissions.len())
 }
 fn inside(root:&Path, relative:&str)->Result<PathBuf,String> {
     let relative=Path::new(relative);
@@ -61,7 +61,8 @@ impl Runtime {
                 if !plugin.manifest.permissions.iter().any(|permission|permission=="system-process-monitor") {
                     return Err("已安装的插件版本未声明系统进程监控授权能力；请重新安装插件并确认该权限。".into());
                 }
-                return privileged_monitor::invoke(action).await;
+                let client=if plugin.manifest.permissions.iter().any(|p|p=="system-process-control") {Some(inside(&plugin.directory,&plugin.manifest.executable)?)} else {None};
+                return privileged_monitor::invoke(action,client).await;
             }
         }
         self.session(id).await?.call("widget_api".into(),params).await
@@ -256,7 +257,8 @@ pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
             if !plugin.manifest.permissions.iter().any(|permission|permission=="system-process-monitor") {
                 return Err("已安装的插件版本未声明系统进程监控授权能力；请重新安装插件并确认该权限。".into());
             }
-            return privileged_monitor::invoke(action).await;
+            let client=if plugin.manifest.permissions.iter().any(|p|p=="system-process-control") {Some(inside(&plugin.directory,&plugin.manifest.executable)?)} else {None};
+                return privileged_monitor::invoke(action,client).await;
         }
     }
     let rt=app.state::<Runtime>();rt.session(&id).await?.call(method,params).await

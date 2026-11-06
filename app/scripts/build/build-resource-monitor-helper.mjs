@@ -17,7 +17,7 @@ const run=(command,args)=>{
 
 if(process.platform==='darwin'){
   const source=join(app,'scripts','privileged-monitor');
-  run('swiftc',['-parse-as-library',join(source,'daemon.swift'),'-o',daemon]);
+  run('swiftc',['-parse-as-library',join(source,'daemon.swift'),join(source,'control.swift'),'-o',daemon]);
   chmodSync(daemon,0o755);
 
   // The admin-authorized installer supports ad-hoc local builds. Developer ID
@@ -40,6 +40,7 @@ if(process.platform==='darwin'){
     throw new Error(`Could not sign the resource-monitor daemon with "${identity}". Ensure this identity is valid and is also used by Tauri for the app.`,{cause:error});
   }
   run(daemon,['--self-check']);
+  run(daemon,['--control-self-check']);
 }else{
   writeFileSync(daemon,'#!/bin/sh\nexit 1\n');
   chmodSync(daemon,0o755);
