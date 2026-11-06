@@ -15,6 +15,8 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
   const dir = await mkdtemp(join(tmpdir(), "flowhub-server-test-"));
   let child;
   let fixture;
+  const listeners = new Map(), observedRequests = new Map();
+  let probeSequence = 0;
   t.after(async () => {
     if (child && child.exitCode === null) { child.kill(); await once(child, "exit"); }
     if (fixture) await new Promise((resolve) => fixture.close(resolve));
@@ -31,7 +33,11 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
   await writeFile(join(dir, ".env"), "PRIVATE-FIXTURE");
   await writeFile(join(dir, "outside.txt"), "PRIVATE-FIXTURE");
   await symlink(join(dir, "outside.txt"), join(dir, "linked.html"));
-  child = spawn(process.execPath, [join(dir, "legacy", "server.mjs")], { env: { ...process.env, PORT: "0", APP_ORIGIN: "http://untrusted.invalid" }, stdio: ["ignore", "pipe", "pipe"] });
+  child = spawn(process.execPath, ["--import", new URL("legacy/fixtures/listener-observer.mjs", source).href, join(dir, "legacy", "server.mjs")], { env: { ...process.env, PORT: "0", APP_ORIGIN: "http://untrusted.invalid" }, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  child.on("message", (message) => {
+    if (message.type === "test:listening") listeners.set(message.address.port, message.address);
+    if (message.type === "test:request") observedRequests.set(message.id, message);
+  });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += chunk; });
   const base = await new Promise((resolve, reject) => {
@@ -39,17 +45,32 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
     child.stdout.on("data", (chunk) => { const match = String(chunk).match(/http:\/\/127\.0\.0\.1:\d+/); if (match) resolve(match[0]); });
   });
   const port = Number(new URL(base).port);
-  function call(path, { method = "GET", headers = {}, body } = {}) {
+  function call(path, { method = "GET", headers = {}, body, hostname = "127.0.0.1", targetPort = port, timeout } = {}) {
     return new Promise((resolve, reject) => {
-      const req = request({ hostname: "127.0.0.1", port, path, method, headers }, (res) => {
+      let timer;
+      const finish = (error, result) => { clearTimeout(timer); error ? reject(error) : resolve(result); };
+      const req = request({ hostname, port: targetPort, path, method, headers }, (res) => {
         let text = "";
         res.setEncoding("utf8");
         res.on("data", (chunk) => { text += chunk; });
-        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text }));
+        res.on("error", finish);
+        res.on("end", () => finish(null, { status: res.statusCode, headers: res.headers, text }));
       });
-      req.on("error", reject);
+      req.on("error", finish);
+      if (timeout) timer = setTimeout(() => req.destroy(Object.assign(new Error("probe timed out"), { code: "ETIMEDOUT" })), timeout);
       req.end(body);
     });
+  }
+  async function observation(map, key) {
+    const deadline = Date.now() + 1000;
+    while (!map.has(key) && Date.now() < deadline) await delay(10);
+    assert.ok(map.has(key), "missing child socket observation");
+    return map.get(key);
+  }
+  function assertLoopbackRequest(observed) {
+    assert.equal(observed.localAddress, "127.0.0.1");
+    assert.equal(observed.localPort, port);
+    assert.match(observed.remoteAddress, /^(?:127\.|::ffff:127\.)|^::1$/);
   }
   const token = JSON.parse((await call("/api/session")).text).token;
   const headers = { "content-type": "application/json", "x-flowhub-token": token, origin: base };
@@ -89,18 +110,66 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
     await writeFile(join(dir, "config.json"), original);
   });
 
-  await t.test("listener is loopback-only; sockets and incomplete headers are bounded", async () => {
+  await t.test("server binds only IPv4 loopback, independently of local proxy routes", async () => {
+    assert.deepEqual(await observation(listeners, port), { address: "127.0.0.1", family: "IPv4", port });
+  });
+
+  await t.test("non-loopback requests are unreachable or rejected after verified loopback forwarding", async (t) => {
     const localAddresses = Object.values(networkInterfaces()).flat().filter((entry) => entry.family === "IPv4" && !entry.internal).map((entry) => entry.address);
     for (const host of ["::1", ...new Set(localAddresses)]) {
-      const reachable = await new Promise((resolve) => {
-        const socket = connect(port, host);
-        socket.setTimeout(1000);
-        socket.once("connect", () => { socket.destroy(); resolve(true); });
-        socket.once("error", () => resolve(false));
-        socket.once("timeout", () => { socket.destroy(); resolve(false); });
-      });
-      assert.equal(reachable, false, host);
+      const id = `probe-${++probeSequence}`;
+      let result;
+      try {
+        result = await call("/api/config", { hostname: host, headers: { "x-flowhub-test-probe": id }, timeout: 1000 });
+      } catch (error) {
+        assert.ok(["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "ETIMEDOUT", "ECONNRESET"].includes(error.code), `unexpected probe failure: ${error.code}`);
+        continue;
+      }
+      // TUN/proxy stacks can relay an interface address to loopback. Do not
+      // confuse their TCP handshake with a wildcard listener in this child.
+      assertLoopbackRequest(await observation(observedRequests, id));
+      assert.equal(result.status, 403);
+      assert.deepEqual(JSON.parse(result.text), { ok: false, reason: "Host 不受信任" });
+      t.diagnostic(`${host}: forwarded to verified loopback socket; untrusted Host rejected`);
     }
+  });
+
+  await t.test("a controlled local relay preserves Host, Origin and token checks", async () => {
+    const relay = createServer((req, res) => {
+      const upstream = request({ hostname: "127.0.0.1", port, path: req.url, method: req.method, headers: req.headers }, (response) => {
+        res.writeHead(response.statusCode, response.headers);
+        response.pipe(res);
+      });
+      upstream.on("error", (error) => res.destroy(error));
+      req.pipe(upstream);
+    });
+    relay.listen(0, "127.0.0.1");
+    await once(relay, "listening");
+    const targetPort = relay.address().port;
+    try {
+      const cases = [
+        { headers: {}, status: 403, reason: "Host 不受信任" },
+        { headers: { host: `127.0.0.1:${port}` }, status: 200 },
+        { headers: { host: `127.0.0.1:${port}`, origin: "https://untrusted.invalid" }, status: 403, reason: "Origin 不受信任" },
+        { method: "POST", headers: { host: `127.0.0.1:${port}`, "content-type": "application/json" }, body: '{"items":[]}', status: 403, reason: "缺少有效写入令牌" },
+      ];
+      const before = await readFile(join(dir, "config.json"), "utf8");
+      for (const entry of cases) {
+        const id = `probe-${++probeSequence}`;
+        const result = await call("/api/config", { ...entry, targetPort, headers: { ...entry.headers, "x-flowhub-test-probe": id }, timeout: 2000 });
+        assertLoopbackRequest(await observation(observedRequests, id));
+        assert.equal(result.status, entry.status);
+        if (entry.reason) assert.deepEqual(JSON.parse(result.text), { ok: false, reason: entry.reason });
+        else assert.deepEqual(JSON.parse(result.text), JSON.parse(before));
+      }
+      assert.equal(await readFile(join(dir, "config.json"), "utf8"), before);
+    } finally {
+      relay.closeAllConnections();
+      await new Promise((resolve) => relay.close(resolve));
+    }
+  });
+
+  await t.test("sockets and incomplete headers are bounded", async () => {
     const sockets = Array.from({ length: 40 }, () => {
       const socket = connect(port, "127.0.0.1");
       socket.on("error", () => {});

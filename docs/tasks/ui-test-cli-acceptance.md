@@ -24,6 +24,10 @@
 
 应用 `npm test` 完整通过；后续新增／修订的 CLI 专项共 12 项通过，Cargo feature 的隔离校验专项通过，类型与 UI 资源构建通过，`git diff --check` 通过。正常 feature 的依赖树无 wdio，驱动只在明确的测试构建中启用。
 
-根目录 `npm test` 已运行，有一项 legacy 回环监听边界子测试失败：监听仅绑定 127.0.0.1，但本机 198.18.0.1 也可连通。同样现象可在完全独立的纯 Node 回环服务上复现；legacy 服务与测试文件逐字节等于分支基线，未为本次改造修改它们，也未关闭用户网络软件或跳过断言。此项记录为环境相关失败，不报告全仓测试全部通过。
+首次 CLI 验收的根目录 `npm test` 有一项 legacy 回环监听边界子测试失败：监听仅绑定 127.0.0.1，但本机 198.18.0.1 也可连通。当时 legacy 服务与测试文件均未修改，结果按实际失败留档。
+
+后续确认运行中的 Mihomo TUN 会转发虚拟网卡地址到回环。按用户授权修正测试：通过仅测试使用的预加载器／私有 IPC 断言真实监听地址，非回环请求的实际响应必须由回环 socket 接收且拒绝非法 Host；受控转发 fixture 验证 Host、Origin 和写入令牌。未排除 TUN 网卡、跳过断言或调整代理配置；`legacy/server.mjs` 不变。测试方法见[旧 Web 服务访问边界](../architecture/legacy/legacy-web-security.md)。
+
+修复后在 TUN 保持开启的环境中，根目录 `npm test` 的 16 项测试全部通过，`cd app && npm test` 完整通过，`git diff --check` 通过。临时副本故意把服务监听改为 `0.0.0.0`，监听断言准确报告实际地址不符并返回非零退出码，确认没有放宽错误绑定检查；临时副本随后清理。修复验收证据保存在 `/Users/bilibili/.local/state/flowhub-network-audit/test-fix-20261107-021147`，包含两级回归日志及故障注入结果；此前环境失败项已关闭。
 
 私有证据：`/Users/bilibili/.local/state/flowhub-ui-test-cli/20261107-014700`，包含最终计划、逐步报告、真实 WKWebView 截图、RPC 日志、负向计划与失败截图、清理结果及各项测试日志。私钥、用户数据、截图与日志不进入 Git。
