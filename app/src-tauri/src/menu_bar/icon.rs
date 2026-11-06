@@ -1,4 +1,4 @@
-/// A transparent, monochrome version of FlowHub's F-and-dot mark.
+/// A transparent, monochrome version of FlowHub's faceted diamond mark.
 /// macOS template images use alpha as a mask, so the application icon's
 /// opaque rounded background must not be included here.
 pub(crate) fn image() -> tauri::image::Image<'static> {
@@ -12,11 +12,10 @@ pub(crate) fn image() -> tauri::image::Image<'static> {
                 for sx in 0..SAMPLES {
                     let px = (x as f64 + (sx as f64 + 0.5) / SAMPLES as f64) / 2.0;
                     let py = (y as f64 + (sy as f64 + 0.5) / SAMPLES as f64) / 2.0;
-                    let stem = (3.5..6.5).contains(&px) && (2.0..16.0).contains(&py);
-                    let top = (3.5..14.5).contains(&px) && (2.0..5.0).contains(&py);
-                    let middle = (3.5..12.5).contains(&px) && (7.5..10.5).contains(&py);
-                    let dot = (px - 14.5).powi(2) + (py - 14.5).powi(2) <= 1.5_f64.powi(2);
-                    if stem || top || middle || dot {
+                    let diamond = (px - 9.0).abs() / 6.0 + (py - 9.0).abs() / 8.0 <= 1.0;
+                    // An open seam preserves the two facets at menu-bar size.
+                    let seam = px < 9.0 && (py - 9.0).abs() < 0.6;
+                    if diamond && !seam {
                         covered += 1;
                     }
                 }

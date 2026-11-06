@@ -1,4 +1,5 @@
 import { AppWindowIcon, ClipboardIcon, CommandIcon, Layers2Icon, PackageOpenIcon, ShieldIcon } from 'lucide-react';
+import { FlowHubLogo } from '../shared/FeatureIcon';
 import { Button, Tabs } from '../shared/ui';
 import { Switch } from '../shared/controls';
 import { isKnownMenuBarSection, menuBarSectionLabel } from '../shared/menu-bar';
@@ -24,7 +25,7 @@ export function MenuBar({ store }: { store: SettingsStore }) {
   const shown = items.filter(item => item.section === 'visible' || item.section === 'hidden');
   const filtered = filter === 'visible' ? shown : items;
   return <div className="settings-menubar">
-    {preview ? <div className="settings-menu-demo" aria-label="菜单栏效果演示"><span>显示效果</span><div>{shown.map(item => { const Icon = item.Icon || AppWindowIcon; return <Icon key={item.windowId} aria-label={item.displayName} />; })}</div><small>示例数据</small></div> : null}
+    {preview ? <div className="settings-menu-demo" aria-label="菜单栏效果演示"><span>显示效果</span><div>{shown.map(item => { const Icon = item.Icon || AppWindowIcon; return item.displayName==='FlowHub'?<span key={item.windowId} role="img" aria-label="FlowHub"><FlowHubLogo/></span>:<Icon key={item.windowId} aria-label={item.displayName} />; })}</div><small>示例数据</small></div> : null}
     <div className="settings-menu-toolbar"><Tabs label="筛选菜单栏项目" items={[{ id: 'all', label: '全部项目' }, { id: 'visible', label: '已显示' }]} value={filter} onChange={setFilter} /><span>{shown.length} / {items.length} 项{preview ? '显示' : '可显示'}</span></div>
     <div className="settings-menu-items" role="tabpanel" id={`panel-${filter}`} aria-labelledby={`tab-${filter}`} aria-label="菜单栏项目">{filtered.map(item => {
       const id = Number(item.windowId ?? item.window_id);
@@ -32,7 +33,7 @@ export function MenuBar({ store }: { store: SettingsStore }) {
       const Icon = item.Icon || AppWindowIcon;
       const disabled = !item.hideable || !isKnownMenuBarSection(item.section) || (!preview && (!core.menuBar.organizerEnabled || !s.management.trusted || s.busy || s.conflict));
       return <label className="settings-menu-item" key={id}>
-        <span className="settings-menu-icon"><Icon aria-hidden="true" /></span>
+        <span className="settings-menu-icon">{item.displayName==='FlowHub'?<FlowHubLogo/>:<Icon aria-hidden="true" />}</span>
         <span className="settings-menu-copy"><strong>{name}</strong><small>{preview ? item.detail : `${menuBarSectionLabel(item.section)}${!item.hideable ? ' · 系统固定' : ''}`}</small></span>
         <Switch label={`显示 ${name}`} checked={isKnownMenuBarSection(item.section) && item.section !== 'alwaysHidden'} disabled={disabled} onChange={visible => {
           if (preview) setDemo(previous => previous.map(entry => entry.windowId === id ? { ...entry, section: visible ? 'visible' : 'alwaysHidden' } : entry));

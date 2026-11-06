@@ -93,7 +93,7 @@
 .settings-plugin-dock .fh-button:hover { background:var(--fh-study-card); }
 .settings-plugin-dock .fh-button[aria-pressed=true] { background:var(--fh-study-selected); box-shadow:inset 0 0 0 1px var(--fh-study-rim); }
 .settings-plugin-dock .settings-dock-plugin { min-width:0; flex:0 1 auto; }
-.settings-dock-plugin span { max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.settings-dock-label { max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .settings-dock-overflow { max-width:300px; max-height:min(400px,60dvh); overflow:auto; font:13px/1.5 -apple-system,sans-serif; }
 .settings-dock-overflow [role=menuitem] { overflow-wrap:anywhere; }
 .settings-plugin-dock svg { width:19px; height:19px; }
@@ -122,7 +122,7 @@ html[data-native-glass="true"] .settings-shell { background:var(--fh-study-readi
   .settings-core-group,.settings-core-group:last-child { padding:14px; }
   .fh-dialog.settings-plugin-drawer { bottom:84px; width:calc(100vw - 24px); padding:26px 14px 12px; max-height:calc(100dvh - 100px); }
   .settings-plugin-dock { max-width:calc(100vw - 24px); bottom:14px; }
-  .settings-dock-plugin span { display:none; }
+  .settings-dock-label { display:none; }
   .settings-plugin-dock .fh-button { padding-inline:9px; font-size:12px; gap:6px; }
 }
 @media(prefers-reduced-transparency:reduce) { .settings-stage .settings-shell,html[data-native-glass="true"] .settings-shell { background:var(--fh-surface); backdrop-filter:none; -webkit-backdrop-filter:none; } .settings-landscape { display:none; } .fh-dialog.settings-plugin-drawer { background:var(--fh-surface); backdrop-filter:none; -webkit-backdrop-filter:none; } }

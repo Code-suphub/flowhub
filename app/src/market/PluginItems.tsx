@@ -1,4 +1,5 @@
 import { ActivityIcon, BoxIcon, KeyRoundIcon, LayoutDashboardIcon, MessagesSquareIcon, MoreHorizontalIcon, PuzzleIcon, SearchIcon, ServerIcon, UsbIcon } from 'lucide-react';
+import { FeatureIcon, type IconTone } from '../shared/FeatureIcon';
 import { Button } from '../shared/ui';
 import { ActionMenu } from '../shared/ActionMenu';
 import { Badge } from '../components/ui/badge';
@@ -9,7 +10,8 @@ import type { MarketItemNavigation } from './useMarketNavigation';
 const icons:Record<string,typeof PuzzleIcon> = {'device-center':UsbIcon,'resource-monitor':ActivityIcon,machines:ServerIcon,docker:BoxIcon,twofa:KeyRoundIcon,'social-hub':MessagesSquareIcon};
 export function PluginIcon({id,manifest}: {id?:string;manifest?:Manifest}) {
   const Icon=icons[id || manifest?.id || ''] || (manifest?.widget?LayoutDashboardIcon:manifest?.statusSurface?ActivityIcon:manifest?.searchable?SearchIcon:PuzzleIcon);
-  return <span className="market-plugin-icon" aria-hidden="true"><Icon/></span>;
+  const tones:Record<string,IconTone>={'device-center':'blue','resource-monitor':'green',machines:'green',docker:'sky',twofa:'violet','social-hub':'pink'};
+  return <FeatureIcon icon={Icon} tone={tones[id || manifest?.id || ''] || 'violet'} size="large" className="market-plugin-icon"/>;
 }
 export function Features({manifest}: {manifest: Manifest}) {
   const features = [manifest.searchable && {label:'搜索入口',Icon:SearchIcon}, manifest.widget && {label:'桌面组件',Icon:LayoutDashboardIcon}, manifest.statusSurface && {label:'状态面板',Icon:ActivityIcon}].filter(Boolean) as {label:string;Icon:typeof SearchIcon}[];

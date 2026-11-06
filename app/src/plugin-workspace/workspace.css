@@ -3,8 +3,8 @@ html:has(#plugin-workspace-root),html:has(#plugin-workspace-root) body { backgro
 .workspace-dock-window { height:60px; display:flex; align-items:center; }
 .workspace-dock-window .settings-plugin-dock { position:relative; inset:auto; transform:none; width:max-content; min-width:180px; max-width:640px; height:60px; padding:9px; gap:4px; justify-content:center; box-shadow:inset 0 1px 0 var(--fh-study-rim); background:var(--fh-study-pane); }
 .workspace-dock-window .settings-plugin-dock .fh-button { padding-inline:10px; }
-.workspace-dock-window .settings-dock-plugin span { display:block; max-width:80px; }
-.workspace-dock-window .settings-plugin-trigger span { display:none; }
+.workspace-dock-window .settings-dock-label { display:block; max-width:80px; }
+.workspace-dock-window .settings-plugin-trigger .settings-dock-trigger-label { display:none; }
 .workspace-dock-window .settings-plugin-dock .workspace-drag-handle { padding:8px 4px; cursor:grab; color:var(--fh-muted); }
 .workspace-dock-window .workspace-drag-handle:active { cursor:grabbing; }
 .workspace-dock-window .settings-plugin-dock .workspace-hide { padding-inline:6px; color:var(--fh-muted); }

@@ -7,7 +7,7 @@ import { tools, clipboardLimit, hasExclusions } from './model';
 import { SettingsStore, useSettings } from './store';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { MenuBar } from './MenuBar';
-import { Layers2Icon } from 'lucide-react';
+import { FlowHubLogo } from '../shared/FeatureIcon';
 import { DataPanel, PathControl } from './DataPanel';
 import { SettingsSection } from './SettingsSection';
 export { DataPanel, PathControl } from './DataPanel';
@@ -146,7 +146,7 @@ function Updates({ store }: { store: SettingsStore }) {
   const statusNames: Record<string, string> = { unsupported: '当前环境不支持更新', idle: '尚未检查', checking: '正在检查', available: '发现新版本', downloaded: '等待安装', downloading: '正在下载', installing: '正在安装', 'not-available': '暂无可用更新', 'up-to-date': '已是最新版本', error: '更新失败' };
   return <div className="settings-updates">
     <section className="settings-core-group settings-update-summary" aria-label="版本状态" data-setting-label="版本状态" tabIndex={-1}>
-      <div className="settings-update-identity"><span className="settings-update-icon"><Layers2Icon aria-hidden="true" /></span><div><h2>FlowHub</h2><span className="fh-muted">当前版本 {update.currentVersion || '预览版'}</span></div></div>
+      <div className="settings-update-identity"><FlowHubLogo/><div><h2>FlowHub</h2><span className="fh-muted">当前版本 {update.currentVersion || '预览版'}</span></div></div>
       <div className="settings-update-status"><p role="status">{statusNames[update.status] || '尚未检查'}{update.availableVersion ? ` · ${update.availableVersion}` : ''}</p><div className="flex flex-wrap gap-2"><Button disabled={readonly() || ['checking', 'downloading', 'installing'].includes(update.status)} onClick={() => void store.run(async () => { const result = await write('checkForUpdates'); if (result.state) store.patch({ update: result.state }); })}>检查更新</Button>{['available', 'downloaded'].includes(update.status) ? <Button className="primary" onClick={() => void store.run(() => primaryUpdate(store))}>{update.status === 'downloaded' ? '重启安装' : '下载并安装'}</Button> : null}</div></div>
       {update.error ? <p role="alert" className="settings-error">{update.error}</p> : null}{['downloading', 'installing'].includes(update.status) && typeof update.percent === 'number' ? <progress aria-label="更新进度" max={100} value={update.percent} /> : null}
     </section>
