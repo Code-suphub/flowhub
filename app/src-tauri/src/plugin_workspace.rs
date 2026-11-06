@@ -15,6 +15,14 @@ pub(crate) struct Snapshot { module: String, open: bool, revision: u64 }
 #[derive(Default)]
 pub(crate) struct Workspace(Mutex<Snapshot>, AtomicBool);
 
+#[cfg(feature = "ui-test")]
+impl Workspace {
+    pub(crate) fn ui_test(module: String) -> Result<Self, String> {
+        if !valid_module(&module) { return Err("无效测试模块".into()); }
+        Ok(Self(Mutex::new(Snapshot { module, open: true, revision: 1 }), AtomicBool::new(false)))
+    }
+}
+
 fn allowed(label: &str) -> bool { matches!(label, "settings" | DOCK | PANEL) }
 fn valid_module(module: &str) -> bool {
     matches!(module, "extensions" | "overflow") || module.strip_prefix("plugin:").is_some_and(|id|
