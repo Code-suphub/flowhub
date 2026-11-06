@@ -77,7 +77,7 @@
 - [x] 屏幕权限关闭时出现明确提示；用户授权后系统设置显示 FlowHub 权限开启，扫描能启动系统截图进程。未完成选区时 75 秒后恢复控件、聚焦链接、保留草稿。
 - [x] 用户手动框选公开 public.png 后，读取原生结果为已解析／尚未保存、Example／public、SHA1／6 位／30 秒，与测试二维码一致；未确认导入。正文手动滚动后的原生截图为 `plugin-comparison/twofa-installed-screen-preview.png`，不是模拟 PNG 结果。
 - [x] Esc 取消按用户明确的安装版实测反馈通过留档；自动输入工具没有重放系统截图层操作。
-- [ ] 双屏选区待验：已将 FlowHub 移到外接 DELL P2419H，公开二维码留在内建 Retina 屏，开始选区前自动锁屏；请求解锁后继续，不将窗口移动记为跨屏选区通过。
+- [x] 双屏选区通过：解锁后将设置／插件窗口整组移到 DELL，窗口菜单核对 FlowHub 在 DELL、公开二维码在内建 Retina；两屏在线且未镜像。在 DELL 的空白导入表单点击扫描，用户框选内建屏二维码，原生结果 Example／public、SHA1／6 位／30 秒正确，且自动滚动可见。取消后仍为 3 个账户，加密文件／本地密钥哈希不变；证据为 `plugin-comparison/twofa-native-dual-screen-preview.png` 和 `twofa-dual-screen-layout.json`。仅覆盖当前两屏与该扫描方向。
 - [ ] 真实输入法、系统主题、最小窗口、测试账户持久化／验证码复制／启动器搜索，以及专用 Docker 实际测试引擎的写入结果，继续留在各插件验收清单。
 
 ## 后续各批验收与交付模板
