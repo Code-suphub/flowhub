@@ -50,6 +50,10 @@ mod network;
 mod plugin;
 mod plugin_workspace;
 mod updater;
+#[cfg(feature = "ui-test")]
+mod ui_test;
+#[cfg(feature = "ui-test")]
+pub use ui_test::run as run_ui_test;
 
 #[cfg(target_os = "macos")]
 tauri_panel! {
