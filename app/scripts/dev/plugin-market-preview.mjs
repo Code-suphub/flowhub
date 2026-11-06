@@ -46,7 +46,8 @@ const mock = String.raw`(()=>{
       case 'removeSource': sources=sources.filter(item=>item.id!==payload.id);return sources.map(item=>({...item}));
       case 'installCandidate': {const manifest=[...manifests,...publicManifests].find(item=>item.id===String(payload.token).split(':').at(-1));if(!manifest)throw Error('示例候选不存在');for(const progress of [{phase:'downloading',received:0,total:20*1024*1024},{phase:'downloading',received:12*1024*1024,total:20*1024*1024},{phase:'verifying'},{phase:'extracting'},{phase:'applying'}]){payload.onProgress?.onmessage(progress);await new Promise(resolve=>setTimeout(resolve,250));}const previous=installed.find(item=>item.manifest.id===manifest.id);installed=[...installed.filter(item=>item.manifest.id!==manifest.id),{manifest:{...manifest},directory:'/example/plugins/'+manifest.id,enabled:previous?.enabled??true,lastLoadedAt:Date.now()}];return null;}
       case 'install': {const manifest={id:'preview.local',name:'本地开发插件',version:'0.1.0',description:'仅用于本地目录安装预览。'};installed=[...installed,{manifest,directory:String(payload.directory||'/example/plugins/local-dev'),enabled:true,lastLoadedAt:Date.now()}];return null;}
-      case 'reload': return null;
+      case 'inspect': {const plugin=installed.find(item=>item.directory===payload.directory);if(!plugin)throw Error('示例目录不可用');return {...plugin,manifest:{...plugin.manifest}};}
+      case 'reload': installed=installed.map(item=>item.manifest.id===payload.id?{...item,lastLoadedAt:item.enabled?Date.now():item.lastLoadedAt}:item);return null;
       case 'enable': installed=installed.map(item=>item.manifest.id===payload.id?{...item,enabled:Boolean(payload.enabled)}:item);return null;
       case 'uninstall': installed=installed.filter(item=>item.manifest.id!==payload.id);return null;
       case 'chooseSource': return '/example/sources/local';

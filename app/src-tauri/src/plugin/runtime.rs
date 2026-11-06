@@ -15,7 +15,10 @@ pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String,
 pub(crate) struct WidgetDefinition { pub card:String, pub editor:String, pub detail:String, #[serde(default,rename="minWidth",skip_serializing_if="Option::is_none")] pub min_width:Option<u32>, #[serde(default,rename="minHeight",skip_serializing_if="Option::is_none")] pub min_height:Option<u32>, #[serde(default,skip_serializing_if="is_false")] pub interactive:bool }
 fn is_false(value:&bool)->bool{!*value}
 #[derive(Clone,Serialize,Deserialize)]
-pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool, #[serde(default,rename="lastLoadedAt",skip_serializing_if="Option::is_none")] last_loaded_at:Option<i64> }
+#[serde(tag="kind",rename_all="lowercase")]
+enum InstallOrigin { Directory, Market { #[serde(default,skip_serializing_if="Option::is_none")] source:Option<String> } }
+#[derive(Clone,Serialize,Deserialize)]
+pub(crate) struct Installed { manifest:Manifest, directory:PathBuf, enabled:bool, #[serde(default,rename="lastLoadedAt",skip_serializing_if="Option::is_none")] last_loaded_at:Option<i64>, #[serde(default,skip_serializing_if="Option::is_none")] origin:Option<InstallOrigin> }
 pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessions:tokio::sync::Mutex<HashMap<String,Arc<Session>>>,sources:Mutex<Vec<sources::Source>>,candidates:Mutex<HashMap<String,sources::Candidate>>,package_lock:tokio::sync::Mutex<()> }
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
@@ -35,7 +38,7 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     semver::Version::parse(&manifest.version).map_err(|e|e.to_string())?;
     inside(&directory,&manifest.ui)?; inside(&directory,&manifest.executable)?;
     if let Some(widget)=&manifest.widget {let ui=inside(&directory,&manifest.ui)?;let root=ui.parent().ok_or("缺少插件页面目录")?;for page in [&widget.card,&widget.editor,&widget.detail]{if !page.ends_with(".html"){return Err("组件入口必须为 HTML 页面".into());}inside(root,page)?;}}
-    Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None})
+    Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None,origin:Some(InstallOrigin::Directory)})
 }
 impl Runtime {
     #[cfg(feature = "ui-test")]
@@ -91,12 +94,36 @@ impl Runtime {
         Ok(Self{root,installed:Mutex::new(installed),sessions:tokio::sync::Mutex::new(HashMap::new()),sources:Mutex::new(sources),candidates:Mutex::new(HashMap::new()),package_lock:tokio::sync::Mutex::new(())})
     }
     pub(crate) fn loaded_at(&self,id:&str)->Option<i64>{self.get(id).ok().and_then(|p|p.last_loaded_at)}
-    fn list(&self)->Value { json!(self.installed.lock().unwrap().clone()) }
+    fn list(&self)->Value {
+        let managed=self.root.join("plugin-packages");let managed=managed.canonicalize().unwrap_or(managed);
+        let mut installed=self.installed.lock().unwrap().clone();
+        for p in &mut installed {if p.origin.is_none(){p.origin=Some(if p.directory.starts_with(&managed){InstallOrigin::Market{source:None}}else{InstallOrigin::Directory});}}
+        json!(installed)
+    }
     fn update(&self, f:impl FnOnce(&mut Vec<Installed>))->Result<Value,String> {
         let mut installed=self.installed.lock().unwrap();let mut next=installed.clone();f(&mut next);
         crate::storage::write_json_atomic(&self.root.join("plugins.json"),&json!(next))?;*installed=next;Ok(json!(*installed))
     }
-    fn get(&self,id:&str)->Result<Installed,String> { self.installed.lock().unwrap().iter().find(|p|p.manifest.id==id && p.enabled).cloned().ok_or("插件未安装或已停用".into()) }
+    fn registered(&self,id:&str)->Result<Installed,String> { self.installed.lock().unwrap().iter().find(|p|p.manifest.id==id).cloned().ok_or("插件未安装".into()) }
+    fn get(&self,id:&str)->Result<Installed,String> { self.registered(id).and_then(|p|if p.enabled{Ok(p)}else{Err("插件已停用".into())}) }
+    async fn reload(&self,id:&str,params:&Value)->Result<Value,String> {
+        let old=self.registered(id)?;
+        let mut next=package(old.directory.clone())?;
+        if next.manifest.id!=id{return Err("插件 ID 已变化，未更新当前插件".into());}
+        if let Some(expected)=params.get("expectedManifest") {
+            if expected!=&json!(next.manifest){return Err("目录内容已变化，请重新点击“更新”核对版本".into());}
+        }
+        if next.manifest.permissions.iter().any(|p|!old.manifest.permissions.contains(p)) && params["confirmedPermissions"]!=json!(next.manifest.permissions) {
+            return Err("插件新增运行权限，请先核对并确认".into());
+        }
+        next.enabled=old.enabled;
+        next.origin=old.origin;
+        next.last_loaded_at=if old.enabled{Some(chrono::Utc::now().timestamp_millis().max(old.last_loaded_at.unwrap_or(0).saturating_add(1)))}else{old.last_loaded_at};
+        self.stop(id).await;
+        self.update(|items|{if let Some(item)=items.iter_mut().find(|p|p.manifest.id==id){*item=next;}})?;
+        if old.enabled{self.session(id).await?.call("health".into(),json!({})).await.map_err(|e|format!("目录已更新，但插件启动检查失败：{e}"))?;}
+        Ok(self.list())
+    }
     async fn stop(&self,id:&str) {
         if let Some(session)=self.sessions.lock().await.remove(id) { let mut child=session.child.lock().await;let _=child.kill().await;let _=child.wait().await; }
     }
@@ -177,6 +204,79 @@ pub(crate) fn launcher_plugin_entries(window:tauri::WebviewWindow,app:tauri::App
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn reload_fixture(id:&str,enabled:bool)->(PathBuf,PathBuf,Runtime) {
+        use std::os::unix::fs::PermissionsExt;
+        static SEQUENCE:AtomicU64=AtomicU64::new(0);
+        let root=std::env::temp_dir().join(format!("flowhub-local-reload-{}-{}-{}",std::process::id(),chrono::Utc::now().timestamp_nanos_opt().unwrap(),SEQUENCE.fetch_add(1,Ordering::Relaxed)));
+        let directory=root.join("package");std::fs::create_dir_all(directory.join("ui")).unwrap();
+        std::fs::write(directory.join("ui/index.html"),"<p>fixture</p>").unwrap();
+        std::fs::write(directory.join("service"),"#!/bin/sh\nprintf 1 > \"$FLOWHUB_PLUGIN_DATA/started\"\nwhile IFS= read -r line; do printf '%s\\n' '{\"id\":1,\"result\":{\"protocol\":2}}'; done\n").unwrap();
+        std::fs::set_permissions(directory.join("service"),std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(directory.join("flowhub-plugin.json"),json!({"schema":2,"id":id,"name":"Local","version":"1.0.0","ui":"ui/index.html","executable":"service","permissions":["native-process"]}).to_string()).unwrap();
+        let mut installed=package(directory.clone()).unwrap();installed.enabled=enabled;
+        let runtime=Runtime::new(root.clone()).unwrap();runtime.update(|items|items.push(installed)).unwrap();
+        (root,directory,runtime)
+    }
+    fn set_fixture_manifest(directory:&Path,change:impl FnOnce(&mut Value))->Value {
+        let file=directory.join("flowhub-plugin.json");let mut manifest:Value=serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();change(&mut manifest);
+        std::fs::write(file,manifest.to_string()).unwrap();json!(package(directory.to_owned()).unwrap().manifest)
+    }
+    #[tokio::test]
+    async fn local_reload_restarts_original_package_and_same_version_changes_revision() {
+        let(root,directory,rt)=reload_fixture("local",true);
+        let first=rt.session("local").await.unwrap();first.call("health".into(),json!({})).await.unwrap();
+        let expected=set_fixture_manifest(&directory,|m|m["version"]=json!("1.1.0"));
+        std::fs::write(directory.join("service"),"#!/bin/sh\nprintf 2 > \"$FLOWHUB_PLUGIN_DATA/started\"\nwhile IFS= read -r line; do printf '%s\\n' '{\"id\":1,\"result\":{\"protocol\":2}}'; done\n").unwrap();
+        rt.reload("local",&json!({"expectedManifest":expected})).await.unwrap();
+        assert!(!Arc::ptr_eq(&first,&rt.session("local").await.unwrap()));
+        assert_eq!(std::fs::read_to_string(root.join("local/started")).unwrap(),"2");
+        assert_eq!(rt.registered("local").unwrap().manifest.version,"1.1.0");
+        let revision=rt.loaded_at("local").unwrap();rt.reload("local",&json!({"expectedManifest":expected})).await.unwrap();
+        assert!(rt.loaded_at("local").unwrap()>revision);
+        assert_eq!(rt.registered("local").unwrap().directory,directory.canonicalize().unwrap());
+        rt.stop("local").await;drop(first);drop(rt);std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn local_reload_preserves_disabled_state_and_never_starts_its_process() {
+        let(root,directory,rt)=reload_fixture("local",false);
+        let expected=set_fixture_manifest(&directory,|m|m["version"]=json!("1.1.0"));
+        rt.reload("local",&json!({"expectedManifest":expected})).await.unwrap();
+        let installed=rt.registered("local").unwrap();assert!(!installed.enabled);assert_eq!(installed.manifest.version,"1.1.0");assert_eq!(installed.last_loaded_at,None);
+        assert!(rt.sessions.lock().await.is_empty());assert!(!root.join("local/started").exists());
+        assert_eq!(Runtime::new(root.clone()).unwrap().list()[0]["enabled"],false);
+        drop(rt);std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn local_reload_rejects_changed_identity_and_stale_review_without_stopping_current_process() {
+        let(root,directory,rt)=reload_fixture("local",true);let first=rt.session("local").await.unwrap();
+        let expected=set_fixture_manifest(&directory,|m|m["version"]=json!("1.1.0"));
+        set_fixture_manifest(&directory,|m|m["id"]=json!("different"));
+        assert!(rt.reload("local",&json!({"expectedManifest":expected})).await.unwrap_err().contains("ID 已变化"));
+        set_fixture_manifest(&directory,|m|{m["id"]=json!("local");m["version"]=json!("1.2.0");});
+        assert!(rt.reload("local",&json!({"expectedManifest":expected})).await.unwrap_err().contains("目录内容已变化"));
+        assert!(Arc::ptr_eq(&first,&rt.session("local").await.unwrap()));assert_eq!(rt.registered("local").unwrap().manifest.version,"1.0.0");
+        std::fs::remove_file(directory.join("flowhub-plugin.json")).unwrap();assert!(rt.reload("local",&json!({})).await.is_err());
+        assert!(Arc::ptr_eq(&first,&rt.session("local").await.unwrap()));rt.stop("local").await;drop(first);drop(rt);std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn local_reload_requires_exact_confirmation_for_added_permissions() {
+        let(root,directory,rt)=reload_fixture("resource-monitor",false);
+        let expected=set_fixture_manifest(&directory,|m|m["permissions"]=json!(["native-process","system-process-monitor"]));
+        assert!(rt.reload("resource-monitor",&json!({"expectedManifest":expected})).await.unwrap_err().contains("权限"));
+        assert_eq!(rt.registered("resource-monitor").unwrap().manifest.permissions,vec!["native-process"]);
+        rt.reload("resource-monitor",&json!({"expectedManifest":expected,"confirmedPermissions":["native-process","system-process-monitor"]})).await.unwrap();
+        assert!(!rt.registered("resource-monitor").unwrap().enabled);drop(rt);std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn legacy_install_origin_is_inferred_without_rewriting_registration() {
+        let(root,_,rt)=reload_fixture("local",false);rt.update(|items|items[0].origin=None).unwrap();
+        assert_eq!(rt.list()[0]["origin"],json!({"kind":"directory"}));
+        let managed=root.join("plugin-packages/legacy-package");std::fs::create_dir_all(&managed).unwrap();
+        rt.update(|items|items[0].directory=managed.canonicalize().unwrap()).unwrap();
+        assert_eq!(rt.list()[0]["origin"],json!({"kind":"market"}));
+        let persisted:Value=serde_json::from_slice(&std::fs::read(root.join("plugins.json")).unwrap()).unwrap();assert!(persisted[0]["origin"].is_null());
+        drop(rt);std::fs::remove_dir_all(root).unwrap();
+    }
     #[test] fn launcher_catalog_exposes_enabled_names_without_paths_or_permissions() {
         let mut plugin:Installed=serde_json::from_value(json!({"manifest":{"schema":2,"id":"example","name":"示例插件","version":"1.0.0","ui":"ui/index.html","executable":"bin/secret","permissions":["native-process"],"description":"测试"},"directory":"/private/plugin","enabled":true})).unwrap();
         assert_eq!(launcher_entry(&plugin),Some(json!({"id":"example","name":"示例插件","description":"测试"})));
@@ -283,8 +383,14 @@ pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         "choose"=>{let (tx,rx)=tokio::sync::oneshot::channel();app.dialog().file().set_title("选择独立插件目录").pick_folder(move |p|{let _=tx.send(p);});
             match rx.await.map_err(|e|e.to_string())?{Some(p)=>Ok(json!(package(p.into_path().map_err(|e|e.to_string())?)?)),None=>Ok(Value::Null)}},
         "inspect"=>Ok(json!(package(PathBuf::from(payload["directory"].as_str().ok_or("缺少插件目录")?))?)),
-        "install"=>{let p=package(PathBuf::from(payload["directory"].as_str().ok_or("缺少插件目录")?))?;rt.stop(&p.manifest.id).await;rt.update(|items|{items.retain(|old|old.manifest.id!=p.manifest.id);items.push(p);})},
-        "reload"=>{let old=rt.get(id)?;let mut p=package(old.directory)?;if p.manifest.id!=id{return Err("插件 ID 已变化，请重新安装".into());}p.last_loaded_at=Some(chrono::Utc::now().timestamp_millis());rt.stop(id).await;rt.update(|items|{items.retain(|old|old.manifest.id!=id);items.push(p);})?;rt.session(id).await?.call("health".into(),json!({})).await?;Ok(rt.list())},
+        "install"=>{let mut p=package(PathBuf::from(payload["directory"].as_str().ok_or("缺少插件目录")?))?;if let Ok(old)=rt.registered(&p.manifest.id){p.enabled=old.enabled;}rt.stop(&p.manifest.id).await;rt.update(|items|{items.retain(|old|old.manifest.id!=p.manifest.id);items.push(p);})},
+        "reload"=>{
+            let result=rt.reload(id,&payload).await;
+            for target in app.webview_windows().values().filter(|w|matches!(w.label(),"settings"|"plugin-panel"|"plugin-dock")) {
+                let _=target.eval("window.FlowHubPluginIntegration?.refresh().catch(console.error)");
+            }
+            result
+        },
         "enable"=>{let enabled=payload["enabled"].as_bool().ok_or("缺少 enabled")?;if !enabled{rt.stop(id).await;}rt.update(|items|{for p in items {if p.manifest.id==id{p.enabled=enabled;}}})},
         "uninstall"=>{rt.stop(id).await;rt.update(|items|items.retain(|p|p.manifest.id!=id))},
         _=>Err("未知插件管理操作".into())

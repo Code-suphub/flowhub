@@ -1,6 +1,18 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
 const h=require('./settings-harness.test.cjs');
 const source=h.fs.readFileSync(h.path.join(__dirname,'../../ui/plugin/plugin-entry.js'),'utf8');
+test('refresh reloads only the changed active plugin and discards replies from its previous generation',async()=>{
+ const listeners={},responses=[];let finish,revision=1,other=1,navigations=0;
+ const frame={contentWindow:{postMessage:value=>responses.push(value)},set src(value){this.url=value;navigations++;},get src(){return this.url;},setAttribute(){},removeAttribute(){}};
+ const window={addEventListener:(name,fn)=>listeners[name]=fn,__TAURI__:{core:{invoke:async(method,args)=>{
+  if(method==='plugin_api')return [{directory:'/original',lastLoadedAt:revision,enabled:true,manifest:{id:'example',ui:'ui/index.html',version:'1.0.0'}},{lastLoadedAt:other,enabled:true,manifest:{id:'other',ui:'ui/index.html'}}];
+  await new Promise(resolve=>finish=resolve);return {old:true};
+ }}}};
+ vm.runInNewContext(source,{window,console});const bridge=window.FlowHubPluginIntegration;await bridge.refresh();bridge.attach(frame);bridge.show('plugin:example');assert.equal(navigations,1);
+ other++;await bridge.refresh();assert.equal(navigations,1,'unrelated plugin update does not reload the active page');
+ const slow=listeners.message({source:frame.contentWindow,data:{type:'flowhub:request',id:'old',method:'slow'}});revision++;await bridge.refresh();assert.equal(navigations,2,'same-version reload refreshes frontend resources');finish();await slow;assert.equal(responses.length,0);
+ await bridge.refresh();assert.equal(navigations,2,'unchanged scans do not keep reloading the page');
+});
 test('React ref attach enables sandboxed plugins; RPC identity is frame-bound and stale replies are dropped',async()=>{
  const listeners={},calls=[],responses=[];let gate;
  const frame={src:'',contentWindow:{postMessage:value=>responses.push(value)},setAttribute(k,v){this[k]=v;},removeAttribute(k){delete this[k];}};

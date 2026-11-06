@@ -17,8 +17,13 @@
     const version = ++refreshVersion;
     const result = await invoke('plugin_api', { action: 'list', payload: {} });
     if (version !== refreshVersion) return;
+    const previous = installed.find(p => `plugin:${p.manifest.id}` === currentModule);
     installed = Array.isArray(result) ? result : [];
+    const updated = installed.find(p => `plugin:${p.manifest.id}` === currentModule);
     if (currentModule.startsWith('plugin:') && !installed.some(p => p.enabled && `plugin:${p.manifest.id}` === currentModule)) show('extensions');
+    else if (previous && updated && JSON.stringify([previous.directory,previous.manifest,previous.lastLoadedAt]) !== JSON.stringify([updated.directory,updated.manifest,updated.lastLoadedAt])) {
+      const module = currentModule; currentModule = ''; show(module);
+    }
     listeners.forEach(listener => listener());
   }
   window.FlowHubPluginIntegration = {
