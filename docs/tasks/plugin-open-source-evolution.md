@@ -69,9 +69,11 @@
 - [x] 插件仓库全量构建、完整测试与机器布局检查通过。首次全量测试的机器 Chrome 启动超时，单项及完整重试通过，未改机器插件；宿主应用测试通过，根目录仍为已知 198.18.0.1 断言失败。
 - [x] 两插件已从独立工作树的 build 目录安装并重新加载。2FA 原有 3 个账户可读，安装前后加密文件／本地密钥哈希一致；未确认保存公开测试账户。
 - [x] 原生 WebKit 图片粘贴：从「预览」复制公开 public.png，⌘V 后显示 Example／SHA1／6 位／30 秒、名称 public，焦点自动转到名称，仍显示尚未保存。证据：仓库外 `plugin-comparison/twofa-installed-paste-preview.png`。
-- [x] 原生截图发现名称聚焦后仍可能位于正文可视范围下方，已移除此次聚焦的 preventScroll。2FA 专项及构建再次通过；800 × 420 后台页面确认名称、元数据和底部操作同时可见，证据为 `plugin-comparison/twofa-preview-focus-short.png`。新产物已重建至当前安装引用的 build 目录，重新打开插件加载；原生滚动效果复测仍待完成。
+- [x] 原生截图发现名称聚焦后仍可能位于正文可视范围下方，已移除此次聚焦的 preventScroll。2FA 专项及构建再次通过；800 × 420 后台页面确认名称、元数据和底部操作同时可见，证据为 `plugin-comparison/twofa-preview-focus-short.png`。新产物已重建至当前安装引用的 build 目录，随后完成下述原生复测。
 - [x] 随后重新从插件栏打开 2FA，在原生文件选择器选择公开二维码，未经手动滚动，元数据、public 名称和底部操作自动可见，名称获焦；原生自动滚动通过。证据为 `plugin-comparison/twofa-native-auto-scroll.png`，未确认导入。
 - [x] Docker 原生只读检查：Colima 的 3 个已停止容器、11 个镜像可见；镜像拉取表单输入测试名称、Escape 关闭并返回触发按钮。未向真实引擎提交拉取、创建、启停或删除；证据为 `plugin-comparison/docker-installed-pull-form.png`。
+- [x] 后续真实下载检查：调用已安装 Docker 0.4.0 的后端二进制，以独立 stdio RPC 进程对当前 Colima 提交 hello-world:latest／linux/arm64。running→succeeded，health 返回正常，两条层完成状态、镜像 ID 及后端列表回读通过；Docker inspect 独立核对为 Linux ARM64、15830 字节。原有 3 个容器状态／启停时间完全不变，镜像数 11→12；只下载、未运行容器，保留公开测试镜像供原生回读。原始记录为仓库外 `plugin-comparison/docker-real-engine-pull.json` 和 `docker-native-pull-{before,after}.json`。
+- [ ] Docker 原生页面提交／任务状态／刷新列表回读仍需解锁后继续，不将独立后端进程的真实下载结果记为原生页面验收通过；实际网络中断恢复、停止请求与 Docker Desktop 场景继续单独留档。
 - [x] 屏幕权限关闭时出现明确提示；用户授权后系统设置显示 FlowHub 权限开启，扫描能启动系统截图进程。未完成选区时 75 秒后恢复控件、聚焦链接、保留草稿。
 - [x] 用户手动框选公开 public.png 后，读取原生结果为已解析／尚未保存、Example／public、SHA1／6 位／30 秒，与测试二维码一致；未确认导入。正文手动滚动后的原生截图为 `plugin-comparison/twofa-installed-screen-preview.png`，不是模拟 PNG 结果。
 - [x] Esc 取消按用户明确的安装版实测反馈通过留档；自动输入工具没有重放系统截图层操作。
