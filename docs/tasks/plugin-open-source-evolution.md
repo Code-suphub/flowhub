@@ -1,6 +1,6 @@
 # 插件开源借鉴与演进
 
-更新：2026-11-06。主体六项实现、提交和本地签名安装已完成，真实设备待验项目继续留在[安装版验收清单](launcher-desktop-acceptance.md)。2FA 已扩展至 0.5.0 的二维码图片粘贴与屏幕框选，Docker 已扩展至 0.4.0 的资源管理与后台镜像拉取；两插件均已更新安装。原生图片粘贴和 Docker 只读表单检查通过，屏幕实际选区及真实引擎写入验收继续单独跟踪。
+更新：2026-11-06。主体六项实现、提交和本地签名安装已完成，真实设备待验项目继续留在[安装版验收清单](launcher-desktop-acceptance.md)。2FA 0.5.0、Docker 0.4.0 均已更新安装；本轮指定的 2FA 原生自动滚动、DELL→内建屏二维码跨屏选区，以及 Colima ARM64 实际下载／原生再次拉取／列表回读通过。其他环境与未覆盖场景继续留在各插件清单，不扩大本次验收范围。
 
 ## 当前基线
 
@@ -15,8 +15,8 @@
 
 | 顺序 | 插件 | 开源参考 | 首批交付 | 状态 |
 | --- | --- | --- | --- | --- |
-| 1 | 2FA 验证码 | [totp-rs](https://github.com/constantoine/totp-rs)、[Proton Authenticator](https://proton.me/authenticator) | 生成器／URI、图片选择／粘贴与屏幕框选；紧凑账户卡片、倒计时和直接复制 | 0.5.0 已安装，原生图片粘贴通过；实际系统框选及其余实机项待验 |
-| 2 | Docker 管理 | [Arcane](https://getarcane.app/docs/docker/containers)，早期流程参考 [Dockge](https://github.com/louislam/dockge) | 资源侧栏、卷与网络管理、引用和确认操作；新增后台镜像拉取、进度与停止请求 | 0.4.0 已安装，原生只读检查通过；实际引擎变更待验 |
+| 1 | 2FA 验证码 | [totp-rs](https://github.com/constantoine/totp-rs)、[Proton Authenticator](https://proton.me/authenticator) | 生成器／URI、图片选择／粘贴与屏幕框选；紧凑账户卡片、倒计时和直接复制 | 0.5.0 已安装，原生粘贴／自动滚动／当前两屏选区通过；其余实机项见清单 |
+| 2 | Docker 管理 | [Arcane](https://getarcane.app/docs/docker/containers)，早期流程参考 [Dockge](https://github.com/louislam/dockge) | 资源侧栏、卷与网络管理、引用和确认操作；新增后台镜像拉取、进度与停止请求 | 0.4.0 已安装，Colima ARM64 实际下载及原生再次拉取／列表回读通过；其他场景待验 |
 | 3 | 机器管理 | [electerm](https://github.com/electerm/electerm)、[Beszel](https://github.com/henrygd/beszel) | 对照会话与任务输出、连接状态、监控摘要／历史的分层；从已测得问题拆小项 | 待差距审查 |
 | 4 | 外设中心 | [Stats](https://github.com/exelban/stats)、[AirBattery](https://github.com/lihaoyun6/AirBattery) | 核对设备发现、电量来源与刷新状态；优先处理具体缺项和未知／过期展示 | 待设备差距审查 |
 | 独立跟踪 | 应用资源监控 | [Stats](https://github.com/exelban/stats) | 复核已有采集、展示与低开销更新专项的结果，再补确有缺口的能力 | 沿用现有专项 |
@@ -73,7 +73,9 @@
 - [x] 随后重新从插件栏打开 2FA，在原生文件选择器选择公开二维码，未经手动滚动，元数据、public 名称和底部操作自动可见，名称获焦；原生自动滚动通过。证据为 `plugin-comparison/twofa-native-auto-scroll.png`，未确认导入。
 - [x] Docker 原生只读检查：Colima 的 3 个已停止容器、11 个镜像可见；镜像拉取表单输入测试名称、Escape 关闭并返回触发按钮。未向真实引擎提交拉取、创建、启停或删除；证据为 `plugin-comparison/docker-installed-pull-form.png`。
 - [x] 后续真实下载检查：调用已安装 Docker 0.4.0 的后端二进制，以独立 stdio RPC 进程对当前 Colima 提交 hello-world:latest／linux/arm64。running→succeeded，health 返回正常，两条层完成状态、镜像 ID 及后端列表回读通过；Docker inspect 独立核对为 Linux ARM64、15830 字节。原有 3 个容器状态／启停时间完全不变，镜像数 11→12；只下载、未运行容器，保留公开测试镜像供原生回读。原始记录为仓库外 `plugin-comparison/docker-real-engine-pull.json` 和 `docker-native-pull-{before,after}.json`。
-- [ ] Docker 原生页面提交／任务状态／刷新列表回读仍需解锁后继续，不将独立后端进程的真实下载结果记为原生页面验收通过；实际网络中断恢复、停止请求与 Docker Desktop 场景继续单独留档。
+- [x] Docker 原生页面提交／任务状态／刷新列表回读通过：解锁后在安装版选择 hello-world:latest／Linux ARM64／colima 并确认，再次拉取显示正在拉取→拉取完成及相同完整镜像 ID；刷新后搜索 hello-world 仅 1 个匹配项，12 个镜像。重新打开拉取窗口仍保留完成状态。首次真实下载来自上方独立进程，本次原生页面为已有镜像的再次拉取，记录分别保留。
+- [x] 页面验收后独立核对镜像 ID／平台和 3 个原容器状态／启停时间均不变，未运行或删除容器。原生证据在 `plugin-comparison/docker-native-pull-{target,completed,list}.png`、`docker-native-pull-page.json`、`docker-native-page-after.json`。
+- [ ] 实际网络中断恢复、停止请求、Docker Desktop 与其他平台继续单独留档；本轮完成窗口的 AX 点击关闭未作为键盘返回焦点通过。
 - [x] 屏幕权限关闭时出现明确提示；用户授权后系统设置显示 FlowHub 权限开启，扫描能启动系统截图进程。未完成选区时 75 秒后恢复控件、聚焦链接、保留草稿。
 - [x] 用户手动框选公开 public.png 后，读取原生结果为已解析／尚未保存、Example／public、SHA1／6 位／30 秒，与测试二维码一致；未确认导入。正文手动滚动后的原生截图为 `plugin-comparison/twofa-installed-screen-preview.png`，不是模拟 PNG 结果。
 - [x] Esc 取消按用户明确的安装版实测反馈通过留档；自动输入工具没有重放系统截图层操作。
