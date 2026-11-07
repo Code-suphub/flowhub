@@ -507,9 +507,19 @@ pub(super) fn window_destroyed(app:&tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     fn root()->PathBuf {
-        let root=std::env::temp_dir().join(format!("canvas-compact-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));
-        std::fs::create_dir_all(&root).unwrap();root
+        // Parallel tests can observe the same clock tick.
+        static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "canvas-compact-{}-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap(),
+            NEXT_ROOT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&root).unwrap();
+        root
     }
     fn display()->Display {Display{key:"cg:stable-display".into(),x:-1920,y:-900,width:1920,height:1080,scale:1.}}
     fn layout()->super::super::Layout {
