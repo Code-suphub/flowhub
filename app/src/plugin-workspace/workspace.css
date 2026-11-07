@@ -34,6 +34,9 @@ html:has(#plugin-workspace-root),html:has(#plugin-workspace-root) body { backgro
 @media(max-width:480px),(max-height:400px) {.workspace-panel {padding:14px 12px 8px;border-radius:16px;}.workspace-panel>header {margin-bottom:10px;gap:10px;}.workspace-panel h1 {font-size:18px;}.workspace-plugin-grid {gap:8px;}.workspace-plugin-grid .fh-button {padding:12px;}}
 .workspace-preview-note { padding:30px; background:var(--fh-surface); }
 .workspace-preview-note a { display:block; margin-top:16px; }
+.workspace-frame-error { min-height:0; padding:24px; }
+.workspace-frame-error [data-slot=empty-description] { overflow-wrap:anywhere; }
+.workspace-frame-loading { padding:24px; color:var(--fh-muted); }
 html[data-native-glass=true] .workspace-panel,html[data-native-glass=true] .workspace-dock-window .settings-plugin-dock {background:var(--fh-study-reading-pane);}
 @media(prefers-reduced-transparency:reduce) { .workspace-panel,.workspace-dock-window .settings-plugin-dock,html[data-native-glass=true] .workspace-panel,html[data-native-glass=true] .workspace-dock-window .settings-plugin-dock { background:var(--fh-surface);backdrop-filter:none;-webkit-backdrop-filter:none; } }
 @media(prefers-contrast:more) {.workspace-panel,.workspace-dock-window .settings-plugin-dock,html[data-native-glass=true] .workspace-panel,html[data-native-glass=true] .workspace-dock-window .settings-plugin-dock {background:var(--fh-surface);backdrop-filter:none;-webkit-backdrop-filter:none;--fh-muted:var(--fh-text);--fh-border:color-mix(in srgb,var(--fh-text) 55%,var(--fh-surface));}}

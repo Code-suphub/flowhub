@@ -3,13 +3,34 @@ import { EllipsisIcon, PuzzleIcon, GripVerticalIcon, XIcon } from 'lucide-react'
 import { FeatureIcon, PluginIcon } from '../shared/FeatureIcon';
 import { Button } from '../shared/ui';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
-import { dragWorkspace } from './native';
-import { host, type InstalledPlugin } from '../settings/api';
-export function PluginFrame({ module }: { module: string }) {
+import { dragWorkspace, inspectPlugin } from './native';
+import { host, readonly, type InstalledPlugin } from '../settings/api';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
+export function PluginFrame({ module, onManage }: { module: string; onManage?: () => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  useEffect(() => { if (!frame.current) return; return host().FlowHubPluginIntegration?.attach(frame.current); }, []);
-  useEffect(() => { host().FlowHubPluginIntegration?.show(module); }, [module]);
-  return <iframe ref={frame} id="pluginFrame" title="插件工作区" className="settings-plugin-frame" referrerPolicy="no-referrer" />;
+  const [attempt, setAttempt] = useState(0), [state, setState] = useState({ module: '', attempt: -1, pending: true, error: false });
+  const current = state.module === module && state.attempt === attempt ? state : { pending: true, error: false };
+  useEffect(() => {
+    const node = frame.current, integration = host().FlowHubPluginIntegration;
+    if (!node || !integration) return;
+    const detach = integration.attach(node);
+    let active = true;
+    setState({ module, attempt, pending: true, error: false });
+    async function open() {
+      const plugin = integration!.getSnapshot().find(item => `plugin:${item.manifest.id}` === module);
+      if (!readonly() && plugin?.directory) {
+        node!.src = 'about:blank';
+        const candidate = await inspectPlugin(plugin.directory);
+        if (candidate.manifest.id !== plugin.manifest.id || candidate.manifest.ui !== plugin.manifest.ui) throw Error('插件入口已变化，请先更新插件');
+      }
+      if (!active) return;
+      integration!.show(module);
+      setState({ module, attempt, pending: false, error: false });
+    }
+    void open().catch(() => { if (active) setState({ module, attempt, pending: false, error: true }); });
+    return () => { active = false; detach(); };
+  }, [module, attempt]);
+  return <>{current.error ? <Empty className="workspace-frame-error" role="alert"><EmptyHeader><EmptyTitle>插件文件不可用</EmptyTitle><EmptyDescription>原安装目录可能已移动，或构建资源不完整。恢复原目录后可以重试；也可前往插件市场，在管理菜单中更换安装目录或重新安装。</EmptyDescription></EmptyHeader><EmptyContent className="flex-row flex-wrap justify-center"><Button onClick={() => setAttempt(value => value + 1)}>重试打开</Button><Button onClick={() => onManage ? onManage() : host().FlowHubPluginIntegration?.show('extensions')}>返回插件市场</Button></EmptyContent></Empty> : current.pending ? <p className="workspace-frame-loading" role="status">正在读取插件…</p> : null}<iframe ref={frame} id="pluginFrame" title="插件工作区" className="settings-plugin-frame" style={{ display: current.pending || current.error ? 'none' : undefined }} referrerPolicy="no-referrer" /></>;
 }
 export function PluginDock({ installed, busy, open, active, onSelect, floating = false, onHide }: { installed: InstalledPlugin[]; busy: boolean; open: boolean; active: string; onSelect: (id: string) => void; floating?: boolean; onHide?: () => void }) {
   const enabled = installed.filter(plugin => plugin.enabled);
