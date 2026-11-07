@@ -17,7 +17,7 @@ const run=(command,args)=>{
 
 if(process.platform==='darwin'){
   const source=join(app,'scripts','privileged-monitor');
-  run('swiftc',['-parse-as-library',join(source,'daemon.swift'),join(source,'control.swift'),'-o',daemon]);
+  run('swiftc',['-parse-as-library',join(source,'daemon.swift'),join(source,'control.swift'),join(source,'services.swift'),'-o',daemon]);
   chmodSync(daemon,0o755);
 
   // The admin-authorized installer supports ad-hoc local builds. Developer ID
@@ -41,6 +41,7 @@ if(process.platform==='darwin'){
   }
   run(daemon,['--self-check']);
   run(daemon,['--control-self-check']);
+  run(daemon,['--services-self-check']);
 }else{
   writeFileSync(daemon,'#!/bin/sh\nexit 1\n');
   chmodSync(daemon,0o755);

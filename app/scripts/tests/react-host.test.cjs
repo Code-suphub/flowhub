@@ -91,6 +91,15 @@ test('root control install confirmation describes selected targets and protected
   ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
   assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
 });
+test('background service control is an explicit disclosed permission without a silent install',async t=>{
+  const monitor={...fresh,permissions:['native-process','system-process-monitor','system-process-control','system-service-control']};
+  const mock=backend({}, {catalog:[manifest,monitor]}),ui=setup(t,mock.invoke);await ready(ui);
+  ui.button('安装',ui.article(monitor.name)).click();await wait(()=>ui.button('确认'));
+  const text=ui.w.document.querySelector('[role="dialog"]').textContent;
+  for(const value of [/暂停或恢复/,/第三方后台服务/,/不改变永久自启/,/系统核心服务/])assert.match(text,value);
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+  ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
+});
 test('same-version reinstallation remains an explicit advanced action',async t=>{
   const mock=backend(),ui=setup(t,mock.invoke);await ready(ui);
   assert.equal(ui.button('重新安装'),undefined);

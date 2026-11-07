@@ -2,7 +2,7 @@ import Foundation
 import Darwin
 import Security
 
-private func canonicalPath(_ path: String) -> String? {
+func canonicalPath(_ path: String) -> String? {
     guard let resolved = path.withCString({ realpath($0, nil) }) else { return nil }
     defer { free(resolved) }
     return String(cString: resolved)
@@ -27,6 +27,7 @@ struct ControlPolicy: Codable {
     let hostHash: String
     let clientPath: String
     let clientHash: String
+    var serviceControl: Bool = false
     static let path = "/Library/PrivilegedHelperTools/cn.ac.camellia.flowhub.resource-monitor/control.json"
     static func load() -> ControlPolicy? {
         var info = stat()
@@ -35,14 +36,14 @@ struct ControlPolicy: Codable {
               let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
         return try? JSONDecoder().decode(ControlPolicy.self, from: data)
     }
-    static func create(host: String, client: String, uid: UInt32) -> ControlPolicy? {
+    static func create(host: String, client: String, uid: UInt32, serviceControl: Bool = false) -> ControlPolicy? {
         guard let host = canonicalPath(host), let client = canonicalPath(client),
               uid > 0, let hostHash = signingHash(host), let clientHash = signingHash(client),
               host.hasSuffix("/Contents/MacOS/flowhub-tauri"), client.hasSuffix("/flowhub-resource-monitor") else { return nil }
-        return ControlPolicy(uid: uid, hostPath: host, hostHash: hostHash, clientPath: client, clientHash: clientHash)
+        return ControlPolicy(uid: uid, hostPath: host, hostHash: hostHash, clientPath: client, clientHash: clientHash, serviceControl: serviceControl)
     }
 }
-private func signingHash(_ path: String) -> String? {
+func signingHash(_ path: String) -> String? {
     var code: SecStaticCode?
     guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code) == errSecSuccess,
           let code, SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
@@ -95,6 +96,16 @@ func thirdPartyPath(_ path: String) -> Bool {
           !path.contains("/cn.ac.camellia.flowhub.resource-monitor/"),
           !path.contains("/../"), !path.contains("/./") else { return false }
     return true
+}
+func thirdPartyProgram(_ path: String) -> Bool {
+    guard thirdPartyPath(path) else { return false }
+    var code: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(URL(fileURLWithPath:path) as CFURL,[],&code) == errSecSuccess, let code else { return false }
+    let valid = SecStaticCodeCheckValidity(code,[],nil)
+    guard valid == errSecSuccess || valid == errSecCSUnsigned else { return false }
+    var apple: SecRequirement?
+    guard SecRequirementCreateWithString("anchor apple" as CFString,[],&apple) == errSecSuccess else { return false }
+    return SecStaticCodeCheckValidity(code,[],apple) != errSecSuccess
 }
 func controllableRoot(_ target: ProcessIdentity) -> Bool {
     guard target.pid > 1, target.pid != getpid(), target.uid == 0, target.started > 0, thirdPartyPath(target.executable),

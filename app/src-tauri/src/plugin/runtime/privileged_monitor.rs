@@ -5,7 +5,7 @@ use std::{path::PathBuf,sync::{Arc,Mutex,OnceLock},time::{Duration,Instant}};
 mod macos;
 
 #[derive(Default)]
-struct Status {value:Option<Value>,at:Option<Instant>,checking:bool,generation:u64,client:Option<PathBuf>}
+struct Status {value:Option<Value>,at:Option<Instant>,checking:bool,generation:u64,client:Option<PathBuf>,service_control:bool}
 static STATUS:OnceLock<Arc<Mutex<Status>>>=OnceLock::new();
 fn state()->Arc<Mutex<Status>> {STATUS.get_or_init(||Arc::new(Mutex::new(Status::default()))).clone()}
 fn publish(status:&mut Status,mut next:Value) {
@@ -19,10 +19,10 @@ fn publish(status:&mut Status,mut next:Value) {
     status.value=Some(next);status.at=Some(Instant::now());status.checking=false;
 }
 #[cfg(target_os="macos")]
-fn cached_status(client:Option<PathBuf>)->Value {
+fn cached_status(client:Option<PathBuf>,services:bool)->Value {
     let shared=state();
     let mut status=shared.lock().unwrap_or_else(|p|p.into_inner());
-    if status.client!=client {status.client=client.clone();status.value=None;status.at=None;status.generation+=1;status.checking=false;}
+    if status.client!=client||status.service_control!=services {status.client=client.clone();status.service_control=services;status.value=None;status.at=None;status.generation+=1;status.checking=false;}
     if !status.checking&&status.at.is_none_or(|at|at.elapsed()>=Duration::from_secs(5)) {
         status.checking=true;
         let generation=status.generation;
@@ -30,7 +30,7 @@ fn cached_status(client:Option<PathBuf>)->Value {
         // Filesystem/signature checks and socket I/O never run on a caller's
         // request path. All windows share one bounded background query.
         tauri::async_runtime::spawn_blocking(move|| {
-            let next=macos::invoke("status",client.as_deref()).unwrap_or_else(|_|json!({"ok":false,"status":"unreachable","message":"暂时无法读取进程服务状态，稍后会自动重试。"}));
+            let next=macos::invoke("status",client.as_deref(),services).unwrap_or_else(|_|json!({"ok":false,"status":"unreachable","message":"暂时无法读取进程服务状态，稍后会自动重试。"}));
             let mut state=worker.lock().unwrap_or_else(|p|p.into_inner());
             if state.generation==generation {publish(&mut state,next);}
         });
@@ -38,17 +38,17 @@ fn cached_status(client:Option<PathBuf>)->Value {
     let mut value=status.value.clone().unwrap_or_else(||json!({"ok":false,"status":"checking","message":"正在检查进程服务授权状态…"}));
     value["checking"]=json!(status.checking);value
 }
-pub(crate) async fn invoke(action:&str,client:Option<PathBuf>)->Result<Value,String> {
+pub(crate) async fn invoke(action:&str,client:Option<PathBuf>,services:bool)->Result<Value,String> {
     if !matches!(action,"status"|"enable"|"disable") {return Err("不支持的系统进程授权操作".into());}
     #[cfg(not(target_os="macos"))]
     return Err("系统级进程授权只支持 macOS。".into());
     #[cfg(target_os="macos")]
     {
-        if action=="status" {return Ok(cached_status(client));}
+        if action=="status" {return Ok(cached_status(client,services));}
         let shared=state();
         {let mut state=shared.lock().unwrap_or_else(|p|p.into_inner());state.generation+=1;state.checking=false;}
         let action=action.to_owned();
-        let result=tauri::async_runtime::spawn_blocking(move||macos::invoke(&action,client.as_deref())).await.map_err(|error|format!("系统进程授权任务失败：{error}"))?;
+        let result=tauri::async_runtime::spawn_blocking(move||macos::invoke(&action,client.as_deref(),services)).await.map_err(|error|format!("系统进程授权任务失败：{error}"))?;
         let mut status=shared.lock().unwrap_or_else(|p|p.into_inner());status.generation+=1;status.checking=false;
         if let Ok(value)=&result {publish(&mut status,value.clone());} else {status.at=None;}
         result
@@ -62,7 +62,7 @@ mod tests {
     fn status_reads_keep_returning_cached_approval_while_one_query_is_pending() {
         let shared=state();
         {let mut status=shared.lock().unwrap();status.client=None;status.value=Some(json!({"ok":true,"status":"enabled"}));status.checking=true;}
-        for _ in 0..100 {let reply=cached_status(None);assert_eq!(reply["status"],"enabled");assert_eq!(reply["checking"],true);}
+        for _ in 0..100 {let reply=cached_status(None,false);assert_eq!(reply["status"],"enabled");assert_eq!(reply["checking"],true);}
         shared.lock().unwrap().checking=false;
     }
     #[test]

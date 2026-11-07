@@ -98,6 +98,7 @@ private final class SnapshotStore: @unchecked Sendable {
 }
 private let snapshots = SnapshotStore()
 private let controlPolicy = ControlPolicy.load()
+private let backgroundServices = BackgroundServices()
 private func handle(_ client: Int32) {
     defer { close(client) }
     var timeout = timeval(tv_sec: 2, tv_usec: 0)
@@ -130,7 +131,7 @@ private func handle(_ client: Int32) {
     }
     switch body["method"] as? String {
     case "status":
-        var response: [String: Any] = ["service": serviceName, "protocolVersion": 2, "uid": Int(geteuid()), "capabilities": ["root-process-control"]]
+        var response: [String: Any] = ["service": serviceName, "protocolVersion": 3, "serviceControlRevision": 3, "uid": Int(geteuid()), "capabilities": ["root-process-control","third-party-service-control"]]
         if let policy = controlPolicy, let data = try? JSONEncoder().encode(policy), let value = try? JSONSerialization.jsonObject(with: data) { response["controlPolicy"] = value }
         sendJSON(response, to: client)
     case "snapshot":
@@ -142,6 +143,11 @@ private func handle(_ client: Int32) {
             sendJSON(["error": "调用方未获准控制 root 进程，请通过 FlowHub 升级授权"], to: client); return
         }
         sendJSON(terminateRoots(body), to: client)
+    case "services_snapshot", "service_preview", "service_confirm":
+        guard controlPolicy?.serviceControl == true, trustedControlPeer(client,uid:peerUID,policy:controlPolicy) else {
+            sendJSON(["error":"后台服务控制尚未授权，请通过 FlowHub 授权升级服务。"],to:client); return
+        }
+        sendJSON(backgroundServices.handle(body["method"] as! String,body:body,uid:peerUID),to:client)
     default:
         sendJSON(["error": "不支持的请求"], to: client)
     }
@@ -154,7 +160,7 @@ private func runDaemon() -> Never {
               unlink(socketPath) == 0 else { exit(EXIT_FAILURE) }
     }
     let server = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard server >= 0 else { exit(EXIT_FAILURE) }
+    guard server >= 0, fcntl(server,F_SETFD,FD_CLOEXEC) == 0 else { exit(EXIT_FAILURE) }
 
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
@@ -185,6 +191,7 @@ private func runDaemon() -> Never {
     while true {
         let client = accept(server, nil, nil)
         guard client >= 0 else { continue }
+        guard fcntl(client,F_SETFD,FD_CLOEXEC) == 0 else { close(client); continue }
         guard capacity.wait(timeout: .now()) == .success else { close(client); continue }
         DispatchQueue.global(qos: .utility).async {
             defer { capacity.signal() }; handle(client)
@@ -195,7 +202,20 @@ private func runDaemon() -> Never {
 @main
 struct ResourceMonitorDaemon {
     static func main() {
+        if CommandLine.arguments.count >= 3 && CommandLine.arguments[1] == "--user-launchctl" {
+            userLaunchctl(Array(CommandLine.arguments.dropFirst(2)))
+        }
         #if FLOWHUB_CONTROL_TESTS
+        if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--services-transport-self-check" {
+            final class Result: @unchecked Sendable { var ok = false }
+            let result = Result(), finished = DispatchSemaphore(value:0)
+            DispatchQueue.global(qos:.utility).async { result.ok = servicesTransportSelfCheck(); finished.signal() }
+            guard finished.wait(timeout:.now()+45) == .success, result.ok else { exit(EXIT_FAILURE) }; print("service transport checks passed"); return
+        }
+        if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--services-read-check" {
+            let value = BackgroundServices().handle("services_snapshot",body:[:],uid:getuid())
+            if let data = try? JSONSerialization.data(withJSONObject:value,options:[.sortedKeys]) { FileHandle.standardOutput.write(data) }; return
+        }
         if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--auth-self-check" {
             guard peerAuthSelfCheck(client: CommandLine.arguments[2]) else { exit(EXIT_FAILURE) }
             print("socket audit-token, client signature and host ancestry checks passed"); return
@@ -204,8 +224,11 @@ struct ResourceMonitorDaemon {
         if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--control-self-check" {
             guard controlSelfCheck() else { exit(EXIT_FAILURE) }; print("control policy checks passed"); return
         }
-        if CommandLine.arguments.count == 5 && CommandLine.arguments[1] == "--control-policy" {
-            guard let uid = UInt32(CommandLine.arguments[4]), let policy = ControlPolicy.create(host: CommandLine.arguments[2], client: CommandLine.arguments[3], uid: uid),
+        if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--services-self-check" {
+            guard servicesSelfCheck() else { exit(EXIT_FAILURE) }; print("service policy checks passed"); return
+        }
+        if [5,6].contains(CommandLine.arguments.count) && CommandLine.arguments[1] == "--control-policy" {
+            guard let uid = UInt32(CommandLine.arguments[4]), let policy = ControlPolicy.create(host: CommandLine.arguments[2], client: CommandLine.arguments[3], uid: uid, serviceControl: CommandLine.arguments.last == "services"),
                   let data = try? JSONEncoder().encode(policy) else { exit(EXIT_FAILURE) }
             FileHandle.standardOutput.write(data); return
         }
@@ -222,6 +245,7 @@ struct ResourceMonitorDaemon {
         }
         guard geteuid() == 0 else { exit(EXIT_FAILURE) }
         signal(SIGPIPE, SIG_IGN)
+        signal(SIGCHLD, SIG_DFL)
         runDaemon()
     }
 }

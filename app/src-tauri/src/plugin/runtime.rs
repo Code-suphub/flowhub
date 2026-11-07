@@ -20,7 +20,7 @@ pub(crate) struct Runtime { root:PathBuf, installed:Mutex<Vec<Installed>>, sessi
 struct Session { child:tokio::sync::Mutex<tokio::process::Child>, input:tokio::sync::Mutex<tokio::process::ChildStdin>, pending:Arc<Mutex<HashMap<u64,tokio::sync::oneshot::Sender<Result<Value,String>>>>>, sequence:AtomicU64 }
 fn safe_id(id:&str)->bool { !id.is_empty() && id.len()<=80 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_') }
 fn valid_permissions(id:&str, permissions:&[String])->bool {
-    permissions==["native-process"] || (id=="resource-monitor" && (permissions.len()==2||permissions.len()==3) && permissions.iter().any(|p|p=="native-process") && permissions.iter().any(|p|p=="system-process-monitor") && permissions.iter().all(|p|matches!(p.as_str(),"native-process"|"system-process-monitor"|"system-process-control")) && permissions.iter().collect::<std::collections::HashSet<_>>().len()==permissions.len())
+    permissions==["native-process"] || (id=="resource-monitor" && (2..=4).contains(&permissions.len()) && permissions.iter().any(|p|p=="native-process") && permissions.iter().any(|p|p=="system-process-monitor") && permissions.iter().all(|p|matches!(p.as_str(),"native-process"|"system-process-monitor"|"system-process-control"|"system-service-control")) && (!permissions.iter().any(|p|p=="system-service-control")||permissions.iter().any(|p|p=="system-process-control")) && permissions.iter().collect::<std::collections::HashSet<_>>().len()==permissions.len())
 }
 fn inside(root:&Path, relative:&str)->Result<PathBuf,String> {
     let relative=Path::new(relative);
@@ -62,7 +62,7 @@ impl Runtime {
                     return Err("已安装的插件版本未声明系统进程监控授权能力；请重新安装插件并确认该权限。".into());
                 }
                 let client=if plugin.manifest.permissions.iter().any(|p|p=="system-process-control") {Some(inside(&plugin.directory,&plugin.manifest.executable)?)} else {None};
-                return privileged_monitor::invoke(action,client).await;
+                return privileged_monitor::invoke(action,client,plugin.manifest.permissions.iter().any(|p|p=="system-service-control")).await;
             }
         }
         self.session(id).await?.call("widget_api".into(),params).await
@@ -172,6 +172,13 @@ pub(crate) fn launcher_plugin_entries(window:tauri::WebviewWindow,app:tauri::App
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_control_requires_the_resource_monitor_and_explicit_process_control() {
+        let permissions=vec!["native-process".into(),"system-process-monitor".into(),"system-process-control".into(),"system-service-control".into()];
+        assert!(valid_permissions("resource-monitor",&permissions));
+        assert!(!valid_permissions("other-plugin",&permissions));
+        assert!(!valid_permissions("resource-monitor",&vec!["native-process".into(),"system-process-monitor".into(),"system-service-control".into()]));
+    }
     #[test] fn launcher_catalog_exposes_enabled_names_without_paths_or_permissions() {
         let mut plugin:Installed=serde_json::from_value(json!({"manifest":{"schema":2,"id":"example","name":"示例插件","version":"1.0.0","ui":"ui/index.html","executable":"bin/secret","permissions":["native-process"],"description":"测试"},"directory":"/private/plugin","enabled":true})).unwrap();
         assert_eq!(launcher_entry(&plugin),Some(json!({"id":"example","name":"示例插件","description":"测试"})));
@@ -258,7 +265,7 @@ pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
                 return Err("已安装的插件版本未声明系统进程监控授权能力；请重新安装插件并确认该权限。".into());
             }
             let client=if plugin.manifest.permissions.iter().any(|p|p=="system-process-control") {Some(inside(&plugin.directory,&plugin.manifest.executable)?)} else {None};
-                return privileged_monitor::invoke(action,client).await;
+                return privileged_monitor::invoke(action,client,plugin.manifest.permissions.iter().any(|p|p=="system-service-control")).await;
         }
     }
     let rt=app.state::<Runtime>();rt.session(&id).await?.call(method,params).await
