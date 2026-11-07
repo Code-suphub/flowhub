@@ -92,7 +92,7 @@ pub async fn plugin_widget_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
         runtime.widget(&id)?;
         return runtime.application_metadata(&app,&id,&params["params"]).await;
     }
-    runtime.widget_call(&id,params).await
+    runtime.widget_call(&window,&id,params).await
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Card { id:String, plugin:String, title:String, view:String, size:String, #[serde(default)] row:Option<String>, #[serde(default)] width:Option<u32>, #[serde(default)] height:Option<u32>, #[serde(default)] break_before:bool, #[serde(default)] x:Option<u32>, #[serde(default)] y:Option<u32>, #[serde(default)] metrics:Option<Vec<String>>, #[serde(default)] config:Value }
@@ -267,7 +267,8 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     if action=="detailReturn" || action=="detailClose" {
         let state=app.state::<State>();
         let entry=state.details.lock().unwrap().get(window.label())?.clone();
-        if action=="detailReturn" {
+        if action=="detailReturn"&&entry.request.native_observer {open(&app,"")?;}
+        else if action=="detailReturn" {
             let valid=detail::validate_source(&state.layout.lock().unwrap(),&entry.request.board_id,&entry.request.card_id,&entry.request.plugin).is_ok();
             if valid {state.return_to_source(&entry.request)?;}
             let target=state.details.lock().unwrap().return_target(&entry.request,!valid);
@@ -318,48 +319,7 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         if window.label()!="plugin-canvas" {return Err("仅可从桌面组件打开详情".into());}
         let request:detail::Request=serde_json::from_value(payload).map_err(|e|e.to_string())?;
         request.validate(&state.layout.lock().unwrap())?;
-        let definition=app.state::<crate::plugin::runtime::Runtime>().widget(&request.plugin)?;
-        if definition.detail.trim().is_empty(){return Err("插件不支持详情".into());}
-        let snapshot=app.state::<crate::plugin::status::State>().snapshot(&request.plugin).unwrap_or(Value::Null);
-        let reservation=state.details.lock().unwrap().reserve(request,snapshot);
-        let (label,create)=match reservation {
-            detail::Reservation::Create(label)=>(label,true),
-            detail::Reservation::Existing(label,mut ready)=>{
-                if !*ready.borrow_and_update(){ready.changed().await.map_err(|_|"详情创建失败")?;}
-                (label,false)
-            }
-        };
-        if create {
-            let title=state.details.lock().unwrap().get(&label)?.request.title.clone();
-            let result=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("plugin-detail.html".into())).title(format!("{title} · 详情")).inner_size(860.,650.).min_inner_size(520.,400.).build();
-            match result {
-                Ok(w)=>{
-                    let handle=app.clone();let key=label.clone();
-                    w.on_window_event(move|event|{if matches!(event,tauri::WindowEvent::Destroyed){handle.state::<State>().details.lock().unwrap().remove(&key);}});
-                    state.details.lock().unwrap().complete(&label)?;
-                }
-                Err(e)=>{state.details.lock().unwrap().remove(&label);return Err(e.to_string());}
-            }
-        }
-        // Serialize publication on the UI thread. Read the latest revision inside
-        // that operation, so a delayed older caller cannot overwrite a newer title.
-        let (tx,rx)=tokio::sync::oneshot::channel();
-        let handle=app.clone();
-        app.run_on_main_thread(move||{
-            let result=(||->Result<(),String>{
-                let state=handle.state::<State>();
-                let entry=state.details.lock().unwrap().get(&label)?.clone();
-                let w=handle.get_webview_window(&label).ok_or_else(||{
-                    state.details.lock().unwrap().remove(&label);"详情窗口已关闭".to_string()
-                })?;
-                w.set_title(&format!("{} · 详情",entry.request.title)).map_err(|e|e.to_string())?;
-                w.eval("window.dispatchEvent(new CustomEvent('flowhub:detail-context-changed'))").map_err(|e|e.to_string())?;
-                w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;
-                Ok(())
-            })();
-            let _=tx.send(result);
-        }).map_err(|e|e.to_string())?;
-        rx.await.map_err(|_|"详情窗口更新中断")??;
+        open_detail(app.clone(),request).await?;
     }
     else if action=="open" {open(&app,"")?;}
     else if action=="fit" {let width=payload["width"].as_f64().filter(|v|v.is_finite()).ok_or("窗口宽度无效")?;let height=payload["height"].as_f64().filter(|v|v.is_finite()).ok_or("窗口高度无效")?;let target=window.clone();compact::on_main(&app,move|app|compact::fit_full(app,&target,width,height))?;}
@@ -576,4 +536,56 @@ fn detail_sources_validate_and_return_without_editing_locked_layouts(){
     state.update(|layout|layout.boards[0].cards.clear()).unwrap();
     assert!(state.return_to_source(&request).is_err());
     std::fs::remove_dir_all(root).unwrap();
+}
+
+async fn open_detail(app:tauri::AppHandle,request:detail::Request)->Result<(),String>{
+    let state=app.state::<State>();
+        let definition=app.state::<crate::plugin::runtime::Runtime>().widget(&request.plugin)?;
+        if definition.detail.trim().is_empty(){return Err("插件不支持详情".into());}
+        let snapshot=app.state::<crate::plugin::status::State>().snapshot(&request.plugin).unwrap_or(Value::Null);
+        let reservation=state.details.lock().unwrap().reserve(request,snapshot);
+        let (label,create)=match reservation {
+            detail::Reservation::Create(label)=>(label,true),
+            detail::Reservation::Existing(label,mut ready)=>{
+                if !*ready.borrow_and_update(){ready.changed().await.map_err(|_|"详情创建失败")?;}
+                (label,false)
+            }
+        };
+        if create {
+            let title=state.details.lock().unwrap().get(&label)?.request.title.clone();
+            let result=WebviewWindowBuilder::new(&app,&label,WebviewUrl::App("plugin-detail.html".into())).title(format!("{title} · 详情")).inner_size(860.,650.).min_inner_size(520.,400.).build();
+            match result {
+                Ok(w)=>{
+                    let handle=app.clone();let key=label.clone();
+                    w.on_window_event(move|event|{if matches!(event,tauri::WindowEvent::Destroyed){handle.state::<State>().details.lock().unwrap().remove(&key);}});
+                    state.details.lock().unwrap().complete(&label)?;
+                }
+                Err(e)=>{state.details.lock().unwrap().remove(&label);return Err(e.to_string());}
+            }
+        }
+        // Serialize publication on the UI thread. Read the latest revision inside
+        // that operation, so a delayed older caller cannot overwrite a newer title.
+        let (tx,rx)=tokio::sync::oneshot::channel();
+        let handle=app.clone();
+        app.run_on_main_thread(move||{
+            let result=(||->Result<(),String>{
+                let state=handle.state::<State>();
+                let entry=state.details.lock().unwrap().get(&label)?.clone();
+                let w=handle.get_webview_window(&label).ok_or_else(||{
+                    state.details.lock().unwrap().remove(&label);"详情窗口已关闭".to_string()
+                })?;
+                w.set_title(&format!("{} · 详情",entry.request.title)).map_err(|e|e.to_string())?;
+                w.eval("window.dispatchEvent(new CustomEvent('flowhub:detail-context-changed'))").map_err(|e|e.to_string())?;
+                w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;
+                Ok(())
+            })();
+            let _=tx.send(result);
+        }).map_err(|e|e.to_string())?;
+        rx.await.map_err(|_|"详情窗口更新中断")??;
+    Ok(())
+}
+pub(crate) async fn open_script_sources(app:tauri::AppHandle,event:String)->Result<(),String>{
+    let request=detail::Request{plugin:"resource-monitor".into(),native_observer:true,board_id:String::new(),card_id:String::new(),config:json!({"sourceView":"scripts","scriptEventId":event}),title:"脚本来源".into()};
+    app.state::<crate::plugin::runtime::Runtime>().widget(&request.plugin)?;
+    open_detail(app,request).await
 }

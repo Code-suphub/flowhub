@@ -6,6 +6,8 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Request {
     pub plugin: String,
+    #[serde(skip)]
+    pub native_observer: bool,
     pub board_id: String,
     pub card_id: String,
     pub config: Value,
@@ -17,6 +19,7 @@ impl Request {
         if !self.config.is_object() || self.config.to_string().len() > 65536 || self.title.len() > 120 {
             return Err("详情配置或标题无效".into());
         }
+        if self.native_observer {return if self.plugin=="resource-monitor" {Ok(())} else {Err("观察来源无效".into())};}
         validate_source(layout, &self.board_id, &self.card_id, &self.plugin)
     }
 
@@ -33,7 +36,7 @@ impl Request {
                 value => value.clone(),
             }
         }
-        json!([self.board_id, self.card_id, self.plugin, self.config.get("selection").map(canonical)]).to_string()
+        json!([self.native_observer,self.board_id, self.card_id, self.plugin, self.config.get("selection").map(canonical)]).to_string()
             + if self.config.get("selection").is_some() { ":selected" } else { ":card" }
     }
 }
@@ -124,7 +127,14 @@ impl Registry {
 mod tests {
     use super::*;
     fn request(config: Value) -> Request {
-        Request { plugin:"machines".into(), board_id:"board".into(), card_id:"card".into(), config, title:"CPU".into() }
+        Request { native_observer:false,plugin:"machines".into(), board_id:"board".into(), card_id:"card".into(), config, title:"CPU".into() }
+    }
+    #[test]
+    fn plugin_callers_cannot_forge_the_native_observer_origin(){
+        let input=json!({"plugin":"resource-monitor","boardId":"","cardId":"","config":{},"title":"test","nativeObserver":true});
+        assert!(serde_json::from_value::<Request>(input).is_err());
+        let mut ordinary=request(json!({}));ordinary.plugin="resource-monitor".into();let mut native=ordinary.clone();native.native_observer=true;
+        assert_ne!(ordinary.identity(),native.identity());
     }
     #[test]
     fn identity_uses_source_and_canonical_selection_only() {

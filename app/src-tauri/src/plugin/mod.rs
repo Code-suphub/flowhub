@@ -2,3 +2,5 @@
 pub(crate) mod canvas;
 pub(crate) mod runtime;
 pub(crate) mod status;
+
+pub(crate) mod script_observer;

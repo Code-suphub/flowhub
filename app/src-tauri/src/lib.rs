@@ -1399,6 +1399,7 @@ pub fn run() {
             crate::plugin::canvas::restore(app.handle());
             crate::plugin::status::start(app.handle().clone());
             application_index::start(app.handle());
+            crate::plugin::script_observer::start(app.handle(),app.state::<AppState>().root_dir.clone());
             #[cfg(target_os = "macos")]
             // Keep the Carbon/event-tap fallback ready. Command+Space is often
             // claimed by Spotlight, which can make the official registrar fail.
@@ -1570,6 +1571,7 @@ pub fn run() {
             updater::download_and_install_update,
             updater::quit_and_install_update,
             send_test_notification,
+            crate::plugin::script_observer::script_alert_api,
             menu_bar::toggle_menu_bar_items
         ])
         .build(tauri::generate_context!())

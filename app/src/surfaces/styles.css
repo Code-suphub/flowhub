@@ -71,3 +71,17 @@ html[data-native-glass="true"]:has(#menu-bar-root),html[data-native-glass="true"
 .fh-detail-page .fh-detail-loading { color:var(--fh-muted); font-size:13px; }
 .fh-detail-error { padding:12px 16px; }
 .fh-detail-error p { margin:0 0 12px; overflow-wrap:anywhere; }
+.fh-script-alert {
+  height:100vh; box-sizing:border-box; display:grid; grid-template-rows:auto minmax(0,1fr); gap:6px;
+  padding:9px 12px; background:var(--fh-surface); border:1px solid var(--fh-border);
+  border-radius:14px; color:var(--fh-text);
+}
+.fh-script-alert header { display:flex; align-items:center; gap:7px; }
+.fh-script-alert-mark { flex:none; color:var(--fh-accent); }
+.fh-script-alert h1 { margin:0; font-size:12px; font-weight:650; }
+.fh-script-alert-preview { font-size:10px; color:var(--fh-muted); }
+.fh-script-alert-close { margin-left:auto; }
+.fh-script-alert-body { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; }
+.fh-script-alert-content { max-height:100%; overflow:auto; overflow-wrap:anywhere; }
+.fh-script-alert-summary { margin:0; font-size:13px; line-height:18px; }
+.fh-script-alert-error { margin:4px 0 0; font-size:11px; line-height:16px; color:var(--fh-danger); }

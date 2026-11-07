@@ -46,10 +46,15 @@ impl Runtime {
         applications::metadata(app.clone(),params).await
     }
     pub(crate) fn widget(&self,id:&str)->Result<WidgetDefinition,String>{let p=self.get(id)?;package(p.directory)?.manifest.widget.ok_or_else(||"请升级插件以支持独立桌面组件".to_string())}
-    pub(crate) async fn widget_call(&self,id:&str,params:Value)->Result<Value,String>{
+    pub(crate) async fn widget_call(&self,window:&tauri::WebviewWindow,id:&str,params:Value)->Result<Value,String>{
         self.widget(id)?;
         if params.to_string().len()>65536{return Err("组件请求过大".into());}
         if params["action"]=="management" {
+            let method=params["method"].as_str().unwrap_or("");
+            if super::script_observer::handles(method){
+                if id!="resource-monitor" {return Err("此插件未提供脚本观察能力".into());}
+                return super::script_observer::call(window,method,&params["params"]).await;
+            }
             let action=match params["method"].as_str().unwrap_or("") {
                 "privileged_status"=>Some("status"),
                 "privileged_enable"=>Some("enable"),
@@ -257,6 +262,7 @@ pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
         return app.state::<Runtime>().application_metadata(&app,&id,&params).await;
     }
     if id=="resource-monitor" {
+        if super::script_observer::handles(&method){app.state::<Runtime>().get(&id)?;return super::script_observer::call(&window,&method,&params).await;}
         let action=match method.as_str(){"privileged_status"=>Some("status"),"privileged_enable"=>Some("enable"),"privileged_disable"=>Some("disable"),_=>None};
         if let Some(action)=action {
             let rt=app.state::<Runtime>();
