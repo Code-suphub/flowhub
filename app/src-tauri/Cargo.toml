@@ -4,6 +4,12 @@ version = "0.1.17"
 description = "FlowHub desktop launcher"
 authors = ["FlowHub contributors"]
 edition = "2021"
+default-run = "flowhub-tauri"
+
+[[bin]]
+name = "flowhub-ui-test"
+path = "src/bin/flowhub-ui-test.rs"
+required-features = ["ui-test"]
 
 # Keep local development/test artifacts small. Test inherits the dev profile.
 # Opt in to symbols when debugging with CARGO_PROFILE_DEV_DEBUG=1.
@@ -20,6 +26,7 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+ui-test = ["dep:tauri-plugin-wdio-webdriver"]
 
 [dependencies]
 notify = "8.2.1"
@@ -49,6 +56,7 @@ tauri-plugin-opener = "2.5.4"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2.4.3"
 tauri-plugin-updater = "2.10.1"
+tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
 tokio = { version = "1", features = ["time", "sync", "process", "io-util", "macros", "rt"] }
 url = "2.5.8"
 

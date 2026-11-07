@@ -38,6 +38,12 @@ fn package(directory:PathBuf)->Result<Installed,String> {
     Ok(Installed{manifest,directory,enabled:true,last_loaded_at:None})
 }
 impl Runtime {
+    #[cfg(feature = "ui-test")]
+    pub(crate) fn install_ui_test_fixture(&self, directory: PathBuf) -> Result<(), String> {
+        let fixture = package(directory)?;
+        self.update(|items| { items.retain(|p| p.manifest.id != fixture.manifest.id); items.push(fixture); })?;
+        Ok(())
+    }
     pub(crate) fn has_launcher_entry(&self,id:&str)->bool { self.get(id).is_ok() }
     fn launcher_entries(&self)->Value { Value::Array(self.installed.lock().unwrap().iter().filter_map(launcher_entry).collect()) }
     pub(crate) async fn application_metadata(&self,app:&tauri::AppHandle,id:&str,params:&Value)->Result<Value,String>{
