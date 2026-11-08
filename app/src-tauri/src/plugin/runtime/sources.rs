@@ -75,7 +75,7 @@ fn commit_package(rt:&Runtime,source:&Source,expected:&Manifest,package:Installe
     let sources=rt.sources.lock().unwrap();
     if !sources.iter().any(|s|s.id==source.id && s.location==source.location && s.key==source.key){return Err("来源已变更，请重新扫描后安装".into());}
     if serde_json::to_value(&package.manifest).unwrap()!=serde_json::to_value(expected).unwrap(){return Err("安装包与索引清单不一致，请重新扫描".into());}
-    let result=rt.update(|items|{let mut package=package;if let Some(old)=items.iter().find(|p|p.manifest.id==package.manifest.id){package.enabled=old.enabled;}items.retain(|p|p.manifest.id!=package.manifest.id);items.push(package);})?;
+    let result=rt.update(|items|{let mut package=package;package.origin=Some(InstallOrigin::Market{source:Some(source.id.clone())});if let Some(old)=items.iter().find(|p|p.manifest.id==package.manifest.id){package.enabled=old.enabled;}items.retain(|p|p.manifest.id!=package.manifest.id);items.push(package);})?;
     staged.0=None;Ok(result)
 }
 fn scan_local(source:&Source)->Result<(Vec<Candidate>,Vec<String>),String>{
@@ -159,9 +159,9 @@ mod tests{
         let manifest:Manifest=serde_json::from_value(json!({"schema":2,"id":"example","name":"Example","version":"1.0.0","ui":"ui/index.html","executable":"bin/run","permissions":["native-process"]})).unwrap();
         let old=root.join("old-package");std::fs::create_dir_all(&old).unwrap();std::fs::write(old.join("keep"),"old executable").unwrap();
         let data=root.join("example");std::fs::create_dir_all(&data).unwrap();std::fs::write(data.join("config.json"),"user data").unwrap();
-        rt.update(|items|items.push(Installed{manifest:manifest.clone(),directory:old.clone(),enabled:false,last_loaded_at:None})).unwrap();
+        rt.update(|items|items.push(Installed{manifest:manifest.clone(),directory:old.clone(),enabled:false,last_loaded_at:None,origin:None})).unwrap();
         let mut next=manifest.clone();next.version="2.0.0".into();
-        let prepare=|name:&str|{let path=root.join(name);std::fs::create_dir_all(&path).unwrap();(Installed{manifest:next.clone(),directory:path.clone(),enabled:true,last_loaded_at:None},StagedDirectory(Some(path)))};
+        let prepare=|name:&str|{let path=root.join(name);std::fs::create_dir_all(&path).unwrap();(Installed{manifest:next.clone(),directory:path.clone(),enabled:true,last_loaded_at:None,origin:None},StagedDirectory(Some(path)))};
         {
             let (package,mut staged)=prepare("mismatch");assert!(commit_package(&rt,&source,&manifest,package,&mut staged).is_err());
         }
@@ -180,6 +180,7 @@ mod tests{
             let (package,mut staged)=prepare("success");commit_package(&rt,&source,&next,package,&mut staged).unwrap();
         }
         assert!(root.join("success").exists());assert_eq!(rt.list()[0]["manifest"]["version"],"2.0.0");assert_eq!(rt.list()[0]["enabled"],false);assert_eq!(std::fs::read_to_string(data.join("config.json")).unwrap(),"user data");
+        assert_eq!(rt.list()[0]["origin"],json!({"kind":"market","source":"test"}));
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]

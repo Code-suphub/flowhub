@@ -1,6 +1,18 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
 const h=require('./settings-harness.test.cjs');
 const source=h.fs.readFileSync(h.path.join(__dirname,'../../ui/plugin/plugin-entry.js'),'utf8');
+test('refresh reloads only the changed active plugin and discards replies from its previous generation',async()=>{
+ const listeners={},responses=[];let finish,revision=1,other=1,navigations=0;
+ const frame={contentWindow:{postMessage:value=>responses.push(value)},set src(value){this.url=value;navigations++;},get src(){return this.url;},setAttribute(){},removeAttribute(){}};
+ const window={addEventListener:(name,fn)=>listeners[name]=fn,__TAURI__:{core:{invoke:async(method,args)=>{
+  if(method==='plugin_api')return [{directory:'/original',lastLoadedAt:revision,enabled:true,manifest:{id:'example',ui:'ui/index.html',version:'1.0.0'}},{lastLoadedAt:other,enabled:true,manifest:{id:'other',ui:'ui/index.html'}}];
+  await new Promise(resolve=>finish=resolve);return {old:true};
+ }}}};
+ vm.runInNewContext(source,{window,console});const bridge=window.FlowHubPluginIntegration;await bridge.refresh();bridge.attach(frame);bridge.show('plugin:example');assert.equal(navigations,1);
+ other++;await bridge.refresh();assert.equal(navigations,1,'unrelated plugin update does not reload the active page');
+ const slow=listeners.message({source:frame.contentWindow,data:{type:'flowhub:request',id:'old',method:'slow'}});revision++;await bridge.refresh();assert.equal(navigations,2,'same-version reload refreshes frontend resources');finish();await slow;assert.equal(responses.length,0);
+ await bridge.refresh();assert.equal(navigations,2,'unchanged scans do not keep reloading the page');
+});
 test('React ref attach enables sandboxed plugins; RPC identity is frame-bound and stale replies are dropped',async()=>{
  const listeners={},calls=[],responses=[];let gate;
  const frame={src:'',contentWindow:{postMessage:value=>responses.push(value)},setAttribute(k,v){this[k]=v;},removeAttribute(k){delete this[k];}};
@@ -142,4 +154,32 @@ test('the floating dock can recover a missing bridge through its own reconnect c
  window.FlowHubPluginIntegration={subscribe:()=>()=>{},getSnapshot:()=>plugins,refresh:async()=>{},attach:()=>()=>{},show:()=>{}};
  await h.click(view.container.querySelector('[aria-label="重新连接插件栏"]'));assert.equal(view.container.querySelector('[role=alert]'),null);assert.equal(view.container.querySelector('[aria-label="插件市场"]').disabled,false);assert.ok(calls.every(action=>action==='ready'));
  await view.unmount();delete window.FlowHubPluginIntegration;delete global.ResizeObserver;
+});
+test('missing plugin files expose recovery controls and an explicit retry rechecks the original directory',async()=>{
+ h.environment();let missing=true,frame,managed=0;const shown=[],calls=[];
+ const plugins=[{directory:'/fixture/package',enabled:true,manifest:{id:'example',name:'Example',ui:'ui/index.html'}}];
+ window.FlowHubPluginIntegration={getSnapshot:()=>plugins,subscribe:()=>()=>{},refresh:async()=>{},attach:node=>{frame=node;return()=>{frame=null;};},show:module=>{shown.push(module);frame.src='flowhub-plugin://example/index.html';}};
+ window.__TAURI__.core.invoke=async(command,args)=>{calls.push({command,...args});if(missing)throw Error('No such file or directory (os error 2)');return {manifest:plugins[0].manifest};};
+ const {PluginFrame}=require('../../src/plugin-workspace/controls.tsx');
+ const view=await h.mount(PluginFrame,{module:'plugin:example',onManage:()=>{managed++;}});
+ assert.match(view.container.querySelector('[role=alert]').textContent,/原安装目录可能已移动/);
+ assert(!view.container.textContent.includes('os error'));assert.equal(frame.src,'about:blank');assert.deepEqual(shown,[]);
+ await h.click(h.button(view.container,'返回插件市场'));assert.equal(managed,1);assert.equal(calls.length,1,'returning does not install, reload or retry');
+ missing=false;await h.click(h.button(view.container,'重试打开'));
+ assert.equal(view.container.querySelector('[role=alert]'),null);assert.deepEqual(shown,['plugin:example']);assert.match(frame.src,/flowhub-plugin:\/\/example/);
+ assert.equal(calls.length,2);assert.ok(calls.every(call=>call.command==='plugin_api'&&call.action==='inspect'&&call.payload.directory==='/fixture/package'));
+ await view.unmount();delete window.FlowHubPluginIntegration;
+});
+test('a late plugin file check cannot navigate after a newer selection and changed identities stay blocked',async()=>{
+ h.environment();let frame,finish;const shown=[];
+ const plugins=['one','two'].map(id=>({directory:'/fixture/'+id,enabled:true,manifest:{id,name:id,ui:'ui/index.html'}}));
+ window.FlowHubPluginIntegration={getSnapshot:()=>plugins,subscribe:()=>()=>{},refresh:async()=>{},attach:node=>{frame=node;return()=>{frame=null;};},show:module=>{shown.push(module);frame.src='flowhub-plugin://'+module.slice(7)+'/index.html';}};
+ window.__TAURI__.core.invoke=async(_command,args)=>args.payload.directory.endsWith('one')?await new Promise(resolve=>{finish=resolve;}):{manifest:plugins[1].manifest};
+ const {PluginFrame}=require('../../src/plugin-workspace/controls.tsx'),view=await h.mount(PluginFrame,{module:'plugin:one'});
+ await h.act(async()=>view.root.render(h.React.createElement(PluginFrame,{module:'plugin:two'})));
+ await h.act(async()=>finish({manifest:plugins[0].manifest}));assert.deepEqual(shown,['plugin:two']);assert.match(frame.src,/flowhub-plugin:\/\/two/);
+ window.__TAURI__.core.invoke=async()=>({manifest:{id:'impostor',ui:'ui/index.html'}});
+ await h.act(async()=>view.root.render(h.React.createElement(PluginFrame,{module:'plugin:one'})));
+ assert.ok(view.container.querySelector('[role=alert]'));assert.equal(frame.src,'about:blank');assert.deepEqual(shown,['plugin:two']);
+ await view.unmount();delete window.FlowHubPluginIntegration;
 });

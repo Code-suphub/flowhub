@@ -6,3 +6,8 @@ export function workspaceCall(action: string, module?: string, width?: number) {
   return invoke<WorkspaceSnapshot>('plugin_workspace', { action, module: module ?? null, width: width ?? null });
 }
 export function dragWorkspace() { return (window as NativeHost).__TAURI__?.window?.getCurrentWindow().startDragging(); }
+export function inspectPlugin(directory: string) {
+  const invoke = (window as NativeHost).__TAURI__?.core.invoke;
+  if (!invoke) return Promise.reject(new Error('插件文件检查仅在 FlowHub App 中可用'));
+  return invoke<{ manifest: { id: string; ui: string } }>('plugin_api', { action: 'inspect', payload: { directory } });
+}

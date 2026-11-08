@@ -1,5 +1,5 @@
 import type { Bag } from './model';
-export interface InstalledPlugin { enabled: boolean; manifest: { id: string; name: string; ui: string } }
+export interface InstalledPlugin { enabled: boolean; directory?: string; manifest: { id: string; name: string; ui: string } }
 export type SettingsHost = Window & {
   weborg: Record<string, (...args: any[]) => any>;
   FlowHubMemoCatalog?: { cloneDefaults: () => import('./model').Memo[] };
