@@ -69,6 +69,11 @@ fn control_policy(client:Option<&Path>,services:bool)->Result<Option<Value>,Stri
     Ok(Some(value))
 }
 fn status(client:Option<&Path>,services:bool) -> Value {
+    let mut value=service_status(client,services);
+    value["vivoStartupSupported"]=json!(bundled_helper().is_some());
+    value
+}
+fn service_status(client:Option<&Path>,services:bool) -> Value {
     if let Some(service)=probe() {
         let needs_update=bundled_helper().and_then(|source|digest(&source).ok())!=digest(Path::new(INSTALLED_HELPER)).ok();
         let policy=control_policy(client,services);
@@ -76,7 +81,7 @@ fn status(client:Option<&Path>,services:bool) -> Value {
         if needs_update || (client.is_some()&&!control) {
             return json!({"ok":true,"status":"needsUpdate","rootControl":false,"message":"系统进程服务需要授权升级。升级后可结束所选第三方 root 进程，并停止或恢复经确认的后台服务；系统核心服务仍受保护。"});
         }
-        return json!({"ok":true,"status":"enabled","rootControl":control,"serviceControl":control&&services,"message":if control&&services {"系统进程采集、第三方 root 进程与后台服务控制已获准。"} else if control {"系统进程采集与第三方 root 进程控制已获准。"} else {"系统进程只读采集已获准。"}});
+        return json!({"ok":true,"status":"enabled","rootControl":control,"serviceControl":control&&services,"vivoStartupControl":control&&services&&service["controlPolicy"]["vivoStartupControl"]==true,"message":if control&&services {"系统进程采集、第三方 root 进程与后台服务控制已获准。"} else if control {"系统进程采集与第三方 root 进程控制已获准。"} else {"系统进程只读采集已获准。"}});
     }
     if bundled_helper().is_none() {
         return json!({"ok":false,"status":"missingHelper","message":"当前应用包缺少系统进程采集器，请重新构建或安装完整的 FlowHub。"});
@@ -190,7 +195,7 @@ fi
 
 fn authorize(script: &str, installing: bool) -> Result<bool, String> {
     let prompt = if installing {
-        "FlowHub 需要安装进程服务：读取系统进程资源，结束所选第三方 root 进程，并暂停或恢复经确认的第三方后台服务。系统核心服务仍受保护。"
+        "FlowHub 需要安装进程服务：读取系统进程资源，结束所选第三方 root 进程，暂停或恢复经确认的后台服务，以及配置 vivo 远控守护服务的自启动。更改自启动时保留当前进程。系统核心服务仍受保护。"
     } else {
         "FlowHub 需要停止并卸载系统进程采集服务。"
     };

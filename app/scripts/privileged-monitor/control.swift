@@ -28,6 +28,9 @@ struct ControlPolicy: Codable {
     let clientPath: String
     let clientHash: String
     var serviceControl: Bool = false
+    // Missing in existing installations. Persistent startup changes require
+    // a new authorization with the matching host and client signatures.
+    var vivoStartupControl: Bool? = nil
     static let path = "/Library/PrivilegedHelperTools/cn.ac.camellia.flowhub.resource-monitor/control.json"
     static func load() -> ControlPolicy? {
         var info = stat()
@@ -40,7 +43,7 @@ struct ControlPolicy: Codable {
         guard let host = canonicalPath(host), let client = canonicalPath(client),
               uid > 0, let hostHash = signingHash(host), let clientHash = signingHash(client),
               host.hasSuffix("/Contents/MacOS/flowhub-tauri"), client.hasSuffix("/flowhub-resource-monitor") else { return nil }
-        return ControlPolicy(uid: uid, hostPath: host, hostHash: hostHash, clientPath: client, clientHash: clientHash, serviceControl: serviceControl)
+        return ControlPolicy(uid: uid, hostPath: host, hostHash: hostHash, clientPath: client, clientHash: clientHash, serviceControl: serviceControl, vivoStartupControl: serviceControl ? true : nil)
     }
 }
 func signingHash(_ path: String) -> String? {
@@ -106,6 +109,14 @@ func thirdPartyProgram(_ path: String) -> Bool {
     var apple: SecRequirement?
     guard SecRequirementCreateWithString("anchor apple" as CFString,[],&apple) == errSecSuccess else { return false }
     return SecStaticCodeCheckValidity(code,[],apple) != errSecSuccess
+}
+func vivoSignedProgram(_ path: String) -> Bool {
+    var code: SecStaticCode?
+    var requirement: SecRequirement?
+    return SecStaticCodeCreateWithPath(URL(fileURLWithPath:path) as CFURL,[],&code) == errSecSuccess
+        && SecRequirementCreateWithString("anchor apple generic and certificate leaf[subject.OU] = NR23K45T29" as CFString,[],&requirement) == errSecSuccess
+        && requirement != nil
+        && code.map { SecStaticCodeCheckValidity($0,[],requirement) == errSecSuccess } == true
 }
 func controllableRoot(_ target: ProcessIdentity) -> Bool {
     guard target.pid > 1, target.pid != getpid(), target.uid == 0, target.started > 0, thirdPartyPath(target.executable),

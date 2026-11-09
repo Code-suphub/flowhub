@@ -143,6 +143,12 @@ private func handle(_ client: Int32) {
             sendJSON(["error": "调用方未获准控制 root 进程，请通过 FlowHub 升级授权"], to: client); return
         }
         sendJSON(terminateRoots(body), to: client)
+    case "vivo_startup_set":
+        guard controlPolicy?.vivoStartupControl == true, controlPolicy?.serviceControl == true,
+              trustedControlPeer(client,uid:peerUID,policy:controlPolicy) else {
+            sendJSON(["error":"vivo 系统级自启动控制需要通过 FlowHub 授权升级系统服务。"],to:client); return
+        }
+        sendJSON(backgroundServices.handle("vivo_startup_set",body:body,uid:peerUID),to:client)
     case "services_snapshot", "service_preview", "service_confirm":
         guard controlPolicy?.serviceControl == true, trustedControlPeer(client,uid:peerUID,policy:controlPolicy) else {
             sendJSON(["error":"后台服务控制尚未授权，请通过 FlowHub 授权升级服务。"],to:client); return

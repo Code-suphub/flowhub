@@ -195,6 +195,68 @@ private func serviceArguments(_ action: String, _ c: ServiceConfig) -> [String]?
     switch action { case "stop": return ["bootout",c.domain+"/"+c.label]; case "resume": return ["bootstrap",c.domain,c.path]; default:return nil }
 }
 
+private let vivoWatchLabel = "com.vivo.control.watch"
+private let vivoWatchPath = "/Library/LaunchDaemons/com.vivo.control.watch.plist"
+private let vivoWatchProgram = "/Applications/pcsuite.app/Contents/Resources/vivoControl/vivocontrol.app/Contents/Resources/depends/darwin/vivo_remote_watch"
+
+private func systemStartupFlags(_ text: String) -> [String:Bool]? {
+    let lines = text.split(separator:"\n").map { $0.trimmingCharacters(in:.whitespaces) }.filter { !$0.isEmpty }
+    guard lines.first == "disabled services = {", lines.last == "}" else { return nil }
+    var flags = [String:Bool]()
+    for line in lines.dropFirst().dropLast() {
+        let parts = line.components(separatedBy:"\" => ")
+        guard parts.count == 2, parts[0].hasPrefix("\"") else { return nil }
+        let label = String(parts[0].dropFirst())
+        guard flags[label] == nil else { return nil }
+        switch parts[1] {
+        case "enabled", "false": flags[label] = true
+        case "disabled", "true": flags[label] = false
+        default: return nil
+        }
+    }
+    return flags
+}
+
+private func vivoStartupFlags() -> [String:Bool]? {
+    let result = launch(["print-disabled","system"])
+    guard result.code == 0, !result.timedOut else { return nil }
+    return systemStartupFlags(result.text)
+}
+
+private func vivoStartupRevision(config: ServiceConfig, enabled: Bool, bytes: Data) -> String {
+    var input = Data((config.domain + config.path + config.program).utf8)
+    input.append(enabled ? 1 : 0)
+    input.append(bytes)
+    return hash(input)
+}
+
+private func vivoStartupArguments(_ enabled: Bool) -> [String] {
+    [enabled ? "enable" : "disable", "system/" + vivoWatchLabel]
+}
+
+private func setVivoStartup(_ body: [String:Any], uid: UInt32) throws -> [String:Any] {
+    guard body["confirmed"] as? Bool == true, body["id"] as? String == vivoWatchLabel,
+          let enabled = body["enabled"] as? Bool, let revision = body["revision"] as? String, revision.utf8.count == 64,
+          let c = config(vivoWatchPath,domain:"system",uid:uid), c.label == vivoWatchLabel,
+          c.program == vivoWatchProgram, c.runUID == 0, vivoSignedProgram(c.program),
+          let bytes = readFile(c.path,maximum:64*1024,owner:0), hash(bytes) == c.digest,
+          let plist = try? PropertyListSerialization.propertyList(from:bytes,format:nil) as? [String:Any],
+          let state = runtime(c), let flags = vivoStartupFlags() else {
+        throw BackgroundServices.Failure.message("无法核验 vivo 远控守护服务的配置或启动状态，请刷新。")
+    }
+    let previous = flags[c.label] ?? (plist["Disabled"] as? Bool != true)
+    guard previous != enabled, vivoStartupRevision(config:c,enabled:previous,bytes:bytes) == revision,
+          config(c.path,domain:"system",uid:uid) == c else {
+        throw BackgroundServices.Failure.message("vivo 自启动策略或服务配置已变化，请刷新后重新确认。")
+    }
+    // A policy override leaves the existing daemon and its connections running.
+    _ = launch(vivoStartupArguments(enabled))
+    guard vivoStartupFlags()?[c.label] == enabled else {
+        throw BackgroundServices.Failure.message("vivo 自启动设置结果尚未确认，请刷新核实。不会自动重试。")
+    }
+    return ["enabled":enabled, "processChanged":state.1.map { ProcessIdentity.read($0.pid) != $0 } ?? false]
+}
+
 final class BackgroundServices: @unchecked Sendable {
     private let lock = NSLock()
     private var saved = [String:PausedService](), plans = [String:ServicePlan]()
@@ -262,6 +324,7 @@ final class BackgroundServices: @unchecked Sendable {
     func handle(_ method: String, body: [String:Any], uid: UInt32) -> [String:Any] {
         guard lock.lock(before:Date().addingTimeInterval(3)) else { return ["error":"另一项服务查询或操作仍在进行，请稍后刷新重试。"] }; defer { lock.unlock() }
         do {
+            if method == "vivo_startup_set" { return try setVivoStartup(body,uid:uid) }
             try load()
             switch method {
             case "services_snapshot": return ["at":UInt64(Date().timeIntervalSince1970*1000),"services":try catalogue(uid),"supported":true]
@@ -318,6 +381,9 @@ func servicesSelfCheck() -> Bool {
     let plan = ServicePlan(config:c,programHash:"binary",identity:identity,action:"stop",at:Date())
     var changed = c; changed.digest = "changed"
     return restartPolicy(true,runAtLoad:false).0 == "always" && restartPolicy(["SuccessfulExit":false],runAtLoad:true).0 == "abnormal-exit"
+        && vivoStartupArguments(false) == ["disable","system/com.vivo.control.watch"]
+        && vivoStartupArguments(true) == ["enable","system/com.vivo.control.watch"]
+        && systemStartupFlags("disabled services = {\n \"com.vivo.control.watch\" => disabled\n}")?[vivoWatchLabel] == false
         && serviceArguments("stop",c) == ["bootout","gui/501/test.fixture"] && serviceArguments("resume",c) == ["bootstrap","gui/501",c.path] && serviceArguments("disable",c) == nil
         && unchanged(plan,config:c,identity:identity) && !unchanged(plan,config:changed,identity:identity)
         && !unchanged(plan,config:c,identity:ProcessIdentity(pid:100,uid:501,started:11,executable:c.program))
