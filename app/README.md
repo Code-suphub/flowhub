@@ -48,10 +48,9 @@ src-tauri/target/release/bundle/macos/FlowHub.app
 src-tauri/target/release/bundle/dmg/FlowHub_0.1.0_aarch64.dmg
 ```
 
-macOS 包固定使用 `FlowHub Local Development` 代码签名身份，以便本地迭代包和 GitHub
-发布包保持相同的 Designated Requirement。该自签名证书仅适合已信任证书的开发机器；其他
-Mac 仍可能出现 Gatekeeper 提示。Tauri 更新包签名与 macOS 应用代码签名相互独立。
-证书只需在运行安装包的 Mac 上设为信任；GitHub runner 仅导入证书完成签名。
+本机构建在 macOS 上默认按证书指纹选择与 GitHub 发布版相同的 `FlowHub Local Development`，宿主和随包的资源监控服务使用同一身份签名。构建机的钥匙串需导入该证书及其私钥。缺少身份时构建会停止，可用 `APPLE_SIGNING_IDENTITY` 显式覆盖。临时测试可设置 `APPLE_SIGNING_IDENTITY=-` 使用 ad-hoc 签名，该包的辅助功能授权无法与发布版共用。
+
+本地包和 GitHub 发布包的签名要求一致时，可以沿用辅助功能授权。从旧 ad-hoc 包迁移时需重新授权一次。该自签名证书仍可能触发 Gatekeeper 提示。Tauri 更新包签名与 macOS 应用代码签名相互独立。
 
 ## GitHub 自动发布与更新
 
