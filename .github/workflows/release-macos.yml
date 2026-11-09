@@ -58,6 +58,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare bundled daemon for Rust tests
+        run: node scripts/build/build-resource-monitor-helper.mjs
+
       - name: Run tests
         run: pnpm test
 
