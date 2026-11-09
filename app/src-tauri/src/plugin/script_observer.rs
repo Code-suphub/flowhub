@@ -1,5 +1,5 @@
-//! Permission-free window/process metadata. A SecurityAgent window proves a
-//! system authentication UI is visible, NOT which concurrent script requested it.
+//! System authentication windows and script clues. Optional keychain labels
+//! yield only the displayed requester's app name.
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -9,6 +9,9 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os="macos")]
 #[path="script_observer/macos.rs"]
 mod native;
+#[cfg(target_os="macos")]
+#[path="script_observer/keychain.rs"]
+mod keychain;
 const LIMIT:usize=64;
 const RETAIN:u64=30*60*1000;
 const ALERT:&str="script-source-alert";
@@ -31,7 +34,7 @@ pub(super) struct Script {
     pub chain_note:String,pub first_seen:u64,pub last_seen:u64,pub running:bool,
 }
 #[derive(Clone,Debug,PartialEq)]
-pub(super) struct Window {pub id:u32,pub owner:Identity,pub center:Option<(f64,f64)>}
+pub(super) struct Window {pub id:u32,pub owner:Identity,pub center:Option<(f64,f64)>,pub request_app:Option<String>}
 impl Window {fn key(&self)->String {format!("{}:{}:{}",self.id,self.owner.pid,self.owner.started)}}
 #[derive(Clone,Serialize)]
 #[serde(rename_all="camelCase")]
@@ -39,6 +42,7 @@ struct Observation {
     id:String,window_id:u32,owner:Identity,first_seen:u64,last_seen:u64,visible:bool,
     #[serde(skip)]
     center: Option<(f64, f64)>,
+    request_app: Option<String>,
     // Frozen evidence from the beginning of this window episode. Later scripts
     // must not silently replace the candidate that was visible at that time.
     candidates:Vec<Script>,candidate_count:usize,
@@ -46,6 +50,14 @@ struct Observation {
 #[derive(Default)]
 struct History {scripts:Vec<Script>,events:Vec<Observation>,active:HashMap<String,String>,serial:u64}
 impl History {
+    #[cfg(target_os="macos")]
+    fn skip_keychain(&self, at: u64) -> HashSet<String> {
+        self.active.iter().filter_map(|(key, id)| {
+            self.events.iter().find(|event| &event.id == id)
+                .filter(|event| event.request_app.is_some() || at.saturating_sub(event.first_seen) > 3_000)
+                .map(|_| key.clone())
+        }).collect()
+    }
     fn prune(&mut self,at:u64){
         self.scripts.retain(|r|r.running||at.saturating_sub(r.last_seen)<=RETAIN);self.scripts.truncate(LIMIT);
         self.events.retain(|r|r.visible||at.saturating_sub(r.last_seen)<=RETAIN);self.events.truncate(LIMIT);
@@ -69,12 +81,16 @@ impl History {
             for window in windows.into_iter().take(LIMIT){
                 let key=window.key();
                 if let Some(id)=self.active.get(&key){
-                    if let Some(event)=self.events.iter_mut().find(|e|&e.id==id){event.visible=true;event.last_seen=at;active.insert(key,id.clone());continue;}
+                    if let Some(event)=self.events.iter_mut().find(|e|&e.id==id){
+                        event.visible=true;event.last_seen=at;
+                        if event.request_app.is_none() {event.request_app=window.request_app;}
+                        active.insert(key,id.clone());continue;
+                    }
                 }
                 self.serial+=1;
                 let id=format!("auth-{:x}",Sha256::digest(format!("{key}:{at}:{}",self.serial)));
                 let candidates:Vec<_>=self.scripts.iter().filter(|s|at.saturating_sub(s.last_seen)<=2000&&s.process.identity.started/1000<=at).cloned().collect();
-                let event=Observation{id:id.clone(),window_id:window.id,owner:window.owner,first_seen:at,last_seen:at,visible:true,center:window.center,candidate_count:candidates.len(),candidates:candidates.into_iter().take(8).collect()};
+                let event=Observation{id:id.clone(),window_id:window.id,owner:window.owner,first_seen:at,last_seen:at,visible:true,center:window.center,request_app:window.request_app,candidate_count:candidates.len(),candidates:candidates.into_iter().take(8).collect()};
                 self.events.insert(0,event.clone());fresh.push(event);active.insert(key,id);
             }
             self.active=active;
@@ -82,9 +98,9 @@ impl History {
         self.prune(at);fresh
     }
 }
-struct Observer {enabled:bool,available:bool,at:u64,revision:u64,generation:u64,error:Option<String>,history:History,path:PathBuf,alert:Option<Value>,alert_center:Option<(f64,f64)>,alert_until:u64,last_alert:u64}
+struct Observer {enabled:bool,keychain_names:bool,available:bool,at:u64,revision:u64,generation:u64,error:Option<String>,history:History,path:PathBuf,alert:Option<Value>,alert_center:Option<(f64,f64)>,alert_until:u64,last_alert:u64}
 static STATE:OnceLock<Arc<Mutex<Observer>>>=OnceLock::new();
-fn snapshot(state:&Observer)->Value {json!({"supported":cfg!(target_os="macos"),"enabled":state.enabled,"available":state.available,"at":state.at,"revision":state.revision,"interval":1,"retentionMinutes":30,"limit":LIMIT,"records":state.history.scripts,"observations":state.history.events.iter().map(|e|json!({"id":e.id,"windowId":e.window_id,"owner":e.owner,"firstSeen":e.first_seen,"lastSeen":e.last_seen,"visible":e.visible,"candidateCount":e.candidate_count})).collect::<Vec<_>>(),"error":state.error})}
+fn snapshot(state:&Observer)->Value {json!({"supported":cfg!(target_os="macos"),"enabled":state.enabled,"keychainNames":state.keychain_names,"available":state.available,"at":state.at,"revision":state.revision,"interval":1,"retentionMinutes":30,"limit":LIMIT,"records":state.history.scripts,"observations":state.history.events.iter().map(|e|json!({"id":e.id,"windowId":e.window_id,"owner":e.owner,"firstSeen":e.first_seen,"lastSeen":e.last_seen,"visible":e.visible,"candidateCount":e.candidate_count,"requestApp":e.request_app})).collect::<Vec<_>>(),"error":state.error})}
 pub(crate) fn handles(method:&str)->bool {matches!(method,"script_observer_status"|"script_observer_config"|"script_observer_event"|"script_observer_replay")}
 pub(crate) async fn call(window: &tauri::WebviewWindow, method: &str, params: &Value) -> Result<Value, String> {
     if method == "script_observer_replay" {
@@ -100,9 +116,11 @@ pub(crate) async fn call(window: &tauri::WebviewWindow, method: &str, params: &V
         result["canReplay"] = json!(cfg!(target_os = "macos"));
         return Ok(result);
     }else if method=="script_observer_config" {
-        let enabled=params["enabled"].as_bool().ok_or("观察开关无效")?;
-        crate::storage::write_json_atomic(&state.path,&json!({"enabled":enabled}))?;
-        state.enabled=enabled;state.generation+=1;state.revision+=1;
+        if params.get("enabled").is_none() && params.get("keychainNames").is_none() {return Err("观察开关无效".into());}
+        let enabled=params.get("enabled").map(Value::as_bool).unwrap_or(Some(state.enabled)).ok_or("观察开关无效")?;
+        let keychain_names=params.get("keychainNames").map(Value::as_bool).unwrap_or(Some(state.keychain_names)).ok_or("钥匙串来源开关无效")?;
+        crate::storage::write_json_atomic(&state.path,&json!({"enabled":enabled,"keychainNames":keychain_names}))?;
+        state.enabled=enabled;state.keychain_names=keychain_names;state.generation+=1;state.revision+=1;
         if !enabled{state.history.pause(now());state.alert=None;state.alert_until=0;}
     }else if method!="script_observer_status"{return Err("不支持的观察操作".into());}
     Ok(snapshot(&state))
@@ -142,16 +160,18 @@ fn alert_content(event: &Observation, preview: bool) -> Value {
     names.sort_unstable();
     names.dedup();
     names.truncate(2);
-    json!({"id": event.id, "sourceNames": names.join("、"), "preview": preview})
+    json!({"id": event.id, "sourceNames": names.join("、"), "requestApp":event.request_app, "preview": preview})
 }
 pub(crate) fn start(app:&tauri::AppHandle,root:PathBuf){
     let path=root.join("script-observer.json");
-    let enabled=crate::storage::read_json(&path).and_then(|v|v["enabled"].as_bool()).unwrap_or(true);
-    let state=Arc::new(Mutex::new(Observer{enabled,available:false,at:0,revision:0,generation:0,error:None,history:History::default(),path,alert:None,alert_center:None,alert_until:0,last_alert:0}));
+    let config=crate::storage::read_json(&path).unwrap_or_default();
+    let enabled=config["enabled"].as_bool().unwrap_or(true);
+    let keychain_names=config["keychainNames"].as_bool().unwrap_or(false);
+    let state=Arc::new(Mutex::new(Observer{enabled,keychain_names,available:false,at:0,revision:0,generation:0,error:None,history:History::default(),path,alert:None,alert_center:None,alert_until:0,last_alert:0}));
     if STATE.set(state.clone()).is_err(){return;}
     let app=app.clone();
-    // One worker with no overlapping scans. No UI or sampler requests are put
-    // on this thread, and no memory/CPU, command lines or window text are read.
+    // One worker with no overlapping scans. Keychain label lookup is optional
+    // and bounded separately from process enumeration.
     std::thread::Builder::new().name("flowhub-script-observer".into()).spawn(move||loop{
         let at=now();
         let plugin=app.state::<super::runtime::Runtime>().has_launcher_entry("resource-monitor");
@@ -159,7 +179,10 @@ pub(crate) fn start(app:&tauri::AppHandle,root:PathBuf){
         let mut show=false;let mut hide=false;
         if enabled {
             #[cfg(target_os="macos")]
-            let scan=native::scan(at);
+            let scan={
+                let skip={let s=state.lock().unwrap_or_else(|p|p.into_inner());s.keychain_names.then(||s.history.skip_keychain(at))};
+                native::scan(at,skip.as_ref())
+            };
             #[cfg(not(target_os="macos"))]
             let scan=(None::<Vec<Script>>,None::<Vec<Window>>,Some("自动观察目前仅支持 macOS。".to_string()));
             let mut s=state.lock().unwrap_or_else(|p|p.into_inner());
@@ -174,6 +197,14 @@ pub(crate) fn start(app:&tauri::AppHandle,root:PathBuf){
                             s.alert_center = event.center;
                             if at.saturating_sub(s.last_alert)>=10_000 {s.last_alert=at;s.alert_until=at+ALERT_DURATION_MS;show=true;}
                             else if at<s.alert_until{show=true;}
+                        } else if at < s.alert_until {
+                            let name=s.alert.as_ref().filter(|alert|alert["preview"]==false&&alert["requestApp"].is_null())
+                                .and_then(|alert|s.history.events.iter().find(|event|alert["id"]==event.id))
+                                .and_then(|event|event.request_app.clone());
+                            if let (Some(alert),Some(name))=(&mut s.alert,name) {
+                                alert["requestApp"]=json!(name);
+                                show=true;
+                            }
                         }
             }
         }
@@ -240,7 +271,7 @@ pub(crate) async fn script_alert_api(window:tauri::WebviewWindow,app:tauri::AppH
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn window(id:u32,started:u64)->Window{Window{id,owner:Identity{pid:20,started,uid:501,executable:"/System/SecurityAgent".into()},center:None}}
+    fn window(id:u32,started:u64)->Window{Window{id,owner:Identity{pid:20,started,uid:501,executable:"/System/SecurityAgent".into()},center:None,request_app:None}}
     fn script(pid:i32,at:u64)->Script{let identity=Identity{pid,started:at*1000,uid:501,executable:"/usr/bin/osascript".into()};Script{id:format!("{pid}-{at}"),process:Node{identity,name:"osascript".into(),app_path:None},chain:vec![],source:None,responsible:None,chain_note:String::new(),first_seen:at,last_seen:at,running:true}}
     #[test]
     fn windows_are_episodes_not_sampling_notifications_and_pid_reuse_is_distinct(){
@@ -258,5 +289,18 @@ mod tests {
         for i in 2..150{h.observe(vec![script(i,i as u64)],Some(vec![window(i as u32,1)]),i as u64);}
         assert!(h.scripts.len()<=LIMIT&&h.events.len()<=LIMIT);
         h.observe(vec![],Some(vec![]),RETAIN+1000);assert!(h.scripts.is_empty()&&h.events.is_empty());
+    }
+    #[test]
+    fn a_late_keychain_label_enriches_only_its_own_episode() {
+        let mut history = History::default();
+        let initial = window(1, 1);
+        history.observe(vec![script(1, 100)], Some(vec![initial.clone()]), 100);
+        let mut identified = initial.clone();
+        identified.request_app = Some("Arc".into());
+        assert!(history.observe(vec![], Some(vec![identified]), 1_100).is_empty());
+        assert_eq!(alert_content(&history.events[0], false)["requestApp"], "Arc");
+        assert_eq!(history.events[0].candidates.len(), 1);
+        history.observe(vec![], Some(vec![window(1, 2)]), 2_100);
+        assert!(history.events[0].request_app.is_none());
     }
 }

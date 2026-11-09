@@ -14,7 +14,7 @@ use core_graphics::{
         CGEventTapPlacement, CGEventType, CGMouseButton, CallbackResult, EventField,
     },
     event_source::{CGEventSource, CGEventSourceStateID},
-    geometry::{CGPoint, CGRect},
+    geometry::{CGPoint, CGRect, CGSize},
     window::{
         create_description_from_array, kCGWindowBounds, kCGWindowIsOnscreen, kCGWindowName,
         kCGWindowNumber, kCGWindowOwnerName, kCGWindowOwnerPID,
@@ -188,6 +188,7 @@ unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
     fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
+    fn AXUIElementSetMessagingTimeout(element: CFTypeRef, timeout: f32) -> i32;
     fn AXUIElementCopyAttributeValue(
         element: CFTypeRef,
         attribute: CFStringRef,
@@ -310,7 +311,7 @@ fn item_capabilities(owner_name: &str, title: &str, accessibility_id: &str) -> (
     (!immovable, !immovable && !non_hideable)
 }
 
-fn ax_attribute(element: CFTypeRef, attribute: &str) -> Option<CFType> {
+pub(crate) fn ax_attribute(element: CFTypeRef, attribute: &str) -> Option<CFType> {
     let attribute = CFString::new(attribute);
     let mut value = ptr::null();
     let result = unsafe {
@@ -320,6 +321,27 @@ fn ax_attribute(element: CFTypeRef, attribute: &str) -> Option<CFType> {
         return None;
     }
     Some(unsafe { CFType::wrap_under_create_rule(value) })
+}
+
+pub(crate) fn ax_application(pid: i32, timeout: f32) -> Option<CFType> {
+    let raw = unsafe { AXUIElementCreateApplication(pid) };
+    if raw.is_null() { return None; }
+    let app = unsafe { CFType::wrap_under_create_rule(raw) };
+    (unsafe { AXUIElementSetMessagingTimeout(raw, timeout) } == 0).then_some(app)
+}
+
+pub(crate) fn ax_window_bounds(window: CFTypeRef) -> Option<CGRect> {
+    let position = ax_attribute(window, "AXPosition")?;
+    let size = ax_attribute(window, "AXSize")?;
+    let mut point = CGPoint::new(0., 0.);
+    let mut dimensions = CGSize::new(0., 0.);
+    unsafe {
+        if !AXValueGetValue(position.as_CFTypeRef(), 1, (&mut point as *mut CGPoint).cast())
+            || !AXValueGetValue(size.as_CFTypeRef(), 2, (&mut dimensions as *mut CGSize).cast()) {
+            return None;
+        }
+    }
+    Some(CGRect::new(&point, &dimensions))
 }
 
 fn ax_string_attribute(element: CFTypeRef, attribute: &str) -> Option<String> {

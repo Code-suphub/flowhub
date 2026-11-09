@@ -30,3 +30,8 @@ test('close requests only dismissal',async t=>{
  const calls=[];const w=setup(t,async(_,{action})=>{calls.push(action);return action==='context'?context:null;});
  await wait(()=>w.document.body.textContent.includes(context.sourceNames));w.document.querySelector('[aria-label="关闭提示"]').click();await wait(()=>calls.includes('dismiss'));assert.equal(calls.includes('open'),false);
 });
+test('the keychain requester replaces the coincident script hint',async t=>{
+ const w=setup(t,async()=>({...context,sourceNames:'Unrelated script',requestApp:'Arc'}));
+ await wait(()=>w.document.querySelector('[role="status"]')?.textContent==='钥匙串 · Arc');
+ assert.doesNotMatch(w.document.body.textContent,/Unrelated script/);
+});

@@ -1,5 +1,6 @@
 use super::{Identity,Node,Script,Source,Window};
 use core_foundation::{array::CFArray,base::{CFType,TCFType},dictionary::CFDictionary,number::CFNumber,string::{CFString,CFStringRef}};
+use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 use core_graphics::window::{CGWindowListCopyWindowInfo,kCGNullWindowID,kCGWindowListOptionOnScreenOnly,kCGWindowListExcludeDesktopElements,kCGWindowOwnerPID,kCGWindowNumber,kCGWindowBounds,kCGWindowAlpha};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSEvent, NSScreen, NSWindow};
@@ -53,13 +54,14 @@ fn number(d:&CFDictionary<CFString,CFType>,key:CFStringRef)->Option<i32>{value(d
 fn is_security_agent(path:&str)->bool{
     path.starts_with("/System/Library/Frameworks/Security.framework/Versions/")&&path.ends_with("/MachServices/SecurityAgent.bundle/Contents/MacOS/SecurityAgent")
 }
-fn windows()->Option<Vec<Window>>{
-    // Owner PID, window ID, alpha and bounds only. In particular, never
-    // request kCGWindowName, screenshots, AX values or password-field contents.
+fn windows(skip_keychain:Option<&HashSet<String>>)->Option<Vec<Window>>{
+    // CoreGraphics only supplies owner PID, window ID, alpha and bounds.
     let raw=unsafe{CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly|kCGWindowListExcludeDesktopElements,kCGNullWindowID)};
     if raw.is_null(){return None;}
     let list:CFArray<CFDictionary<CFString,CFType>>=unsafe{CFArray::wrap_under_create_rule(raw)};
     let mut result=vec![];
+    let mut trusted=None;
+    let mut keychain_deadline=None;
     for d in list.iter().take(4096){
         let Some(pid)=number(&d,unsafe{kCGWindowOwnerPID})else{continue;};
         let Some((owner,_))=process(pid)else{continue;};if !is_security_agent(&owner.executable){continue;}
@@ -71,10 +73,22 @@ fn windows()->Option<Vec<Window>>{
             .and_then(|value| value.to_f64()).filter(|value| value.is_finite());
         let (Some(width), Some(height)) = (coordinate("Width"), coordinate("Height")) else {continue;};
         if width < 80. || height < 40. {continue;}
-        let center = coordinate("X").zip(coordinate("Y"))
-            .map(|(x, y)| (x + width / 2., y + height / 2.));
+        let origin = coordinate("X").zip(coordinate("Y"));
+        let center = origin.map(|(x, y)| (x + width / 2., y + height / 2.));
         let Some(id)=number(&d,unsafe{kCGWindowNumber}).and_then(|n|u32::try_from(n).ok())else{continue;};
-        if process(pid).as_ref().map(|p|&p.0)==Some(&owner){result.push(Window{id,owner,center});}
+        if process(pid).as_ref().map(|p|&p.0)!=Some(&owner){continue;}
+        let mut window=Window{id,owner,center,request_app:None};
+        if let Some((x,y))=origin.filter(|_|skip_keychain.is_some_and(|skip|!skip.contains(&window.key()))) {
+            if *trusted.get_or_insert_with(crate::macos::accessibility::is_trusted) {
+                let deadline=*keychain_deadline.get_or_insert_with(||Instant::now()+Duration::from_millis(300));
+                if Instant::now()<deadline {
+                    let bounds=CGRect::new(&CGPoint::new(x,y),&CGSize::new(width,height));
+                    window.request_app=super::keychain::request_app(pid,bounds,deadline);
+                    if process(pid).as_ref().map(|p|&p.0)!=Some(&window.owner){continue;}
+                }
+            }
+        }
+        result.push(window);
     }
     Some(result)
 }
@@ -112,8 +126,8 @@ pub(super) fn present_alert(
     window.orderFrontRegardless();
     Ok(())
 }
-pub(super) fn scan(at:u64)->(Option<Vec<Script>>,Option<Vec<Window>>,Option<String>){
-    let scripts=scripts(at);let windows=windows();let error=if let Err(error)=&scripts {Some(error.clone())}else if windows.is_none(){Some("系统认证窗口元数据暂不可用；仍可查看脚本活动，未推断弹窗来源。".into())}else{None};(scripts.ok(),windows,error)
+pub(super) fn scan(at:u64,skip_keychain:Option<&HashSet<String>>)->(Option<Vec<Script>>,Option<Vec<Window>>,Option<String>){
+    let scripts=scripts(at);let windows=windows(skip_keychain);let error=if let Err(error)=&scripts {Some(error.clone())}else if windows.is_none(){Some("系统认证窗口元数据暂不可用；仍可查看脚本活动，未推断弹窗来源。".into())}else{None};(scripts.ok(),windows,error)
 }
 #[cfg(test)]
 mod tests {
@@ -124,5 +138,5 @@ mod tests {
         for p in ["/tmp/SecurityAgent","/Applications/SecurityAgent.app/Contents/MacOS/SecurityAgent","/usr/bin/osascript"]{assert!(!is_security_agent(p));}
     }
     #[test]
-    fn metadata_observation_is_bounded_and_never_collects_process_resources(){let scan=scan(super::super::now());assert!(scan.0.is_none_or(|v|v.len()<=64));assert!(scan.1.is_none_or(|v|v.len()<=4096));}
+    fn metadata_observation_is_bounded_and_never_collects_process_resources(){let scan=scan(super::super::now(),None);assert!(scan.0.is_none_or(|v|v.len()<=64));assert!(scan.1.is_none_or(|v|v.len()<=4096));}
 }

@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {ShieldQuestion,X,ArrowUpRight} from 'lucide-react';
 import {Button} from '../shared/ui';
 import {invoke,nativeHost} from '../shared/native';
-type AlertContext = {sourceNames: string; preview: boolean};
+type AlertContext = {sourceNames: string; requestApp?: string | null; preview: boolean};
 export function ScriptAlert(){
   const [data,setData]=useState<AlertContext | null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const alive=useRef(true),pending=useRef(false);
@@ -28,7 +28,7 @@ export function ScriptAlert(){
     </header>
     <div className="fh-script-alert-body">
       <div className="fh-script-alert-content">
-        <p className="fh-script-alert-summary" role="status">{data?.sourceNames ? <>线索 · <strong>{data.sourceNames}</strong></> : '来源待确认'}</p>
+        <p className="fh-script-alert-summary" role="status">{data?.requestApp ? <>钥匙串 · <strong>{data.requestApp}</strong></> : data?.sourceNames ? <>线索 · <strong>{data.sourceNames}</strong></> : '来源待确认'}</p>
         {error ? <p className="fh-script-alert-error" role="alert">{error}</p> : null}
       </div>
       <Button size="sm" disabled={busy||isBrowser||!data} onClick={()=>void act('open')}>查看来源 <ArrowUpRight size={12}/></Button>
