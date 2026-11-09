@@ -28,6 +28,20 @@ for(const scopeId of ['clipboard','all'])for(const query of ['', 'fixture'])test
   await wait(()=>w.document.querySelector('.result.active h3')?.textContent===pinned.content);
   assert.equal(q.value,'');
 });
+test('clipboard Enter invokes paste and reports a copy-only fallback', async t => {
+  const {w, key, scope} = await setup(t);
+  await scope('clipboard');
+  await wait(() => w.document.querySelector('.clipboard-result.active'));
+  const actions = [];
+  const fallback = '已复制；接收窗口已切换，请手动粘贴';
+  w.weborg.pluginAction = async (plugin, action, {id}) => {
+    actions.push([plugin, action, id]);
+    return {ok: true, pasted: false, pasteReason: fallback};
+  };
+  key('Enter');
+  await wait(() => w.document.getElementById('actionStatus').textContent === fallback);
+  assert.deepEqual(actions, [['clipboard', 'activate', 1]]);
+});
 test('slow external opens freeze usage reordering and hover, deduplicate activation, and recover on failure',async t=>{
   const page=id=>({type:'page',id,title:id,url:`https://example.com/${id}`});
   const {w,key,events}=await setup(t,{usage:{frequent:[page('A'),page('B')],recent:[]}});

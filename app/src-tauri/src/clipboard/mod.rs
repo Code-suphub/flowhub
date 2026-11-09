@@ -1048,32 +1048,61 @@ fn record_existing_text_copy(app: &tauri::AppHandle, hash: &str) {
     }
 }
 
-fn paste_source_generation() -> u64 {
+struct PasteRequest {
     #[cfg(target_os = "macos")]
-    {
-        crate::macos::launcher_activation::source_generation()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        0
+    show_session: Option<u64>,
+    #[cfg(target_os = "macos")]
+    source_generation: u64,
+}
+
+impl PasteRequest {
+    fn capture() -> Self {
+        Self {
+            #[cfg(target_os = "macos")]
+            show_session: crate::MAIN_VISIBILITY.lock().unwrap().active_session(),
+            #[cfg(target_os = "macos")]
+            source_generation: crate::macos::launcher_activation::source_generation(),
+        }
     }
 }
 
 fn send_paste(
     app: &tauri::AppHandle,
-    show_session: Option<u64>,
-    source_generation: u64,
+    request: PasteRequest,
+    revision: Option<isize>,
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    let receipt = crate::macos::launcher_activation::prepare_paste(app, show_session, source_generation)?;
+    {
+        use crate::macos::launcher_activation::{prepare_paste, try_paste_to_source};
+
+        let receipt = prepare_paste(app, request.show_session, request.source_generation)?;
+        let deadline = Instant::now() + Duration::from_millis(500);
+        thread::sleep(Duration::from_millis(70));
+        loop {
+            if try_paste_to_source(app, receipt, move || {
+                if clipboard_revision() != revision {
+                    return Err("剪贴板已变化，本次未自动粘贴".into());
+                }
+                send_paste_keys()
+            })? {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err("已复制；接收窗口尚未就绪，请手动粘贴".into());
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (show_session, source_generation);
+        let _ = (request, revision);
         hide_main(app);
+        thread::sleep(Duration::from_millis(70));
+        send_paste_keys()
     }
-    thread::sleep(Duration::from_millis(70));
-    #[cfg(target_os = "macos")]
-    crate::macos::launcher_activation::verify_paste_target(app, receipt)?;
+}
+
+fn send_paste_keys() -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
     let modifier = Key::Meta;
@@ -1092,23 +1121,34 @@ fn send_paste(
     release_result
 }
 
-pub fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
-    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
-    let source_generation = paste_source_generation();
+pub async fn paste_text(app: &tauri::AppHandle, text: &str) -> Result<Value, String> {
     if text.trim().is_empty() {
         return Ok(json!({ "ok": false, "reason": "内容为空" }));
     }
+    let request = PasteRequest::capture();
+    let app = app.clone();
+    let text = text.to_string();
+    tauri::async_runtime::spawn_blocking(move || paste_text_blocking(&app, text, request))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn paste_text_blocking(
+    app: &tauri::AppHandle,
+    text: String,
+    request: PasteRequest,
+) -> Result<Value, String> {
     let hash = sha256(text.as_bytes());
     app.state::<ClipboardRuntime>()
         .suppress(signature("text", &hash));
-    let text = text.to_string();
-    run_on_main_thread(app, move || {
+    let revision = run_on_main_thread(app, move || {
         ClipboardContext::new()
             .and_then(|context| context.set_text(text))
+            .map(|_| clipboard_revision())
             .map_err(|error| error.to_string())
     })??;
     record_existing_text_copy(app, &hash);
-    let paste = send_paste(app, show_session, source_generation);
+    let paste = send_paste(app, request, revision);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "pasteReason": reason }),
@@ -1125,13 +1165,19 @@ pub fn copy_text(app: tauri::AppHandle, text: String) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub fn activate_clipboard(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+pub async fn activate_clipboard(app: tauri::AppHandle, id: i64) -> Result<Value, String> {
+    let request = PasteRequest::capture();
+    tauri::async_runtime::spawn_blocking(move || activate_clipboard_record(&app, id, request))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn activate_clipboard_record(
+    app: &tauri::AppHandle,
     id: i64,
+    request: PasteRequest,
 ) -> Result<Value, String> {
-    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
-    let source_generation = paste_source_generation();
+    let state = app.state::<AppState>();
     let connection = database(&state)?;
     let record = connection
         .query_row(
@@ -1175,7 +1221,7 @@ pub fn activate_clipboard(
     };
     let write_kind = kind.clone();
     let write_content = content.unwrap_or_default();
-    run_on_main_thread(&app, move || {
+    let revision = run_on_main_thread(app, move || {
         let context = ClipboardContext::new().map_err(|error| error.to_string())?;
         match write_kind.as_str() {
             "text" => context.set_text(write_content),
@@ -1187,10 +1233,11 @@ pub fn activate_clipboard(
             }
             _ => unreachable!("clipboard kind was validated before dispatch"),
         }
+        .map(|_| clipboard_revision())
         .map_err(|error| error.to_string())
     })??;
-    record_copy_recency(&app, &connection, id);
-    let paste = send_paste(&app, show_session, source_generation);
+    record_copy_recency(app, &connection, id);
+    let paste = send_paste(app, request, revision);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "pasteReason": reason }),
@@ -1319,14 +1366,19 @@ fn plain_text(state: &AppState, id: i64) -> Result<PlainText, String> {
 }
 
 #[tauri::command]
-pub fn paste_clipboard_text(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+pub async fn paste_clipboard_text(app: tauri::AppHandle, id: i64) -> Result<Value, String> {
+    let request = PasteRequest::capture();
+    tauri::async_runtime::spawn_blocking(move || paste_clipboard_record_as_text(&app, id, request))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn paste_clipboard_record_as_text(
+    app: &tauri::AppHandle,
     id: i64,
+    request: PasteRequest,
 ) -> Result<Value, String> {
-    let show_session = crate::MAIN_VISIBILITY.lock().unwrap().active_session();
-    let source_generation = paste_source_generation();
-    let text = match plain_text(&state, id)? {
+    let text = match plain_text(&app.state::<AppState>(), id)? {
         PlainText::Text(text) => text,
         PlainText::Unavailable(reason) => return Ok(json!({ "ok": false, "reason": reason })),
     };
@@ -1334,14 +1386,15 @@ pub fn paste_clipboard_text(
     let hash = sha256(text.as_bytes());
     app.state::<ClipboardRuntime>()
         .suppress(signature("text", &hash));
-    run_on_main_thread(&app, move || {
+    let revision = run_on_main_thread(app, move || {
         ClipboardContext::new()
             .map_err(|error| error.to_string())?
             .set_text(text)
+            .map(|_| clipboard_revision())
             .map_err(|error| error.to_string())
     })??;
-    record_existing_text_copy(&app, &hash);
-    let paste = send_paste(&app, show_session, source_generation);
+    record_existing_text_copy(app, &hash);
+    let paste = send_paste(app, request, revision);
     Ok(match paste {
         Ok(()) => json!({ "ok": true, "pasted": true, "plain": true }),
         Err(reason) => json!({ "ok": true, "pasted": false, "plain": true, "pasteReason": reason }),

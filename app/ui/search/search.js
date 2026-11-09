@@ -647,6 +647,7 @@ function clipboardAction(action, item, extra = {}) {
   return Promise.resolve(window.weborg?.pluginAction("clipboard", action, { id: Number(item.id ?? item), ...extra }))
     .then((result) => {
       if (result?.ok === false && !result.cancelled) showActionStatus(result.reason || "操作失败");
+      else if (result?.pasted === false) showActionStatus(result.pasteReason || "已复制，请在目标窗口手动粘贴");
       return result;
     })
     .catch((error) => {
@@ -990,6 +991,7 @@ function choose(page) {
     return window.weborg.pluginAction(pluginId, "activate", payload);
   }).then(result => {
     if (result?.ok === false && !result.cancelled) reportFailure(result.reason || "操作失败");
+    else if (result?.pasted === false) reportFailure(result.pasteReason || "已复制，请在目标窗口手动粘贴");
     return result;
   }).catch(error => {
     reportFailure(error?.message || String(error || "操作失败"));
