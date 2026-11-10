@@ -26,9 +26,9 @@
 
 ## 输入焦点与窗口生命周期
 
-唤出需要按顺序完成四个步骤：进程取得系统键盘焦点、NSPanel 显示并成为 key window、实际 WKWebView 成为原生 first responder、搜索页恢复适当的 DOM 焦点。`macos/launcher_activation.rs` 在主线程通过 NSRunningApplication 显式激活进程；收到原生激活通知并确认当前前台属于自身后，才显示已定位的面板并请求 key window，避免先出现可输入界面却仍向原应用发送按键。否则激活过程也可能稍后选中桌面组件等普通窗口，覆盖过早的面板聚焦。`macos/launcher_focus.rs` 随后恢复实际 WKWebView，不能把包含 WebView 的 `contentView` 容器当作输入接收者。恢复仅在当前显示会话仍有效、窗口仍可见且为 key window 时执行。隐藏、启动外部应用或再次唤出都会作废旧会话，迟到的显示或聚焦回调不能抢回键盘。原生激活通知的重入由进程内守卫隔离。
+唤出在当前 Space 使用非激活 NSPanel。面板定位后由 AppKit 成为 key window，原应用继续保持前台，FlowHub 的设置或桌面组件不会因进程激活被带到前面。`macos/launcher_focus.rs` 随后恢复实际 WKWebView first responder 和搜索页焦点。恢复仅在当前显示会话仍有效、窗口仍可见且为 key window 时执行。隐藏、启动外部应用或再次唤出会作废旧会话。面板未成为 key window 时收起，并在原生验收中检查实际按键去向。
 
-Workspace 通知使用自身携带的应用对象判断激活方，不把激活过程中暂未更新的 frontmost 状态当作外部切换。迟到的外部通知在自身已处于前台、或尚在从原应用激活期间不收起新会话；真实切到另一应用仍优先。已开始启动／粘贴的隐藏会话也不能被外部通知再次 dismiss，避免误作废启动恢复票据或提前清理粘贴接收者。
+Workspace 通知通过附带的应用对象识别 FlowHub 自己的激活，再对照当前前台应用和唤出来源决定是否收起。唤出来源仍在前台时，迟到的通知不会收起新会话；实际切到第三方应用或失去 key window 时仍走会话失焦处理。已经开始启动或粘贴的隐藏会话不会因外部通知重复收起。
 
 前端控制器在首帧布局阶段绑定交互，输入不等待插件、配置或索引查询完成。窗口重新获得焦点时只补齐缺失焦点，不重新选中已输入文字，不抢走菜单、操作按钮、其他编辑控件或输入法组合输入。初始化完成也遵守同一规则。快捷键显式返回搜索框时仍可选中现有查询。
 
@@ -38,14 +38,14 @@ Workspace 通知使用自身携带的应用对象判断激活方，不把激活�
 
 ### 非激活面板的系统状态
 
-原生 key window、WebView first responder 和 DOM focus 均为 true，仍不能单独证明全局键盘已路由到启动器。`tauri-nspanel::to_panel` 通过转换现有 NSWindow 的类实现 NSPanel，未执行 NSPanel 初始化；仅追加 `NonactivatingPanel` 样式还可能遗漏 WindowServer 的禁止激活状态。FlowHub 将窗口库固定到包含[上游修复 #139](https://github.com/ahkohd/tauri-nspanel/pull/139)的 `854634cc4b4a6a01caef464d2de83efae42403a2`，由库在设置样式后同步系统状态，并检查私有 selector 的可用性。显式激活方案清除 `NonactivatingPanel` 位，保留 Tauri 原有结构样式，避免混用非激活面板的键盘借用和进程激活两套交接。原生拒绝设置时返回初始化错误。
+原生 key window、WebView first responder 和 DOM focus 均为 true，仍需通过实际按键验证键盘路由。`tauri-nspanel::to_panel` 通过转换现有 NSWindow 的类实现 NSPanel，未执行 NSPanel 初始化。FlowHub 固定到包含[上游修复 #139](https://github.com/ahkohd/tauri-nspanel/pull/139)的 `854634cc4b4a6a01caef464d2de83efae42403a2`，保留 Tauri 原有结构样式，由库在设置 `NonactivatingPanel` 位时同步 WindowServer 状态。原生拒绝设置时返回初始化错误。
 
 | 参考实现 | 原生处理 | FlowHub 的取舍 |
 | --- | --- | --- |
-| EcoPaste `window/macos.rs` | 非激活 NSPanel；主线程显示／隐藏；显示前等待 16 ms；固定窗口粘贴时先放弃 key，再恢复 | 参考面板配置和主线程生命周期；保留自己的显示会话保护和显式进程焦点交接 |
+| EcoPaste `window/macos.rs` | 非激活 NSPanel；主线程显示／隐藏；显示前等待 16 ms；固定窗口粘贴时先放弃 key，再恢复 | 参考面板配置和主线程生命周期；保留自己的显示会话保护和接收者校验 |
 | Sol `views/Panel.swift`、`managers/PanelManager.swift` | 创建时即指定 NSPanel 的非激活样式；选择目标屏幕后 `makeKeyAndOrderFront`；原生 delegate 异步处理失焦 | 参考原生初始化状态和屏幕选择顺序；保留自己的 WKWebView responder 与 DOM 焦点恢复 |
-| tauri-nspanel #139 | 转换普通窗口后补齐系统禁止激活标记；支持启用和移除样式；保留结构样式并捕获原生异常 | 采用上游实现并锁定提交；清除非激活位时同步系统标记，避免在宿主重复维护私有 API |
-| [Maccy FloatingPanel](https://github.com/p0deje/Maccy/blob/master/Maccy/FloatingPanel.swift)、[Clipboard](https://github.com/p0deje/Maccy/blob/master/Maccy/Clipboard.swift) | 原生非激活面板与粘贴流程分离；剪贴板写入和合成粘贴独立处理 | 参考生命周期分离；FlowHub 自行实现显式激活后的接收应用记录与校验，没有照搬 Maccy 的显示策略 |
+| tauri-nspanel #139 | 转换普通窗口后补齐系统禁止激活标记；支持启用和移除样式；保留结构样式并捕获原生异常 | 采用上游实现并锁定提交，由上游同步设置样式后的系统标记 |
+| [Maccy FloatingPanel](https://github.com/p0deje/Maccy/blob/master/Maccy/FloatingPanel.swift)、[Clipboard](https://github.com/p0deje/Maccy/blob/master/Maccy/Clipboard.swift) | 原生非激活面板与粘贴流程分离；剪贴板写入和合成粘贴独立处理 | 参考生命周期分离；FlowHub 自行记录并校验接收应用 |
 
 上游 #139 的实机记录来自 macOS 27，明确未测 macOS 15。该缺口与本项目的窗口创建路径吻合，但是否修复本机间歇性输入问题必须重新验收，不能把上游实验当成本机结论。至少覆盖普通模式冷启动、打开／关闭设置及插件工作区后的再次唤出、两屏各连续 5 轮；用专用接收文稿核对是否有字符落入原应用。禁止用应用定向输入代替全局键盘路由检查。
 
@@ -55,9 +55,9 @@ Workspace 通知使用自身携带的应用对象判断激活方，不把激活�
 
 ### 收起与原应用的交接
 
-显式激活会改变前台应用，因此唤出时在内存中保留原 NSRunningApplication 实例。固定窗口保持显示时，真实的外部激活更新内存接收者及代次，避免点击固定窗口后使用更早的返回目标；尚在激活中的迟到通知不覆盖目标。收起只隐藏启动器面板，桌面组件仍保留；仅当前台仍为 FlowHub 时才返回原应用，用户主动切到另一应用优先。进入设置会清理本次返回目标并交给设置自身取得焦点，不先激活外部应用；启动外部入口前先收起并交回原应用，失败恢复保留原查询及返回目标。
+唤出时在内存中保留原 NSRunningApplication 实例。固定窗口保持显示时，前台切到另一应用会更新内存接收者及代次。收起只隐藏启动器面板，桌面组件仍保留；仅当前台已经属于 FlowHub 时才尝试返回原应用。进入设置清理本次返回目标，由设置窗口取得焦点；启动外部入口失败时恢复原查询和返回目标。
 
-自动粘贴在读取记录前捕获显示会话及接收者代次；原会话已结束、被新唤出替换、或固定窗口的接收应用在读取期间改变时，只完成复制，不关闭新窗口或继续发送按键。原生对象只留在主线程，后台命令读取原子代次，不同步查询应用或窗口。收起后恢复原应用，原实例未退出、原应用确已处于前台、返回目标代次未变化且没有新的唤出时才发送粘贴。校验失败保留剪贴板内容并返回手动粘贴提示，不向未确认的应用发送按键。正常收起、固定窗口点击取回焦点、从设置返回，以及全屏／Space／多屏必须分别实测，不能从编译或原生布尔值推定通过。
+自动粘贴在读取记录前捕获显示会话及接收者代次。数据库读取和等待接收应用在后台执行，剪贴板写入、接收者复核及发送按键由主线程处理。收起后最多等待 500 ms，仅在原实例仍存在、前台与接收者匹配、代次未变化、没有新唤出且剪贴板内容未被替换时发送粘贴。未完成自动粘贴时返回原因；搜索页仍可见时可显示退回复制或剪贴板变化的提示。正常收起、固定窗口、全屏 Space、多屏及真实目标文稿的粘贴需要在候选安装版分别验收。
 
 可使用独立 AppKit/WKWebView 冒烟脚本验证原生 responder 链和生产搜索页。它只加载本机只读演示页，键盘事件仅发送到脚本自己的进程，不打开 FlowHub 用户数据：
 

@@ -2,7 +2,7 @@
 //! AppKit key-window flags alone do not establish WindowServer input ownership.
 use objc2::{rc::Retained, MainThreadMarker};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationOptions, NSRunningApplication, NSWorkspace,
+    NSApplicationActivationOptions, NSRunningApplication, NSWorkspace,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -35,7 +35,6 @@ struct ReturnContext {
 thread_local! {
     static RETURN: RefCell<ReturnContext> = RefCell::new(ReturnContext::default());
     static CLAIMING: Cell<bool> = const { Cell::new(false) };
-    static PENDING: Cell<Option<(u64, bool)>> = const { Cell::new(None) };
 }
 
 struct ClaimGuard;
@@ -75,24 +74,7 @@ pub(crate) fn show(app: &tauri::AppHandle, capture_return: bool, prepare: bool) 
         return;
     };
     if capture_return {
-        let front = NSWorkspace::sharedWorkspace().frontmostApplication();
-        let source = front
-            .as_ref()
-            .filter(|app| {
-                app.processIdentifier() != std::process::id() as i32 && !app.isTerminated()
-            })
-            .cloned()
-            .or_else(|| {
-                if pending()
-                    && front
-                        .as_ref()
-                        .is_some_and(|app| app.processIdentifier() == std::process::id() as i32)
-                {
-                    RETURN.with(|slot| slot.borrow().application.clone())
-                } else {
-                    None
-                }
-            });
+        let source = external_front_application();
         RETURN.with(|slot| {
             let mut context = slot.borrow_mut();
             context.generation = context.generation.wrapping_add(1);
@@ -100,106 +82,20 @@ pub(crate) fn show(app: &tauri::AppHandle, capture_return: bool, prepare: bool) 
             SOURCE_GENERATION.store(context.generation, Ordering::Release);
         });
     }
-    let Some(session) = crate::MAIN_VISIBILITY.lock().unwrap().active_session() else {
-        return;
-    };
-    PENDING.with(|pending| pending.set(Some((session, prepare))));
-    if front_pid() == Some(std::process::id() as i32) {
-        finish_pending(app);
-        if !pending() {
-            return;
-        }
-    }
-    let accepted = activate(&NSRunningApplication::currentApplication());
-    crate::diagnostics::focus::record(
-        "native-activation",
-        serde_json::json!({"accepted":accepted}),
-    );
-    // Activation can select a regular window (including the desktop canvas).
-    // Acquire panel key status after that native activation turn has finished.
-    schedule_finish(app);
-}
-
-pub(crate) fn pending() -> bool {
-    PENDING.with(|pending| pending.get().is_some())
-}
-
-fn external_switch_requires_hide(
-    front: Option<i32>,
-    source: Option<i32>,
-    pending: bool,
-    own: i32,
-) -> bool {
-    // Workspace notifications can be delivered after a new hotkey request.
-    // The old source remaining frontmost during activation is not a new switch.
-    front.is_some_and(|pid| pid != own && !(pending && Some(pid) == source))
-}
-
-pub(crate) fn should_dismiss_for_external_activation() -> bool {
-    let source = RETURN.with(|slot| {
-        slot.borrow()
-            .application
-            .as_ref()
-            .map(|app| app.processIdentifier())
-    });
-    external_switch_requires_hide(front_pid(), source, pending(), std::process::id() as i32)
-}
-
-pub(crate) fn remember_pinned_source() {
-    if pending()
-        || crate::MAIN_VISIBILITY
-            .lock()
-            .unwrap()
-            .active_session()
-            .is_none()
-    {
-        return;
-    }
-    let source = NSWorkspace::sharedWorkspace()
-        .frontmostApplication()
-        .filter(|app| app.processIdentifier() != std::process::id() as i32 && !app.isTerminated());
-    if let Some(source) = source {
-        RETURN.with(|slot| {
-            let mut context = slot.borrow_mut();
-            context.generation = context.generation.wrapping_add(1);
-            context.application = Some(source);
-            SOURCE_GENERATION.store(context.generation, Ordering::Release);
-        });
-    }
-}
-
-fn finish_pending(app: &tauri::AppHandle) {
-    let Some((session, prepare)) = PENDING.with(|pending| pending.get()) else {
-        return;
-    };
-    let Some(mtm) = MainThreadMarker::new() else {
-        return;
-    };
-    if !crate::MAIN_VISIBILITY
-        .lock()
-        .unwrap()
-        .is_current_show(session)
-        || front_pid() != Some(std::process::id() as i32)
-        || !NSApplication::sharedApplication(mtm).isActive()
-    {
-        if crate::diagnostics::focus::focus_diagnostics_enabled() {
-            crate::diagnostics::focus::record(
-                "native-focus-wait",
-                serde_json::json!({
-                    "current":crate::MAIN_VISIBILITY.lock().unwrap().is_current_show(session),
-                    "frontmostSelf":front_pid()==Some(std::process::id() as i32),
-                    "applicationActive":NSApplication::sharedApplication(mtm).isActive(),
-                }),
-            );
-        }
+    if crate::MAIN_VISIBILITY.lock().unwrap().active_session().is_none() {
         return;
     }
     let Ok(panel) = app.get_webview_panel("main") else {
         return;
     };
-    // Do not display a writable search field until the application owns input.
-    panel.as_panel().orderFrontRegardless();
-    panel.make_key_window();
+    // The nonactivating panel borrows keyboard focus in the current Space.
+    // Activating the application here can take the user to a regular FlowHub
+    // window on a different desktop.
+    panel.make_key_and_order_front();
+    if !panel.as_panel().isKeyWindow() {
+        crate::hide_main(app);
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         crate::macos::launcher_focus::restore(&window, prepare);
     }
@@ -209,73 +105,61 @@ fn finish_pending(app: &tauri::AppHandle) {
             crate::diagnostics::focus::native_window_state(panel.as_panel()),
         );
     }
-    PENDING.with(|pending| {
-        if pending.get() == Some((session, prepare)) {
-            pending.set(None);
-        }
-    });
 }
 
-pub(crate) fn schedule_finish(app: &tauri::AppHandle) {
-    if !pending() {
-        return;
-    }
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let ready = handle.clone();
-        let _ = handle.run_on_main_thread(move || finish_pending(&ready));
-    });
+fn external_front_application() -> Option<Retained<NSRunningApplication>> {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .filter(|app| app.processIdentifier() != std::process::id() as i32 && !app.isTerminated())
 }
 
-pub(crate) fn install(app: &tauri::AppHandle) {
-    use block2::RcBlock;
-    use objc2_app_kit::NSApplicationDidBecomeActiveNotification;
-    use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
-    use std::ptr::NonNull;
-    let handle = app.clone();
-    let callback = RcBlock::new(move |_: NonNull<NSNotification>| {
-        crate::diagnostics::focus::record(
-            "native-application-activated",
-            serde_json::json!({"pending":pending()}),
-        );
-        schedule_finish(&handle);
-    });
-    let observer = unsafe {
-        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
-            Some(NSApplicationDidBecomeActiveNotification),
-            None,
-            Some(&NSOperationQueue::mainQueue()),
-            &callback,
-        )
-    };
-    std::mem::forget(observer);
+pub(crate) fn claiming() -> bool {
+    CLAIMING.with(Cell::get)
 }
 
-pub(crate) fn reclaim(app: &tauri::AppHandle) {
-    if crate::MAIN_VISIBILITY
-        .lock()
-        .unwrap()
-        .active_session()
-        .is_none()
+fn external_switch_requires_hide(front: Option<i32>, source: Option<i32>, own: i32) -> bool {
+    // The summon source remains frontmost while its keyboard focus is borrowed.
+    // A delayed notification for that application must not dismiss the panel.
+    front.is_some_and(|pid| pid != own && Some(pid) != source)
+}
+
+pub(crate) fn should_dismiss_for_external_activation() -> bool {
+    let source = RETURN.with(|slot| {
+        slot.borrow()
+            .application
+            .as_ref()
+            .map(|app| app.processIdentifier())
+    });
+    external_switch_requires_hide(front_pid(), source, std::process::id() as i32)
+}
+
+pub(crate) fn remember_pinned_source() {
+    if claiming()
+        || crate::MAIN_VISIBILITY
+            .lock()
+            .unwrap()
+            .active_session()
+            .is_none()
     {
         return;
     }
-    let Ok(panel) = app.get_webview_panel("main") else {
-        return;
-    };
-    if !panel.as_panel().isVisible()
-        || !panel.as_panel().isKeyWindow()
-        || front_pid() == Some(std::process::id() as i32)
-    {
-        return;
+    if let Some(source) = external_front_application() {
+        RETURN.with(|slot| {
+            let mut context = slot.borrow_mut();
+            if context.application.as_ref().is_some_and(|old| {
+                !old.isTerminated() && old.processIdentifier() == source.processIdentifier()
+            }) {
+                return;
+            }
+            context.generation = context.generation.wrapping_add(1);
+            context.application = Some(source);
+            SOURCE_GENERATION.store(context.generation, Ordering::Release);
+        });
     }
-    // A pinned panel can become key while another application still owns input.
-    show(app, true, false);
 }
 
 pub(crate) fn hide_panel(app: &tauri::AppHandle) -> Result<(), String> {
-    crate::diagnostics::focus::record("native-hide", serde_json::json!({"pending":pending()}));
-    PENDING.with(|pending| pending.set(None));
+    crate::diagnostics::focus::record("native-hide", serde_json::json!({}));
     if app.get_webview_window("main").is_none() {
         return Ok(());
     }
@@ -374,7 +258,7 @@ pub(crate) fn prepare_paste(
         if front != Some(std::process::id() as i32) && front != Some(receipt.pid) {
             return Err("已复制；接收应用已改变，请在目标窗口手动粘贴".into());
         }
-        if !activate(&source) {
+        if front != Some(receipt.pid) && !activate(&source) {
             return Err("已复制；无法恢复接收应用，请手动粘贴".into());
         }
         Ok(receipt)
@@ -392,20 +276,36 @@ fn paste_request_is_current(
         && current_source == Some(expected_source)
 }
 
-fn ready(
+#[derive(Debug, PartialEq, Eq)]
+enum PasteReadiness {
+    Ready,
+    Waiting,
+    Cancelled,
+}
+
+fn paste_readiness(
     current: Option<PasteReceipt>,
     expected: PasteReceipt,
     front: Option<i32>,
     alive: bool,
     showing: bool,
-) -> bool {
-    current == Some(expected) && front == Some(expected.pid) && alive && !showing
+    own: i32,
+) -> PasteReadiness {
+    if current != Some(expected) || !alive || showing {
+        return PasteReadiness::Cancelled;
+    }
+    match front {
+        Some(pid) if pid == expected.pid => PasteReadiness::Ready,
+        Some(pid) if pid != own => PasteReadiness::Cancelled,
+        _ => PasteReadiness::Waiting,
+    }
 }
 
-pub(crate) fn verify_paste_target(
+pub(crate) fn try_paste_to_source(
     app: &tauri::AppHandle,
     receipt: PasteReceipt,
-) -> Result<(), String> {
+    send: impl FnOnce() -> Result<(), String> + Send + 'static,
+) -> Result<bool, String> {
     on_main(app, move |_| {
         let current = target();
         let showing = crate::MAIN_VISIBILITY
@@ -413,20 +313,25 @@ pub(crate) fn verify_paste_target(
             .unwrap()
             .active_session()
             .is_some();
-        let valid = ready(
+        match paste_readiness(
             current.as_ref().map(|(receipt, _)| *receipt),
             receipt,
             front_pid(),
             current.as_ref().is_some_and(|(_, app)| !app.isTerminated()),
             showing,
-        );
-        if !valid {
-            return Err("已复制；接收窗口尚未就绪或已切换，请手动粘贴".into());
+            std::process::id() as i32,
+        ) {
+            PasteReadiness::Waiting => Ok(false),
+            PasteReadiness::Cancelled => Err("已复制；接收窗口已切换，请手动粘贴".into()),
+            PasteReadiness::Ready => {
+                RETURN.with(|slot| {
+                    slot.borrow_mut().application = None;
+                });
+                // Recheck the live target and dispatch on the same native turn.
+                send()?;
+                Ok(true)
+            }
         }
-        RETURN.with(|slot| {
-            slot.borrow_mut().application = None;
-        });
-        Ok(())
     })
 }
 
@@ -444,16 +349,11 @@ mod tests {
     }
     #[test]
     fn delayed_external_notifications_do_not_hide_a_new_activation() {
-        assert!(!external_switch_requires_hide(
-            Some(10),
-            Some(20),
-            false,
-            10
-        ));
-        assert!(!external_switch_requires_hide(Some(20), Some(20), true, 10));
-        assert!(external_switch_requires_hide(Some(30), Some(20), true, 10));
-        assert!(external_switch_requires_hide(Some(20), Some(20), false, 10));
-        assert!(!external_switch_requires_hide(None, Some(20), true, 10));
+        assert!(!external_switch_requires_hide(Some(10), Some(20), 10));
+        assert!(!external_switch_requires_hide(Some(20), Some(20), 10));
+        assert!(external_switch_requires_hide(Some(30), Some(20), 10));
+        assert!(external_switch_requires_hide(Some(20), None, 10));
+        assert!(!external_switch_requires_hide(None, Some(20), 10));
     }
     #[test]
     fn activation_notifications_cannot_reenter_the_same_claim() {
@@ -468,17 +368,21 @@ mod tests {
             generation: 7,
             pid: 101,
         };
-        assert!(ready(Some(receipt), receipt, Some(101), true, false));
-        assert!(!ready(Some(receipt), receipt, Some(202), true, false));
-        assert!(!ready(Some(receipt), receipt, None, true, false));
-        assert!(!ready(Some(receipt), receipt, Some(101), false, false));
-        assert!(!ready(Some(receipt), receipt, Some(101), true, true));
-        assert!(!ready(None, receipt, Some(101), true, false));
+        let check = |current, front, alive, showing| {
+            paste_readiness(current, receipt, front, alive, showing, 10)
+        };
+        assert_eq!(check(Some(receipt), Some(101), true, false), PasteReadiness::Ready);
+        assert_eq!(check(Some(receipt), Some(10), true, false), PasteReadiness::Waiting);
+        assert_eq!(check(Some(receipt), None, true, false), PasteReadiness::Waiting);
+        assert_eq!(check(Some(receipt), Some(202), true, false), PasteReadiness::Cancelled);
+        assert_eq!(check(Some(receipt), Some(101), false, false), PasteReadiness::Cancelled);
+        assert_eq!(check(Some(receipt), Some(101), true, true), PasteReadiness::Cancelled);
+        assert_eq!(check(None, Some(101), true, false), PasteReadiness::Cancelled);
         // A new summon from the same application still invalidates old paste work.
         let next = PasteReceipt {
             generation: 8,
             pid: 101,
         };
-        assert!(!ready(Some(next), receipt, Some(101), true, false));
+        assert_eq!(check(Some(next), Some(101), true, false), PasteReadiness::Cancelled);
     }
 }
