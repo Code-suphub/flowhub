@@ -131,6 +131,27 @@ test('toolbar view-only switch persists immediately, locks the canvas, and setti
   assert.equal(toggle.getAttribute('aria-checked'), 'false');
 });
 
+test('inline card settings use the canvas save queue and cannot edit another card', async t => {
+  const saved = layout();
+  saved.boards[0].cards.push({ ...card, id: 'two', config: { filter: 'second' } });
+  let release;
+  const s = setup(t, { layout: saved, invoke: (_command, args) => args.action === 'save' ? new Promise(resolve => { release = resolve; }) : undefined });
+  await ready(s);
+  const frame = s.w.document.querySelector('[data-id="one"] iframe');
+  s.frameMessages(frame);
+  const message = { type: 'flowhub:widget-rpc', id: 'save', params: { action: 'configureCard', patch: { sort: 'cpu', limit: 5 }, cardId: 'two' } };
+  s.message(frame, message, { source: s.w });
+  s.message(frame, message);
+  await wait(() => release);
+  const writes = s.calls.filter(call => call.action === 'save');
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].payload.boards[0].cards.map(card => card.config), [{ filter: 'first', sort: 'cpu', limit: 5 }, { filter: 'second' }]);
+  assert.equal(s.responses.some(message => message.type === 'flowhub:widget-result'), false);
+  release();
+  await wait(() => s.responses.some(message => message.type === 'flowhub:widget-result' && message.result.saved));
+  assert.equal(s.w.document.querySelector('[data-id="one"] iframe'), frame);
+});
+
 test('More keyboard navigation skips disabled actions, restores focus and stays separate from card menus', async t => {
   const s = setup(t); await ready(s);
   const trigger = s.w.document.getElementById('canvasMore');

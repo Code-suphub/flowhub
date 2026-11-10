@@ -159,11 +159,12 @@ export function Canvas() {
     layoutRef.current = next; setLayout(next); setMenu(null);
     // Each queued write owns an immutable snapshot; failures do not block later writes.
     const snapshot = structuredClone(next); saving.current++;
-    saveTail.current = saveTail.current.catch(() => {}).then(async () => {
+    const written = saveTail.current.catch(() => {}).then(async () => {
       try {
         if (invoke) await api('save', snapshot.layoutLocked && presentation ? { active: snapshot.active, pinned: snapshot.pinned } : snapshot);
         else localStorage.setItem('flowhub-canvas-preview', JSON.stringify({ ...snapshot, layoutLocked: layoutRef.current.layoutLocked }));
         if (alive.current && invoke) setNotice('');
+        return true;
       } catch (error) {
         if (alive.current) setNotice(`保存失败：${error}`);
         // A settings window can lock the layout while an old full save is queued.
@@ -177,9 +178,23 @@ export function Canvas() {
             }
           } catch { /* Preserve the original save error for retry. */ }
         }
+        return false;
       }
       finally { saving.current--; }
     });
+    saveTail.current = written.then(() => {});
+    return written;
+  }
+  async function configureCard(boardId: string, card: Card, patch: Config) {
+    const current = layoutRef.current;
+    if (current.active !== boardId || !current.boards.find(board => board.id === boardId)?.cards.some(item => item.id === card.id && item.plugin === card.plugin)) {
+      throw Error('卡片已变更，请重新打开');
+    }
+    const written = commit(draft => {
+      const item = draft.boards.find(board => board.id === boardId)!.cards.find(item => item.id === card.id)!;
+      item.config = { ...cardConfig(item), ...patch };
+    });
+    if (!await written) throw Error('未能保存卡片设置');
   }
   const changeCards = (change: (cards: Card[]) => void) => commit(draft => change(draft.boards.find(board => board.id === draft.active)!.cards));
   const changePresentation = (change: (draft: Layout) => void) => commit(change, undefined, undefined, undefined, true);
@@ -531,7 +546,9 @@ export function Canvas() {
             if (!viewOnly && event.key === 'Enter') { event.preventDefault(); openCard(card); }
             if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); context(card, rect.left + 20, rect.top + 20, false); }
           }}>
-          {demo ? <div className="canvas-demo-card"><strong>{compactStatus(card, source).label}</strong><span>{compactStatus(card, source).metric}</span><span>只读演示</span></div> : source?.widget ? framesReady ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} activity={activity} onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <div className="canvas-suspended-card" role="status">{activity.active ? refreshError ? '等待重试更新组件' : '正在恢复最新状态…' : '窗口未显示，组件已暂停'}</div> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
+          {demo ? <div className="canvas-demo-card"><strong>{compactStatus(card, source).label}</strong><span>{compactStatus(card, source).metric}</span><span>只读演示</span></div> : source?.widget ? framesReady ? <WidgetSurface source={source} card={card} kind="card" invoke={invoke} preview={preview} inactive={viewOnly} activity={activity}
+            onConfigure={editingDisabled ? undefined : patch => configureCard(board.id, card, patch)}
+            onNavigate={(action, selection) => { if (layoutRef.current.viewOnly) return; const current = layoutRef.current.boards.find(board => board.id === layoutRef.current.active)?.cards.find(item => item.id === card.id); if (current) { if (action === 'detail') actions.current.openCard(current, selection); else if (action === 'editor') actions.current.add(current); } }} /> : <div className="canvas-suspended-card" role="status">{activity.active ? refreshError ? '等待重试更新组件' : '正在恢复最新状态…' : '窗口未显示，组件已暂停'}</div> : <EmptyState>插件未启用或尚未提供组件页面 · 布局已保留</EmptyState>}
           <div className="widget-hit absolute" aria-hidden="true">{interactive ? '⠿' : ''}</div>
           <Button className="resize-handle absolute" data-resize aria-label="调整组件大小" disabled={editingDisabled} onKeyDown={event => {
             if (modePending.current || layoutRef.current.viewOnly || layoutRef.current.layoutLocked) return;

@@ -5,7 +5,7 @@ export type Layout = { boards: Board[]; active: string; pinned: boolean; viewOnl
 export type Source = { id: string; title: string; snapshot?: unknown; lastLoadedAt?: unknown; widget?: { card: string; editor: string; detail?: string; interactive?: boolean; minWidth?: number; minHeight?: number } };
 export type Point = { x: number; y: number };
 export type Position = Point & { id: string; w: number; h: number };
-export type FrameContext = { config: Config; title: string; snapshot?: unknown; preview: boolean };
+export type FrameContext = { config: Config; title: string; snapshot?: unknown; preview: boolean; canSaveConfig?: boolean };
 export type FrameHandle = { setActive(active: boolean): void; updateContext(context: FrameContext): void; save(): Promise<Config>; dispose(): void };
 export type Invoke = <T = unknown>(command: string, args: Record<string, unknown>) => Promise<T>;
 export type CanvasHost = Window & {
