@@ -48,7 +48,7 @@ test('browser preview navigation keeps selected market/plugin highlighted after 
  assert.equal(document.querySelector('[data-slot="dialog-overlay"]'),null,'dock remains interactive while the plugin panel is open');
  const frame=document.querySelector('iframe');
  await h.click(h.button(view.container.querySelector('.settings-plugin-dock'),'Example'));assert.deepEqual(selected(),['Example']);assert.equal(document.querySelector('iframe').getAttribute('sandbox'),'allow-scripts');
- assert.equal(document.querySelector('iframe'),frame,'switching from the dock retains the bound frame');
+ assert.notEqual(document.querySelector('iframe'),frame,'the plugin gets a separate frame from the market');
  assert.equal(document.querySelector('[data-slot="dialog-title"]').textContent,'Example');
  await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['Example']);
  enabled=false;await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['插件市场']);
@@ -114,9 +114,10 @@ test('floating workspace handles native selection, overflow, refresh, collapse a
  await h.click(h.button(panel.container,'Plugin 4'));
  const frame=panel.container.querySelector('iframe');assert.match(frame.src,/p4/);assert.equal(frame.getAttribute('sandbox'),'allow-scripts');
  await h.act(async()=>window.dispatchEvent(new window.CustomEvent('flowhub-workspace',{detail:{module:'plugin:p1',open:true,revision:99}})));
- assert.equal(panel.container.querySelector('iframe'),frame);assert.match(frame.src,/p1/);
+ const nextFrame=panel.container.querySelector('iframe');
+ assert.notEqual(nextFrame,frame);assert.match(nextFrame.src,/p1/);
  await h.act(async()=>window.dispatchEvent(new window.CustomEvent('flowhub-workspace',{detail:{module:'extensions',open:false,revision:2}})));
- assert.equal(panel.container.querySelector('iframe'),frame,'old ready/command responses cannot overwrite newer native state');
+ assert.equal(panel.container.querySelector('iframe'),nextFrame,'old ready/command responses cannot overwrite newer native state');
  state={module:'plugin:p1',open:true,revision:99};
  plugins=plugins.map(p=>({...p,enabled:p.manifest.id!=='p1'}));
  await h.act(async()=>window.FlowHubPluginIntegration.refresh());
@@ -163,23 +164,27 @@ test('missing plugin files expose recovery controls and an explicit retry rechec
  const {PluginFrame}=require('../../src/plugin-workspace/controls.tsx');
  const view=await h.mount(PluginFrame,{module:'plugin:example',onManage:()=>{managed++;}});
  assert.match(view.container.querySelector('[role=alert]').textContent,/原安装目录可能已移动/);
- assert(!view.container.textContent.includes('os error'));assert.equal(frame.src,'about:blank');assert.deepEqual(shown,[]);
+ assert(!view.container.textContent.includes('os error'));assert.equal(view.container.querySelector('iframe'),null);assert.deepEqual(shown,[]);
  await h.click(h.button(view.container,'返回插件市场'));assert.equal(managed,1);assert.equal(calls.length,1,'returning does not install, reload or retry');
  missing=false;await h.click(h.button(view.container,'重试打开'));
  assert.equal(view.container.querySelector('[role=alert]'),null);assert.deepEqual(shown,['plugin:example']);assert.match(frame.src,/flowhub-plugin:\/\/example/);
  assert.equal(calls.length,2);assert.ok(calls.every(call=>call.command==='plugin_api'&&call.action==='inspect'&&call.payload.directory==='/fixture/package'));
  await view.unmount();delete window.FlowHubPluginIntegration;
 });
-test('a late plugin file check cannot navigate after a newer selection and changed identities stay blocked',async()=>{
+test('the market frame is removed while the plugin is checked, and a late check cannot override a newer selection',async()=>{
  h.environment();let frame,finish;const shown=[];
  const plugins=['one','two'].map(id=>({directory:'/fixture/'+id,enabled:true,manifest:{id,name:id,ui:'ui/index.html'}}));
- window.FlowHubPluginIntegration={getSnapshot:()=>plugins,subscribe:()=>()=>{},refresh:async()=>{},attach:node=>{frame=node;return()=>{frame=null;};},show:module=>{shown.push(module);frame.src='flowhub-plugin://'+module.slice(7)+'/index.html';}};
+ window.FlowHubPluginIntegration={getSnapshot:()=>plugins,subscribe:()=>()=>{},refresh:async()=>{},attach:node=>{frame=node;return()=>{frame=null;};},show:module=>{shown.push(module);frame.src=module==='extensions'?'plugin-market.html':'flowhub-plugin://'+module.slice(7)+'/index.html';}};
  window.__TAURI__.core.invoke=async(_command,args)=>args.payload.directory.endsWith('one')?await new Promise(resolve=>{finish=resolve;}):{manifest:plugins[1].manifest};
- const {PluginFrame}=require('../../src/plugin-workspace/controls.tsx'),view=await h.mount(PluginFrame,{module:'plugin:one'});
+ const {PluginFrame}=require('../../src/plugin-workspace/controls.tsx'),view=await h.mount(PluginFrame,{module:'extensions'});
+ const marketFrame=frame;assert.match(marketFrame.src,/plugin-market.html$/);assert.equal(marketFrame.hasAttribute('sandbox'),false);
+ await h.act(async()=>view.root.render(h.React.createElement(PluginFrame,{module:'plugin:one'})));
+ assert.equal(marketFrame.isConnected,false);assert.equal(frame,null);
+ assert.match(view.container.querySelector('[role=status]').textContent,/正在读取插件/);
  await h.act(async()=>view.root.render(h.React.createElement(PluginFrame,{module:'plugin:two'})));
- await h.act(async()=>finish({manifest:plugins[0].manifest}));assert.deepEqual(shown,['plugin:two']);assert.match(frame.src,/flowhub-plugin:\/\/two/);
+ await h.act(async()=>finish({manifest:plugins[0].manifest}));assert.deepEqual(shown,['extensions','plugin:two']);assert.match(frame.src,/flowhub-plugin:\/\/two/);assert.equal(frame.getAttribute('sandbox'),'allow-scripts');
  window.__TAURI__.core.invoke=async()=>({manifest:{id:'impostor',ui:'ui/index.html'}});
  await h.act(async()=>view.root.render(h.React.createElement(PluginFrame,{module:'plugin:one'})));
- assert.ok(view.container.querySelector('[role=alert]'));assert.equal(frame.src,'about:blank');assert.deepEqual(shown,['plugin:two']);
+ assert.ok(view.container.querySelector('[role=alert]'));assert.equal(frame,null);assert.deepEqual(shown,['extensions','plugin:two']);
  await view.unmount();delete window.FlowHubPluginIntegration;
 });
