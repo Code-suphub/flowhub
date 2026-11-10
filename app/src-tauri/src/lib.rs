@@ -1174,13 +1174,13 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
 fn install_launcher_activation_observer(app: &tauri::AppHandle) {
     use block2::RcBlock;
     use objc2_app_kit::{
-        NSRunningApplication, NSWorkspace, NSWorkspaceApplicationKey,
+        NSRunningApplication, NSWorkspace, NSWorkspaceActiveSpaceDidChangeNotification, NSWorkspaceApplicationKey,
         NSWorkspaceDidActivateApplicationNotification,
     };
     use objc2_foundation::{NSNotification, NSOperationQueue};
     use std::ptr::NonNull;
 
-    let app = app.clone();
+    let activation_app = app.clone();
     let activation = RcBlock::new(move |notification: NonNull<NSNotification>| {
         // Read the application carried by this event. Querying frontmost here
         // can still return the previous application during our activation turn.
@@ -1214,23 +1214,36 @@ fn install_launcher_activation_observer(app: &tauri::AppHandle) {
         {
             // A launch or paste already dismissed the panel before returning
             // to its source. Do not invalidate that handoff or consume its target.
-            hide_main(&app);
+            hide_main(&activation_app);
         }
     });
-    let observer = unsafe {
-        NSWorkspace::sharedWorkspace()
-            .notificationCenter()
-            .addObserverForName_object_queue_usingBlock(
-                Some(NSWorkspaceDidActivateApplicationNotification),
-                None,
-                Some(&NSOperationQueue::mainQueue()),
-                &activation,
-            )
+    let space_app = app.clone();
+    let space_change = RcBlock::new(move |_: NonNull<NSNotification>| {
+        let dismissed = MAIN_VISIBILITY.lock().unwrap().dismiss_for_space_change(
+            LAUNCHER_PINNED.load(AtomicOrdering::Acquire),
+        );
+        if dismissed {
+            crate::diagnostics::focus::record("native-space-dismiss", json!({}));
+            // The Space switch owns the destination. Never activate the old source here.
+            if let Err(error) = crate::macos::launcher_activation::hide(&space_app, false) {
+                eprintln!("[flowhub-tauri] 切换空间时收起启动器失败：{error}");
+            }
+        }
+    });
+    let center = NSWorkspace::sharedWorkspace().notificationCenter();
+    let queue = NSOperationQueue::mainQueue();
+    let activation_observer = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSWorkspaceDidActivateApplicationNotification), None, Some(&queue), &activation,
+        )
     };
-    // The observer is intentionally process-lifetime. The returned token owns
-    // the block and must stay alive while the workspace notification center can
-    // invoke it.
-    std::mem::forget(observer);
+    let space_observer = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSWorkspaceActiveSpaceDidChangeNotification), None, Some(&queue), &space_change,
+        )
+    };
+    // The tokens retain the process-lifetime workspace observer blocks.
+    std::mem::forget((activation_observer, space_observer));
 }
 
 fn register_hotkey(app: &tauri::AppHandle, hotkey: &str) -> Value {

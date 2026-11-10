@@ -37,6 +37,13 @@ impl Visibility {
         self.launch_session = self.launch_session.wrapping_add(1);
         self.invalidate();
     }
+    pub fn dismiss_for_space_change(&mut self, pinned: bool) -> bool {
+        if pinned || self.active_session().is_none() {
+            return false;
+        }
+        self.dismiss();
+        true
+    }
     pub fn begin_launch(&mut self) -> u64 {
         self.dismiss();
         self.launch_session
@@ -64,7 +71,7 @@ impl Visibility {
         focused: bool,
         pinned: bool,
     ) -> bool {
-        self.generation == check.generation && visible && !focused && !pinned
+        self.active_session().is_some() && self.generation == check.generation && visible && !focused && !pinned
     }
 }
 
@@ -128,6 +135,21 @@ mod tests {
         let current = v.blur(now + Duration::from_secs(3));
         assert_eq!(current.delay, Duration::from_millis(120));
         assert!(v.should_hide(&current, true, false, false));
+    }
+    #[test]
+    fn space_change_closes_an_unpinned_session_once_and_preserves_a_pinned_session() {
+        let mut v = Visibility::new();
+        let now = Instant::now();
+        let session = v.show(now);
+        let blur = v.blur(now);
+        assert!(!v.dismiss_for_space_change(true));
+        assert!(v.is_current_show(session));
+        assert!(v.dismiss_for_space_change(false));
+        assert!(!v.dismiss_for_space_change(false));
+        assert!(!v.should_hide(&blur, true, false, false));
+        let after_close = v.blur(now);
+        assert!(!v.should_hide(&after_close, true, false, false));
+        assert_ne!(v.show(now), session);
     }
     #[test]
     fn missing_focus_event_does_not_disable_future_blur_checks() {
