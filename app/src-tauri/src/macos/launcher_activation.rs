@@ -2,7 +2,8 @@
 //! AppKit key-window flags alone do not establish WindowServer input ownership.
 use objc2::{rc::Retained, MainThreadMarker};
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSRunningApplication, NSWorkspace,
+    NSApplicationActivationOptions, NSRunningApplication, NSWindow, NSWindowCollectionBehavior,
+    NSWorkspace,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -12,7 +13,7 @@ use std::{
     },
 };
 use tauri::Manager;
-use tauri_nspanel::ManagerExt;
+use tauri_nspanel::{CollectionBehavior, ManagerExt};
 
 // Commands capture this before clipboard/database I/O; native objects stay on main.
 static SOURCE_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -68,6 +69,26 @@ fn activate(application: &NSRunningApplication) -> bool {
             .activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps)
 }
 
+fn space_behavior(pinned: bool) -> NSWindowCollectionBehavior {
+    let common = CollectionBehavior::new()
+        .full_screen_auxiliary()
+        .transient()
+        .ignores_cycle();
+    if pinned {
+        common.can_join_all_spaces().into()
+    } else {
+        common.move_to_active_space().into()
+    }
+}
+
+pub(crate) fn apply_space_behavior(window: &NSWindow) {
+    debug_assert!(MainThreadMarker::new().is_some());
+    let behavior = space_behavior(crate::LAUNCHER_PINNED.load(Ordering::Acquire));
+    if window.collectionBehavior() != behavior {
+        window.setCollectionBehavior(behavior);
+    }
+}
+
 pub(crate) fn show(app: &tauri::AppHandle, capture_return: bool, prepare: bool) {
     debug_assert!(MainThreadMarker::new().is_some());
     let Some(_claim) = ClaimGuard::enter() else {
@@ -88,6 +109,10 @@ pub(crate) fn show(app: &tauri::AppHandle, capture_return: bool, prepare: bool) 
     let Ok(panel) = app.get_webview_panel("main") else {
         return;
     };
+    // Move the temporary launcher to this Space only when summoned. Joining
+    // all Spaces lets WindowServer show it on the destination before the
+    // active-Space notification can close it.
+    apply_space_behavior(panel.as_panel());
     // The nonactivating panel borrows keyboard focus in the current Space.
     // Activating the application here can take the user to a regular FlowHub
     // window on a different desktop.
@@ -338,6 +363,18 @@ pub(crate) fn try_paste_to_source(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_pinned_launchers_join_all_spaces() {
+        let temporary = space_behavior(false);
+        let pinned = space_behavior(true);
+        assert!(temporary.contains(NSWindowCollectionBehavior::MoveToActiveSpace));
+        assert!(!temporary.contains(NSWindowCollectionBehavior::CanJoinAllSpaces));
+        assert!(pinned.contains(NSWindowCollectionBehavior::CanJoinAllSpaces));
+        assert!(!pinned.contains(NSWindowCollectionBehavior::MoveToActiveSpace));
+        assert!(temporary.contains(NSWindowCollectionBehavior::FullScreenAuxiliary));
+        assert!(pinned.contains(NSWindowCollectionBehavior::FullScreenAuxiliary));
+    }
+
     #[test]
     fn paste_request_cannot_follow_a_source_change_during_clipboard_io() {
         assert!(paste_request_is_current(Some(1), Some(1), 7, Some(7)));

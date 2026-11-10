@@ -33,7 +33,7 @@ use std::{
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{
-    tauri_panel, CollectionBehavior, ManagerExt as PanelManagerExt, PanelLevel,
+    tauri_panel, ManagerExt as PanelManagerExt, PanelLevel,
     WebviewWindowExt,
 };
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
@@ -535,8 +535,19 @@ fn get_launcher_pinned() -> bool {
 }
 
 #[tauri::command]
-fn set_launcher_pinned(pinned: bool) -> bool {
+fn set_launcher_pinned(app: tauri::AppHandle, pinned: bool) -> bool {
     LAUNCHER_PINNED.store(pinned, AtomicOrdering::Release);
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(panel) = handle.get_webview_panel("main") {
+                crate::macos::launcher_activation::apply_space_behavior(panel.as_panel());
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
     pinned
 }
 
@@ -1159,14 +1170,7 @@ fn configure_macos_panel(window: &tauri::WebviewWindow) -> Result<(), String> {
     panel
         .set_style_mask(panel.as_panel().styleMask() | objc2_app_kit::NSWindowStyleMask::NonactivatingPanel)
         .map_err(|error| format!("配置启动器非激活面板失败：{error}"))?;
-    panel.set_collection_behavior(
-        CollectionBehavior::new()
-            .full_screen_auxiliary()
-            .can_join_all_spaces()
-            .transient()
-            .ignores_cycle()
-            .into(),
-    );
+    crate::macos::launcher_activation::apply_space_behavior(panel.as_panel());
     Ok(())
 }
 
