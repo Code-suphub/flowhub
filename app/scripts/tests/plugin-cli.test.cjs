@@ -4,10 +4,20 @@ const load=()=>import('../dev/native-plugin-cli.mjs');
 
 test('native plugin CLI validates commands before launching anything',async()=>{
   const {runPluginCli}=await load();let calls=0;
-  for(const args of [['migrate','../bad'],['install','docker'],['verify','docker','--force'],[]]) {
+  for(const args of [['migrate','../bad'],['reload','../bad'],['reload','docker','--force'],['install','docker'],['verify','docker','--force'],[]]) {
     await assert.rejects(runPluginCli(args,{run:async()=>{calls++;}}),/用法/);
   }
   assert.equal(calls,0);
+});
+test('reload supports a dry-run and uses only the native maintenance client',async()=>{
+  const {runPluginCli}=await load();
+  for(const extra of [[],['--dry-run']]) {
+    const calls=[];
+    await runPluginCli(['reload','device-center',...extra],{run:async(...args)=>{
+      calls.push(args);return {stdout:calls.length===1?'1':JSON.stringify({ok:true,protocol:1,result:{}})};
+    }});
+    assert.deepEqual(calls[1][1],['--plugin-cli','reload','device-center',...extra]);
+  }
 });
 test('old installed host is rejected before it can interpret CLI arguments as a launcher toggle',async()=>{
   const {runPluginCli}=await load();const calls=[];

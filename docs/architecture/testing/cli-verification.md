@@ -5,7 +5,7 @@
 | 入口 | 能验证 | 不能据此宣布通过 |
 | --- | --- | --- |
 | 项目测试、构建、包资源检查与只读后端 RPC | 业务逻辑、协议、资源与真实后端返回 | 页面点击、原生焦点、安装替换 |
-| `flowhub-cli.mjs` | 旧 HTTP 目录与本机诊断 | 桌面 SQLite 配置、插件安装、页面按钮 |
+| `flowhub-cli.mjs` | 旧 HTTP 目录、本机诊断、支持该协议的安装版本地插件迁移／重载 | 桌面 SQLite 配置、安装新插件、任意业务 RPC、页面按钮 |
 | checkout 中可用的 `flowhub-ui-test.mjs` | 隔离 WKWebView 内页面控件、生产桥接与后端调用 | 普通安装版、系统输入、IME、原生目录框 |
 | `toolkit desktop`／Computer Use | 正常安装版的窗口、AX、截图和原生操作 | 未实际执行的硬件输入、热插拔或跨屏场景 |
 
@@ -28,6 +28,8 @@ node app/scripts/dev/flowhub-cli.mjs plugin list
 node app/scripts/dev/flowhub-cli.mjs plugin migrate docker --dry-run
 node app/scripts/dev/flowhub-cli.mjs plugin migrate docker
 node app/scripts/dev/flowhub-cli.mjs plugin verify docker
+node app/scripts/dev/flowhub-cli.mjs plugin reload device-center --dry-run
+node app/scripts/dev/flowhub-cli.mjs plugin reload device-center
 ```
 
 `FLOWHUB_APP` 可指定应用包路径，默认 `/Applications/FlowHub.app`。CLI 先检查应用能力，旧版不会收到未知参数而意外唤出搜索窗口。原生客户端在初始化 Tauri 前处理参数，通过仅当前用户可访问的 Unix socket 连接同一安装程序的宿主；服务器双向核对用户和进程路径。命令不会发送系统鼠标／键盘事件。
@@ -35,6 +37,10 @@ node app/scripts/dev/flowhub-cli.mjs plugin verify docker
 迁移只处理已登记的本地插件，同版本、同权限、同文件内容搬到 `~/Library/Application Support/FlowHub/local-plugins/<id>`，拒绝覆盖不同包或接收新插件。先校验并复制，之后由宿主持有插件管理锁、更新登记并重载目标进程。失败恢复原登记及进程。插件数据仍按原 ID 保存，验证码邮件监控留在宿主。`--dry-run` 不创建目录、不重载、不写登记；`verify` 检查包、健康协议及已声明的只读状态，停用插件保持停用。
 
 `verify` 可能按正常宿主流程启动尚未运行的已启用插件；它不启用被停用的插件。该入口是正式维护能力，不能调用任意业务 RPC、读取验证码或凭证，也不能代替安装版的页面点击、IME 或键盘焦点验收。迁移后核对 CLI 返回、磁盘登记、进程路径、包指纹与原有配置，再清理旧目录。
+
+`reload` 用于本地原目录的包更新：先备份旧包和登记，将已验证的新包完整暂存、核对指纹后替换到已登记目录，再执行预演和重载。它复用插件市场的重载链路，检查 ID、包资源和权限，重启目标后端并刷新插件页面，不操作鼠标或键盘。禁止新增权限、安装新 ID 或更新市场托管包；新增权限仍需市场确认。`--dry-run` 只检查并展示版本变化，不写登记、不停止进程。停用状态和插件数据目录保持不变。启动检查失败会返回错误；先检查真实状态，再恢复备份包并重载，不能盲目重复更新。
+
+2026-11-11 验证：本节所在提交通过根目录与 `app/` 的完整测试，涵盖重载预演不写登记、不停止当前进程，重载保留数据和停用状态，拒绝身份变化、新权限及市场包。使用同签名安装版 `0.1.18-local.20261111070231`，在后台将固定目录的外设中心从 0.3.12 重载为 0.3.19；读回登记、29 项文件指纹、实际进程及父进程，并从该插件进程采样真实手机。原始记录在 `~/.local/state/flowhub-mail-verification/device-storage.8o9jnxn4/`。该结果验证正式维护 CLI 与后端，未将页面点击或原生焦点标记为通过。
 
 ## 隔离 WKWebView 驱动
 

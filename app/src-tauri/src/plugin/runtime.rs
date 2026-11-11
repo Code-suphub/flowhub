@@ -533,6 +533,11 @@ pub(crate) async fn plugin_rpc(window:tauri::WebviewWindow,app:tauri::AppHandle,
     }
     let rt=app.state::<Runtime>();rt.session(&id).await?.call(method,params).await
 }
+fn refresh_plugin_views(app:&tauri::AppHandle) {
+    for target in app.webview_windows().values().filter(|w|matches!(w.label(),"settings"|"plugin-panel"|"plugin-dock")) {
+        let _=target.eval("window.FlowHubPluginIntegration?.refresh().catch(console.error)");
+    }
+}
 #[tauri::command]
 pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
     // The dock can read names, but cannot install, manage or execute plugins.
@@ -564,9 +569,7 @@ pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         },
         "reload"=>{
             let result=rt.reload(id,&payload).await;
-            for target in app.webview_windows().values().filter(|w|matches!(w.label(),"settings"|"plugin-panel"|"plugin-dock")) {
-                let _=target.eval("window.FlowHubPluginIntegration?.refresh().catch(console.error)");
-            }
+            refresh_plugin_views(&app);
             result
         },
         "enable"=>{

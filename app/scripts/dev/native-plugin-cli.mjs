@@ -4,8 +4,8 @@ import {join} from 'node:path';
 
 export async function runPluginCli(args, {bundle=process.env.FLOWHUB_APP || '/Applications/FlowHub.app', run=promisify(execFile)}={}) {
   const validId=id=>typeof id==='string' && /^[A-Za-z0-9_-]{1,80}$/.test(id);
-  if (!(args.length===1 && args[0]==='list' || args.length===2 && ['verify','migrate'].includes(args[0]) && validId(args[1]) || args.length===3 && args[0]==='migrate' && validId(args[1]) && args[2]==='--dry-run')) {
-    throw Error('用法：plugin list | verify <id> | migrate <id> [--dry-run]');
+  if (!(args.length===1 && args[0]==='list' || args.length===2 && ['verify','migrate','reload'].includes(args[0]) && validId(args[1]) || args.length===3 && ['migrate','reload'].includes(args[0]) && validId(args[1]) && args[2]==='--dry-run')) {
+    throw Error('用法：plugin list | verify <id> | migrate <id> [--dry-run] | reload <id> [--dry-run]');
   }
   // Older binaries treat unknown arguments as a launcher toggle. Check their
   // advertised capability before executing any native command.

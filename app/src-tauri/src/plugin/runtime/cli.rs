@@ -1,5 +1,5 @@
-//! Production plugin maintenance, limited to inspecting and relocating identical
-//! installed packages. No arbitrary RPC, installation, credentials or UI input.
+//! Production maintenance of registered local plugins: inspect, relocate, reload.
+//! No arbitrary RPC, new installations, permission grants, credentials or UI input.
 use super::*;
 use sha2::{Digest, Sha256};
 use std::os::fd::AsRawFd;
@@ -24,6 +24,11 @@ enum Request {
     Verify {
         id: String,
     },
+    Reload {
+        id: String,
+        #[serde(default)]
+        dry_run: bool,
+    },
     Migrate {
         id: String,
         #[serde(default)]
@@ -40,6 +45,14 @@ fn parse(args: &[String]) -> Result<Request, String> {
     {
         ["list"] => Ok(Request::List {}),
         ["verify", id] if safe_id(id) => Ok(Request::Verify { id: (*id).into() }),
+        ["reload", id] if safe_id(id) => Ok(Request::Reload {
+            id: (*id).into(),
+            dry_run: false,
+        }),
+        ["reload", id, "--dry-run"] if safe_id(id) => Ok(Request::Reload {
+            id: (*id).into(),
+            dry_run: true,
+        }),
         ["migrate", id] if safe_id(id) => Ok(Request::Migrate {
             id: (*id).into(),
             dry_run: false,
@@ -48,7 +61,10 @@ fn parse(args: &[String]) -> Result<Request, String> {
             id: (*id).into(),
             dry_run: true,
         }),
-        _ => Err("用法：plugin list | verify <id> | migrate <id> [--dry-run]".into()),
+        _ => Err(
+            "用法：plugin list | verify <id> | migrate <id> [--dry-run] | reload <id> [--dry-run]"
+                .into(),
+        ),
     }
 }
 
@@ -175,9 +191,14 @@ pub(crate) fn start(app: tauri::AppHandle) -> Result<(), String> {
                         .map_err(|_| "不支持的插件 CLI 操作".into())
                 });
             let result = result.and_then(|request| {
-                tauri::async_runtime::block_on(async {
+                let refresh = matches!(&request, Request::Reload { dry_run: false, .. });
+                let result = tauri::async_runtime::block_on(async {
                     app.state::<Runtime>().cli_execute(request).await
-                })
+                });
+                if refresh && result.is_ok() {
+                    refresh_plugin_views(&app);
+                }
+                result
             });
             let response = match result {
                 Ok(result) => json!({"ok":true,"protocol":1,"result":result}),
@@ -285,6 +306,39 @@ fn copy_package(
 }
 
 impl Runtime {
+    async fn cli_reload(&self, id: &str, dry_run: bool) -> Result<Value, String> {
+        if !safe_id(id) {
+            return Err("插件 ID 无效".into());
+        }
+        let old = self.registered(id)?;
+        if matches!(old.origin, Some(InstallOrigin::Market { .. }))
+            || old.directory.starts_with(self.root.join("plugin-packages"))
+        {
+            return Err("市场安装包请通过市场更新，CLI 重载仅支持本地目录".into());
+        }
+        let next = package(old.directory.clone())?;
+        if next.manifest.id != id {
+            return Err("插件 ID 已变化，未更新当前插件".into());
+        }
+        if next
+            .manifest
+            .permissions
+            .iter()
+            .any(|p| !old.manifest.permissions.contains(p))
+        {
+            return Err("插件新增运行权限，请先通过插件市场核对并确认".into());
+        }
+        let inventory = files(&old.directory)?;
+        let preview = json!({"id":id,"fromVersion":old.manifest.version,"version":next.manifest.version,"directory":old.directory,"enabled":old.enabled,"files":inventory.len(),"dryRun":dry_run});
+        if dry_run {
+            return Ok(preview);
+        }
+        // Reuse normal reload validation, persistence, session and mail lifecycle.
+        self.reload(id, &json!({"expectedManifest":next.manifest}))
+            .await?;
+        Ok(json!({"reload":preview,"verified":self.cli_verify(id).await?}))
+    }
+
     async fn cli_health(&self, id: &str) -> Result<Value, String> {
         let session = self.session(id).await?;
         let health = tokio::time::timeout(
@@ -349,6 +403,7 @@ impl Runtime {
         match request {
             Request::List {} => Ok(self.list()),
             Request::Verify { id } => self.cli_verify(&id).await,
+            Request::Reload { id, dry_run } => self.cli_reload(&id, dry_run).await,
             Request::Migrate { id, dry_run } => {
                 if !safe_id(&id) {
                     return Err("插件 ID 无效".into());
@@ -474,10 +529,16 @@ mod tests {
             parse(&args(&["migrate", "docker", "--dry-run"])),
             Ok(Request::Migrate { dry_run: true, .. })
         ));
+        assert!(matches!(
+            parse(&args(&["reload", "device-center", "--dry-run"])),
+            Ok(Request::Reload { dry_run: true, .. })
+        ));
         for a in [
             vec!["install", "x"],
             vec!["migrate", "../escape"],
             vec!["verify", "x", "--force"],
+            vec!["reload", "../escape"],
+            vec!["reload", "x", "--confirmedPermissions"],
         ] {
             assert!(parse(&args(&a)).is_err());
         }
@@ -530,6 +591,101 @@ mod tests {
             serde_json::from_value::<Request>(json!({"action":"list","method":"mail_copy"}))
                 .is_err()
         );
+    }
+    #[tokio::test]
+    async fn reload_previews_without_mutation_then_updates_original_directory_and_preserves_data() {
+        let (root, rt, directory) = fixture(true, false);
+        let session = rt.session("fixture").await.unwrap();
+        rt.cli_health("fixture").await.unwrap();
+        let registry = fs::read(root.0.join("plugins.json")).unwrap();
+        let mut manifest: Value =
+            serde_json::from_slice(&fs::read(directory.join("flowhub-plugin.json")).unwrap())
+                .unwrap();
+        manifest["version"] = json!("1.1.0");
+        fs::write(directory.join("flowhub-plugin.json"), manifest.to_string()).unwrap();
+        let preview = rt
+            .cli_execute(Request::Reload {
+                id: "fixture".into(),
+                dry_run: true,
+            })
+            .await
+            .unwrap();
+        assert_eq!(preview["version"], "1.1.0");
+        assert_eq!(preview["fromVersion"], "1.0.0");
+        assert_eq!(fs::read(root.0.join("plugins.json")).unwrap(), registry);
+        assert!(Arc::ptr_eq(&session, &rt.session("fixture").await.unwrap()));
+        let result = rt
+            .cli_execute(Request::Reload {
+                id: "fixture".into(),
+                dry_run: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result["verified"]["version"], "1.1.0");
+        assert_eq!(rt.registered("fixture").unwrap().directory, directory);
+        assert!(!Arc::ptr_eq(
+            &session,
+            &rt.session("fixture").await.unwrap()
+        ));
+        assert_eq!(
+            fs::read(root.0.join("fixture/settings.json")).unwrap(),
+            b"retained configuration"
+        );
+        rt.stop("fixture").await;
+    }
+    #[tokio::test]
+    async fn reload_rejects_new_permissions_identity_changes_and_market_packages_before_stopping() {
+        let (root, rt, directory) = fixture(true, false);
+        let session = rt.session("fixture").await.unwrap();
+        let registry = fs::read(root.0.join("plugins.json")).unwrap();
+        let original = fs::read(directory.join("flowhub-plugin.json")).unwrap();
+        let mut manifest: Value = serde_json::from_slice(&original).unwrap();
+        manifest["permissions"] = json!(["native-process", "system-process-monitor"]);
+        fs::write(directory.join("flowhub-plugin.json"), manifest.to_string()).unwrap();
+        for dry_run in [true, false] {
+            assert!(rt
+                .cli_execute(Request::Reload {
+                    id: "fixture".into(),
+                    dry_run
+                })
+                .await
+                .unwrap_err()
+                .contains("权限"));
+        }
+        manifest["permissions"] = json!(["native-process"]);
+        manifest["id"] = json!("different");
+        fs::write(directory.join("flowhub-plugin.json"), manifest.to_string()).unwrap();
+        assert!(rt
+            .cli_reload("fixture", false)
+            .await
+            .unwrap_err()
+            .contains("ID 已变化"));
+        assert_eq!(fs::read(root.0.join("plugins.json")).unwrap(), registry);
+        assert!(Arc::ptr_eq(&session, &rt.session("fixture").await.unwrap()));
+        fs::write(directory.join("flowhub-plugin.json"), original).unwrap();
+        rt.update(|items| items[0].origin = Some(InstallOrigin::Market { source: None }))
+            .unwrap();
+        assert!(rt
+            .cli_reload("fixture", false)
+            .await
+            .unwrap_err()
+            .contains("市场安装包"));
+        assert!(Arc::ptr_eq(&session, &rt.session("fixture").await.unwrap()));
+        rt.stop("fixture").await;
+    }
+    #[tokio::test]
+    async fn reload_does_not_enable_or_launch_a_disabled_plugin() {
+        let (_root, rt, _) = fixture(false, false);
+        let result = rt
+            .cli_execute(Request::Reload {
+                id: "fixture".into(),
+                dry_run: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result["verified"]["enabled"], false);
+        assert!(result["verified"]["pid"].is_null());
+        assert!(rt.sessions.lock().await.is_empty());
     }
     #[tokio::test]
     async fn dry_run_preserves_session_and_migration_retains_data_and_restarts_from_fixed_path() {
