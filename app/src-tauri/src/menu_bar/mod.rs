@@ -5,6 +5,8 @@
 pub(crate) mod icon;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) mod section_memory;
+#[cfg(any(target_os = "macos", test))]
+pub(crate) mod presentation;
 
 use crate::storage::{ensure_object_path, hydrated_config};
 use crate::{diagnostics, open_settings, toggle_main, AppState};
@@ -527,6 +529,9 @@ pub(crate) fn managed_menu_bar_items(
     let always_boundary = all_items
         .iter()
         .find(|item| item.window_id == always_boundary_id);
+    if boundary.is_none() || always_boundary.is_none() {
+        return Err("菜单栏分界尚未就绪，请稍后刷新".into());
+    }
     let current_pid = std::process::id() as i32;
     Ok(all_items
         .iter()
@@ -551,19 +556,25 @@ pub(crate) fn managed_menu_bar_items(
 
 #[cfg(target_os = "macos")]
 pub(crate) fn menu_bar_item_display_name(item: &crate::macos::accessibility::MenuBarItem) -> String {
-    match item.title.as_str() {
-        "Clock" => "时钟".to_string(),
-        "BentoBox" => "控制中心".to_string(),
-        "WiFi" => "无线局域网".to_string(),
-        "Bluetooth" => "蓝牙".to_string(),
-        "Battery" => "电池".to_string(),
-        "FocusModes" => "专注模式".to_string(),
-        "Sound" => "声音".to_string(),
-        title if !title.is_empty() => title.to_string(),
-        _ if !item.accessibility_label.is_empty() => item.accessibility_label.clone(),
-        _ if !item.owner_name.is_empty() => item.owner_name.clone(),
-        _ => "未命名图标".to_string(),
-    }
+    let owner = if presentation::placeholder_title(&item.title) && presentation::placeholder_title(&item.accessibility_label) {
+        objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(item.owner_pid)
+            .and_then(|app| app.localizedName()).map(|name| name.to_string())
+            .filter(|name| !name.trim().is_empty()).unwrap_or_else(|| item.owner_name.clone())
+    } else { item.owner_name.clone() };
+    presentation::display_name(&item.title, &item.accessibility_label, &owner)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn ordered_menu_bar_items(app: &tauri::AppHandle, boundary: u32, always: u32)
+    -> Result<Vec<(crate::macos::accessibility::MenuBarItem, &'static str)>, String> {
+    let items = managed_menu_bar_items(boundary, always)?;
+    let path = app.state::<AppState>().root_dir.join("menu-bar-list-order.json");
+    let mut order = presentation::Order::load(&path)?;
+    let before = serde_json::to_value(&order).map_err(|e|e.to_string())?;
+    let keys = items.iter().map(|(item,_)| json!([item.owner_name,item.title,item.accessibility_id]).to_string()).collect::<Vec<_>>();
+    let indices = order.arrange(&keys);
+    if serde_json::to_value(&order).map_err(|e|e.to_string())? != before { order.save(&path)?; }
+    Ok(indices.into_iter().map(|i| items[i].clone()).collect())
 }
 
 #[tauri::command]
@@ -585,7 +596,7 @@ pub(crate) async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, 
         .map_err(|error| error.to_string())?;
         let (control_id, boundary_id, always_boundary_id) =
             receiver.await.map_err(|error| error.to_string())??;
-        let items = managed_menu_bar_items(boundary_id, always_boundary_id)?
+        let items = ordered_menu_bar_items(&app, boundary_id, always_boundary_id)?
             .into_iter()
             // Omit only these fixed entries from management UI, not from the
             // underlying inventory used for geometry and diagnostics.
@@ -729,7 +740,7 @@ pub(crate) async fn set_menu_bar_item_hidden(
                 );
                 error
             })?;
-            let plan = memory.prepare(&identities, index, section, hidden);
+            let plan = memory.prepare_visibility(&identities, index, section, hidden);
             let section_of = |item: &crate::macos::accessibility::MenuBarItem| {
                 if item.x + item.width <= always_boundary.x + 1.0 {
                     Section::AlwaysHidden
@@ -804,7 +815,17 @@ pub(crate) async fn set_menu_bar_item_hidden(
                 }),
             );
             // Keep both dividers unchanged: unrelated hidden items must never be exposed.
-            crate::macos::accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, true)
+            crate::macos::accessibility::move_menu_bar_item(&handle, window_id, target_id, place_left, true)?;
+            // Only read while settling; never report adjacency as visibility.
+            for _ in 0..10 {
+                if let Ok(items) = managed_menu_bar_items(boundary_id, always_boundary_id) {
+                    if items.iter().any(|(item,section)| item.window_id == window_id && *section == if hidden {"alwaysHidden"} else {"visible"}) {
+                        return Ok(());
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err("图标未进入指定分区，未确认显示设置生效；请刷新后重试".into())
         })
         .await
         .map_err(|error| error.to_string())?;

@@ -232,10 +232,12 @@ define_class!(
                 }
             }
             let hidden = iv.switch.state() == 0;
+            // Keep the confirmed switch position until the native move succeeds.
+            iv.switch.setState(if iv.hidden.get() { 0 } else { 1 });
             crate::diagnostics::record_event(&app, "menu_bar_submenu_toggle_requested", serde_json::json!({"windowId": iv.window_id, "hidden": hidden, "tracking": is_tracking()}));
             iv.busy.set(true);
             iv.switch.setEnabled(false);
-            iv.status.setStringValue(&NSString::from_str("进行中…"));
+            iv.status.setStringValue(&NSString::from_str(if hidden {"正在隐藏…"} else {"正在显示…"}));
             let generation = iv.generation;
             let window_id = iv.window_id;
             tauri::async_runtime::spawn(async move {
@@ -316,7 +318,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         return;
     }
     let inventory = crate::menu_bar::organizer_window_ids()
-        .and_then(|(_, boundary, always)| crate::menu_bar::managed_menu_bar_items(boundary, always));
+        .and_then(|(_, boundary, always)| crate::menu_bar::ordered_menu_bar_items(&delegate.ivars().app, boundary, always));
     let items = match inventory {
         Ok(items) => items,
         Err(error) => {
@@ -334,7 +336,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         ) {
             continue;
         }
-        let hidden = section == "alwaysHidden";
+        let hidden = section != "visible";
         let title = crate::menu_bar::menu_bar_item_display_name(&item);
         let switch = NSSwitch::initWithFrame(NSSwitch::alloc(mtm), rect(256.0, 7.0, 36.0, 20.0));
         switch.setControlSize(NSControlSize::Small);
@@ -342,7 +344,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         let capable = item.movable && item.hideable;
         switch.setEnabled(capable);
         switch.setToolTip(Some(&NSString::from_str(&format!(
-            "{title}：开：恢复原分区；关：始终隐藏"
+            "{title}：开：固定显示；关：始终隐藏"
         ))));
         let status = secondary_label(
             &row_status(section, capable),
@@ -451,7 +453,7 @@ fn complete(generation: u64, window_id: u32, result: Result<serde_json::Value, S
         });
     let status = match actual {
         Ok((item, section)) => {
-            iv.hidden.set(section == "alwaysHidden");
+            iv.hidden.set(section != "visible");
             iv.capable.set(
                 item.movable
                     && item.hideable
@@ -523,7 +525,7 @@ pub fn install(app: &tauri::AppHandle, tray: &tray_icon::TrayIcon) -> Result<(),
     let header: Retained<ItemMenuView> =
         unsafe { msg_send![super(header), initWithFrame: rect(0.0, 0.0, WIDTH, HEADER_HEIGHT)] };
     header.addSubview(&secondary_label(
-        "开：恢复原分区  ·  关：始终隐藏",
+        "开：固定显示  ·  关：始终隐藏",
         rect(12.0, 6.0, WIDTH - 24.0, 14.0),
         mtm,
     ));

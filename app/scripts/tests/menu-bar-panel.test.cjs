@@ -36,15 +36,16 @@ test('sections stay distinct from fixed capabilities; unknown sections cannot be
   await wait(()=>s.rows().length===5);
   assert.deepEqual(s.rows().map(row=>row.querySelector('small').textContent),['常显区','随箭头展开／收起','始终隐藏区','分区未知','常显区 · 系统固定']);
   assert.deepEqual(s.controls().map(s.disabled),[false,false,false,true,true]);
+  assert.deepEqual(s.controls().map(control=>control.getAttribute('aria-checked')),['true','false','false','false','true']);
   s.controls()[3].click();s.controls()[4].click();await delay(10);
   assert.equal(s.calls.filter(call=>call.command==='set_menu_bar_item_hidden').length,0);
   assert.match(s.w.document.querySelector('footer').textContent,/5 个图标 · 1 个隐藏/);
 });
 
-test('actual hide/show IPC remains available, deduplicated, and restores an arrow-hidden section',async t=>{
+test('hide/show IPC stays deduplicated and showing pins the icon in the visible section',async t=>{
   let section='visible';
   const s=await setup(t,async(command,args)=>{
-    if(command==='set_menu_bar_item_hidden'){section=args.hidden?'alwaysHidden':'hidden';return {ok:true};}
+    if(command==='set_menu_bar_item_hidden'){section=args.hidden?'alwaysHidden':'visible';return {ok:true};}
     return snapshot([item(1,section)]);
   });
   await wait(()=>s.controls().length===1&&!s.disabled(s.controls()[0]));
@@ -52,11 +53,13 @@ test('actual hide/show IPC remains available, deduplicated, and restores an arro
   await wait(()=>control.getAttribute('aria-checked')==='false'&&!s.disabled(control));
   assert.equal(s.calls.filter(call=>call.command==='set_menu_bar_item_hidden').length,1);
   control.click();await wait(()=>control.getAttribute('aria-checked')==='true'&&!s.disabled(control));
-  assert.equal(s.rows()[0].querySelector('small').textContent,'随箭头展开／收起');
+  assert.equal(s.rows()[0].querySelector('small').textContent,'常显区');
+  s.events.get('menu-bar-panel-opened')();await wait(()=>!s.disabled(control));
+  assert.equal(control.getAttribute('aria-checked'),'true');
   assert.deepEqual(s.calls.filter(call=>call.command==='set_menu_bar_item_hidden').map(call=>({...call.args})),[{windowId:1,hidden:true},{windowId:1,hidden:false}]);
 });
 
-test('mutation refresh preserves row order, focus and scroll; reopening follows inventory order',async t=>{
+test('mutation and reopening preserve original row order, focus and scroll',async t=>{
   let data=snapshot([item(1),item(2,'alwaysHidden'),item(3,'hidden')]);
   const s=await setup(t,async(command,args)=>{
     if(command==='set_menu_bar_item_hidden'){data=snapshot([item(3,'hidden'),item(2,'alwaysHidden'),item(1,'alwaysHidden'),item(4)]);return {ok:true};}
@@ -68,8 +71,9 @@ test('mutation refresh preserves row order, focus and scroll; reopening follows 
   await wait(()=>s.rows().length===4&&!s.disabled(control));
   assert.deepEqual(s.names(),['图标 1','图标 2','图标 3','图标 4']);
   assert.equal(main.scrollTop,80);assert.equal(s.w.document.activeElement,control);
-  s.events.get('menu-bar-panel-opened')();await wait(()=>s.names()[0]==='图标 3');
-  assert.deepEqual(s.names(),['图标 3','图标 2','图标 1','图标 4']);assert.equal(main.scrollTop,80);
+  data=snapshot([item(3,'hidden',{displayName:'第三项'}),item(2,'alwaysHidden'),item(1,'alwaysHidden'),item(4)]);
+  s.events.get('menu-bar-panel-opened')();await wait(()=>s.names()[2]==='第三项'&&!s.refresh().disabled);
+  assert.deepEqual(s.names(),['图标 1','图标 2','第三项','图标 4']);assert.equal(main.scrollTop,80);
   data=snapshot([item(4),item(5)]);s.refresh().click();await wait(()=>s.rows().length===2);
   assert.deepEqual(s.names(),['图标 4','图标 5']);
 });
@@ -107,6 +111,8 @@ test('backend refusals and unconfirmed or unknown placement never report a succe
   s.controls()[0].click();await wait(()=>s.notice().includes('鼠标正在使用中'));
   assert.equal(s.controls()[0].getAttribute('aria-checked'),'false');
   result={ok:true};s.controls()[0].click();await wait(()=>s.notice().includes('图标位置尚未更新'));
+  data=snapshot([item(1,'hidden')]);s.controls()[0].click();await wait(()=>s.rows()[0].querySelector('small').textContent==='随箭头展开／收起');
+  await wait(()=>s.notice().includes('图标位置尚未更新'));assert.equal(s.controls()[0].getAttribute('aria-checked'),'false');
   data=snapshot([item(1,'future')]);s.controls()[0].click();await wait(()=>s.rows()[0].querySelector('small').textContent==='分区未知');
   await wait(()=>s.notice().includes('图标位置尚未更新'));
   assert.equal(s.disabled(s.controls()[0]),true);

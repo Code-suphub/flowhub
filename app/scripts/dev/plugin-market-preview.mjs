@@ -63,7 +63,7 @@ const mock = String.raw`(()=>{
       default: throw Error('示例预览不支持此状态操作');
     }
     if(command==='list_menu_bar_items') return {ok:true,items:menuItems.map(item=>({...item})),trusted:true,organizerEnabled:true};
-    if(command==='set_menu_bar_item_hidden') {menuItems=menuItems.map(item=>item.windowId===args.windowId?{...item,section:args.hidden?'alwaysHidden':'shown'}:item);return {ok:true};}
+    if(command==='set_menu_bar_item_hidden') {menuItems=menuItems.map(item=>item.windowId===args.windowId?{...item,section:args.hidden?'alwaysHidden':'visible'}:item);return {ok:true};}
     if(command==='toggle_menu_bar_panel') return null;
     throw Error('示例预览仅支持插件市场、状态与菜单栏面板');
   }}};

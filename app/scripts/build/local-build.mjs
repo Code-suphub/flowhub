@@ -6,7 +6,9 @@ import { spawnSync } from "node:child_process";
 const appDirectory = resolve(new URL("../..", import.meta.url).pathname);
 const packageJson = JSON.parse(readFileSync(join(appDirectory, "package.json"), "utf8"));
 const installRequested = process.argv.includes("--install");
-const buildArguments = process.argv.slice(2).filter((argument) => argument !== "--install");
+const backgroundRequested = process.argv.includes("--background");
+if (backgroundRequested && !installRequested) throw new Error("--background 仅用于 --install 后台安装");
+const buildArguments = process.argv.slice(2).filter((argument) => argument !== "--install" && argument !== "--background");
 // A local install needs the signed app/updater archive, not a distribution DMG.
 if (installRequested && !buildArguments.some(argument => argument === '--bundles' || argument.startsWith('--bundles='))) {
   buildArguments.push('--bundles', 'app');
@@ -64,7 +66,7 @@ try {
       }
       const copied = spawnSync("ditto", [appPath, targetPath], { stdio: "inherit" });
       if ((copied.status ?? 1) !== 0) throw new Error("本地 FlowHub 安装失败");
-      spawnSync("open", ["-a", targetPath], { stdio: "inherit" });
+      spawnSync("open", [...(backgroundRequested ? ["-g"] : []), "-a", targetPath], { stdio: "inherit" });
       console.log(`本地迭代版已安装并启动：${targetPath}`);
     }
   }

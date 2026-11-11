@@ -64,6 +64,13 @@ impl Plan {
 }
 
 impl Memory {
+    /// The visibility switch explicitly pins an enabled icon in the visible zone.
+    /// Returning it to a collapsed zone would make "show" appear to be lost.
+    pub fn prepare_visibility(&mut self, items: &[Identity], index: usize, current: Section, hide: bool) -> Plan {
+        let mut plan = self.prepare(items, index, current, hide);
+        if !hide { plan.destination = Section::Visible; plan.fallback_reason = None; }
+        plan
+    }
     /// `ordered` contains unique, manageable icons in physical left-to-right
     /// order in the original section. Retain hidden placeholders so hiding
     /// several adjacent icons also works when restored in a different order.
@@ -189,6 +196,17 @@ impl Memory {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_show_pins_visible_even_when_the_original_section_was_collapsed() {
+        let mut memory = Memory::default();
+        memory.prepare_visibility(&[icon("Magpie")], 0, Section::Hidden, true);
+        let mut restarted: Memory = serde_json::from_slice(&serde_json::to_vec(&memory).unwrap()).unwrap();
+        let plan = restarted.prepare_visibility(&[icon("Magpie")], 0, Section::AlwaysHidden, false);
+        assert_eq!(plan.destination, Section::Visible);
+        assert_eq!(plan.target(10,20), (10,false));
+        assert_eq!(restarted.prepare_visibility(&[icon("Magpie")], 0, Section::Hidden, false).destination, Section::Visible);
+    }
 
     #[test]
     fn repeated_restores_keep_the_same_side_of_a_fixed_anchor() {

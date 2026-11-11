@@ -13,5 +13,5 @@ export function menuBarSectionLabel(section: unknown): string {
 }
 
 export function menuBarVisibilityMatches(section: unknown, hidden: boolean): boolean {
-  return hidden ? section === 'alwaysHidden' : section === 'visible' || section === 'hidden';
+  return hidden ? section === 'alwaysHidden' : section === 'visible';
 }
