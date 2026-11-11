@@ -145,6 +145,7 @@ function Search() {
   useLayoutEffect(()=>{
     if(snapshot?.timing) host.flowhubSearchTiming?.commit(snapshot.timing.run,snapshot.timing.startedAt);
   },[snapshot]);
+  useLayoutEffect(()=>{controller.current?.resultsCommitted();},[snapshot,previewVisible]);
   // Measure only windowed rows after a commit; ordinary input renders do not
   // synchronously read geometry or scroll. ResizeObserver catches expansion.
   useLayoutEffect(()=>{
@@ -281,7 +282,7 @@ function Search() {
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard' && snapshot?<ClipboardFilters snapshot={snapshot} onKind={kind=>controller.current?.setClipboardKind(kind)} onFilter={(source,pinnedOnly)=>controller.current?.setClipboardFilters({source,pinnedOnly})} onReset={()=>{controller.current?.setClipboardFilters({kind:'all',source:null,pinnedOnly:false});controller.current?.returnToSearch();}} onReturn={()=>controller.current?.returnToSearch()}/>:null}
     <div className="search-workbench" data-has-preview={Boolean(previewable)} data-preview-open={previewVisible} data-detail-open={detailOpen} data-auto-code-preview={previewVisible && autoCodePreview && !detailOpen}>
-      <div id="results" className="search-result-pane min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onDoubleClick={dispatch('results:dblclick')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onContextMenu={contextMenu}>
+      <div id="results" className="search-result-pane min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onWheel={dispatch('results:wheel')} onClick={dispatch('results:click')} onDoubleClick={dispatch('results:dblclick')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onContextMenu={contextMenu}>
         {snapshot?<Results snapshot={snapshot} onPreview={openPreview} onClear={clearSearch} onSearchAll={()=>controller.current?.setScope('all')}/>:<p className="search-empty" role="status">配置加载中…</p>}
       </div>
       {previewVisible && selected && snapshot?<Preview item={selected} index={activeIndex} snapshot={snapshot} onAction={dispatch('results:click')} onBack={closePreview} onNavigate={direction=>{const next=previewNeighbor(snapshot.items,activeIndex,direction);if(next>=0)openPreview(next,true);}}/>:null}

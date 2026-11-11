@@ -17,6 +17,7 @@ export interface SearchController {
   ready: Promise<void>; handlers: Record<string, (event?: any) => void>;
   state: Data; resultWindow: {heights: Map<string,number>};
   render(options?: {preserveScroll?: boolean}): void;
+  resultsCommitted():void;
   returnToSearch(): void; setScope(scope:string): void; setClipboardKind(kind:string): void;
   setClipboardFilters(filters:{kind?:string;source?:string|null;pinnedOnly?:boolean}):void;refreshClipboard():Promise<void>;
   executeAction(key:string,kind:'result'|'clipboard',action:string):void;

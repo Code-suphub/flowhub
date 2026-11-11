@@ -800,6 +800,44 @@ function executeAction(key, kind, action) {
 const resultWindow = new window.FlowHubResultWindow();
 let windowedResults = false;
 let windowRenderFrame = 0;
+let pageResumeFrame = 0, pageIntent = null, pageScrollOwner = null;
+const pageSources = ['clipboard','app','web','memo','twofa'];
+const pageIntentKey = () => JSON.stringify([activationSession,state.scope,state.query,state.clipboardKind,state.clipboardSource,state.clipboardPinnedOnly]);
+function nearResultsEnd() {
+  return resultsEl.scrollHeight-resultsEl.scrollTop-resultsEl.clientHeight<160;
+}
+function resumeResultsPage() {
+  if (!pageIntent) return;
+  const key=pageIntentKey();
+  if (disposed || externalActivation || document.hidden || pageIntent!==key || !nearResultsEnd()) {pageIntent=null;return;}
+  if (pageScrollOwner?.key===key || allPaging) return;
+  const source=state.scope;
+  const hasMore=source==='all'?allHasMore():state[source+'HasMore'];
+  if (!hasMore) {pageIntent=null;return;}
+  // Keep one scroll intent while a fresh first page is pending. The React
+  // commit that publishes it retries against the new list geometry.
+  const pending=source==='all'
+    ? pageSources.some(id=>pluginEnabled(id) && (state[id+'Loading'] || state[id+'LoadedQuery']!==state.query))
+    : state[source+'Loading'] || state[source+'LoadedQuery']!==state.query;
+  if (pending) return;
+  pageIntent=null;
+  const owner={key};pageScrollOwner=owner;
+  const refreshers={clipboard:refreshClipboard,app:refreshApps,web:refreshWeb,memo:refreshMemos,twofa:refreshTwofa};
+  const task=source==='all'?loadMoreAll():refreshers[source]?.({append:true});
+  void Promise.resolve(task).finally(()=>{if(pageScrollOwner===owner)pageScrollOwner=null;});
+}
+function requestResultsPage() {
+  if (!state.config || disposed || externalActivation || !nearResultsEnd()) {pageIntent=null;return;}
+  const key=pageIntentKey();
+  // Repeated wheel/scroll events fulfill the same in-flight page request.
+  if (pageScrollOwner?.key===key || allPaging) return;
+  pageIntent=key;
+  resumeResultsPage();
+}
+function resultsCommitted() {
+  if (!pageIntent || pageResumeFrame) return;
+  pageResumeFrame=requestAnimationFrame(()=>{pageResumeFrame=0;resumeResultsPage();});
+}
 function render(options = {}) {
   if (window.flowhubSearchTiming) return window.flowhubSearchTiming.render(() => renderSnapshot(options), {deferCommit:true});
   return renderSnapshot(options);
@@ -1397,7 +1435,7 @@ bind(document, "keydown", (e) => {
     if(state.index!==previous)revealActiveResult();
     e.preventDefault();return;
   }
-  if (e.key === "ArrowDown") { resultInputMode("keyboard");moveVertical(m, 1); revealActiveResult(); e.preventDefault(); }
+  if (e.key === "ArrowDown") { resultInputMode("keyboard");moveVertical(m, 1); revealActiveResult(); if(state.index===m.length-1)requestResultsPage(); e.preventDefault(); }
   else if (e.key === "ArrowUp") { resultInputMode("keyboard");moveVertical(m, -1); revealActiveResult(); e.preventDefault(); }
   else if (e.key === "Enter") {
     const p = m[state.index];
@@ -1708,6 +1746,9 @@ async function refreshTwofa({ append = false, deferRender = false, live = false 
     if (token === twofaSearchToken) {
       state.twofaLoading = false;
       if (!deferRender && changed) render({ preserveScroll: append || live });
+      // An unchanged live response skips React rendering but still releases
+      // a page request that was waiting for this source to finish.
+      else if (!deferRender) resultsCommitted();
     }
   }
 }
@@ -1846,14 +1887,11 @@ bind(resultsEl, "error", (event) => {
 }, true);
 bind(resultsEl, "scroll", () => {
   if (windowedResults && !windowRenderFrame) windowRenderFrame = requestAnimationFrame(() => { windowRenderFrame = 0; render({ preserveScroll: true }); });
-  if (resultsEl.scrollHeight - resultsEl.scrollTop - resultsEl.clientHeight >= 160) return;
-  if (state.scope === "all") void loadMoreAll();
-  else if (state.scope === "clipboard") void refreshClipboard({ append: true });
-  else if (state.scope === "app") void refreshApps({ append: true });
-  else if (state.scope === "twofa") void refreshTwofa({ append: true });
-  else if (state.scope === "web") void refreshWeb({ append: true });
-  else if (state.scope === "memo") void refreshMemos({ append: true });
+  requestResultsPage();
 });
+// At the physical bottom a downward gesture may not emit another scroll event.
+// Observe intent without cancelling the browser's normal wheel handling.
+bind(resultsEl, "wheel", event => {if(event.deltaY>0)requestResultsPage();});
 
 // A captured cold WKWebView sequence was mouseup -> mousedown, with no click.
 // Navigation is reversible: activate on primary press instead of waiting for
@@ -2199,14 +2237,15 @@ if (fixture) {
 
 
 if (window.weborg.getLauncherPinned) window.weborg.getLauncherPinned().then(value => {launcherPinned=value;render({preserveScroll:true});}).catch(()=>{});
-return { ready, handlers, state, resultWindow, render, returnToSearch, executeAction, requestCommands, requestQueryHistory, recallQuery, setScope, setClipboardKind, setClipboardFilters, refreshClipboard:()=>refreshClipboard({preserveSelection:true}), selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
+return { ready, handlers, state, resultWindow, render, resultsCommitted, returnToSearch, executeAction, requestCommands, requestQueryHistory, recallQuery, setScope, setClipboardKind, setClipboardFilters, refreshClipboard:()=>refreshClipboard({preserveSelection:true}), selectResult, preserveSearchFocus, activateScopeControl, confirmClipboardDelete, cancelClipboardDelete,
   togglePin: async () => {try {launcherPinned=await window.weborg.setLauncherPinned(!launcherPinned);render({preserveScroll:true});return true;} catch(error){showActionStatus(error.message);return false;}},
   dispose() {
     disposed=true; cleanups.forEach(fn=>fn());
     cancelActivationFocus();
     invalidateClipboardPaging(); invalidatePluginPaging(); ++allScopeRefreshToken; ++usageSearchToken; ++dnsSearchToken; ++ipSearchToken; ++proxySearchToken;
     [clipboardSearchTimer,dnsSearchTimer,ipSearchTimer,proxySearchTimer,actionStatusTimer,webIconTimer].forEach(clearTimeout);
-    [inputRenderFrame,webInputSearchFrame,windowRenderFrame].forEach(cancelAnimationFrame);
+    [inputRenderFrame,webInputSearchFrame,windowRenderFrame,pageResumeFrame].forEach(cancelAnimationFrame);
+    pageIntent=null;
     window.FlowHubTools.queryChanged({...toolContext(),enabled:()=>false,query:''});
     for (const id of ['dns','cloudflare','proxy','timestamp','jwt','ip','calculator']) window.FlowHubTools.unregister(id);
     if(window.focusSearch===focusSearch) delete window.focusSearch;

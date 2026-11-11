@@ -3,6 +3,63 @@ const assert=require('node:assert/strict');
 const {setup,wait,delay}=require('./search-react-harness.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const app=path.resolve(__dirname,'../..');
+for(const gesture of ['scroll','keyboard'])test(`a bottom-${gesture} during reopen refresh resumes after the first page commits`,async t=>{
+ const records=Array.from({length:45},(_,i)=>({id:i+1,kind:'text',content:'scroll fixture '+i,hash:String(i)}));
+ let hold=false,release;
+ const {w,calls,key}=await setup(t,{previewExpanded:true,search:async(id,args)=>{
+  if(id!=='clipboard')return[];
+  if(hold&&!args.offset)await new Promise(resolve=>release=resolve);
+  return records.slice(args.offset||0,(args.offset||0)+args.limit);
+ }});
+ const rows=()=>w.document.querySelectorAll('.clipboard-result').length;
+ await wait(()=>rows()===6);
+ const list=w.document.querySelector('#results');
+ Object.defineProperty(list,'clientHeight',{get:()=>240});
+ Object.defineProperty(list,'scrollHeight',{get:()=>rows()*80});
+ hold=true;w.prepareForShow();await wait(()=>release);
+ list.scrollTop=240;
+ if(gesture==='scroll')list.dispatchEvent(new w.Event('scroll'));
+ else for(let i=0;i<6;i++)key('ArrowDown');
+ await delay(30);assert.equal(rows(),6);
+ hold=false;release();
+ await wait(()=>rows()===18);
+ assert.equal(list.scrollTop,240);
+ assert.equal(calls.filter(call=>call[0]==='search'&&call[1]==='clipboard'&&call[2].offset>0).length,0,'cached tail should not fetch an extra page');
+});
+test('moving away from the bottom cancels a deferred page without changing scroll position',async t=>{
+ const records=Array.from({length:40},(_,i)=>({id:i+1,kind:'text',content:'fixture '+i,hash:String(i)}));
+ let hold=false,release;
+ const {w}=await setup(t,{search:async(id,args)=>{if(id!=='clipboard')return[];if(hold)await new Promise(resolve=>release=resolve);return records.slice(0,args.limit);}});
+ await wait(()=>w.document.querySelectorAll('.clipboard-result').length===6);
+ const list=w.document.querySelector('#results');Object.defineProperty(list,'clientHeight',{value:240});Object.defineProperty(list,'scrollHeight',{value:600});
+ hold=true;w.prepareForShow();await wait(()=>release);list.scrollTop=360;list.dispatchEvent(new w.Event('scroll'));
+ list.scrollTop=0;list.dispatchEvent(new w.Event('scroll'));hold=false;release();await delay(100);
+ assert.equal(w.document.querySelectorAll('.clipboard-result').length,6);assert.equal(list.scrollTop,0);
+});
+test('an unchanged slow verification refresh also releases the pending bottom page',async t=>{
+ const records=Array.from({length:40},(_,i)=>({id:i+1,kind:'text',content:'fixture '+i,hash:String(i)}));
+ let hold=false,releaseClipboard,releaseTwofa;
+ const {w}=await setup(t,{search:async(id,args)=>{
+  if(hold&&id==='clipboard')await new Promise(resolve=>releaseClipboard=resolve);
+  if(hold&&id==='twofa')await new Promise(resolve=>releaseTwofa=resolve);
+  return id==='clipboard'?records.slice(0,args.limit):[];
+ }});
+ await wait(()=>w.document.querySelectorAll('.clipboard-result').length===6);
+ const list=w.document.querySelector('#results');Object.defineProperty(list,'clientHeight',{value:240});Object.defineProperty(list,'scrollHeight',{get:()=>w.document.querySelectorAll('.clipboard-result').length*80});
+ hold=true;w.prepareForShow();await wait(()=>releaseClipboard&&releaseTwofa);list.scrollTop=240;list.dispatchEvent(new w.Event('scroll'));
+ releaseClipboard();await delay(50);assert.equal(w.document.querySelectorAll('.clipboard-result').length,6);
+ hold=false;releaseTwofa();await wait(()=>w.document.querySelectorAll('.clipboard-result').length===18);
+});
+test('downward wheels at the bottom paginate once and failed appends do not auto-retry',async t=>{
+ const records=Array.from({length:40},(_,i)=>({id:i+1,kind:'text',content:'fixture '+i,hash:String(i)}));let rejectPage;
+ const {w,calls,scope}=await setup(t,{search:async(id,args)=>{if(id!=='clipboard')return[];if(args.offset)return new Promise((_,reject)=>rejectPage=reject);return records.slice(0,args.limit);}});
+ await scope('clipboard');await wait(()=>w.document.querySelectorAll('.clipboard-result').length===30);
+ const list=w.document.querySelector('#results');Object.defineProperty(list,'clientHeight',{value:240});Object.defineProperty(list,'scrollHeight',{value:2400});list.scrollTop=2160;
+ for(let i=0;i<8;i++)list.dispatchEvent(new w.WheelEvent('wheel',{bubbles:true,deltaY:100}));
+ await wait(()=>rejectPage);rejectPage(Error('fixture unavailable'));await delay(150);
+ assert.equal(calls.filter(call=>call[0]==='search'&&call[1]==='clipboard'&&call[2].offset===30).length,1);
+ assert.equal(w.document.querySelectorAll('.clipboard-result').length,30);assert.equal(list.scrollTop,2160);
+});
 for(const scopeId of ['clipboard','all'])for(const query of ['', 'fixture'])test(`clipboard updates reorder ${scopeId} results and retain record selection with query ${JSON.stringify(query)}`,async t=>{
   const record=(id,content,pinnedAt='')=>({id,kind:'text',content,hash:String(id),pinnedAt,copyCount:1});
   const pinned=record(1,'fixture pinned','2026-09-01T00:00:00Z'),recent=record(2,'fixture recent'),old=record(3,'fixture reused');
