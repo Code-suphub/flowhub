@@ -318,7 +318,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
         return;
     }
     let inventory = crate::menu_bar::organizer_window_ids()
-        .and_then(|(_, boundary, always)| crate::menu_bar::ordered_menu_bar_items(&delegate.ivars().app, boundary, always));
+        .and_then(|(_, boundary, always)| crate::menu_bar::managed_menu_bar_items(boundary, always));
     let items = match inventory {
         Ok(items) => items,
         Err(error) => {
@@ -326,7 +326,7 @@ fn populate(delegate: &ItemMenuView, menu: &NSMenu) {
             return;
         }
     };
-    // Deliberately retain inventory order. Completion changes only this row's
+    // Opening captures the actual left-to-right order. Completion changes only this row's
     // controls, never the menu's structure, row height, or ordering.
     for (item, section) in items {
         if crate::macos::accessibility::is_fixed_menu_bar_entry(

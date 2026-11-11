@@ -59,7 +59,7 @@ test('hide/show IPC stays deduplicated and showing pins the icon in the visible 
   assert.deepEqual(s.calls.filter(call=>call.command==='set_menu_bar_item_hidden').map(call=>({...call.args})),[{windowId:1,hidden:true},{windowId:1,hidden:false}]);
 });
 
-test('mutation and reopening preserve original row order, focus and scroll',async t=>{
+test('mutations preserve row targets while reopening and refresh follow the actual menu bar order',async t=>{
   let data=snapshot([item(1),item(2,'alwaysHidden'),item(3,'hidden')]);
   const s=await setup(t,async(command,args)=>{
     if(command==='set_menu_bar_item_hidden'){data=snapshot([item(3,'hidden'),item(2,'alwaysHidden'),item(1,'alwaysHidden'),item(4)]);return {ok:true};}
@@ -72,8 +72,12 @@ test('mutation and reopening preserve original row order, focus and scroll',asyn
   assert.deepEqual(s.names(),['图标 1','图标 2','图标 3','图标 4']);
   assert.equal(main.scrollTop,80);assert.equal(s.w.document.activeElement,control);
   data=snapshot([item(3,'hidden',{displayName:'第三项'}),item(2,'alwaysHidden'),item(1,'alwaysHidden'),item(4)]);
-  s.events.get('menu-bar-panel-opened')();await wait(()=>s.names()[2]==='第三项'&&!s.refresh().disabled);
-  assert.deepEqual(s.names(),['图标 1','图标 2','第三项','图标 4']);assert.equal(main.scrollTop,80);
+  s.events.get('menu-bar-panel-opened')();await wait(()=>s.names()[0]==='第三项'&&!s.refresh().disabled);
+  assert.deepEqual(s.names(),['第三项','图标 2','图标 1','图标 4']);assert.equal(main.scrollTop,80);
+  assert.equal(s.w.document.activeElement,control);
+  data=snapshot([item(4),item(1,'alwaysHidden'),item(2,'alwaysHidden'),item(3,'hidden')]);
+  s.refresh().click();await wait(()=>s.names()[0]==='图标 4'&&!s.refresh().disabled);
+  assert.deepEqual(s.names(),['图标 4','图标 1','图标 2','图标 3']);
   data=snapshot([item(4),item(5)]);s.refresh().click();await wait(()=>s.rows().length===2);
   assert.deepEqual(s.names(),['图标 4','图标 5']);
 });

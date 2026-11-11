@@ -36,7 +36,7 @@ export function MenuBarPanel() {
   }, []);
   const open = useCallback(() => {
     if (changing.current) return;
-    void refresh().catch(error => {if (alive.current) setNotice(String(error));});
+    void refresh(true).catch(error => {if (alive.current) setNotice(String(error));});
   }, [refresh]);
   const close = useCallback(() => {void invoke('toggle_menu_bar_panel').catch(error => {if (alive.current) setNotice(String(error));});}, []);
   useEffect(() => {
@@ -63,7 +63,7 @@ export function MenuBarPanel() {
     finally {changing.current = false;if (alive.current) setBusy(false);}
   }
   return <div className="fh-root fh-menubar-panel">
-    <header><h1>菜单栏图标 <Help>打开后固定在显示区，关闭后移到始终隐藏区。跟随分区的图标尚未固定显示。系统固定图标不能隐藏。</Help></h1><Button aria-label="关闭面板" disabled={!available} onClick={close}>×</Button></header>
+    <header><h1>菜单栏图标 <Help>列表从上到下对应菜单栏从左到右。操作期间行位置保持不动，重新打开或刷新后对齐实际位置。开关打开后固定显示，关闭后始终隐藏；跟随分区的图标尚未固定显示。系统固定图标不能隐藏。</Help></h1><Button aria-label="关闭面板" disabled={!available} onClick={close}>×</Button></header>
     <p role="status" className="fh-muted">{notice}</p>
     <main aria-label="逐个图标控制">{items.map(item => {
       const name = item.displayName || item.accessibilityLabel || item.title || item.ownerName || '未命名图标';

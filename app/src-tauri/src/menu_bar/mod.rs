@@ -564,19 +564,6 @@ pub(crate) fn menu_bar_item_display_name(item: &crate::macos::accessibility::Men
     presentation::display_name(&item.title, &item.accessibility_label, &owner)
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) fn ordered_menu_bar_items(app: &tauri::AppHandle, boundary: u32, always: u32)
-    -> Result<Vec<(crate::macos::accessibility::MenuBarItem, &'static str)>, String> {
-    let items = managed_menu_bar_items(boundary, always)?;
-    let path = app.state::<AppState>().root_dir.join("menu-bar-list-order.json");
-    let mut order = presentation::Order::load(&path)?;
-    let before = serde_json::to_value(&order).map_err(|e|e.to_string())?;
-    let keys = items.iter().map(|(item,_)| json!([item.owner_name,item.title,item.accessibility_id]).to_string()).collect::<Vec<_>>();
-    let indices = order.arrange(&keys);
-    if serde_json::to_value(&order).map_err(|e|e.to_string())? != before { order.save(&path)?; }
-    Ok(indices.into_iter().map(|i| items[i].clone()).collect())
-}
-
 #[tauri::command]
 pub(crate) async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
@@ -596,7 +583,7 @@ pub(crate) async fn list_menu_bar_items(app: tauri::AppHandle) -> Result<Value, 
         .map_err(|error| error.to_string())?;
         let (control_id, boundary_id, always_boundary_id) =
             receiver.await.map_err(|error| error.to_string())??;
-        let items = ordered_menu_bar_items(&app, boundary_id, always_boundary_id)?
+        let items = managed_menu_bar_items(boundary_id, always_boundary_id)?
             .into_iter()
             // Omit only these fixed entries from management UI, not from the
             // underlying inventory used for geometry and diagnostics.

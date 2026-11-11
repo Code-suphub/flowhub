@@ -31,9 +31,9 @@ const mock = String.raw`(()=>{
     {id:'preview-machine-c',name:'测试环境',status:'error',at:Date.now()-120000,values:{cpu:0,memory:0,disk:0}}
   ]};
   let menuItems=[
-    {windowId:1001,displayName:'示例应用',ownerName:'Preview',section:'shown',hideable:true},
+    {windowId:1001,displayName:'示例应用',ownerName:'Preview',section:'visible',hideable:true},
     {windowId:1002,displayName:'系统状态',ownerName:'Preview',section:'hidden',hideable:true},
-    {windowId:1003,displayName:'系统时钟',ownerName:'Preview',section:'shown',hideable:false}
+    {windowId:1003,displayName:'系统时钟',ownerName:'Preview',section:'visible',hideable:false}
   ];
   if(location.pathname.endsWith('/plugin-status.html')&&!location.search)history.replaceState(null,'',location.pathname+'?id=preview-status');
   window.__TAURI__={core:{Channel:class{onmessage=()=>{};},invoke:async(command,args={})=>{
