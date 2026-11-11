@@ -1,0 +1,1679 @@
+{
+  "schema": 1,
+  "projectId": "rKroot8WmpiogJg8366SaB",
+  "source": {
+    "host": "4543be2",
+    "plugins": "1e5563e",
+    "scope": "actual public-fixture presentation; no production API or native input"
+  },
+  "components": [
+    {
+      "name": "启动器 · 全部",
+      "path": "/launcher",
+      "source": {
+        "entry": "app/ui/search.html",
+        "component": "app/src/search/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 169,
+        "svgAssets": 18,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 剪贴板",
+      "path": "/launcher/clipboard",
+      "source": {
+        "entry": "app/ui/search.html",
+        "component": "app/src/search/Results.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 213,
+        "svgAssets": 34,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 应用",
+      "path": "/launcher/applications",
+      "source": {
+        "entry": "app/ui/search.html",
+        "component": "app/src/search/Results.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 197,
+        "svgAssets": 18,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 网页",
+      "path": "/launcher/web",
+      "source": {
+        "entry": "app/ui/search.html",
+        "component": "app/src/search/Results.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 117,
+        "svgAssets": 10,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 命令备忘录",
+      "path": "/launcher/memo",
+      "source": {
+        "entry": "app/ui/search.html",
+        "component": "app/src/search/Results.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 165,
+        "svgAssets": 28,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 通用设置",
+      "path": "/settings/core",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 202,
+        "svgAssets": 25,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 外观",
+      "path": "/settings/appearance",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 149,
+        "svgAssets": 23,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 数据与诊断",
+      "path": "/settings/data",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 276,
+        "svgAssets": 36,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 版本与更新",
+      "path": "/settings/updates",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 171,
+        "svgAssets": 23,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 搜索",
+      "path": "/settings/search",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 259,
+        "svgAssets": 26,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 菜单栏",
+      "path": "/settings/menubar",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 285,
+        "svgAssets": 28,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 桌面组件",
+      "path": "/settings/canvas",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 154,
+        "svgAssets": 22,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 网页目录",
+      "path": "/settings/web",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 229,
+        "svgAssets": 35,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 应用",
+      "path": "/settings/app",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 159,
+        "svgAssets": 25,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 剪贴板",
+      "path": "/settings/clipboard",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 214,
+        "svgAssets": 29,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 备忘录",
+      "path": "/settings/memo",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 282,
+        "svgAssets": 38,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 工具",
+      "path": "/settings/tools",
+      "source": {
+        "entry": "app/ui/settings.html",
+        "component": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 285,
+        "svgAssets": 23,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件市场 · 发现",
+      "path": "/market",
+      "source": {
+        "entry": "app/ui/plugin-market.html",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 189,
+        "svgAssets": 22,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件市场 · 已安装",
+      "path": "/market/installed",
+      "source": {
+        "entry": "app/ui/plugin-market.html",
+        "component": "app/src/market/Market.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 104,
+        "svgAssets": 9,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件状态",
+      "path": "/plugin-status",
+      "source": {
+        "entry": "app/ui/plugin-status.html",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 83,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "菜单栏图标",
+      "path": "/menu-bar",
+      "source": {
+        "entry": "app/ui/menu-bar-panel.html",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 50,
+        "svgAssets": 1,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 搜索设置面板",
+      "path": "/settings/dialog/search",
+      "source": {
+        "entry": "app/src/settings/SettingsSearch.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 444,
+        "svgAssets": 64,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · 更多操作",
+      "path": "/settings/dialog/more",
+      "source": {
+        "entry": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 218,
+        "svgAssets": 25,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "设置 · JSON 配置",
+      "path": "/settings/dialog/json",
+      "source": {
+        "entry": "app/src/settings/index.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 220,
+        "svgAssets": 25,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 剪贴板预览",
+      "path": "/launcher/clipboard/preview",
+      "source": {
+        "entry": "app/src/search/Preview.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 214,
+        "svgAssets": 34,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 操作面板",
+      "path": "/launcher/actions",
+      "source": {
+        "entry": "app/src/search/ActionPanel.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 283,
+        "svgAssets": 41,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件市场 · 插件详情",
+      "path": "/market/dialog/details",
+      "source": {
+        "entry": "app/src/market/PluginDetails.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 280,
+        "svgAssets": 26,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件市场 · 来源设置",
+      "path": "/market/dialog/sources",
+      "source": {
+        "entry": "app/src/market/SourceDialog.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 230,
+        "svgAssets": 23,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "浏览器扩展 · 新标签",
+      "path": "/extension/newtab",
+      "source": {
+        "entry": "extension/newtab.html",
+        "component": "extension/src/app.js",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 71,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "浏览器扩展 · 侧边栏",
+      "path": "/extension/side_panel",
+      "source": {
+        "entry": "extension/side_panel.html",
+        "component": "extension/src/app.js",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 69,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "浏览器扩展 · 弹出页",
+      "path": "/extension/popup",
+      "source": {
+        "entry": "extension/popup.html",
+        "component": "extension/src/app.js",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 69,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "桌面组件 · 紧凑状态条",
+      "path": "/canvas/compact",
+      "source": {
+        "entry": "app/ui/plugin-canvas.html",
+        "component": "app/src/canvas/CompactBar.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 38,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "桌面组件 · 画布",
+      "path": "/canvas",
+      "source": {
+        "entry": "app/ui/plugin-canvas.html",
+        "component": "app/src/canvas/Canvas.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 72,
+        "svgAssets": 2,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "桌面组件 · 操作菜单",
+      "path": "/canvas/actions",
+      "source": {
+        "entry": "app/ui/plugin-canvas.html",
+        "component": "app/src/canvas/Canvas.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 84,
+        "svgAssets": 2,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "桌面组件 · 紧凑入口设置",
+      "path": "/canvas/compact-settings",
+      "source": {
+        "entry": "app/ui/plugin-canvas.html",
+        "component": "app/src/canvas/CompactBar.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 122,
+        "svgAssets": 5,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "脚本认证 · 来源提示",
+      "path": "/script-alert",
+      "source": {
+        "entry": "app/ui/script-alert.html",
+        "component": "app/src/surfaces/ScriptAlert.tsx",
+        "fixture": true,
+        "nativeBehavior": false,
+        "nodes": 17,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件工作区 · 插件导航条",
+      "path": "/workspace/dock",
+      "source": {
+        "entry": "app/ui/plugin-workspace.html",
+        "fixture": true,
+        "fixtureKind": "synthetic-native-adapter",
+        "nativeBehavior": false,
+        "nodes": 17,
+        "svgAssets": 5,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件工作区 · 更多插件",
+      "path": "/workspace/panel",
+      "source": {
+        "entry": "app/ui/plugin-workspace.html",
+        "fixture": true,
+        "fixtureKind": "synthetic-native-adapter",
+        "nativeBehavior": false,
+        "nodes": 26,
+        "svgAssets": 2,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "脚本认证 · 合成来源",
+      "path": "/script-alert/identified",
+      "source": {
+        "entry": "app/ui/script-alert.html",
+        "fixture": true,
+        "fixtureKind": "synthetic-native-adapter",
+        "nativeBehavior": false,
+        "nodes": 19,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "桌面组件 · 添加组件",
+      "path": "/canvas/add",
+      "source": {
+        "entry": "app/ui/plugin-canvas.html",
+        "fixture": true,
+        "fixtureKind": "synthetic-native-adapter",
+        "nativeBehavior": false,
+        "nodes": 66,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "外设中心 · 设备",
+      "path": "/plugins/device-center",
+      "source": {
+        "entry": "plugins/device-center/ui/index.html",
+        "react": "plugins/device-center/src/App.tsx",
+        "api": "plugins/device-center/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 216,
+        "svgAssets": 7,
+        "buildEntry": "plugins/device-center/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · 供电",
+      "source": {
+        "entry": "plugins/device-center/ui/index.html",
+        "react": "plugins/device-center/src/App.tsx",
+        "api": "plugins/device-center/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 103,
+        "svgAssets": 6,
+        "buildEntry": "plugins/device-center/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · 事件",
+      "source": {
+        "entry": "plugins/device-center/ui/index.html",
+        "react": "plugins/device-center/src/App.tsx",
+        "api": "plugins/device-center/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 62,
+        "svgAssets": 5,
+        "buildEntry": "plugins/device-center/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · Widget 卡片",
+      "source": {
+        "entry": "plugins/device-center/ui/widget-card.html",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 350,
+          "height": 420
+        },
+        "capturedSelector": "body",
+        "nodes": 183,
+        "svgAssets": 11,
+        "buildEntry": "plugins/device-center/build/ui/widget-card.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · Widget 编辑器",
+      "source": {
+        "entry": "plugins/device-center/ui/widget-editor.html",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 350,
+          "height": 620
+        },
+        "capturedSelector": "body",
+        "nodes": 53,
+        "svgAssets": 6,
+        "buildEntry": "plugins/device-center/build/ui/widget-editor.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · Widget 详情",
+      "source": {
+        "entry": "plugins/device-center/ui/widget-detail.html",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 216,
+        "svgAssets": 7,
+        "buildEntry": "plugins/device-center/build/ui/widget-detail.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · 设备详情",
+      "source": {
+        "entry": "plugins/device-center/ui/index.html",
+        "react": "plugins/device-center/src/App.tsx",
+        "api": "plugins/device-center/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 66,
+        "svgAssets": 1,
+        "buildEntry": "plugins/device-center/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 容器",
+      "path": "/plugins/docker",
+      "source": {
+        "entry": "plugins/docker/ui/index.html",
+        "react": "plugins/docker/src/App.tsx",
+        "api": "plugins/docker/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 178,
+        "svgAssets": 12,
+        "buildEntry": "plugins/docker/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · Compose 项目",
+      "source": {
+        "entry": "plugins/docker/ui/index.html",
+        "react": "plugins/docker/src/App.tsx",
+        "api": "plugins/docker/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 115,
+        "svgAssets": 9,
+        "buildEntry": "plugins/docker/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 独立容器",
+      "source": {
+        "entry": "plugins/docker/ui/index.html",
+        "react": "plugins/docker/src/App.tsx",
+        "api": "plugins/docker/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 134,
+        "svgAssets": 10,
+        "buildEntry": "plugins/docker/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 镜像",
+      "source": {
+        "entry": "plugins/docker/ui/index.html",
+        "react": "plugins/docker/src/App.tsx",
+        "api": "plugins/docker/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 136,
+        "svgAssets": 10,
+        "buildEntry": "plugins/docker/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 卷",
+      "source": {
+        "entry": "plugins/docker/ui/index.html",
+        "react": "plugins/docker/src/App.tsx",
+        "api": "plugins/docker/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 152,
+        "svgAssets": 11,
+        "buildEntry": "plugins/docker/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 网络",
+      "source": {
+        "entry": "plugins/docker/ui/index.html",
+        "react": "plugins/docker/src/App.tsx",
+        "api": "plugins/docker/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 152,
+        "svgAssets": 11,
+        "buildEntry": "plugins/docker/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · Widget 卡片",
+      "source": {
+        "entry": "plugins/docker/ui/widget-card.html",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 350,
+          "height": 460
+        },
+        "capturedSelector": "body",
+        "nodes": 69,
+        "svgAssets": 0,
+        "buildEntry": "plugins/docker/build/ui/widget-card.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · Widget 编辑器",
+      "source": {
+        "entry": "plugins/docker/ui/widget-editor.html",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 350,
+          "height": 520
+        },
+        "capturedSelector": "body",
+        "nodes": 13,
+        "svgAssets": 0,
+        "buildEntry": "plugins/docker/build/ui/widget-editor.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · Widget 详情",
+      "source": {
+        "entry": "plugins/docker/ui/widget-detail.html",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 178,
+        "svgAssets": 12,
+        "buildEntry": "plugins/docker/build/ui/widget-detail.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · 机器",
+      "path": "/plugins/machines",
+      "source": {
+        "entry": "plugins/machines/ui/machines.html",
+        "react": "plugins/machines/src/fleet/main.tsx",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#machineAppRoot",
+        "nodes": 188,
+        "svgAssets": 2,
+        "buildEntry": "plugins/machines/build/ui/machines.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · Widget 卡片",
+      "source": {
+        "entry": "plugins/machines/ui/widget-card.html",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 350,
+          "height": 350
+        },
+        "capturedSelector": "body",
+        "nodes": 17,
+        "svgAssets": 3,
+        "buildEntry": "plugins/machines/build/ui/widget-card.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · Widget 详情",
+      "source": {
+        "entry": "plugins/machines/ui/widget-detail.html",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 900
+        },
+        "capturedSelector": "body",
+        "nodes": 88,
+        "svgAssets": 7,
+        "buildEntry": "plugins/machines/build/ui/widget-detail.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · Widget 编辑器",
+      "source": {
+        "entry": "plugins/machines/ui/widget-editor.html",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 460,
+          "height": 720
+        },
+        "capturedSelector": "body",
+        "nodes": 56,
+        "svgAssets": 2,
+        "buildEntry": "plugins/machines/build/ui/widget-editor.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · 新增主机弹窗",
+      "source": {
+        "entry": "plugins/machines/ui/machines.html",
+        "react": "plugins/machines/src/fleet/main.tsx",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 70,
+        "svgAssets": 2,
+        "buildEntry": "plugins/machines/build/ui/machines.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · 监控设置弹窗",
+      "source": {
+        "entry": "plugins/machines/ui/machines.html",
+        "react": "plugins/machines/src/fleet/main.tsx",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 47,
+        "svgAssets": 1,
+        "buildEntry": "plugins/machines/build/ui/machines.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · 备份与恢复弹窗",
+      "source": {
+        "entry": "plugins/machines/ui/machines.html",
+        "react": "plugins/machines/src/fleet/main.tsx",
+        "preview": "plugins/machines/dev/machines-preview.js",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 37,
+        "svgAssets": 0,
+        "buildEntry": "plugins/machines/build/ui/machines.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 应用与工具排行",
+      "path": "/plugins/resource-monitor",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/index.html",
+        "react": "plugins/resource-monitor/src/App.tsx",
+        "api": "plugins/resource-monitor/src/api.ts",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 342,
+        "svgAssets": 21,
+        "buildEntry": "plugins/resource-monitor/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · Widget 卡片",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/widget-card.html",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 350,
+          "height": 490
+        },
+        "capturedSelector": "#root",
+        "nodes": 96,
+        "svgAssets": 0,
+        "buildEntry": "plugins/resource-monitor/build/ui/widget-card.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · Widget 编辑器",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/widget-editor.html",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 420,
+          "height": 650
+        },
+        "capturedSelector": "#root",
+        "nodes": 43,
+        "svgAssets": 2,
+        "buildEntry": "plugins/resource-monitor/build/ui/widget-editor.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · Widget 详情",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/widget-detail.html",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 900
+        },
+        "capturedSelector": "#root",
+        "nodes": 340,
+        "svgAssets": 21,
+        "buildEntry": "plugins/resource-monitor/build/ui/widget-detail.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 应用进程详情",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/index.html",
+        "react": "plugins/resource-monitor/src/App.tsx",
+        "api": "plugins/resource-monitor/src/api.ts",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": ".ant-modal[open], [role=\"dialog\"]",
+        "nodes": 231,
+        "svgAssets": 2,
+        "buildEntry": "plugins/resource-monitor/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 后台服务抽屉",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/index.html",
+        "react": "plugins/resource-monitor/src/App.tsx",
+        "api": "plugins/resource-monitor/src/api.ts",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": ".ant-drawer[open], [role=\"dialog\"]",
+        "nodes": 34,
+        "svgAssets": 3,
+        "buildEntry": "plugins/resource-monitor/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 自启动抽屉",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/index.html",
+        "react": "plugins/resource-monitor/src/App.tsx",
+        "api": "plugins/resource-monitor/src/api.ts",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": ".ant-drawer[open], [role=\"dialog\"]",
+        "nodes": 41,
+        "svgAssets": 1,
+        "buildEntry": "plugins/resource-monitor/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 访达扩展抽屉",
+      "source": {
+        "entry": "plugins/resource-monitor/ui/index.html",
+        "react": "plugins/resource-monitor/src/App.tsx",
+        "api": "plugins/resource-monitor/src/api.ts",
+        "fixtures": "plugins/resource-monitor/src/model.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": ".ant-drawer[open], [role=\"dialog\"]",
+        "nodes": 34,
+        "svgAssets": 1,
+        "buildEntry": "plugins/resource-monitor/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "社交中心 · 会话工作台",
+      "path": "/plugins/social-hub",
+      "source": {
+        "entry": "plugins/social-hub/ui/index.html",
+        "react": "plugins/social-hub/src/App.tsx",
+        "api": "plugins/social-hub/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 123,
+        "svgAssets": 0,
+        "buildEntry": "plugins/social-hub/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "社交中心 · OAuth 链接弹窗",
+      "source": {
+        "entry": "plugins/social-hub/ui/index.html",
+        "react": "plugins/social-hub/src/App.tsx",
+        "api": "plugins/social-hub/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 36,
+        "svgAssets": 0,
+        "buildEntry": "plugins/social-hub/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 邮件验证码",
+      "source": {
+        "entry": "plugins/twofa/ui/index.html",
+        "react": "plugins/twofa/src/App.tsx",
+        "api": "plugins/twofa/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "#root",
+        "nodes": 24,
+        "svgAssets": 0,
+        "buildEntry": "plugins/twofa/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 账户编辑弹窗",
+      "source": {
+        "entry": "plugins/twofa/ui/index.html",
+        "react": "plugins/twofa/src/App.tsx",
+        "api": "plugins/twofa/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 41,
+        "svgAssets": 0,
+        "buildEntry": "plugins/twofa/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 导入账户弹窗",
+      "source": {
+        "entry": "plugins/twofa/ui/index.html",
+        "react": "plugins/twofa/src/App.tsx",
+        "api": "plugins/twofa/src/api.ts",
+        "fixture": true,
+        "fixtureKind": "standalone-plugin-demo",
+        "nativeBehavior": false,
+        "viewport": {
+          "width": 1000,
+          "height": 780
+        },
+        "capturedSelector": "dialog[open], [role=\"dialog\"]",
+        "nodes": 37,
+        "svgAssets": 0,
+        "buildEntry": "plugins/twofa/build/ui/index.html",
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 卷资源（合成连接）",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 151,
+        "svgAssets": 11,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 容器运行日志选项卡",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 122,
+        "svgAssets": 8,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 拉取镜像表单",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 32,
+        "svgAssets": 1,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 新建卷表单",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 25,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 新建网络表单",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 25,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 网络资源（合成连接）",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 151,
+        "svgAssets": 11,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 镜像资源（合成连接）",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 135,
+        "svgAssets": 10,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · 任务与会话",
+      "source": {
+        "entry": "plugins/machines/src/fleet/main.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 135,
+        "svgAssets": 5,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "机器管理 · 执行记录",
+      "source": {
+        "entry": "plugins/machines/src/fleet/main.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 88,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 导入账户解析弹窗",
+      "source": {
+        "entry": "plugins/twofa/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 55,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 添加账户编辑弹窗",
+      "source": {
+        "entry": "plugins/twofa/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 39,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 现有账户编辑弹窗",
+      "source": {
+        "entry": "plugins/twofa/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 39,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 连接邮箱弹窗",
+      "source": {
+        "entry": "plugins/twofa/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 39,
+        "svgAssets": 1,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 邮件验证码列表 · 已连接含验证码",
+      "source": {
+        "entry": "plugins/twofa/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 43,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "验证码 · 验证器主页面 · 稳定示例码",
+      "path": "/plugins/twofa",
+      "source": {
+        "entry": "plugins/twofa/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 48,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 容器详情 · 概览选项卡",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 154,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 容器详情 · 终端选项卡",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 116,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "Docker · 容器详情 · 运行日志选项卡",
+      "source": {
+        "entry": "plugins/docker/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-compiled-ui-with-synthetic-api",
+        "nativeBehavior": false,
+        "nodes": 123,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · ADB 电量设置",
+      "path": "/plugins/device-center/adb/settings",
+      "source": {
+        "entry": "plugins/device-center/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-api-with-real-react-components",
+        "nativeBehavior": false,
+        "nodes": 322,
+        "svgAssets": 23,
+        "viewport": {
+          "width": 1050,
+          "height": 850
+        },
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · 手机资源与 CPU 曲线",
+      "path": "/plugins/device-center/adb/performance",
+      "source": {
+        "entry": "plugins/device-center/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-api-with-real-react-components",
+        "nativeBehavior": false,
+        "nodes": 182,
+        "svgAssets": 4,
+        "viewport": {
+          "width": 1050,
+          "height": 850
+        },
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · 手机内存曲线",
+      "path": "/plugins/device-center/adb/history/memory",
+      "source": {
+        "entry": "plugins/device-center/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-api-with-real-react-components",
+        "nativeBehavior": false,
+        "nodes": 182,
+        "svgAssets": 4,
+        "viewport": {
+          "width": 1050,
+          "height": 850
+        },
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · 手机存储曲线",
+      "path": "/plugins/device-center/adb/history/storage",
+      "source": {
+        "entry": "plugins/device-center/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-api-with-real-react-components",
+        "nativeBehavior": false,
+        "nodes": 182,
+        "svgAssets": 4,
+        "viewport": {
+          "width": 1050,
+          "height": 850
+        },
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · K75 模式与预设",
+      "path": "/plugins/device-center/keyboard/presets",
+      "source": {
+        "entry": "plugins/device-center/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-api-with-real-react-components",
+        "nativeBehavior": false,
+        "nodes": 150,
+        "svgAssets": 2,
+        "viewport": {
+          "width": 1050,
+          "height": 850
+        },
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "外设中心 · K75 USB 诊断",
+      "path": "/plugins/device-center/keyboard/diagnostics",
+      "source": {
+        "entry": "plugins/device-center/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-api-with-real-react-components",
+        "nativeBehavior": false,
+        "nodes": 173,
+        "svgAssets": 2,
+        "viewport": {
+          "width": 1050,
+          "height": 850
+        },
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 活跃足迹历史",
+      "path": "/plugins/resource-monitor/history/footprint",
+      "source": {
+        "entry": "plugins/resource-monitor/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-readonly-react-with-synthetic-history",
+        "nativeBehavior": false,
+        "nodes": 237,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · CPU历史",
+      "path": "/plugins/resource-monitor/history/cpu",
+      "source": {
+        "entry": "plugins/resource-monitor/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-readonly-react-with-synthetic-history",
+        "nativeBehavior": false,
+        "nodes": 237,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · RSS历史",
+      "path": "/plugins/resource-monitor/history/rss",
+      "source": {
+        "entry": "plugins/resource-monitor/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-readonly-react-with-synthetic-history",
+        "nativeBehavior": false,
+        "nodes": 237,
+        "svgAssets": 3,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 脚本来源",
+      "path": "/plugins/resource-monitor/script-sources",
+      "source": {
+        "entry": "plugins/resource-monitor/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-readonly-react-with-synthetic-history",
+        "nativeBehavior": false,
+        "nodes": 94,
+        "svgAssets": 1,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 卡片完整指标",
+      "path": "/plugins/resource-monitor/card/all-metrics",
+      "source": {
+        "entry": "plugins/resource-monitor/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-readonly-react-with-synthetic-history",
+        "nativeBehavior": false,
+        "nodes": 186,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "资源监控 · 卡片显示设置",
+      "path": "/plugins/resource-monitor/card/settings",
+      "source": {
+        "entry": "plugins/resource-monitor/src/App.tsx",
+        "fixture": true,
+        "fixtureKind": "real-readonly-react-with-synthetic-history",
+        "nativeBehavior": false,
+        "nodes": 40,
+        "svgAssets": 0,
+        "repository": "Code-suphub/flowhub-plugins"
+      }
+    },
+    {
+      "name": "启动器 · 邮件验证码与历史",
+      "path": "/launcher/verification",
+      "source": {
+        "entry": "app/src/search/VerificationPreview.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-mail-search-adapter",
+        "nativeBehavior": false,
+        "nodes": 131,
+        "svgAssets": 17,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "启动器 · 已连接邮箱等待验证码",
+      "path": "/launcher/verification/waiting",
+      "source": {
+        "entry": "app/src/search/VerificationPreview.tsx",
+        "fixture": true,
+        "fixtureKind": "synthetic-mail-search-adapter",
+        "nativeBehavior": false,
+        "nodes": 104,
+        "svgAssets": 15,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "插件详情 · 独立窗口导航",
+      "path": "/plugin-detail",
+      "source": {
+        "entry": "app/ui/plugin-detail.html",
+        "component": "app/src/surfaces/PluginDetail.tsx",
+        "fixture": true,
+        "fixtureKind": "real-shell-with-reusable-public-detail-component",
+        "nativeBehavior": false,
+        "nodes": 11,
+        "repository": "Code-suphub/flowhub"
+      }
+    },
+    {
+      "name": "FlowHub · 页面目录",
+      "path": "/",
+      "source": {
+        "fixture": true,
+        "entry": "design/plasmic/project.json",
+        "repository": "Code-suphub/flowhub",
+        "nativeBehavior": false
+      }
+    }
+  ]
+}
