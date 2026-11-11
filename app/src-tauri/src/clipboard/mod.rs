@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
-    io::Cursor,
+    io::{Cursor, Read},
     path::Path,
     process::Command,
     sync::{
@@ -777,6 +777,41 @@ fn image_data_url(storage_dir: &Path, file_name: &str) -> String {
         .unwrap_or_default()
 }
 
+fn file_image_preview(path: &Path) -> Option<String> {
+    const MAX_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
+    if !path.is_absolute() || !image_file(path) || !fs::symlink_metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path).ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_PREVIEW_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_PREVIEW_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > MAX_PREVIEW_BYTES {
+        return None;
+    }
+    let mime = match image::guess_format(&bytes).ok()? {
+        ImageFormat::Png => "image/png",
+        ImageFormat::Jpeg => "image/jpeg",
+        ImageFormat::Gif => "image/gif",
+        ImageFormat::WebP => "image/webp",
+        ImageFormat::Bmp => "image/bmp",
+        ImageFormat::Avif => "image/avif",
+        ImageFormat::Ico => "image/x-icon",
+        _ => return None,
+    };
+    Some(format!("data:{mime};base64,{}", BASE64.encode(bytes)))
+}
+
 pub(crate) fn native_icon_data_urls(paths: &[String]) -> HashMap<String, String> {
     if !cfg!(target_os = "macos") || paths.is_empty() {
         return HashMap::new();
@@ -989,6 +1024,7 @@ fn search_clipboard_filtered(state:&AppState,query:&str,kind:&str,limit:usize,of
 pub async fn load_clipboard_assets(
     app: tauri::AppHandle,
     ids: Vec<i64>,
+    include_file_preview: Option<bool>,
 ) -> Result<HashMap<String, Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -1001,10 +1037,11 @@ pub async fn load_clipboard_assets(
         if unique_ids.is_empty() {
             return Ok(HashMap::new());
         }
+        let include_file_preview = include_file_preview == Some(true) && unique_ids.len() == 1;
         let connection = database(&state)?;
         let mut records = Vec::new();
         let mut statement = connection
-            .prepare("SELECT kind, file_name, file_paths FROM clipboard_records WHERE id = ?")
+            .prepare("SELECT kind, file_name, file_paths, file_types FROM clipboard_records WHERE id = ?")
             .map_err(|error| error.to_string())?;
         for id in unique_ids {
             let record = statement
@@ -1013,29 +1050,34 @@ pub async fn load_clipboard_assets(
                         row.get::<_, String>(0)?,
                         row.get::<_, Option<String>>(1)?,
                         row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
                     ))
                 })
                 .optional()
                 .map_err(|error| error.to_string())?;
-            if let Some((kind, file_name, file_paths)) = record {
+            if let Some((kind, file_name, file_paths, file_types)) = record {
                 let first_path = parse_string_array(file_paths)
                     .into_iter()
                     .next()
                     .unwrap_or_default();
-                records.push((id, kind, file_name.unwrap_or_default(), first_path));
+                let image_file = include_file_preview && kind == "file" &&
+                    parse_string_array(file_types).first().is_some_and(|value| value == "image");
+                records.push((id, kind, file_name.unwrap_or_default(), first_path, image_file));
             }
         }
         let icon_paths: Vec<String> = records
             .iter()
-            .filter(|(_, kind, _, path)| kind == "file" && !path.is_empty())
-            .map(|(_, _, _, path)| path.clone())
+            .filter(|(_, kind, _, path, preview)| kind == "file" && !path.is_empty() && !*preview)
+            .map(|(_, _, _, path, _)| path.clone())
             .collect();
         let icons = application_icon_data_urls(&state, &icon_paths);
         Ok(records
             .into_iter()
-            .map(|(id, kind, file_name, path)| {
+            .map(|(id, kind, file_name, path, preview)| {
                 let image_url = if kind == "image" {
                     image_data_url(&connection.storage_dir, &file_name)
+                } else if preview {
+                    file_image_preview(Path::new(&path)).unwrap_or_default()
                 } else {
                     String::new()
                 };

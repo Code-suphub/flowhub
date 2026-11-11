@@ -13,7 +13,7 @@ import { getQueryHistory, type QueryHistoryEntry } from './query-history';
 import type { LauncherCommand } from './commands';
 import { shortcutKeys } from '../shared/shortcuts';
 import { Preview, canPreview, previewNeighbor, primaryLabel } from './Preview';
-import { isLongPreviewContent, previewIdentity, readPreviewExpanded, rememberPreviewExpanded } from './preview-layout';
+import { isClipboardImage, isLongPreviewContent, previewIdentity, readPreviewExpanded, rememberPreviewExpanded } from './preview-layout';
 import { host, type SearchController, type SearchSnapshot, type SearchItem } from './types';
 import './search.css';
 
@@ -44,8 +44,9 @@ function Search() {
   const narrow=useMediaQuery('(max-width: 719px)');
   const previewable=canPreview(selected) && !state?.editingClipboard;
   const autoCodePreview=selected?.type==='twofa' && ['all','twofa'].includes(state?.scope) && dismissedPreview!==selectedKey;
-  const autoLongPreview=state?.config?.core?.autoPreviewLongContent !== false && isLongPreviewContent(selected) && dismissedPreview!==selectedKey;
-  const previewVisible=Boolean(previewable && (autoCodePreview || (narrow ? detailOpen : widePreview || autoLongPreview)));
+  const autoContentPreview=dismissedPreview!==selectedKey && (isClipboardImage(selected) ||
+    state?.config?.core?.autoPreviewLongContent !== false && isLongPreviewContent(selected));
+  const previewVisible=Boolean(previewable && (autoCodePreview || (narrow ? detailOpen : widePreview || autoContentPreview)));
   const previousNarrow=useRef(narrow), previewFocused=useRef(false);
   const previewFrame=useRef<number | undefined>(undefined);
   const pendingPreviewFocus=useRef(false);

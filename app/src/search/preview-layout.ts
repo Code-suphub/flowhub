@@ -2,6 +2,11 @@ import type { SearchItem } from './types';
 
 const preferenceKey = 'flowhub.search.previewExpanded';
 
+export function isClipboardImage(item?: SearchItem): boolean {
+  return item?.type === 'clipboard' &&
+    (item.kind === 'image' || (item.kind === 'file' && item.fileType === 'image'));
+}
+
 export function isLongPreviewContent(item?: SearchItem): boolean {
   if (!item || !(item.type === 'clipboard' && item.kind === 'text' || item.type === 'memo')) return false;
   const content = String(item.content || '');

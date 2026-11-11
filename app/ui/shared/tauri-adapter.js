@@ -239,7 +239,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     listPlugins,
     pluginSearch,
     loadAppIcons,
-    loadClipboardAssets: (ids = []) => invoke("load_clipboard_assets", { ids }),
+    loadClipboardAssets: (ids = [], { includeFilePreview = false } = {}) =>
+      invoke("load_clipboard_assets", { ids, includeFilePreview }),
     copyText: (text) => invoke("copy_text", { text: String(text) }),
     lookupDns,
     runNetworkDiagnostic: (kind, target, head) => invoke("run_network_diagnostic", { kind, target, head }),

@@ -51,6 +51,39 @@ test('automatic preview honors live configuration and narrow layout, while expli
   assert.equal(w.document.activeElement,q);assert.equal(w.localStorage.getItem('flowhub.search.previewExpanded'),'true');
 });
 
+test('selecting a clipboard image opens the right preview and loads an image outside the thumbnail batch',async t=>{
+  const imageUrl='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOWQAAAAASUVORK5CYII=';
+  const clips=[{id:1,kind:'text',content:'text'},{id:9,kind:'file',fileType:'image',fileNames:['fixture.png']},
+    ...Array.from({length:7},(_,i)=>({id:i+2,kind:'image'}))];
+  const requests=[];
+  const {w,q,key,scope,resize}=await setup(t,{autoPreviewLongContent:false,
+    search:(id,args)=>id==='clipboard'?(args.kind==='image'?clips.slice(1):clips):[],
+    beforeReady:({w})=>{w.weborg.loadClipboardAssets=async (ids,options)=>{
+      requests.push({ids:[...ids],filePreview:options?.includeFilePreview===true});
+      return Object.fromEntries(ids.filter(id=>id!==9||options?.includeFilePreview).map(id=>[id,{imageUrl}]));
+    };}
+  });
+  await scope('clipboard');
+  assert.equal(w.document.querySelector('.search-preview'),null);
+  w.document.querySelector('[data-clipboard-kind="image"]').click();
+  await wait(()=>w.document.querySelector('.preview-image img')?.src===imageUrl);
+  const preview=w.document.querySelector('.search-preview-body');
+  assert.ok(preview.firstElementChild.matches('.preview-image'));
+  assert.match(preview.querySelector('.preview-properties').textContent,/使用次数.*fixture\.png/);
+  assert.equal(preview.querySelector('.preview-identity'),null);
+  assert.ok(requests.some(({ids,filePreview})=>ids.length===1&&ids[0]===9&&filePreview));
+  for(let index=0;index<7;index++)key('ArrowDown');
+  await wait(()=>requests.some(({ids})=>ids.length===1&&ids[0]===8) && w.document.querySelector('.preview-image img')?.src===imageUrl);
+  assert.equal(w.document.activeElement,q);
+  assert.equal(w.localStorage.length,0);
+  w.document.querySelector('[aria-label="收起预览"]').click();
+  await wait(()=>!w.document.querySelector('.search-preview'));
+  key('ArrowUp');
+  await wait(()=>w.document.querySelector('.preview-image img'));
+  await resize(640);
+  assert.equal(w.document.querySelector('.search-preview'),null);
+});
+
 test('preview starts collapsed; explicit toggles preserve the query, caret and selected record without execution',async t=>{
   const apps=['A','B'].map(id=>({id,title:`App ${id}`,path:`/Applications/${id}.app`}));
   const {w,q,key,input,scope,calls}=await setup(t,{search:id=>id==='app'?apps:[]});
