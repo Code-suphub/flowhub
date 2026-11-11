@@ -4,20 +4,35 @@ use tauri::Manager;
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
 pub(super) struct Snapshot { pub active:bool, pub revision:u64 }
-struct Inner { snapshot:Snapshot, epoch:u64, current:Option<u64> }
+#[derive(Clone,Copy,Debug,Serialize,PartialEq)]
+#[serde(rename_all="camelCase")]
+struct Observation { visible:bool, minimized:bool, occlusion_visible:Option<bool>, on_active_space:Option<bool>, application_hidden:Option<bool> }
+impl Observation {
+    fn active(self)->bool {active(self.visible,self.minimized,self.occlusion_visible) && !self.application_hidden.unwrap_or(false)}
+    fn reason(self)->&'static str {
+        if self.application_hidden==Some(true){"application-hidden"}else if self.minimized{"minimized"}else if !self.visible{"window-hidden"}
+        else if self.on_active_space==Some(false){"other-space"}else if self.occlusion_visible==Some(false){"occluded"}else{"visible"}
+    }
+}
+struct Inner { snapshot:Snapshot, epoch:u64, current:Option<u64>, last_observation:Option<Observation> }
 pub(super) struct Store(Mutex<Inner>);
 impl Default for Store {
     // Until a real native observation exists, preserve work rather than treating
     // uncertainty (or focus loss) as a hidden window.
-    fn default()->Self {Self(Mutex::new(Inner{snapshot:Snapshot{active:true,revision:0},epoch:0,current:None}))}
+    fn default()->Self {Self(Mutex::new(Inner{snapshot:Snapshot{active:true,revision:0},epoch:0,current:None,last_observation:None}))}
 }
 impl Store {
     fn begin(&self)->u64 {
         let mut inner=self.0.lock().unwrap();inner.epoch+=1;let epoch=inner.epoch;inner.current=Some(epoch);
-        inner.snapshot=Snapshot{active:true,revision:inner.snapshot.revision+1};epoch
+        inner.last_observation=None;inner.snapshot=Snapshot{active:true,revision:inner.snapshot.revision+1};epoch
     }
     fn epoch(&self)->Option<u64> {self.0.lock().unwrap().current}
     fn snapshot(&self)->Snapshot {self.0.lock().unwrap().snapshot}
+    fn changed_observation(&self,epoch:u64,observation:Observation)->bool {
+        let mut inner=self.0.lock().unwrap();
+        if inner.current!=Some(epoch)||inner.last_observation==Some(observation){return false;}
+        inner.last_observation=Some(observation);true
+    }
     fn observe(&self,epoch:u64,active:Option<bool>)->Option<Snapshot> {
         let mut inner=self.0.lock().unwrap();if inner.current!=Some(epoch){return None;}
         let active=active?;if inner.snapshot.active==active{return None;}
@@ -37,27 +52,31 @@ fn publish(app:&tauri::AppHandle,snapshot:Snapshot) {
 }
 
 #[cfg(target_os="macos")]
-fn actual(window:&tauri::WebviewWindow)->Result<bool,String> {
+fn actual(window:&tauri::WebviewWindow)->Result<Observation,String> {
     let (tx,rx)=std::sync::mpsc::sync_channel(1);
     window.with_webview(move|webview|{
         let result=if objc2::MainThreadMarker::new().is_none(){Err("窗口生命周期只能在主线程读取".into())}else{
             let native=unsafe{&*webview.ns_window().cast::<objc2_app_kit::NSWindow>()};
-            Ok(active(native.isVisible(),native.isMiniaturized(),Some(native.occlusionState().contains(objc2_app_kit::NSWindowOcclusionState::Visible))))
+            let mtm=objc2::MainThreadMarker::new().unwrap();
+            Ok(Observation{visible:native.isVisible(),minimized:native.isMiniaturized(),occlusion_visible:Some(native.occlusionState().contains(objc2_app_kit::NSWindowOcclusionState::Visible)),on_active_space:Some(native.isOnActiveSpace()),application_hidden:Some(objc2_app_kit::NSApplication::sharedApplication(mtm).isHidden())})
         };let _=tx.send(result);
     }).map_err(|e|e.to_string())?;
     rx.recv().map_err(|_|"窗口生命周期读取中断".to_string())?
 }
 #[cfg(not(target_os="macos"))]
-fn actual(window:&tauri::WebviewWindow)->Result<bool,String> {
+fn actual(window:&tauri::WebviewWindow)->Result<Observation,String> {
     // Tauri does not expose an occlusion event on these platforms. Visibility
     // and minimized state remain authoritative; focus is never substituted.
-    Ok(active(window.is_visible().map_err(|e|e.to_string())?,window.is_minimized().map_err(|e|e.to_string())?,None))
+    Ok(Observation{visible:window.is_visible().map_err(|e|e.to_string())?,minimized:window.is_minimized().map_err(|e|e.to_string())?,occlusion_visible:None,on_active_space:None,application_hidden:None})
 }
 pub(super) fn sample_epoch(app:&tauri::AppHandle,window:&tauri::WebviewWindow,epoch:u64)->Snapshot {
     let state=app.state::<super::State>();
     if state.lifecycle.epoch()!=Some(epoch){return state.lifecycle.snapshot();}
     let observation=actual(window).ok();
-    if let Some(snapshot)=state.lifecycle.observe(epoch,observation) {publish(app,snapshot);}
+    if let Some(observation)=observation {
+        if state.lifecycle.changed_observation(epoch,observation){crate::diagnostics::record_event(app,"canvas_visibility_changed",serde_json::json!({"reason":observation.reason(),"state":observation}));}
+    }
+    if let Some(snapshot)=state.lifecycle.observe(epoch,observation.map(Observation::active)) {publish(app,snapshot);}
     state.lifecycle.snapshot()
 }
 pub(super) fn sample(app:&tauri::AppHandle,window:&tauri::WebviewWindow)->Snapshot {
@@ -71,7 +90,7 @@ pub(super) fn read(app:&tauri::AppHandle,window:&tauri::WebviewWindow)->Result<S
 }
 
 #[cfg(target_os="macos")]
-struct Observers { epoch:u64, tokens:Vec<objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>> }
+struct Observers { epoch:u64, tokens:Vec<objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>>>, space_token:objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_foundation::NSObjectProtocol>> }
 #[cfg(target_os="macos")]
 thread_local! {static OBSERVERS:std::cell::RefCell<Option<Observers>>=const {std::cell::RefCell::new(None)};}
 #[cfg(target_os="macos")]
@@ -81,6 +100,8 @@ fn remove_observers(epoch:Option<u64>) {
         if let Some(old)=old {
             let center=objc2_foundation::NSNotificationCenter::defaultCenter();
             for observer in old.tokens {unsafe{center.removeObserver(AsRef::<objc2::runtime::AnyObject>::as_ref(&*observer));}}
+            let workspace=objc2_app_kit::NSWorkspace::sharedWorkspace().notificationCenter();
+            unsafe{workspace.removeObserver(AsRef::<objc2::runtime::AnyObject>::as_ref(&*old.space_token));}
         }
     });
 }
@@ -102,10 +123,13 @@ pub(super) fn install(app:&tauri::AppHandle,window:&tauri::WebviewWindow)->Resul
                     if app.state::<super::State>().lifecycle.epoch()!=Some(epoch){return;}
                     if let Some(window)=app.get_webview_window("plugin-canvas"){sample_epoch(&app,&window,epoch);}
                 });
-                let names=unsafe{[objc2_app_kit::NSWindowDidChangeOcclusionStateNotification,objc2_app_kit::NSWindowDidMiniaturizeNotification,objc2_app_kit::NSWindowDidDeminiaturizeNotification]};
+                let names=unsafe{[objc2_app_kit::NSWindowDidChangeOcclusionStateNotification,objc2_app_kit::NSWindowDidMiniaturizeNotification,objc2_app_kit::NSWindowDidDeminiaturizeNotification,objc2_app_kit::NSWindowDidChangeScreenNotification]};
                 let mut tokens=vec![];
                 for name in names {tokens.push(unsafe{center.addObserverForName_object_queue_usingBlock(Some(name),Some(AsRef::<objc2::runtime::AnyObject>::as_ref(native)),Some(&objc2_foundation::NSOperationQueue::mainQueue()),&callback)});}
-                OBSERVERS.with(|observers|*observers.borrow_mut()=Some(Observers{epoch,tokens}));Ok(())
+                for name in unsafe{[objc2_app_kit::NSApplicationDidHideNotification,objc2_app_kit::NSApplicationDidUnhideNotification]} {tokens.push(unsafe{center.addObserverForName_object_queue_usingBlock(Some(name),None,Some(&objc2_foundation::NSOperationQueue::mainQueue()),&callback)});}
+                let workspace=objc2_app_kit::NSWorkspace::sharedWorkspace().notificationCenter();
+                let space_token=unsafe{workspace.addObserverForName_object_queue_usingBlock(Some(objc2_app_kit::NSWorkspaceActiveSpaceDidChangeNotification),None,Some(&objc2_foundation::NSOperationQueue::mainQueue()),&callback)};
+                OBSERVERS.with(|observers|*observers.borrow_mut()=Some(Observers{epoch,tokens,space_token}));Ok(())
             })();let _=tx.send(result);
         }).map_err(|e|e.to_string());
         let result=registered.and_then(|_|rx.recv().map_err(|_|"窗口监听注册中断".to_string())?);
@@ -116,7 +140,7 @@ pub(super) fn install(app:&tauri::AppHandle,window:&tauri::WebviewWindow)->Resul
     start_sampler(app.clone(),epoch);
     Ok(epoch)
 }
-pub(super) fn destroy(app:&tauri::AppHandle,epoch:u64) {
+pub(super) fn destroy(app:&tauri::AppHandle,epoch:u64)->bool {
     // Invalidate first; a queued main-queue observer can still be delivered after
     // removeObserver, but its captured epoch is already harmless.
     let ended=app.state::<super::State>().lifecycle.end(epoch);
@@ -124,6 +148,7 @@ pub(super) fn destroy(app:&tauri::AppHandle,epoch:u64) {
     if ended {remove_observers(Some(epoch));}
     #[cfg(not(target_os="macos"))]
     let _=ended;
+    ended
 }
 
 #[cfg(any(not(target_os="macos"),test))]
@@ -154,6 +179,20 @@ fn start_sampler(app:tauri::AppHandle,epoch:u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn diagnostics_distinguish_hidden_minimized_occluded_and_other_space_without_repeating_samples() {
+        let visible=Observation{visible:true,minimized:false,occlusion_visible:Some(true),on_active_space:Some(true),application_hidden:Some(false)};
+        assert_eq!(visible.reason(),"visible");assert!(visible.active());
+        let obscured=Observation{occlusion_visible:Some(false),..visible};assert_eq!(obscured.reason(),"occluded");assert!(!obscured.active());
+        let other_space=Observation{on_active_space:Some(false),..obscured};assert_eq!(other_space.reason(),"other-space");
+        let hidden=Observation{visible:false,..visible};assert_eq!(hidden.reason(),"window-hidden");assert!(!hidden.active());
+        let minimized=Observation{minimized:true,..hidden};assert_eq!(minimized.reason(),"minimized");
+        let application_hidden=Observation{application_hidden:Some(true),..visible};assert_eq!(application_hidden.reason(),"application-hidden");assert!(!application_hidden.active());
+        let store=Store::default();let epoch=store.begin();
+        assert!(store.changed_observation(epoch,obscured));assert!(!store.changed_observation(epoch,obscured));
+        assert!(store.changed_observation(epoch,other_space),"record reason changes even when activity remains false");
+        let next=store.begin();assert!(!store.changed_observation(epoch,visible));assert!(store.changed_observation(next,visible));
+    }
     #[test]
     fn actual_visibility_and_occlusion_control_activity_without_focus() {
         assert!(active(true,false,Some(true)),"visible unfocused windows remain active; focus is not an input");

@@ -16,6 +16,8 @@ mod detail;
 mod compact;
 #[path = "canvas/lifecycle.rs"]
 mod lifecycle;
+#[path = "canvas/startup.rs"]
+mod startup;
 
 #[cfg(any(target_os="macos",test))]
 fn viewport_point(x:f64,y:f64,left:f64,bottom:f64,height:f64,flipped:bool)->(f64,f64){
@@ -117,9 +119,9 @@ impl Layout {
         } Ok(())
     }
 }
-pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<detail::Registry>, return_target:Mutex<Option<detail::ReturnTarget>>, compact:compact::Store, lifecycle:lifecycle::Store }
+pub struct State { path:PathBuf, layout:Mutex<Layout>, details:Mutex<detail::Registry>, return_target:Mutex<Option<detail::ReturnTarget>>, compact:compact::Store, lifecycle:lifecycle::Store, startup:startup::Recovery }
 impl State {
-    pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(detail::Registry::default()),return_target:Mutex::new(None),compact:compact::Store::new(root)?,lifecycle:lifecycle::Store::default()})}
+    pub fn new(root:&std::path::Path)->Result<Self,String>{let path=root.join("plugin-canvas.json");let layout=match std::fs::read(&path){Ok(b)=>serde_json::from_slice::<Layout>(&b).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Layout::default(),Err(e)=>return Err(e.to_string())};layout.validate()?;Ok(Self{path,layout:Mutex::new(layout),details:Mutex::new(detail::Registry::default()),return_target:Mutex::new(None),compact:compact::Store::new(root)?,lifecycle:lifecycle::Store::default(),startup:startup::Recovery::default()})}
     fn try_update(&self, change:impl FnOnce(&mut Layout)->Result<(),String>)->Result<(),String>{let mut layout=self.layout.lock().unwrap();let mut next=layout.clone();change(&mut next)?;next.validate()?;crate::storage::write_json_atomic(&self.path,&json!(next))?;*layout=next;Ok(())}
     fn update(&self, change:impl FnOnce(&mut Layout))->Result<(),String>{self.try_update(|layout|{change(layout);Ok(())})}
     #[cfg(test)]
@@ -209,10 +211,29 @@ pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     open_with_source(app,plugin,None)
 }
 fn open_with_source(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>)->Result<(),String>{
+    app.state::<State>().startup.cancel();
     let plugin=plugin.to_string();
-    compact::on_main(app,move|app|open_on_main(app,&plugin,source))
+    compact::on_main(app,move|app|open_on_main(app,&plugin,source,true))
 }
-fn open_on_main(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>)->Result<(),String>{
+fn present(window:&tauri::WebviewWindow,focus:bool)->Result<(),String>{
+    if focus {window.show().map_err(|e|e.to_string())?;return window.set_focus().map_err(|e|e.to_string());}
+    #[cfg(target_os="macos")]
+    {
+        // Tao's show() makes the window key. Startup recovery must not take
+        // keyboard ownership or bring the user back from another Space.
+        let (tx,rx)=std::sync::mpsc::sync_channel(1);
+        window.with_webview(move|webview|{
+            let result=if objc2::MainThreadMarker::new().is_none(){Err("组件只能在主线程恢复".into())}else{
+                let native=unsafe{&*webview.ns_window().cast::<objc2_app_kit::NSWindow>()};
+                native.orderBack(None);Ok(())
+            };let _=tx.send(result);
+        }).map_err(|e|e.to_string())?;
+        rx.recv().map_err(|_|"组件显示恢复中断".to_string())?
+    }
+    #[cfg(not(target_os="macos"))]
+    window.show().map_err(|e|e.to_string())
+}
+fn open_on_main(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>,focus:bool)->Result<(),String>{
     let state=app.state::<State>();let added=state.prepare_open(plugin)?;
     if source.is_some() && state.compact.presentation(&state.layout.lock().unwrap()).collapsed {
         compact::action(app,"plugin-canvas","setCompact",json!({"collapsed":false}))?;
@@ -230,12 +251,12 @@ fn open_on_main(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTa
             // can recover it when its React listener is not attached yet.
             w.eval(&format!("window.__flowhubCanvasReturn={value};window.dispatchEvent(new CustomEvent('flowhub:canvas-return',{{detail:{value}}}))")).map_err(|e|e.to_string())?;
         }
-        w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;lifecycle::sample(app,&w);return Ok(());
+        present(&w,focus)?;lifecycle::sample(app,&w);return Ok(());
     }
     let w=WebviewWindowBuilder::new(app,"plugin-canvas",WebviewUrl::App(source_url.unwrap_or_else(||"plugin-canvas.html".into()).into())).title("FlowHub · 桌面组件").transparent(true).decorations(false).shadow(false).visible(false).inner_size(1040.,720.).min_inner_size(360.,200.).always_on_top(layout.pinned).build().map_err(|e|e.to_string())?;
-    if let Err(error)=compact::restore_window(app,&w,Some(layout)) {compact::window_destroyed(app);let _=w.close();return Err(error);}
+    if let Err(error)=compact::restore_window(app,&w,Some(layout)) {compact::window_destroyed(app);let _=w.destroy();return Err(error);}
     compact::install_menu(&w);
-    let lifecycle_epoch=match lifecycle::install(app,&w) {Ok(epoch)=>epoch,Err(error)=>{compact::window_destroyed(app);let _=w.close();return Err(error);}};
+    let lifecycle_epoch=match lifecycle::install(app,&w) {Ok(epoch)=>epoch,Err(error)=>{compact::window_destroyed(app);let _=w.destroy();return Err(error);}};
     let handle=app.clone();let sampled_window=w.clone();w.on_window_event(move|event|{
         let state=handle.state::<State>();
         match event {
@@ -244,16 +265,36 @@ fn open_on_main(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTa
                 capture_canvas_position(&sampled_window);
                 lifecycle::sample_epoch(&handle,&sampled_window,lifecycle_epoch);}
             tauri::WindowEvent::Focused(_)=>{lifecycle::sample_epoch(&handle,&sampled_window,lifecycle_epoch);}
-            tauri::WindowEvent::CloseRequested{..}=>{let _=state.update(|layout|layout.desktop=false);}
-            tauri::WindowEvent::Destroyed=>{lifecycle::destroy(&handle,lifecycle_epoch);compact::window_destroyed(&handle);}
+            tauri::WindowEvent::CloseRequested{..}=>{state.startup.cancel();crate::diagnostics::record_event(&handle,"canvas_close_requested",json!({}));let _=state.update(|layout|layout.desktop=false);}
+            tauri::WindowEvent::Destroyed=>{crate::diagnostics::record_event(&handle,"canvas_window_destroyed",json!({}));if lifecycle::destroy(&handle,lifecycle_epoch){compact::window_destroyed(&handle);}}
             _=>{}
         }
     });
-    if let Err(error)=compact::watch_displays(app) {lifecycle::destroy(app,lifecycle_epoch);compact::window_destroyed(app);let _=w.close();return Err(error);}
-    w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string())?;lifecycle::sample_epoch(app,&w,lifecycle_epoch);
+    if let Err(error)=compact::watch_displays(app) {lifecycle::destroy(app,lifecycle_epoch);compact::window_destroyed(app);let _=w.destroy();return Err(error);}
+    if let Err(error)=present(&w,focus){lifecycle::destroy(app,lifecycle_epoch);compact::window_destroyed(app);let _=w.destroy();return Err(error);}
+    lifecycle::sample_epoch(app,&w,lifecycle_epoch);
     Ok(())
 }
-pub fn restore(app:&tauri::AppHandle){let desktop=app.state::<State>().layout.lock().unwrap().desktop;if desktop{let handle=app.clone();let _=app.run_on_main_thread(move||{let _=open(&handle,"");});}}
+pub fn restore(app:&tauri::AppHandle){
+    let state=app.state::<State>();if !state.layout.lock().unwrap().desktop{return;}
+    let ticket=state.startup.start();let app=app.clone();
+    tauri::async_runtime::spawn(async move {
+        let outcome=startup::recover(|attempt|{
+            let app=app.clone();async move {
+                let result=compact::on_main(&app,move|app|{
+                    let state=app.state::<State>();
+                    if !state.startup.current(ticket,state.layout.lock().unwrap().desktop){return Ok(startup::Attempt::Cancelled);}
+                    match open_on_main(app,"",None,false){
+                        Ok(())=>{crate::diagnostics::record_event(app,"canvas_restore_succeeded",json!({"attempt":attempt}));Ok(startup::Attempt::Ready)}
+                        Err(error)=>{crate::diagnostics::record_event(app,"canvas_restore_failed",json!({"attempt":attempt,"error":error}));Ok(startup::Attempt::Failed)}
+                    }
+                });
+                result.unwrap_or_else(|error|{crate::diagnostics::record_event(&app,"canvas_restore_dispatch_failed",json!({"attempt":attempt,"error":error}));startup::Attempt::Failed})
+            }
+        }).await;
+        if outcome==startup::Outcome::Exhausted {crate::diagnostics::record_event(&app,"canvas_restore_exhausted",json!({"attempts":4}));}
+    });
+}
 #[tauri::command]
 pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,action:String,payload:Value)->Result<Value,String>{
     if action=="detailContext" {
@@ -323,9 +364,9 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     }
     else if action=="open" {open(&app,"")?;}
     else if action=="fit" {let width=payload["width"].as_f64().filter(|v|v.is_finite()).ok_or("窗口宽度无效")?;let height=payload["height"].as_f64().filter(|v|v.is_finite()).ok_or("窗口高度无效")?;let target=window.clone();compact::on_main(&app,move|app|compact::fit_full(app,&target,width,height))?;}
-    else if action=="hide" {if window.label()!="plugin-canvas"{return Err("仅可隐藏桌面组件".into());}let target=window.clone();compact::on_main(&app,move|app|{app.state::<State>().update(|layout|layout.desktop=true)?;target.hide().map_err(|e|e.to_string())?;lifecycle::sample(app,&target);Ok(())})?;}
+    else if action=="hide" {if window.label()!="plugin-canvas"{return Err("仅可隐藏桌面组件".into());}state.startup.cancel();crate::diagnostics::record_event(&app,"canvas_hide_requested",json!({"source":"canvas-api"}));let target=window.clone();compact::on_main(&app,move|app|{app.state::<State>().update(|layout|layout.desktop=true)?;target.hide().map_err(|e|e.to_string())?;lifecycle::sample(app,&target);Ok(())})?;}
     else if action=="drag" {let target=window.clone();compact::on_main(&app,move|app|{if target.label()=="plugin-canvas"{compact::prepare_drag(app,&target)?;}target.start_dragging().map_err(|e|e.to_string())})?;}
-    else if action=="close" {window.close().map_err(|e|e.to_string())?;}
+    else if action=="close" {state.startup.cancel();window.close().map_err(|e|e.to_string())?;}
     else if action!="get" {return Err("未知画布操作".into());}
     let sources:Vec<_>=app.state::<crate::plugin::runtime::Runtime>().widget_plugins().into_iter().map(|(id,title)|json!({"lastLoadedAt":app.state::<crate::plugin::runtime::Runtime>().loaded_at(&id),"snapshot":app.state::<crate::plugin::status::State>().snapshot(&id),"widget":app.state::<crate::plugin::runtime::Runtime>().widget(&id).ok(),"id":id,"title":title})).collect();
     let return_target=if action=="get" && window.label()=="plugin-canvas" {state.return_target.lock().unwrap().take()}else{None};

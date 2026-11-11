@@ -380,6 +380,7 @@ pub(super) fn install_menu(window:&tauri::WebviewWindow) {
                     let _=w.eval(&format!("window.dispatchEvent(new CustomEvent('flowhub:canvas-pinned',{{detail:{pinned}}}))"));
                 }}
             } else if command=="hide" {
+                state.startup.cancel();crate::diagnostics::record_event(&app,"canvas_hide_requested",json!({"source":"compact-menu"}));
                 state.update(|layout|layout.desktop=true)?;window.hide().map_err(|e|e.to_string())?;super::lifecycle::sample(app,&window);
             }
             Ok(())
