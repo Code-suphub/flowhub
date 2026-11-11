@@ -9,6 +9,8 @@ mod sources;
 mod applications;
 mod mail;
 mod privileged_monitor;
+#[cfg(target_os = "macos")]
+pub(crate) mod cli;
 
 #[derive(Clone,Serialize,Deserialize)]
 pub(crate) struct Manifest { schema:u32, id:String, name:String, version:String, ui:String, executable:String, permissions:Vec<String>, #[serde(default)] description:String, #[serde(default)] searchable:bool, #[serde(default,rename="statusSurface")] status_surface:bool, #[serde(default,skip_serializing_if="Option::is_none")] widget:Option<WidgetDefinition> }

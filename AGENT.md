@@ -70,6 +70,7 @@ git diff --check
 
 - 验证优先选择能覆盖目标的项目 CLI、后端测试或隔离页面驱动；涉及正式安装版、系统输入和窗口行为时补原生验收。具体入口、示例和取证要求见 [CLI 与原生验收](docs/architecture/testing/cli-verification.md)。
 - 在 `app/` 执行 `node scripts/dev/flowhub-cli.mjs help` 查看数据与诊断 CLI。HTTP 配置命令默认连接 `http://127.0.0.1:4173`，可用 `FLOWHUB_URL` 指定旧服务；它不操作桌面 SQLite 配置，也不安装插件或点击原生按钮。`config set`／`config replace` 会写配置，`diagnose`／`monitor sample` 会写诊断文件，`monitor enable`／`disable`／`clear` 也有写入，不能当作纯读取。
+- 支持插件管理 CLI 的安装版可用同一脚本的 `plugin list`、`plugin migrate <id> --dry-run`、`plugin migrate <id>`、`plugin verify <id>` 在后台维护。迁移仅搬迁已登记且内容相同的本地包，由宿主更新登记并重载；不接收新插件、增加权限或调用任意业务 RPC。旧版先报能力不足，不执行可能唤出窗口的未知参数。此入口不占用键鼠，不能据此宣布原生输入或页面交互通过。
 - 当前 checkout 若包含 `app/scripts/dev/flowhub-ui-test.mjs`，先读取其配套使用说明并执行 `help`。此驱动只连接专用测试构建与隔离数据目录；`synthetic-dom`、`isTrusted=false` 的结果不能证明普通安装版、实际键盘路由、IME、原生 Tab、全局焦点或多屏通过。缺少该脚本时不能假定入口已合入当前分支。
 - 正常安装版可使用环境已有的 `toolkit desktop` 或 Computer Use 读取窗口、AX 与截图，再操作真实控件。CLI 发起的原生输入仍可能占用系统桌面；后台读取、隔离 DOM 驱动和全局输入要区分，不承诺多会话键鼠操作互不影响。
 - 桌面 CLI 先读当前后端指南，写操作先预演；用新读取的窗口、控件和坐标，不固化 PID／窗口 ID。操作后读回业务结果；退出码、`confirmed` 或截图差分不单独代表成功。超时／疑似未生效时先检查实际状态，不自动重放输入、安装、保存或提交。
