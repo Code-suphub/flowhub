@@ -11,6 +11,7 @@ import { host, type SearchItem, type SearchSnapshot } from './types';
 
 const tools = new Set(['calculation','timestamp','jwt','ip','dns','cloudflare','proxy','port','network','public-ip','json','url-tool']);
 export const resultKind = (item: SearchItem) => ({app:'应用',page:'网页',web:'网页','web-add':'网页',clipboard:'剪贴板',memo:'命令',twofa:'验证码'}[item.type] || '工具');
+export const waitingForMail = (item?: SearchItem) => Boolean(item?.mailAccount && !item.mailCodeId);
 const imageUrl = (value: unknown) => /^(https?:\/\/|data:image\/|(?:\.\/|\/)?assets\/)/i.test(String(value || ''));
 const excerpt = (value: unknown, limit = 100) => String(value || '').slice(0, limit * 4).replace(/\s+/g, ' ').slice(0, limit);
 function itemMeta(item: SearchItem) {
@@ -21,7 +22,11 @@ function itemMeta(item: SearchItem) {
     return [kind,item.note?`备注：${excerpt(item.note,60)}`:'', item.sourceName, date && Number.isFinite(date.getTime()) ? date.toLocaleString() : '', item.pinnedAt ? '已置顶' : ''].filter(Boolean).join(' · ');
   }
   if (item.type === 'memo') return host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category || '命令备忘';
-  if (item.type === 'twofa') return item.issuer || '验证码';
+  if (item.type === 'twofa') {
+    if (waitingForMail(item)) return `${item.issuer || '邮箱'} · 等待验证码`;
+    const received = item.source === 'mail' && typeof item.receivedAt === 'number' ? new Date(item.receivedAt) : null;
+    return [item.issuer || '验证码', received?.toLocaleTimeString()].filter(Boolean).join(' · ');
+  }
   return item.breadcrumb || item.note || item.url || '';
 }
 export function ResultIcon({item,snapshot}: {item: SearchItem; snapshot: SearchSnapshot}) {
@@ -41,7 +46,7 @@ export function resultActions(item: SearchItem): [string,string][] {
     if (item.type === 'page') actions.push(['edit','编辑网页']);
   }
   if (item.type === 'memo') { if (item.content?.trim()) actions.push(['copy','复制命令']); actions.push(['open','粘贴']); }
-  if (item.type === 'twofa') actions.push(['copy','复制验证码']);
+  if (item.type === 'twofa' && !waitingForMail(item)) actions.push(['open','粘贴验证码'],['copy','复制验证码']);
   if (['calculation','timestamp','jwt'].includes(item.type)) actions.push(['copy','复制结果']);
   if (['dns','ip'].includes(item.type)) actions.push(['copy-query','复制查询命令']);
   return actions;

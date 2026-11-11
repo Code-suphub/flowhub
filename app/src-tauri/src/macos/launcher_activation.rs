@@ -267,11 +267,17 @@ pub(crate) fn prepare_paste(
     on_main(app, move |app| {
         {
             let mut visibility = crate::MAIN_VISIBILITY.lock().unwrap();
+            let current_source = target().map(|(receipt, _)| receipt.generation);
+            if current_source.is_none() && show_session.is_some()
+                && show_session == visibility.active_session() && source_generation == self::source_generation()
+            {
+                return Err("已复制；未记录可返回的接收应用，请手动粘贴".into());
+            }
             if !paste_request_is_current(
                 show_session,
                 visibility.active_session(),
                 source_generation,
-                target().map(|(receipt, _)| receipt.generation),
+                current_source,
             ) {
                 return Err("已复制；启动器或接收应用已切换，请在目标窗口手动粘贴".into());
             }

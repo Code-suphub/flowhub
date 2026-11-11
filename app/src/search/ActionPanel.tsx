@@ -3,6 +3,7 @@ import { ArrowUpRight, Clipboard, Copy, FilePenLine, Pin, PinOff, Trash2 } from 
 import { CommandDialog } from '../shared/CommandDialog';
 import { CommandSearch } from '../shared/CommandSearch';
 import { resultActions, resultKind } from './Results';
+import { mailReceivedAt } from './VerificationPreview';
 import type { SearchItem } from './types';
 import './action-panel.css';
 
@@ -19,7 +20,7 @@ export function availableActions(item:SearchItem,readonly:boolean):ResultAction[
     ...(item.kind==='text'?[{id:'clipboard:edit',label:'编辑副本',action:'edit',kind:'clipboard' as const,shortcut:'⌘E',keywords:'edit 编辑 修改 副本',disabled:readonly}]:[]),
     ...(!readonly?[{id:'clipboard:delete',label:'删除记录…',action:'delete',kind:'clipboard' as const,shortcut:'⌥⌫',keywords:'delete remove 删除 清除 历史'}]:[]),
   ];
-  return resultActions(item).map(([action,label])=>({id:`result:${action}`,label,action,kind:'result',shortcut:action==='open' || item.type==='twofa'?'↵':undefined,keywords:action==='copy'?'copy 复制':action==='copy-query'?'copy command 查询 命令':action==='edit'?'edit 编辑 修改':'open activate 打开 粘贴',disabled:readonly}));
+  return resultActions(item).map(([action,label])=>({id:`result:${action}`,label,action,kind:'result',shortcut:action==='open'?'↵':undefined,keywords:action==='copy'?'copy 复制':action==='copy-query'?'copy command 查询 命令':action==='edit'?'edit 编辑 修改':'open activate 打开 粘贴',disabled:readonly}));
 }
 
 export function ActionPanel({item,onClose,onChoose}: {item:SearchItem;onClose():void;onChoose(action:ResultAction):void}) {
@@ -29,8 +30,10 @@ export function ActionPanel({item,onClose,onChoose}: {item:SearchItem;onClose():
   const terms=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const matches=actions.filter(action=>terms.every(term=>`${action.label} ${action.keywords}`.toLocaleLowerCase().includes(term)));
   const title=String(item.title || (item.type==='clipboard'?item.kind==='image'?'图片':item.kind==='file'?(item.fileNames || []).join('、'):item.content:'') || resultKind(item)).slice(0,180).replace(/\s+/g,' ');
+  const receivedAt = mailReceivedAt(item);
   return <CommandDialog title="结果操作" onClose={onClose} initialFocus={input} className="search-actions-dialog">
       <div className="search-action-target flex min-w-0 items-center gap-2"><span>{resultKind(item)}</span><strong>{title}</strong></div>
+      {receivedAt ? <p className="verification-time text-xs">收取时间 <time dateTime={receivedAt.toISOString()}>{receivedAt.toLocaleString()}</time></p> : null}
       <CommandSearch label="搜索结果操作" placeholder="搜索操作，如复制、置顶…" listLabel="可用结果操作" clearLabel="清除操作搜索" inputRef={input} value={query} onValueChange={setQuery} items={matches} groupLabel={query.trim()?`${matches.length} 个匹配操作`:'当前结果的操作'} isItemDisabled={action=>Boolean(action.disabled)} onChoose={onChoose} renderItem={action=>{
         const Icon=action.action==='pin'?(item.pinnedAt?PinOff:Pin):action.action==='delete'?Trash2:action.action==='edit'?FilePenLine:action.action==='open'?ArrowUpRight:action.action==='plain'?Clipboard:Copy;
         return <><Icon aria-hidden="true"/><span className="min-w-0 flex-1">{action.label}</span>{action.shortcut?<kbd aria-label={`搜索框快捷键 ${action.shortcut}`}>{action.shortcut}</kbd>:null}</>;

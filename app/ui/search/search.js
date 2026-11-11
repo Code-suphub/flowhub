@@ -34,6 +34,8 @@ let appCatalogRevision = 0, appCatalogDirty = false, appCatalogRefreshing = fals
 let webSearchToken = 0;
 let memoSearchToken = 0;
 let twofaSearchToken = 0;
+let twofaLoadedAsAccounts = false;
+let emptyTwofaAccounts = [];
 let usageSearchToken = 0;
 let allScopeRefreshToken = 0;
 let dnsSearchToken = 0;
@@ -452,8 +454,31 @@ function memoMatches() {
   return state.memoResults.map((memo) => ({ ...memo, type: "memo" }));
 }
 
+function withoutExpiredMailboxCode(entry, now) {
+  if (entry.mailAccount && entry.mailCodeId && entry.expiresAt <= now) {
+    return { ...entry, mailCodeId: null, receivedAt: null, expiresAt: null };
+  }
+  return entry;
+}
+
+function activeTwofaRecords(records = []) {
+  const now = Date.now();
+  return records.filter((entry) => entry.mailAccount || entry.source !== "mail" || entry.expiresAt > now)
+    .map(entry => withoutExpiredMailboxCode(entry, now));
+}
+
 function twofaMatches() {
-  return (state.twofaResults || []).map((entry) => ({ ...entry, type: "twofa", pluginId: "twofa" }));
+  const now = Date.now();
+  return (state.twofaResults || []).filter(entry => state.scope === "twofa" || !entry.mailAccount).map(entry => ({
+    ...withoutExpiredMailboxCode(entry, now),
+    type: "twofa", pluginId: "twofa"
+  }));
+}
+
+function restoreEmptyTwofa() {
+  twofaLoadedAsAccounts = state.scope === "twofa";
+  state.twofaResults = activeTwofaRecords(twofaLoadedAsAccounts ? emptyTwofaAccounts : state.emptyResults.twofa);
+  state.twofaHasMore = state.twofaResults.length >= (twofaLoadedAsAccounts ? PLUGIN_PAGE_SIZE : 12);
 }
 
 
@@ -744,7 +769,7 @@ function runResultAction(action, item) {
     return copyText(text).then(() => showActionStatus("查询命令已复制")).catch(() => showActionStatus("复制失败"));
   }
   if (action !== "copy") return undefined;
-  if (item.type === "twofa") return choose(item);
+  if (item.type === "twofa") return activateVerificationCode(item, false);
   const text = item.type === "page" || item.type === "web" || item.type === "web-add"
     ? normalizeUrl(item.url)
     : item.type === "app" ? String(item.path || "")
@@ -863,18 +888,27 @@ function rememberQuery(item) {
   if(item?.toolId && !toolEnabled('commandHistory'))return;
   try {integration.onQueryUsed?.({query:state.query,scope:state.scope,clipboardKind:state.scope==='clipboard'?state.clipboardKind:'all',clipboardSource:state.scope==='clipboard'?state.clipboardSource ?? null:null,clipboardPinnedOnly:state.scope==='clipboard' && state.clipboardPinnedOnly===true});}catch{}
 }
+function activateVerificationCode(item, paste) {
+  if (item.mailAccount && (!item.mailCodeId || item.expiresAt <= Date.now())) return showActionStatus("等待验证码");
+  return Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: item.mailCodeId || item.id, title: item.title, source: item.source, paste }))
+    .then((result) => {
+      if (result?.pasted === true) { showActionStatus("验证码已粘贴"); return; }
+      if (result?.copied === true) {
+        showActionStatus(result.pasteReason || (item.source === "mail" ? "邮件验证码已复制" : "验证码已复制"));
+        return;
+      }
+      if (!result?.code) throw new Error("获取验证码失败");
+      return copyText(result.code).then(() => showActionStatus(`已复制 ${result.name || item.title} 的验证码`));
+    })
+    .catch((error) => showActionStatus(error.message || "获取验证码失败"));
+}
+
 function choose(page) {
   if (externalActivation) return externalActivation.promise;
   rememberQuery(page);
   if (page?.toolId) { Promise.resolve(window.FlowHubTools.choose(page,toolContext())).catch(error=>showActionStatus(error.message||"操作失败")); return; }
   if (page?.type === "twofa") {
-    Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: page.id, title: page.title }))
-      .then((result) => {
-        if (!result?.code) throw new Error("获取验证码失败");
-        return copyText(result.code).then(() => showActionStatus(`已复制 ${result.name || page.title} 的验证码`));
-      })
-      .catch((error) => showActionStatus(error.message || "获取验证码失败"));
-    return;
+    return activateVerificationCode(page, true);
   }
   if (["calculation", "timestamp", "jwt"].includes(page?.type)) {
     void copyText(page.result)
@@ -1124,6 +1158,13 @@ function setScope(scope) {
   invalidatePluginPaging({ resetPaging: false });
   if(state.scope!==scope && (state.scope==='clipboard' || scope==='clipboard')){state.clipboardResults=[];state.clipboardLoadedQuery=null;}
   state.scope = scope;
+  if (["all", "twofa"].includes(scope) && twofaLoadedAsAccounts !== (scope === "twofa")) {
+    if (state.query.trim()) {
+      state.twofaResults = [];
+      state.twofaHasMore = false;
+    } else restoreEmptyTwofa();
+    state.twofaLoadedQuery = null;
+  }
   state.usageColumn = null;
   window.FlowHubTools.queryChanged(toolContext());
   state.index = 0;
@@ -1136,9 +1177,9 @@ function setScope(scope) {
     const stale = (pluginEnabled("clipboard") && state.clipboardLoadedQuery !== state.query)
       || (pluginEnabled("app") && state.appLoadedQuery !== state.query)
       || (pluginEnabled("web") && state.webLoadedQuery !== state.query)
-      || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query)
-      || (pluginEnabled("twofa") && state.twofaLoadedQuery !== state.query);
+      || (pluginEnabled("memo") && state.memoLoadedQuery !== state.query);
     if (stale) void refreshAllScopes();
+    else if (state.twofaLoadedQuery !== state.query) void refreshTwofa();
   } else if (scope === "clipboard") {
     if (state.clipboardLoadedQuery !== state.query && !state.clipboardLoading) void refreshClipboard();
   }
@@ -1627,29 +1668,46 @@ async function refreshMemos({ append = false, deferRender = false } = {}) {
   }
 }
 
-async function refreshTwofa({ append = false, deferRender = false } = {}) {
+async function refreshTwofa({ append = false, deferRender = false, live = false } = {}) {
   if (!pluginEnabled("twofa") || !["all", "twofa"].includes(state.scope)) return;
   if (append && (!['all', 'twofa'].includes(state.scope) || state.twofaLoading || !state.twofaHasMore)) return;
+  const includeMailAccounts = state.scope === "twofa";
+  if (live && (state.twofaLoading || (!includeMailAccounts && state.twofaResults.length > PLUGIN_PAGE_SIZE))) return;
   const token = ++twofaSearchToken;
-  const limit = state.scope === "twofa" ? PLUGIN_PAGE_SIZE : 12;
+  const limit = includeMailAccounts ? PLUGIN_PAGE_SIZE : 12;
   const offset = append ? state.twofaResults.length : 0;
   state.twofaLoading = true;
-  if (!append) state.twofaHasMore = true;
+  if (!append && !live) state.twofaHasMore = true;
   if (append && !deferRender) render({ preserveScroll: true });
+  let changed = !live;
   try {
-    const records = await window.weborg.pluginSearch("twofa", { query: state.query, limit, offset });
+    const records = await window.weborg.pluginSearch("twofa", { query: state.query, limit, offset, ...(includeMailAccounts ? { includeMailAccounts: true } : {}) });
     if (token !== twofaSearchToken) return;
-    const next = records || [];
-    const existing = new Set(state.twofaResults.map((item) => item.id));
-    state.twofaResults = append ? [...state.twofaResults, ...next.filter((item) => !existing.has(item.id))] : next;
+    const next = activeTwofaRecords(records || []);
+    if (includeMailAccounts && !append && !state.query.trim()) emptyTwofaAccounts = next;
+    const selected = live && includeMailAccounts ? twofaMatches()[state.index]?.id : null;
+    const keepTail = live && includeMailAccounts && next.length === limit && state.twofaResults.length > limit;
+    const existing = new Set((append ? state.twofaResults : next).map(item => item.id));
+    const updated = append ? [...activeTwofaRecords(state.twofaResults), ...next.filter(item => !existing.has(item.id))]
+      : keepTail ? [...next, ...state.twofaResults.slice(limit).filter(item => !existing.has(item.id))] : next;
+    if (live) changed = state.twofaResults.length !== updated.length || updated.some((item, index) => {
+      const previous = state.twofaResults[index];
+      return item.id !== previous?.id || item.mailCodeId !== previous?.mailCodeId || item.mailHistoryKey !== previous?.mailHistoryKey;
+    });
+    state.twofaResults = updated;
+    if (selected != null) {
+      const index = twofaMatches().findIndex((item) => item.id === selected);
+      if (index >= 0) state.index = index;
+    }
     state.twofaLoadedQuery = state.query;
-    state.twofaHasMore = next.length === limit;
+    twofaLoadedAsAccounts = includeMailAccounts;
+    if (!keepTail) state.twofaHasMore = next.length === limit;
   } catch {
-    if (token === twofaSearchToken && !append) state.twofaResults = [];
+    if (token === twofaSearchToken && !append && !live) state.twofaResults = [];
   } finally {
     if (token === twofaSearchToken) {
       state.twofaLoading = false;
-      if (!deferRender) render({ preserveScroll: append });
+      if (!deferRender && changed) render({ preserveScroll: append || live });
     }
   }
 }
@@ -1756,12 +1814,11 @@ bind(q, "input", () => {
     state.appResults = state.emptyResults.app.slice();
     state.webResults = state.emptyResults.web.slice();
     state.memoResults = state.emptyResults.memo.slice();
-    state.twofaResults = (state.emptyResults.twofa || []).slice();
+    restoreEmptyTwofa();
     state.clipboardHasMore = state.clipboardResults.length === CLIPBOARD_PAGE_SIZE;
     state.appHasMore = state.appResults.length === APP_PAGE_SIZE;
     state.webHasMore = state.webResults.length === 12;
     state.memoHasMore = state.memoResults.length === 12;
-    state.twofaHasMore = state.twofaResults.length === 12;
   }
   state.index = 0;
   const dedicatedWebSearch = state.scope === "web";
@@ -1974,7 +2031,7 @@ function prepareForShow() {
   state.appLoadedLimit = state.appResults.length;
   state.webHasMore = state.webResults.length >= 12;
   state.memoHasMore = state.memoResults.length >= 12;
-  state.twofaHasMore = state.twofaResults.length >= 12;
+  restoreEmptyTwofa();
   resultsEl.scrollTop = 0;
   render();
   focusSearch();
@@ -1982,6 +2039,7 @@ function prepareForShow() {
   // cancels its debounce. Paint the cache first, then reconcile with storage.
   state.clipboardLoadedQuery = null;
   void refreshClipboard();
+  void refreshTwofa({live:true});
   void refreshApplicationCatalog();
 }
 window.focusSearch = focusSearch;
@@ -1993,6 +2051,10 @@ bind(document, "visibilitychange", () => {
   if (!document.hidden) focusSearchAfterWindowActivation();
   else cancelActivationFocus();
 });
+const twofaTimer = window.setInterval(() => {
+  if (initialized && !document.hidden && document.hasFocus() && state.scope === "twofa") void refreshTwofa({live:true});
+}, 2500);
+cleanups.push(() => window.clearInterval(twofaTimer));
 subscribe("onUpdateState", renderVersion);
 
 // 初始加载
@@ -2042,7 +2104,8 @@ async function initialize() {
   state.memoLoadedQuery = "";
   state.emptyResults.memo = state.memoResults.slice();
   state.memoHasMore = state.memoResults.length === 12;
-  state.twofaResults = twofa || [];
+  state.twofaResults = activeTwofaRecords(twofa || []);
+  twofaLoadedAsAccounts = false;
   state.twofaLoadedQuery = "";
   state.emptyResults.twofa = state.twofaResults.slice();
   state.twofaHasMore = state.twofaResults.length === 12;
@@ -2050,6 +2113,7 @@ async function initialize() {
   state.usageLoadedScope = "all";
   initialized = true;
   render();
+  if (state.scope === "twofa") void refreshTwofa();
   void refreshApplicationCatalog();
   deferUncachedWebIcons(320);
   restoreLauncherFocus();

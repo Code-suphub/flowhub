@@ -89,7 +89,7 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     }
     if (id === "twofa") {
       const twofaQuery = query.replace(/^2fa(?:\s+|$)/i, "").trim();
-      return (await invoke("plugin_search_call", { id, method: "search", params: { query: twofaQuery, limit, offset } }))
+      return (await invoke("plugin_search_call", { id, method: "search", params: { query: twofaQuery, limit, offset, includeMailAccounts: request.includeMailAccounts === true } }))
         .map((record) => ({ ...record, pluginId: id }));
     }
     return [];
@@ -207,12 +207,22 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
       return invoke("delete_clipboard", { id: Number(payload.id) });
     }
     if (id === "twofa" && action === "activate") {
-      return invoke("plugin_search_call", { id, method: "activate", params: { name: payload.id || payload.title } });
+      const params = payload.source === "mail" ? { source: "mail", id: payload.id } : { name: payload.id || payload.title };
+      return invoke("plugin_search_call", { id, method: "activate", params: { ...params, paste: payload.paste === true } });
     }
     if (action !== "activate") return { ok: false, reason: `插件 ${id} 不支持操作 ${action}` };
     const result = await invoke("activate_target", { pluginId: id, payload });
     if (result?.ok && ["app", "web"].includes(id)) usageListeners.forEach((listener) => listener());
     return result;
+  }
+
+  async function previewVerificationCode(item) {
+    const params = item.source === "mail" ? { source: "mail", id: item.id } : { name: item.id || item.title };
+    return invoke("plugin_search_call", { id: "twofa", method: "preview", params });
+  }
+
+  async function previewMailCodeHistory(accountId, currentCodeId) {
+    return invoke("plugin_search_call", { id: "twofa", method: "mail_history", params: { accountId, currentCodeId } });
   }
 
   window.weborg = {
@@ -240,6 +250,8 @@ if (!window.weborg && window.__TAURI__?.core?.invoke) {
     inspectCloudflare,
     lookupProxy,
     pluginAction,
+    previewVerificationCode,
+    previewMailCodeHistory,
     listClipboardSources: () => invoke("clipboard_sources"),
     setClipboardNote: (id,note,expectedNote) => document.documentElement.dataset.weborgReadonly==='true'?Promise.resolve({ok:false,reason:'只读预览不能修改备注'}):invoke("set_clipboard_note",{id:Number(id),note:String(note),expectedNote:String(expectedNote)}),
     getLauncherPinned: () => invoke("get_launcher_pinned"),

@@ -6,6 +6,7 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../../ui/search/search.js'), 'utf8');
 const renderSlice = source.slice(source.indexOf('function runResultAction('), source.indexOf('const resultWindow = new window.FlowHubResultWindow();'));
 const focusSlice = source.slice(source.indexOf('function focusResultAction('), source.indexOf('function rememberQuery('));
+const verificationSlice = source.slice(source.indexOf('function activateVerificationCode('), source.indexOf('function choose('));
 
 function harness() {
   const copied = [];
@@ -14,6 +15,7 @@ function harness() {
   const focused = [];
   const actions = [];
   const menuRequests = [];
+  const pluginCalls = [];
   let returned = 0;
   const element = (id) => {
     if (!actions.includes(id)) actions.push(id);
@@ -39,7 +41,12 @@ function harness() {
     root: { querySelector: () => null, querySelectorAll: () => [] },
     matches: () => [],
     CustomEvent: class { constructor(type,options) { this.type=type; this.detail=options.detail; } },
-    window: { FlowHubTools: { render: () => null }, weborg: {} },
+    window: { FlowHubTools: { render: () => null }, weborg: {
+      pluginAction: (plugin, action, params) => {
+        pluginCalls.push({ plugin, action, ...params });
+        return Promise.resolve({ copied: true });
+      }
+    } },
     document: {
       getElementById: element,
       documentElement: { dataset: {} },
@@ -72,7 +79,8 @@ function harness() {
   });
   vm.runInContext(renderSlice, ctx);
   vm.runInContext(focusSlice, ctx);
-  return { ctx, copied, status, opened, focused, buttons, resultsEl, menuRequests, hint: () => element.store.keyboardHint.innerHTML, returned: () => returned };
+  vm.runInContext(verificationSlice, ctx);
+  return { ctx, copied, status, opened, focused, buttons, resultsEl, menuRequests, pluginCalls, hint: () => element.store.keyboardHint.innerHTML, returned: () => returned };
 }
 
 const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://example.com/', path: '目录 / 示例' });
@@ -100,8 +108,13 @@ const webItem = () => ({ type: 'web', id: 'w1', title: '示例', url: 'https://e
     assert.equal(h.status.at(-1), '这条结果没有可复制的命令');
     await h.ctx.runResultAction('copy', { type: 'web', url: '' });
     assert.equal(h.status.at(-1), '没有可复制的内容');
-    await h.ctx.runResultAction('copy', { type: 'twofa', id: 't1' });
-    assert.equal(h.opened.at(-1).type, 'twofa', '验证码复制走插件路径');
+    const clipboardWrites = h.copied.length;
+    await h.ctx.runResultAction('copy', { type: 'twofa', id: 't1', source: 'mail' });
+    assert.equal(h.pluginCalls.at(-1).plugin, 'twofa');
+    assert.equal(h.pluginCalls.at(-1).action, 'activate');
+    assert.equal(h.pluginCalls.at(-1).id, 't1');
+    assert.equal(h.pluginCalls.at(-1).paste, false, '显式复制不应触发粘贴');
+    assert.equal(h.copied.length, clipboardWrites, '验证码不走普通复制路径');
   }
 
   {

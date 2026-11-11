@@ -42,6 +42,121 @@ test('clipboard Enter invokes paste and reports a copy-only fallback', async t =
   await wait(() => w.document.getElementById('actionStatus').textContent === fallback);
   assert.deepEqual(actions, [['clipboard', 'activate', 1]]);
 });
+test('mail verification code Enter requests native paste and hides expired results',async t=>{
+  const now=Date.now();
+  const {w,key,scope,calls}=await setup(t,{search:id=>id==='twofa'?[
+    {id:'expired',title:'expired.example.test',source:'mail',expiresAt:now-1},
+    {id:'active',title:'sender.example.test',source:'mail',issuer:'163 邮箱',receivedAt:now,expiresAt:now+300000},
+    {id:'later',title:'later.example.test',source:'mail',issuer:'QQ 邮箱',receivedAt:now,expiresAt:now+400000},
+  ]:[]});
+  await scope('twofa');
+  await wait(()=>w.document.querySelector('.result.active h3')?.textContent==='sender.example.test');
+  assert.doesNotMatch(w.document.getElementById('results').textContent,/expired\.example\.test/);
+  w.weborg.pluginAction=async(...args)=>{calls.push(['action',...args]);return {ok:true,copied:true,pasted:true};};
+  key('Enter');
+  await wait(()=>w.document.getElementById('actionStatus').textContent==='验证码已粘贴');
+  const action=calls.find(call=>call[0]==='action');
+  assert.equal(action[1],'twofa');assert.equal(action[2],'activate');
+  assert.equal(action[3].id,'active');assert.equal(action[3].source,'mail');
+  assert.equal(action[3].paste,true);
+  assert.equal(calls.some(call=>call[0]==='copy'),false);
+  const fallback='已复制；未记录可返回的接收应用，请手动粘贴';
+  w.weborg.pluginAction=async()=>({ok:true,copied:true,pasted:false,pasteReason:fallback});
+  key('Enter');
+  await wait(()=>w.document.getElementById('actionStatus').textContent===fallback);
+  w.Date.now=()=>now+300001;
+  w.weborg.pluginAction=async(...args)=>{calls.push(['action',...args]);throw Error('验证码已过期');};
+  key('Enter');
+  await wait(()=>w.document.getElementById('actionStatus').textContent==='验证码已过期');
+  assert.equal(calls.filter(call=>call[0]==='action').at(-1)[3].id,'active');
+});
+test('verification previews follow selection in both scopes without revealing stale codes', async t => {
+  const now = Date.now();
+  const first = {id:'first',title:'first.example.test',source:'mail',receivedAt:now,expiresAt:now+120000};
+  const second = {id:'second',title:'second.example.test',source:'mail',receivedAt:now-30000,expiresAt:now+90000};
+  const {w,q,key,scope,input,calls} = await setup(t,{previewExpanded:false,width:600,
+    search:id=>id==='twofa'?[first,second]:[]});
+  const requests = [];
+  w.weborg.previewVerificationCode = ({id}) => new Promise(resolve=>requests.push({id,resolve}));
+  const digits = ()=>w.document.querySelector('.verification-digits')?.textContent;
+  await scope('twofa');
+  await wait(()=>requests.some(request=>request.id===first.id));
+  assert.equal(w.document.querySelector('.search-workbench').dataset.autoCodePreview,'true');
+  assert.equal(w.document.activeElement,q);
+  key('ArrowDown');
+  await wait(()=>requests.some(request=>request.id===second.id));
+  requests.find(request=>request.id===second.id).resolve({code:'041839',expiresAt:second.expiresAt});
+  await wait(()=>digits()==='041839');
+  requests.find(request=>request.id===first.id).resolve({code:'329811',expiresAt:first.expiresAt});
+  await delay(30);
+  assert.equal(digits(),'041839');
+  assert.match(w.document.querySelector('#search-preview').textContent,/剩余 \d+ 秒/);
+  assert.equal(w.document.querySelector('#search-preview time').dateTime,new Date(second.receivedAt).toISOString());
+  assert.doesNotMatch(w.document.querySelector('#results').textContent,/041839|329811/);
+  const selected = w.document.querySelector('.result.active');
+  selected.dispatchEvent(new w.MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2}));
+  await wait(()=>w.document.querySelector('.search-actions-dialog time'));
+  assert.equal(w.document.querySelector('.search-actions-dialog time').dateTime,new Date(second.receivedAt).toISOString());
+  w.document.querySelector('.search-actions-dialog input').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  await wait(()=>!w.document.querySelector('.search-actions-dialog'));
+  await scope('clipboard');
+  await wait(()=>!w.document.querySelector('#search-preview'));
+  await input('first');
+  const count=requests.length;
+  await scope('all');
+  await wait(()=>requests.length>count && requests.at(-1).id===first.id);
+  requests.at(-1).resolve({code:'329811',expiresAt:first.expiresAt});
+  await wait(()=>digits()==='329811');
+  w.dispatchEvent(new w.Event('blur'));
+  await wait(()=>!digits());
+  key('Escape');
+  await wait(()=>!w.document.querySelector('#search-preview'));
+  assert.equal(calls.some(call=>call[0]==='copy'||call[0]==='action'),false);
+});
+test('a connected mailbox keeps its row and selection while codes arrive and expire', async t => {
+  const now = Date.now();
+  const mailbox = { id:'mail-account:fixture@163.com',title:'fixture@163.com',source:'mail',mailAccount:true,issuer:'163 邮箱',mailHistoryKey:'older' };
+  let records = [mailbox];
+  const {w,key,scope,calls} = await setup(t,{search:(id,options)=>id==='twofa' && options.includeMailAccounts?records:[]});
+  const selected = ()=>w.document.querySelector('.result.active h3')?.textContent;
+  const digits = ()=>w.document.querySelector('.verification-digits')?.textContent;
+  const previewRequests = [];
+  w.weborg.previewVerificationCode = async ({id})=>{
+    previewRequests.push(id);
+    return {code:'713049',expiresAt:now+60000};
+  };
+  let history = [{id:'older',code:'012345',sender:'fixture.example.test',receivedAt:now-600000,historyUntil:now+600000}];
+  w.weborg.previewMailCodeHistory = async (id, currentId) => {
+    assert.equal(id,mailbox.id);
+    return history.filter(entry=>entry.id!==currentId);
+  };
+  await scope('twofa');
+  await wait(()=>selected()===mailbox.title);
+  await wait(()=>w.document.querySelector('.mail-code-history')?.textContent.includes('012345'));
+  assert.match(w.document.querySelector('.result.active').textContent,/等待验证码/);
+  assert.match(w.document.querySelector('#search-preview').textContent,/等待验证码/);
+  assert.equal(w.document.querySelector('#activateResultBtn'),null);
+  key('Enter');
+  assert.deepEqual(previewRequests,[]);
+  assert.equal(calls.some(call=>call[0]==='action'),false);
+  records = [{...mailbox,mailCodeId:'first-mail',mailHistoryKey:'first-mail:older',receivedAt:now,expiresAt:now+60000}];
+  history = [{...history[0],id:'first-mail',code:'713049',receivedAt:now},...history];
+  await delay(2600);
+  await wait(()=>digits()==='713049');
+  assert.doesNotMatch(w.document.querySelector('.mail-code-history').textContent,/713049/);
+  assert.deepEqual(previewRequests,['first-mail']);
+  assert.equal(selected(),mailbox.title);
+  key('Enter');
+  await wait(()=>calls.some(call=>call[0]==='action' && call[3].id==='first-mail' && call[3].paste===true));
+  w.Date.now=()=>now+60001;
+  records=[{...mailbox,mailHistoryKey:'first-mail:older'}];
+  await delay(2600);
+  await wait(()=>!digits() && w.document.querySelector('.result.active')?.textContent.includes('等待验证码'));
+  await wait(()=>w.document.querySelector('.mail-code-history')?.textContent.includes('713049'));
+  assert.equal(selected(),mailbox.title);
+  await scope('all');
+  assert.doesNotMatch(w.document.querySelector('#results').textContent,/fixture@163\.com/);
+});
 test('slow external opens freeze usage reordering and hover, deduplicate activation, and recover on failure',async t=>{
   const page=id=>({type:'page',id,title:id,url:`https://example.com/${id}`});
   const {w,key,events}=await setup(t,{usage:{frequent:[page('A'),page('B')],recent:[]}});

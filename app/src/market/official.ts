@@ -9,7 +9,7 @@ export const officialPlugins = [
   {id:'resource-monitor', name:'应用资源监控', version:'0.3.0'},
   {id:'machines', name:'机器管理', version:'0.3.1'},
   {id:'docker', name:'Docker 管理', version:'0.1.0'},
-  {id:'twofa', name:'2FA 验证码', version:'0.1.0'},
+  {id:'twofa', name:'验证码', version:'0.1.0'},
   {id:'social-hub', name:'社交聚合', version:'0.1.0'},
 ] as const;
 export const officialSources: Source[] = officialPlugins.map(plugin=>({

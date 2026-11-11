@@ -1415,6 +1415,10 @@ pub fn run() {
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
             app.manage(crate::plugin::runtime::Runtime::new(app.state::<AppState>().root_dir.clone()).map_err(std::io::Error::other)?);
+            let mail_monitor = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                mail_monitor.state::<crate::plugin::runtime::Runtime>().sync_mail_monitor().await;
+            });
             app.manage(crate::plugin::status::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
             app.manage(crate::plugin::canvas::State::new(&app.state::<AppState>().root_dir).map_err(std::io::Error::other)?);
             crate::plugin::canvas::restore(app.handle());

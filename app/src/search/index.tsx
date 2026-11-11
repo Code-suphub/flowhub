@@ -4,7 +4,7 @@ import { Button, Dialog } from '../shared/ui';
 import { Help, Tooltip } from '../shared/controls';
 import { Command, CornerUpLeft, CornerDownLeft, History, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { useMediaQuery } from '../shared/useMediaQuery';
-import { Results, resultActions } from './Results';
+import { Results, resultActions, waitingForMail } from './Results';
 import { ActionPanel, actionIdentity, availableActions, type ResultAction } from './ActionPanel';
 import { CommandPalette } from './CommandPalette';
 import { QueryHistory } from './QueryHistory';
@@ -28,9 +28,9 @@ function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNav
   }
   if(selected && (selected.type==='clipboard' || resultActions(selected).length))hints.push('右键 搜索结果操作');
   const action=primaryLabel(selected);
-  hints.push('单击选择 · 双击或回车执行');
+  hints.push(waitingForMail(selected) ? '单击选择' : '单击选择 · 双击或回车执行');
   if(canPreview(selected))hints.push('⌘I 展开／收起预览','预览中 ⌥↑ / ⌥↓ 切换结果');
-  return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?'↑↓ 选择 · ↵ '+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
+  return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?waitingForMail(selected)?'↑↓ 选择 · 等待验证码':'↑↓ 选择 · ↵ '+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
 }
 
 function Search() {
@@ -42,6 +42,10 @@ function Search() {
   const [widePreview,setWidePreview]=useState(readPreviewExpanded);
   const [dismissedPreview,setDismissedPreview]=useState<string|null>(null);
   const narrow=useMediaQuery('(max-width: 719px)');
+  const previewable=canPreview(selected) && !state?.editingClipboard;
+  const autoCodePreview=selected?.type==='twofa' && ['all','twofa'].includes(state?.scope) && dismissedPreview!==selectedKey;
+  const autoLongPreview=state?.config?.core?.autoPreviewLongContent !== false && isLongPreviewContent(selected) && dismissedPreview!==selectedKey;
+  const previewVisible=Boolean(previewable && (autoCodePreview || (narrow ? detailOpen : widePreview || autoLongPreview)));
   const previousNarrow=useRef(narrow), previewFocused=useRef(false);
   const previewFrame=useRef<number | undefined>(undefined);
   const pendingPreviewFocus=useRef(false);
@@ -58,8 +62,9 @@ function Search() {
   },[]);
   const closePreview=useCallback(()=>{
     cancelPreviewFocus();
+    setDismissedPreview(selectedKey);
     if(narrow)setDetailOpen(false);
-    else {setWidePreview(false);setDismissedPreview(selectedKey);rememberPreviewExpanded(false);}
+    else {setWidePreview(false);rememberPreviewExpanded(false);}
     root.current?.querySelector<HTMLInputElement>('#q')?.focus({preventScroll:true});
   },[narrow,selectedKey,cancelPreviewFocus]);
   useEffect(()=>{
@@ -107,17 +112,17 @@ function Search() {
       if(mode==='reset'){cancelActionWork();cancelPreviewFocus();setDetailOpen(false);setActionKey(null);setCommandsOpen(false);setHistoryOpen(false);return;}
       if(mode==='selection'){if(narrow)setDetailOpen(true);return;}
       if(mode==='close'){
-        if(narrow && detailOpen){event.preventDefault();closePreview();}
+        if(narrow && previewVisible){event.preventDefault();closePreview();}
         return;
       }
       if(mode==='toggle'){
-        if(narrow?detailOpen:node?.querySelector('.search-workbench')?.getAttribute('data-preview-open')==='true')closePreview();
+        if(previewVisible)closePreview();
         else openPreview(controller.current?.state.index || 0);
       }
     };
     node?.addEventListener('flowhub:preview',preview);
     return ()=>node?.removeEventListener('flowhub:preview',preview);
-  },[detailOpen,widePreview,narrow,openPreview,closePreview,cancelPreviewFocus,cancelActionWork]);
+  },[previewVisible,narrow,openPreview,closePreview,cancelPreviewFocus,cancelActionWork]);
   useEffect(()=>{
     const node=root.current;
     const open=()=>{cancelActionWork();cancelPreviewFocus();setActionKey(null);setHistoryOpen(false);setCommandsOpen(true);};
@@ -195,9 +200,6 @@ function Search() {
   const version=String(snapshot?.updateState?.currentVersion || ''), hasUpdate=['available','downloaded'].includes(snapshot?.updateState?.status || '');
   const placeholders:Record<string,string>={app:'搜索已安装的应用…',web:'搜索网页与书签…',clipboard:'搜索剪贴板历史…',memo:'搜索命令备忘…',twofa:'搜索验证码账户…'};
   const placeholder=placeholders[state?.scope || ''] || '搜索应用、网页、剪贴板…';
-  const previewable=canPreview(selected) && !state?.editingClipboard;
-  const autoPreview=state?.config?.core?.autoPreviewLongContent !== false && isLongPreviewContent(selected) && dismissedPreview !== selectedKey;
-  const previewVisible=Boolean(previewable && (narrow?detailOpen:widePreview || autoPreview));
   useLayoutEffect(()=>{
     if(previewVisible || !previewFocused.current)return;
     cancelPreviewFocus();
@@ -277,7 +279,7 @@ function Search() {
     </header>
     <nav id="scopeRow" aria-label="搜索范围" className="search-scopes flex gap-1 overflow-x-auto">{[{id:'all',name:'全部'},...(state?.plugins || []).filter((p:{searchable:boolean})=>p.searchable)].map((p:{id:string;name:string})=><Button key={p.id} data-scope={p.id} className={`scope-button ${state?.scope===p.id?'active':''}`} aria-pressed={state?.scope===p.id} onMouseDown={press} onClick={activate}>{p.name}</Button>)}</nav>
     {state?.scope==='clipboard' && snapshot?<ClipboardFilters snapshot={snapshot} onKind={kind=>controller.current?.setClipboardKind(kind)} onFilter={(source,pinnedOnly)=>controller.current?.setClipboardFilters({source,pinnedOnly})} onReset={()=>{controller.current?.setClipboardFilters({kind:'all',source:null,pinnedOnly:false});controller.current?.returnToSearch();}} onReturn={()=>controller.current?.returnToSearch()}/>:null}
-    <div className="search-workbench" data-has-preview={Boolean(previewable)} data-preview-open={previewVisible} data-detail-open={detailOpen}>
+    <div className="search-workbench" data-has-preview={Boolean(previewable)} data-preview-open={previewVisible} data-detail-open={detailOpen} data-auto-code-preview={previewVisible && autoCodePreview && !detailOpen}>
       <div id="results" className="search-result-pane min-h-0 overflow-y-auto" onScroll={dispatch('results:scroll')} onClick={dispatch('results:click')} onDoubleClick={dispatch('results:dblclick')} onMouseMove={dispatch('results:mousemove')} onMouseDown={dispatch('results:mousedown')} onContextMenu={contextMenu}>
         {snapshot?<Results snapshot={snapshot} onPreview={openPreview} onClear={clearSearch} onSearchAll={()=>controller.current?.setScope('all')}/>:<p className="search-empty" role="status">配置加载中…</p>}
       </div>
@@ -292,7 +294,7 @@ function Search() {
       <div className="search-footer-actions">
         {previewable?<Button variant="ghost" size="sm" aria-label={previewVisible?'收起预览':'展开预览'} aria-expanded={previewVisible} aria-controls={previewVisible?'search-preview':undefined} aria-keyshortcuts="Meta+I" onClick={()=>previewVisible?closePreview():openPreview(activeIndex)}>{previewVisible?<PanelRightClose data-icon="inline-start"/>:<PanelRight data-icon="inline-start"/>}<span className="preview-toggle-label">{previewVisible?'收起预览':'预览'}</span><kbd>⌘I</kbd></Button>:null}
         {selected && availableActions(selected,readonly).length?<Tooltip content="搜索当前结果的操作；F6 也可进入"><Button id="resultActionsBtn" variant="ghost" size="sm" aria-label="搜索当前结果的操作" aria-haspopup="dialog" aria-expanded={Boolean(actionItem)} disabled={Boolean(state?.editingClipboard || state?.deletingClipboard)} onClick={openActions}>操作<MoreHorizontal data-icon="inline-end"/></Button></Tooltip>:null}
-        {selected?<Button id="activateResultBtn" className="tool-action" variant="default" size="sm" data-result-action="open" data-result-index={activeIndex} disabled={Boolean(state?.editingClipboard || state?.deletingClipboard || readonly && ['clipboard','memo'].includes(selected.type))}>{primaryLabel(selected)}<CornerDownLeft data-icon="inline-end"/></Button>:null}
+        {selected && !waitingForMail(selected)?<Button id="activateResultBtn" className="tool-action" variant="default" size="sm" data-result-action="open" data-result-index={activeIndex} disabled={Boolean(state?.editingClipboard || state?.deletingClipboard || readonly && ['clipboard','memo'].includes(selected.type))}>{primaryLabel(selected)}<CornerDownLeft data-icon="inline-end"/></Button>:null}
       </div>
     </footer>
   </div>;

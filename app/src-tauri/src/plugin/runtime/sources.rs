@@ -142,6 +142,7 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value,p
             if serde_json::to_value(&package.manifest).unwrap()!=serde_json::to_value(&c.manifest).unwrap(){return Err("安装包与索引清单不一致，请重新扫描".into());}
             report(progress,"applying",0,None);rt.stop(&package.manifest.id).await;
             let result=commit_package(rt,&source,&c.manifest,package,&mut staged)?;
+            if c.manifest.id=="twofa"{rt.sync_mail_monitor_locked().await;}
             report(progress,"complete",0,None);Ok(result)
         }
         _=>Err("未知来源操作".into())

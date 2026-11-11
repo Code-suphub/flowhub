@@ -1,7 +1,8 @@
 import { useEffect, useRef, type MouseEventHandler } from 'react';
 import { ArrowLeft, Clipboard, FileText, Image, Pin } from 'lucide-react';
 import { Button } from '../shared/ui';
-import { ResultIcon } from './Results';
+import { ResultIcon, waitingForMail } from './Results';
+import { MailCodeHistory, mailReceivedAt, VerificationPreview } from './VerificationPreview';
 import type { SearchItem, SearchSnapshot } from './types';
 
 export const canPreview = (item?: SearchItem) => Boolean(item && ['app', 'page', 'web', 'web-add', 'clipboard', 'memo', 'twofa'].includes(item.type));
@@ -15,7 +16,7 @@ export function primaryLabel(item?: SearchItem) {
   if(tools[item.type])return tools[item.type];
   if(item.toolId)return '执行';
   if (item.type === 'clipboard' || item.type === 'memo') return '粘贴';
-  if (item.type === 'twofa') return '复制验证码';
+  if (item.type === 'twofa') return '粘贴验证码';
   if (item.type === 'web-add') return '添加网页';
   return '打开';
 }
@@ -36,6 +37,7 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
   const content = String(item.content || ''), text = content.slice(0, 20000);
   const readonly = document.documentElement.dataset.weborgReadonly === 'true';
   const date = item.lastSeenAt ? new Date(item.lastSeenAt) : null;
+  const receivedAt = mailReceivedAt(item);
   const copyLabel = item.type === 'app' ? '复制路径' : clipboard ? item.kind === 'file' ? '复制文件名' : '复制全文' : item.type === 'memo' ? '复制命令' : '复制链接';
   const copyable = ['app', 'page', 'web', 'web-add', 'memo'].includes(item.type) || (clipboard && item.kind !== 'image');
   return <aside id="search-preview" className="search-preview" aria-label="结果预览" onClick={onAction} onKeyDown={event=>{
@@ -57,7 +59,15 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
       {item.type === 'app' ? <dl className="preview-properties"><dt>位置</dt><dd>{item.path}</dd>{item.fileName ? <><dt>文件名</dt><dd>{item.fileName}</dd></> : null}</dl> : null}
       {['page', 'web', 'web-add'].includes(item.type) ? <><dl className="preview-properties"><dt>网址</dt><dd>{item.url}</dd>{breadcrumb ? <><dt>目录</dt><dd>{breadcrumb}</dd></> : null}</dl>{item.note ? <p className="preview-note">{item.note}</p> : null}</> : null}
       {item.type === 'memo' && item.description ? <p className="preview-note">{item.description}</p> : null}
-      {item.type === 'twofa' ? <><p className="preview-note">按回车或点击下方按钮，复制当前验证码。</p>{item.issuer ? <dl className="preview-properties"><dt>发行方</dt><dd>{item.issuer}</dd></dl> : null}</> : null}
+      {item.type === 'twofa' ? <>
+        <VerificationPreview key={`${item.source ?? 'totp'}:${identity}:${item.mailCodeId ?? ''}`} item={item}/>
+        {item.issuer || receivedAt ? <dl className="preview-properties">
+          {item.issuer ? <><dt>发行方</dt><dd>{item.issuer}</dd></> : null}
+          {receivedAt ? <><dt>收取时间</dt><dd><time dateTime={receivedAt.toISOString()}>{receivedAt.toLocaleString()}</time></dd></> : null}
+        </dl> : null}
+        {item.mailAccount ? <MailCodeHistory key={identity} item={item}/> : null}
+        <p className="preview-note">{waitingForMail(item) ? '识别到新邮件验证码后，这里会自动更新。' : '按回车把验证码粘贴回唤出启动器的应用，也可以在操作菜单中选择复制。'}</p>
+      </> : null}
       {clipboard ? <dl className="preview-properties">{item.sourceName ? <><dt>来源</dt><dd>{item.sourceName}</dd></> : null}{date && Number.isFinite(date.getTime()) ? <><dt>复制时间</dt><dd>{date.toLocaleString()}</dd></> : null}<dt>使用次数</dt><dd>{item.copyCount || 1} 次</dd>{item.pinnedAt ? <><dt>状态</dt><dd>已置顶</dd></> : null}{item.kind === 'file' ? <><dt>文件</dt><dd>{(item.fileNames || []).join('\n') || `${item.fileCount || 0} 个文件`}</dd></> : null}</dl> : null}
     </div>
     <div className="search-preview-actions">

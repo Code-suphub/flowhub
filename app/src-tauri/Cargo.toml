@@ -37,6 +37,11 @@ clipboard-rs = "0.3.5"
 dirs = "6"
 enigo = "0.6.1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+imap = { version = "3.0.0-alpha.15", default-features = false }
+mail-parser = { version = "0.11.3", features = ["full_encoding"] }
+native-tls = "0.2"
+regex = "1"
+ring = "0.17.14"
 # The updater disables reqwest defaults; restore macOS/Windows system proxy discovery.
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
 # The updater's rustls-no-provider client initializes ring only when checking
@@ -59,17 +64,19 @@ tauri-plugin-updater = "2.10.1"
 tauri-plugin-wdio-webdriver = { version = "=1.5.1", optional = true }
 tokio = { version = "1", features = ["time", "sync", "process", "io-util", "macros", "rt"] }
 url = "2.5.8"
+zeroize = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
 libc = "0.2"
 block2 = "0.6"
 core-foundation = "0.10.1"
 core-graphics = { version = "0.25.0", features = ["elcapitan"] }
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSApplication", "NSButton", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSImage", "NSImageView", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSScreen", "NSScrollView", "NSClipView", "NSVisualEffectView", "NSResponder", "NSRunningApplication", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSSwitch", "NSText", "NSTextField", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSApplication", "NSButton", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSImage", "NSImageView", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSScreen", "NSScrollView", "NSClipView", "NSVisualEffectView", "NSResponder", "NSRunningApplication", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSSwitch", "NSText", "NSTextField", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["block2", "NSBundle", "NSURL", "NSNotification", "NSOperation", "NSArray", "NSDate", "NSObjCRuntime", "NSRunLoop", "NSProcessInfo", "NSObject", "NSString", "NSUserDefaults"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "WKWebView"] }
 # Includes upstream #139: converted panels must synchronize WindowServer's

@@ -114,6 +114,50 @@ where
         .map_err(|_| "主线程剪贴板任务未返回".to_string())
 }
 
+pub(crate) async fn activate_private_code(
+    app: tauri::AppHandle,
+    code: String,
+    paste: Option<PasteRequest>,
+) -> Result<Value, String> {
+    if !(4..=8).contains(&code.len()) || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("验证码格式无效".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::runtime::ProtocolObject;
+        use objc2_app_kit::{NSPasteboard, NSPasteboardItem};
+        use objc2_foundation::{NSArray, NSString};
+        tauri::async_runtime::spawn_blocking(move || {
+            let revision = run_on_main_thread(&app, move || {
+                let item = NSPasteboardItem::new();
+                if !item.setString_forType(&NSString::from_str(&code), &NSString::from_str("public.utf8-plain-text"))
+                    || !item.setString_forType(&NSString::from_str("1"), &NSString::from_str(privacy::PRIVATE_CODE_FORMAT))
+                    || !item.setString_forType(&NSString::from_str("1"), &NSString::from_str("org.nspasteboard.ConcealedType"))
+                {
+                    return Err("无法准备验证码复制".into());
+                }
+                let objects = NSArray::from_slice(&[ProtocolObject::from_ref(&*item)]);
+                let pasteboard = NSPasteboard::generalPasteboard();
+                pasteboard.clearContents();
+                if !pasteboard.writeObjects(&objects) {
+                    return Err("无法复制验证码".to_owned());
+                }
+                Ok(Some(pasteboard.changeCount()))
+            })??;
+            Ok(match paste.map(|request| send_paste(&app, request, revision)) {
+                Some(Ok(())) => json!({"ok":true,"copied":true,"pasted":true}),
+                Some(Err(reason)) => json!({"ok":true,"copied":true,"pasted":false,"pasteReason":reason}),
+                None => json!({"ok":true,"copied":true}),
+            })
+        }).await.map_err(|_| "无法复制验证码".to_owned())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, paste);
+        Err("验证码复制仅支持 macOS".into())
+    }
+}
+
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -513,13 +557,11 @@ fn capture_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
         .measure("context", ClipboardContext::new)
         .map_err(|error| error.to_string())?;
     // Read advertised types before any payload. Failure is fail-closed.
-    if authorization.policy.protect_sensitive {
-        let formats = context
-            .available_formats()
-            .map_err(|_| "clipboard metadata unavailable")?;
-        if !authorization.policy.permits_formats(&formats) {
-            return Ok(());
-        }
+    let formats = context
+        .available_formats()
+        .map_err(|_| "clipboard metadata unavailable")?;
+    if !authorization.policy.permits_formats(&formats) {
+        return Ok(());
     }
     let captured_at = Utc::now().to_rfc3339();
     let writer = runtime
@@ -1048,7 +1090,7 @@ fn record_existing_text_copy(app: &tauri::AppHandle, hash: &str) {
     }
 }
 
-struct PasteRequest {
+pub(crate) struct PasteRequest {
     #[cfg(target_os = "macos")]
     show_session: Option<u64>,
     #[cfg(target_os = "macos")]
@@ -1056,7 +1098,7 @@ struct PasteRequest {
 }
 
 impl PasteRequest {
-    fn capture() -> Self {
+    pub(crate) fn capture() -> Self {
         Self {
             #[cfg(target_os = "macos")]
             show_session: crate::MAIN_VISIBILITY.lock().unwrap().active_session(),

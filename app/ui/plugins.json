@@ -46,8 +46,8 @@
   },
   {
     "id": "twofa",
-    "name": "2FA 验证码",
-    "description": "按名称搜索并复制一次性验证码",
+    "name": "验证码",
+    "description": "搜索并复制验证器和邮件验证码",
     "icon": "⌁",
     "defaultEnabled": true,
     "searchable": true,

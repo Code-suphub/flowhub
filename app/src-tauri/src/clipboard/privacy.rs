@@ -1,6 +1,8 @@
 //! Capture authorization, independent of storage and native clipboard access.
 use serde_json::Value;
 
+pub(super) const PRIVATE_CODE_FORMAT: &str = "cn.ac.camellia.flowhub.private-code";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Policy {
     pub paused: bool,
@@ -47,6 +49,9 @@ impl Policy {
         !self.paused && self.excluded_apps.is_empty()
     }
     pub fn permits_formats(&self, formats: &[String]) -> bool {
+        if formats.iter().any(|format| format == PRIVATE_CODE_FORMAT) {
+            return false;
+        }
         !self.protect_sensitive
             || !formats.iter().any(|format| {
                 matches!(
@@ -126,6 +131,7 @@ mod tests {
         assert!(policy.permits_formats(&["public.utf8-plain-text".into()]));
         policy.protect_sensitive = false;
         assert!(policy.permits_formats(&["org.nspasteboard.ConcealedType".into()]));
+        assert!(!policy.permits_formats(&["public.utf8-plain-text".into(), PRIVATE_CODE_FORMAT.into()]));
     }
     #[test]
     fn unsupported_source_identity_fails_closed_and_normalizes_list() {
