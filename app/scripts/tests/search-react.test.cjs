@@ -85,6 +85,16 @@ for(const scopeId of ['clipboard','all'])for(const query of ['', 'fixture'])test
   await wait(()=>w.document.querySelector('.result.active h3')?.textContent===pinned.content);
   assert.equal(q.value,'');
 });
+test('an account awaiting local credentials keeps its row and updates after the code is filled',async t=>{
+  let missing=true;
+  const {w,scope,key,calls}=await setup(t,{search:id=>id==='twofa'?[{id:'mail-account:example@163.com',title:'example@163.com',issuer:'163 邮箱',source:'mail',mailAccount:true,mailCodeId:null,credentialsMissing:missing}]:[]});
+  await scope('twofa');await wait(()=>w.document.querySelector('.result.active')?.textContent.includes('请填写邮箱授权码'));
+  assert.ok(w.document.querySelector('#search-preview').textContent.includes('更新一次客户端授权码'));
+  key('Enter');await wait(()=>w.document.querySelector('#actionStatus').textContent.includes('更新邮箱授权码'));
+  assert.equal(calls.some(call=>call[0]==='copy'||call[0]==='action'),false);
+  missing=false;await delay(1100);await wait(()=>w.document.querySelector('.result.active')?.textContent.includes('等待验证码'));
+  assert.ok(!w.document.querySelector('#search-preview').textContent.includes('更新一次客户端授权码'));
+});
 test('clipboard Enter invokes paste and reports a copy-only fallback', async t => {
   const {w, key, scope} = await setup(t);
   await scope('clipboard');

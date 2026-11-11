@@ -12,6 +12,7 @@ import { host, type SearchItem, type SearchSnapshot } from './types';
 const tools = new Set(['calculation','timestamp','jwt','ip','dns','cloudflare','proxy','port','network','public-ip','json','url-tool']);
 export const resultKind = (item: SearchItem) => ({app:'应用',page:'网页',web:'网页','web-add':'网页',clipboard:'剪贴板',memo:'命令',twofa:'验证码'}[item.type] || '工具');
 export const waitingForMail = (item?: SearchItem) => Boolean(item?.mailAccount && !item.mailCodeId);
+export const mailWaitingLabel = (item?:SearchItem) => item?.credentialsMissing?'请填写邮箱授权码':'等待验证码';
 const imageUrl = (value: unknown) => /^(https?:\/\/|data:image\/|(?:\.\/|\/)?assets\/)/i.test(String(value || ''));
 const excerpt = (value: unknown, limit = 100) => String(value || '').slice(0, limit * 4).replace(/\s+/g, ' ').slice(0, limit);
 function itemMeta(item: SearchItem) {
@@ -23,7 +24,7 @@ function itemMeta(item: SearchItem) {
   }
   if (item.type === 'memo') return host.FlowHubMemoCatalog?.categorySegments(item.category || '').join(' › ') || item.category || '命令备忘';
   if (item.type === 'twofa') {
-    if (waitingForMail(item)) return `${item.issuer || '邮箱'} · 等待验证码`;
+    if (waitingForMail(item)) return `${item.issuer || '邮箱'} · ${mailWaitingLabel(item)}`;
     const received = item.source === 'mail' && typeof item.receivedAt === 'number' ? new Date(item.receivedAt) : null;
     return [item.issuer || '验证码', received?.toLocaleTimeString()].filter(Boolean).join(' · ');
   }

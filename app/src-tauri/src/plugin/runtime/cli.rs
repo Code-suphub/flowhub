@@ -385,7 +385,10 @@ impl Runtime {
         let mail = if id == "twofa" && installed.enabled && mail_allowed(&installed) {
             self.read_mail(|monitor| {
                 let value = monitor.status()?;
-                Ok(json!({"accounts":value["accounts"].as_array().map(Vec::len)}))
+                let accounts=value["accounts"].as_array();
+                Ok(json!({"accounts":accounts.map(Vec::len),"credentialStorage":value["credentialStorage"],
+                    "credentialsMissing":accounts.map(|a|a.iter().filter(|a|a["credentialsMissing"]==true).count()),
+                    "connected":accounts.map(|a|a.iter().filter(|a|matches!(a["status"].as_str(),Some("live"|"polling"))).count())}))
             })?
         } else {
             Value::Null

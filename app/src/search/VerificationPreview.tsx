@@ -79,7 +79,7 @@ export function VerificationPreview({ item }: { item: SearchItem }) {
   const { title, source, expiresAt, mailAccount } = item;
   const id = mailAccount ? item.mailCodeId : item.id;
   const waiting = mailAccount && !id;
-  const expiredMessage = mailAccount ? '等待验证码' : '验证码已过期';
+  const expiredMessage = mailAccount ? item.credentialsMissing?'请填写邮箱授权码':'等待验证码' : '验证码已过期';
   const [display, setDisplay] = useState<Display>(loading);
 
   useEffect(() => {
@@ -149,7 +149,7 @@ export function VerificationPreview({ item }: { item: SearchItem }) {
   }, [id, title, source, expiresAt, waiting, expiredMessage]);
 
   return <div className="verification-preview mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-    {waiting ? <span className="verification-time text-xs" role="status">等待验证码</span> : 'code' in display ? <>
+    {waiting ? <span className="verification-time text-xs" role="status">{expiredMessage}</span> : 'code' in display ? <>
       <span className="verification-digits select-none font-mono text-3xl font-semibold tabular-nums" aria-label={'验证码 ' + display.code}>{display.code}</span>
       <span className="verification-time text-xs tabular-nums">剩余 {display.remaining} 秒</span>
     </> : <span className="verification-time text-xs" role="status">{display.message}</span>}

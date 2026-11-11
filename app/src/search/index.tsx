@@ -4,7 +4,7 @@ import { Button, Dialog } from '../shared/ui';
 import { Help, Tooltip } from '../shared/controls';
 import { Command, CornerUpLeft, CornerDownLeft, History, MoreHorizontal, PanelRight, PanelRightClose, Pin, PinOff, Search as SearchIcon, Settings2 } from 'lucide-react';
 import { useMediaQuery } from '../shared/useMediaQuery';
-import { Results, resultActions, waitingForMail } from './Results';
+import { Results, resultActions, waitingForMail, mailWaitingLabel } from './Results';
 import { ActionPanel, actionIdentity, availableActions, type ResultAction } from './ActionPanel';
 import { CommandPalette } from './CommandPalette';
 import { QueryHistory } from './QueryHistory';
@@ -30,7 +30,7 @@ function KeyboardHint({selected,usageNavigation}: {selected?:SearchItem;usageNav
   const action=primaryLabel(selected);
   hints.push(waitingForMail(selected) ? '单击选择' : '单击选择 · 双击或回车执行');
   if(canPreview(selected))hints.push('⌘I 展开／收起预览','预览中 ⌥↑ / ⌥↓ 切换结果');
-  return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?waitingForMail(selected)?'↑↓ 选择 · 等待验证码':'↑↓ 选择 · ↵ '+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
+  return <span id="keyboardHint" className="search-keyboard-hint"><span>{usageNavigation?'↑↓ 跨排 · ←→ 同排':selected?waitingForMail(selected)?'↑↓ 选择 · '+mailWaitingLabel(selected):'↑↓ 选择 · ↵ '+action:'输入以搜索'}</span><Help label="其他快捷键"><div className="search-shortcut-list">{hints.map(hint=><span key={hint}>{hint}</span>)}</div></Help></span>;
 }
 
 function Search() {

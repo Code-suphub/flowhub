@@ -82,7 +82,7 @@ export function Preview({item, index, snapshot, onBack, onAction, onNavigate}: {
           {receivedAt ? <><dt>收取时间</dt><dd><time dateTime={receivedAt.toISOString()}>{receivedAt.toLocaleString()}</time></dd></> : null}
         </dl> : null}
         {item.mailAccount ? <MailCodeHistory key={identity} item={item}/> : null}
-        <p className="preview-note">{waitingForMail(item) ? '识别到新邮件验证码后，这里会自动更新。' : '按回车把验证码粘贴回唤出启动器的应用，也可以在操作菜单中选择复制。'}</p>
+        <p className="preview-note">{item.credentialsMissing?'邮箱地址已保留。请在验证码插件的“邮件验证码”中更新一次客户端授权码，之后会自动收件。':waitingForMail(item) ? '识别到新邮件验证码后，这里会自动更新。' : '按回车把验证码粘贴回唤出启动器的应用，也可以在操作菜单中选择复制。'}</p>
       </> : null}
       {clipboard ? <dl className="preview-properties">{item.sourceName ? <><dt>来源</dt><dd>{item.sourceName}</dd></> : null}{date && Number.isFinite(date.getTime()) ? <><dt>复制时间</dt><dd>{date.toLocaleString()}</dd></> : null}<dt>使用次数</dt><dd>{item.copyCount || 1} 次</dd>{item.pinnedAt ? <><dt>状态</dt><dd>已置顶</dd></> : null}{item.kind === 'file' ? <><dt>文件</dt><dd>{(item.fileNames || []).join('\n') || `${item.fileCount || 0} 个文件`}</dd></> : null}</dl> : null}
     </div>

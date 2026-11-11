@@ -927,7 +927,7 @@ function rememberQuery(item) {
   try {integration.onQueryUsed?.({query:state.query,scope:state.scope,clipboardKind:state.scope==='clipboard'?state.clipboardKind:'all',clipboardSource:state.scope==='clipboard'?state.clipboardSource ?? null:null,clipboardPinnedOnly:state.scope==='clipboard' && state.clipboardPinnedOnly===true});}catch{}
 }
 function activateVerificationCode(item, paste) {
-  if (item.mailAccount && (!item.mailCodeId || item.expiresAt <= Date.now())) return showActionStatus("等待验证码");
+  if (item.mailAccount && (!item.mailCodeId || item.expiresAt <= Date.now())) return showActionStatus(item.credentialsMissing?'请先在验证码插件中更新邮箱授权码':"等待验证码");
   return Promise.resolve(window.weborg.pluginAction("twofa", "activate", { id: item.mailCodeId || item.id, title: item.title, source: item.source, paste }))
     .then((result) => {
       if (result?.pasted === true) { showActionStatus("验证码已粘贴"); return; }
@@ -1730,7 +1730,7 @@ async function refreshTwofa({ append = false, deferRender = false, live = false 
       : keepTail ? [...next, ...state.twofaResults.slice(limit).filter(item => !existing.has(item.id))] : next;
     if (live) changed = state.twofaResults.length !== updated.length || updated.some((item, index) => {
       const previous = state.twofaResults[index];
-      return item.id !== previous?.id || item.mailCodeId !== previous?.mailCodeId || item.mailHistoryKey !== previous?.mailHistoryKey;
+      return item.id !== previous?.id || item.mailCodeId !== previous?.mailCodeId || item.mailHistoryKey !== previous?.mailHistoryKey || Boolean(item.credentialsMissing)!==Boolean(previous?.credentialsMissing);
     });
     state.twofaResults = updated;
     if (selected != null) {

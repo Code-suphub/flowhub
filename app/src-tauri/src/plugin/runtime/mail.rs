@@ -6,23 +6,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, VecDeque},
-    fs::{self, OpenOptions},
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
-    os::unix::fs::OpenOptionsExt,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{mpsc, Arc, Mutex, OnceLock},
     thread,
     time::Duration,
 };
 use zeroize::Zeroizing;
+mod credentials;
 
 const MAX_ACCOUNTS: usize = 8;
 const CODE_LIFETIME: u64 = 300;
 const HISTORY_LIFETIME: u64 = 24 * 60 * 60;
 const HISTORY_LIMIT: usize = 5;
-const KEYCHAIN_SERVICE: &str = "cn.ac.camellia.flowhub.mail";
-const LEGACY_KEYCHAIN_SERVICE: &str = "cn.ac.camellia.flowhub.twofa.mail";
 
 fn now() -> u64 {
     std::time::SystemTime::now()
@@ -113,86 +110,50 @@ struct Mailbox {
 struct Worker {
     state: Arc<Mutex<Mailbox>>,
     _stop: mpsc::Sender<()>,
+    credentials_missing:bool,
 }
 
 pub struct Monitor {
-    file: PathBuf,
+    store: credentials::Store,
     workers: BTreeMap<Account, Worker>,
-    credentials: Arc<Mutex<()>>,
     load_error: Option<String>,
 }
 
 impl Monitor {
     pub fn new(root: &Path) -> Self {
-        let file = root.join("mail-accounts.json");
-        let loaded = match fs::read(&file) {
-            Ok(bytes) => serde_json::from_slice::<Vec<Account>>(&bytes)
-                .map_err(|_| "邮箱配置无法读取".to_owned()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
-            Err(_) => Err("邮箱配置无法读取".into()),
-        };
+        let loaded = credentials::Store::load(root);
         let mut this = Self {
-            file,
+            store: credentials::Store::empty(root),
             workers: BTreeMap::new(),
-            credentials: Arc::new(Mutex::new(())),
             load_error: None,
         };
         match loaded {
-            Ok(accounts) if accounts.len() <= MAX_ACCOUNTS => {
-                let normalized = accounts
-                    .iter()
-                    .map(|account| Account::parse(&json!(account)))
-                    .collect::<Result<Vec<_>, _>>();
-                match normalized {
-                    Ok(accounts) => accounts.into_iter().for_each(|account| this.start(account)),
-                    Err(_) => this.load_error = Some("邮箱配置无法读取，请检查配置文件".into()),
-                }
+            Ok(store) => {
+                let accounts=store.entries.clone();this.store=store;
+                for entry in accounts {this.start(entry.account(),entry.secret());}
             }
-            _ => this.load_error = Some("邮箱配置无法读取，请检查配置文件".into()),
+            Err(error) => this.load_error = Some(error),
         }
         this
     }
 
-    fn start(&mut self, account: Account) {
+    fn start(&mut self, account: Account,secret:Option<Zeroizing<String>>) {
         let (stop, receiver) = mpsc::channel();
         let state = Arc::new(Mutex::new(Mailbox {
-            status: "connecting",
+            status: if secret.is_some(){"connecting"}else{"authorization"},
             codes: VecDeque::new(),
         }));
         let worker_state = state.clone();
         let worker_account = account.clone();
-        let credentials = self.credentials.clone();
-        if thread::Builder::new()
+        let credentials_missing=secret.is_none();
+        if let Some(secret)=secret {if thread::Builder::new()
             .name("flowhub-mail".into())
-            .spawn(move || monitor_mail(worker_account, worker_state, receiver, credentials))
+            .spawn(move || monitor_mail(worker_account, worker_state, receiver, secret))
             .is_err()
         {
             state.lock().unwrap().status = "offline";
-        }
-        self.workers.insert(account, Worker { state, _stop: stop });
-    }
-
-    fn persist(&self, accounts: &[&Account]) -> Result<(), String> {
-        let directory = self.file.parent().ok_or("缺少邮箱配置目录")?;
-        fs::create_dir_all(directory).map_err(|_| "无法创建邮箱配置目录")?;
-        let temp = self
-            .file
-            .with_extension(format!("{}.tmp", std::process::id()));
-        let data = serde_json::to_vec(accounts).map_err(|_| "无法编码邮箱配置")?;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temp)
-            .map_err(|_| "无法创建邮箱配置文件")?;
-        let result = file
-            .write_all(&data)
-            .and_then(|_| file.sync_all())
-            .and_then(|_| fs::rename(&temp, &self.file));
-        if result.is_err() {
-            let _ = fs::remove_file(&temp);
-        }
-        result.map_err(|_| "无法保存邮箱配置".into())
+        }}
+        self.workers.insert(account, Worker { state, _stop: stop,credentials_missing });
     }
 
     pub fn add(&mut self, mut params: Value) -> Result<Value, String> {
@@ -205,35 +166,19 @@ impl Monitor {
         };
         let secret = Zeroizing::new(secret);
         let secret = secret.trim();
-        if secret.is_empty()
-            || secret.len() > 128
-            || !secret.bytes().all(|b| b.is_ascii_alphanumeric())
-        {
+        if !credentials::valid_secret(secret) {
             return Err("请输入邮箱生成的客户端授权码".into());
         }
         let existing = self.workers.contains_key(&account);
         if !existing && self.workers.len() >= MAX_ACCOUNTS {
             return Err("最多连接 8 个邮箱".into());
         }
-        {
-            let _credentials = self.credentials.lock().unwrap();
-            keychain::set(&account.address, secret.as_bytes())?;
-            if !existing {
-                let accounts = self
-                    .workers
-                    .keys()
-                    .chain(std::iter::once(&account))
-                    .collect::<Vec<_>>();
-                if let Err(error) = self.persist(&accounts) {
-                    let _ = keychain::remove(KEYCHAIN_SERVICE, &account.address);
-                    return Err(error);
-                }
-            }
-            let _ = keychain::remove(LEGACY_KEYCHAIN_SERVICE, &account.address);
-            // Cancel any previous worker before it can write a stale migration.
-            self.workers.remove(&account);
-        }
-        self.start(account);
+        let secret=Zeroizing::new(secret.to_owned());
+        let mut entries=self.store.entries.iter().filter(|entry|entry.account()!=account).cloned().collect::<Vec<_>>();
+        entries.push(credentials::Entry::new(&account,Some(secret.clone())));
+        self.store.replace(entries)?;
+        self.workers.remove(&account);
+        self.start(account,Some(secret));
         Ok(json!({"saved":true}))
     }
 
@@ -245,20 +190,8 @@ impl Monitor {
         if !self.workers.contains_key(&account) {
             return Err("该邮箱已断开".into());
         }
-        let _credentials = self.credentials.lock().unwrap();
-        let previous = self.workers.keys().collect::<Vec<_>>();
-        let remaining = previous
-            .iter()
-            .copied()
-            .filter(|item| *item != &account)
-            .collect::<Vec<_>>();
-        self.persist(&remaining)?;
-        if let Err(error) = keychain::remove(LEGACY_KEYCHAIN_SERVICE, &account.address)
-            .and_then(|()| keychain::remove(KEYCHAIN_SERVICE, &account.address))
-        {
-            self.persist(&previous)?;
-            return Err(error);
-        }
+        let remaining=self.store.entries.iter().filter(|entry|entry.account()!=account).cloned().collect();
+        self.store.replace(remaining)?;
         self.workers.remove(&account);
         Ok(json!({"removed":true}))
     }
@@ -268,9 +201,9 @@ impl Monitor {
             return Err(error.clone());
         }
         let accounts = self.workers.iter().map(|(account, worker)| {
-            json!({"provider":account.provider,"address":account.address,"status":worker.state.lock().unwrap().status})
+            json!({"provider":account.provider,"address":account.address,"status":worker.state.lock().unwrap().status,"credentialsMissing":worker.credentials_missing})
         }).collect::<Vec<_>>();
-        Ok(json!({"accounts":accounts,"codes":self.search("")}))
+        Ok(json!({"accounts":accounts,"codes":self.search(""),"credentialStorage":"local-file"}))
     }
 
     pub fn search(&self, query: &str) -> Vec<Value> {
@@ -315,6 +248,7 @@ impl Monitor {
                 "id": format!("mail-account:{}", account.address),
                 "type": "twofa", "source": "mail", "mailAccount": true,
                 "title": account.address, "issuer": issuer,
+                "credentialsMissing":worker.credentials_missing,
                 "mailCodeId": code.map(|code| &code.id),
                 "mailHistoryKey": state.codes.iter().rev()
                     .filter(|code| in_history(code.received, now))
@@ -594,40 +528,12 @@ fn collect<T: Read + Write>(
     Ok(())
 }
 
-fn authorization(
-    address: &str,
-    stop: &mpsc::Receiver<()>,
-    credentials: &Mutex<()>,
-) -> Result<Zeroizing<String>, String> {
-    if let Some(secret) = keychain::get(KEYCHAIN_SERVICE, address)? {
-        return Ok(secret);
-    }
-    // The old item can need one-time permission. Do not hold the mutation lock
-    // while macOS is waiting, and never migrate after replacement or removal.
-    let legacy = keychain::get(LEGACY_KEYCHAIN_SERVICE, address)?
-        .ok_or("邮箱授权码不存在")?;
-    let _credentials = credentials.lock().unwrap();
-    if !matches!(stop.try_recv(), Err(mpsc::TryRecvError::Empty)) {
-        return Err("邮箱连接已变更".into());
-    }
-    if let Some(secret) = keychain::get(KEYCHAIN_SERVICE, address)? {
-        return Ok(secret);
-    }
-    keychain::set(address, legacy.as_bytes())?;
-    let _ = keychain::remove(LEGACY_KEYCHAIN_SERVICE, address);
-    Ok(legacy)
-}
-
 fn monitor_mail(
     account: Account,
     state: Arc<Mutex<Mailbox>>,
     stop: mpsc::Receiver<()>,
-    credentials: Arc<Mutex<()>>,
+    secret: Zeroizing<String>,
 ) {
-    let Ok(secret) = authorization(&account.address, &stop, &credentials) else {
-        state.lock().unwrap().status = "authorization";
-        return;
-    };
     let mut cursor = Cursor::default();
     let mut backoff = 2;
     while matches!(stop.try_recv(), Err(mpsc::TryRecvError::Empty)) {
@@ -684,37 +590,6 @@ fn monitor_mail(
     }
 }
 
-#[cfg(target_os = "macos")]
-mod keychain {
-    use super::{Zeroizing, KEYCHAIN_SERVICE};
-    use security_framework::passwords::{
-        delete_generic_password, get_generic_password, set_generic_password,
-    };
-
-    pub fn get(service: &str, address: &str) -> Result<Option<Zeroizing<String>>, String> {
-        let bytes = Zeroizing::new(match get_generic_password(service, address) {
-            Ok(bytes) => bytes,
-            Err(error) if error.code() == -25300 => return Ok(None),
-            Err(_) => return Err("无法读取钥匙串授权码".into()),
-        });
-        let secret = std::str::from_utf8(&bytes).map_err(|_| "授权码格式无效")?;
-        Ok(Some(Zeroizing::new(secret.to_owned())))
-    }
-
-    pub fn set(address: &str, secret: &[u8]) -> Result<(), String> {
-        set_generic_password(KEYCHAIN_SERVICE, address, secret)
-            .map_err(|_| "无法保存授权码到钥匙串".into())
-    }
-
-    pub fn remove(service: &str, address: &str) -> Result<(), String> {
-        match delete_generic_password(service, address) {
-            Ok(()) => Ok(()),
-            Err(error) if error.code() == -25300 => Ok(()),
-            Err(_) => Err("无法从钥匙串删除授权码".into()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -730,8 +605,8 @@ mod tests {
         let state = Arc::new(Mutex::new(Mailbox { status: "live", codes: VecDeque::new() }));
         let (stop, _) = mpsc::channel();
         let monitor = Monitor {
-            file: PathBuf::new(), credentials: Arc::new(Mutex::new(())), load_error: None,
-            workers: BTreeMap::from([(account, Worker { state: state.clone(), _stop: stop })]),
+            store:credentials::Store::empty(Path::new("/fixture")),load_error: None,
+            workers: BTreeMap::from([(account, Worker { state: state.clone(), _stop: stop,credentials_missing:false })]),
         };
         let waiting = monitor.search_accounts("163");
         assert_eq!(waiting.len(), 1);
@@ -837,19 +712,5 @@ mod tests {
             .metadata(Provider::NetEase)
             .to_string()
             .contains("013489"));
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod keychain {
-    use super::Zeroizing;
-    pub fn get(_: &str, _: &str) -> Result<Option<Zeroizing<String>>, String> {
-        Err("邮箱授权仅支持 macOS".into())
-    }
-    pub fn set(_: &str, _: &[u8]) -> Result<(), String> {
-        Err("邮箱授权仅支持 macOS".into())
-    }
-    pub fn remove(_: &str, _: &str) -> Result<(), String> {
-        Err("邮箱授权仅支持 macOS".into())
     }
 }
