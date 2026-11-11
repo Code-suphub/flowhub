@@ -19,6 +19,23 @@ node app/scripts/dev/flowhub-cli.mjs help
 
 HTTP 配置命令依赖旧目录服务，默认地址为 `http://127.0.0.1:4173`，不是 Tauri 正式宿主的控制端口。诊断 CLI 中 `diagnose`、`monitor sample` 会落盘，启停监测和清空诊断同样是写操作，按任务范围使用。
 
+## 安装版后台插件迁移
+
+支持 `FlowHubPluginCLIProtocol=1` 的 macOS 安装版提供后台插件维护入口，启动主程序后运行：
+
+```sh
+node app/scripts/dev/flowhub-cli.mjs plugin list
+node app/scripts/dev/flowhub-cli.mjs plugin migrate docker --dry-run
+node app/scripts/dev/flowhub-cli.mjs plugin migrate docker
+node app/scripts/dev/flowhub-cli.mjs plugin verify docker
+```
+
+`FLOWHUB_APP` 可指定应用包路径，默认 `/Applications/FlowHub.app`。CLI 先检查应用能力，旧版不会收到未知参数而意外唤出搜索窗口。原生客户端在初始化 Tauri 前处理参数，通过仅当前用户可访问的 Unix socket 连接同一安装程序的宿主；服务器双向核对用户和进程路径。命令不会发送系统鼠标／键盘事件。
+
+迁移只处理已登记的本地插件，同版本、同权限、同文件内容搬到 `~/Library/Application Support/FlowHub/local-plugins/<id>`，拒绝覆盖不同包或接收新插件。先校验并复制，之后由宿主持有插件管理锁、更新登记并重载目标进程。失败恢复原登记及进程。插件数据仍按原 ID 保存，验证码邮件监控留在宿主。`--dry-run` 不创建目录、不重载、不写登记；`verify` 检查包、健康协议及已声明的只读状态，停用插件保持停用。
+
+`verify` 可能按正常宿主流程启动尚未运行的已启用插件；它不启用被停用的插件。该入口是正式维护能力，不能调用任意业务 RPC、读取验证码或凭证，也不能代替安装版的页面点击、IME 或键盘焦点验收。迁移后核对 CLI 返回、磁盘登记、进程路径、包指纹与原有配置，再清理旧目录。
+
 ## 隔离 WKWebView 驱动
 
 先检查当前 checkout 是否具有 `app/scripts/dev/flowhub-ui-test.mjs` 及配套的 `docs/architecture/testing/ui-test-cli.md`。存在时阅读其完整隔离要求，并执行：

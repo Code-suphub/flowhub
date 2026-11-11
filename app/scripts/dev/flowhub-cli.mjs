@@ -5,6 +5,7 @@ import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { runPluginCli } from "./native-plugin-cli.mjs";
 import "../../../extension/src/config-contract.js";
 
 const baseUrl = String(process.env.FLOWHUB_URL || "http://127.0.0.1:4173").replace(/\/$/, "");
@@ -16,6 +17,7 @@ const monitorConfigPath = join(diagnosticsDir, "monitoring.json");
 
 function usage() {
   console.log(`FlowHub CLI\n\n用法:\n  pnpm run cli config get\n  pnpm run cli config set <路径> <JSON值>\n  pnpm run cli config replace <JSON文件>\n  pnpm run cli web list\n  pnpm run cli diagnose\n  pnpm run cli monitor status|enable|disable|sample|clear|export <文件>\n\n环境变量:\n  FLOWHUB_URL  服务地址，默认 http://127.0.0.1:4173\n\nHTTP 配置命令仅支持顶层 items 的旧版目录，不支持桌面 SQLite 配置或 memo list。\n路径使用点号分隔，例如 app.title；值必须是合法 JSON。`);
+  console.log('\n安装版后台插件管理（macOS）:\n  pnpm run cli plugin list\n  pnpm run cli plugin migrate <id> --dry-run\n  pnpm run cli plugin migrate <id>\n  pnpm run cli plugin verify <id>\n\nFLOWHUB_APP 可指定 FlowHub.app 路径。迁移保留原版本与权限，只搬迁已登记的本地插件。');
 }
 
 async function ensureDiagnosticsDir() { await mkdir(diagnosticsDir, { recursive: true }); }
@@ -72,6 +74,7 @@ async function writeConfig(config) {
 async function main() {
   const [resource, action, ...rest] = args;
   if (!resource || resource === "help" || resource === "--help" || resource === "-h") return usage();
+  if (resource === "plugin") return console.log(JSON.stringify(await runPluginCli(args.slice(1)), null, 2));
   if (resource === "config") {
     if (action === "get") return console.log(JSON.stringify(await readConfig(), null, 2));
     if (action === "set") {
@@ -114,4 +117,4 @@ async function main() {
   throw new Error("未知命令；使用 flowhub help 查看帮助");
 }
 
-main().catch((error) => { console.error(`错误：${error.message}`); process.exitCode = 1; });
+main().catch((error) => { console.error(args[0] === 'plugin' ? JSON.stringify({ok:false,error:error.message}) : `错误：${error.message}`); process.exitCode = 1; });

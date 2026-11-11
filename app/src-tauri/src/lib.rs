@@ -1285,6 +1285,15 @@ fn register_platform_hotkey(app: &tauri::AppHandle, shortcut: Shortcut) -> Resul
 }
 
 pub fn run() {
+    if std::env::args().nth(1).as_deref() == Some("--plugin-cli") {
+        #[cfg(target_os = "macos")]
+        let result = plugin::runtime::cli::client(std::env::args().skip(2).collect());
+        #[cfg(not(target_os = "macos"))]
+        let result: Result<Value, String> = Err("插件管理 CLI 目前仅支持 macOS".into());
+        let success = result.as_ref().is_ok_and(|value| value["ok"] == true);
+        println!("{}", result.unwrap_or_else(|error| json!({"ok":false,"error":error})));
+        std::process::exit(if success { 0 } else { 1 });
+    }
     crate::diagnostics::focus::initialize();
     let builder = tauri::Builder::default()
         .manage(plugin_workspace::Workspace::default())
@@ -1415,6 +1424,10 @@ pub fn run() {
             let config = hydrated_config(&state).map_err(std::io::Error::other)?;
             app.manage(state);
             app.manage(crate::plugin::runtime::Runtime::new(app.state::<AppState>().root_dir.clone()).map_err(std::io::Error::other)?);
+            #[cfg(target_os = "macos")]
+            if let Err(error) = plugin::runtime::cli::start(app.handle().clone()) {
+                eprintln!("[flowhub-tauri] 插件 CLI 启动失败：{error}");
+            }
             let mail_monitor = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 mail_monitor.state::<crate::plugin::runtime::Runtime>().sync_mail_monitor().await;

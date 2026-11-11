@@ -22,7 +22,7 @@
     "build:ui-test": "pnpm run build:ui && cargo build --manifest-path src-tauri/Cargo.toml --features ui-test,custom-protocol --bin flowhub-ui-test",
     "test:ui-cli": "node --test scripts/tests/ui-test-agent.test.cjs scripts/tests/ui-test-cli.test.mjs scripts/tests/ui-test-plan.test.mjs",
     "posttest": "pnpm run test:ui-cli",
-    "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --check ui/shared/tauri-adapter.js && node --check ui/shared/browser-adapter.js && node --check ui/search/search.js && node --check scripts/build/local-build.mjs && node --check scripts/dev/flowhub-cli.mjs && node --check scripts/build/fix-updater-metadata.mjs && pnpm run test:ui && pnpm run test:preview && pnpm run test:security && node scripts/tests/focus-diagnostics.test.cjs && node scripts/tests/app-navigation.test.cjs",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml && node --test scripts/tests/plugin-cli.test.cjs && node --check ui/shared/tauri-adapter.js && node --check ui/shared/browser-adapter.js && node --check ui/search/search.js && node --check scripts/build/local-build.mjs && node --check scripts/dev/flowhub-cli.mjs && node --check scripts/build/fix-updater-metadata.mjs && pnpm run test:ui && pnpm run test:preview && pnpm run test:security && node scripts/tests/focus-diagnostics.test.cjs && node scripts/tests/app-navigation.test.cjs",
     "build": "node scripts/build/tauri-build.mjs",
     "build:local": "node scripts/build/local-build.mjs",
     "build:local:install": "node scripts/build/local-build.mjs --install",
