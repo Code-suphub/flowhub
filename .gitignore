@@ -19,3 +19,8 @@ __pycache__/
 /plugins
 # Local shared UI dependency used by the nested plugin checkout.
 /common-components
+# Transient lock/staging files for development-only design synchronization.
+**/node_modules
+/app/src-tauri/target
+**/.layout-sync-lock
+**/plasmic-layouts.css.next

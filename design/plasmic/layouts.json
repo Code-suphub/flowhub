@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "output": "app/ui/shared/plasmic-layouts.css",
+  "layouts": [
+    {"id":"launcher","component":"联动 · 主体启动器","designSource":"启动器 · 全部","page":"search","entry":"search.html","regions":{"root":".search-shell","header":".search-header","scopes":".search-scopes","content":".search-workbench","footer":".search-footer"},"designPaths":{"root":[0],"header":[0,0],"scopes":[0,1],"content":[0,2],"footer":[0,3]}},
+    {"id":"settings","component":"联动 · 主体设置","designSource":"设置 · 通用设置","page":"settings","entry":"settings.html","regions":{"root":".settings-shell","header":".settings-topbar","content":".settings-workspace"},"designPaths":{"root":[0,1],"header":[0,1,1],"content":[0,1,2]}},
+    {"id":"market","component":"联动 · 主体插件市场","designSource":"插件市场 · 发现","page":"plugin-market","entry":"plugin-market.html","regions":{"root":".fh-market"},"designPaths":{"root":[1,0]}},
+    {"id":"canvas","component":"联动 · 主体桌面画布","designSource":"桌面组件 · 画布","page":"plugin-canvas","entry":"plugin-canvas.html","regions":{"root":".fh-canvas-app","header":".canvas-toolbar","content":"#canvas"},"designPaths":{"root":[0],"header":[0,0],"content":[0,2]}},
+    {"id":"workspace","component":"联动 · 主体插件工作区","designSource":"插件工作区 · 插件导航条","page":"plugin-workspace","entry":"plugin-workspace.html","regions":{"root":".workspace-dock-window, .workspace-panel, .workspace-preview-note","content":".workspace-dock-error"},"designPaths":{"root":[0],"content":[0,1]}},
+    {"id":"menubar","component":"联动 · 主体菜单栏","designSource":"菜单栏图标","page":"menu-bar-panel","entry":"menu-bar-panel.html","regions":{"root":".fh-menubar-panel"},"designPaths":{"root":[1,0]}},
+    {"id":"status","component":"联动 · 主体插件状态","designSource":"插件状态","page":"plugin-status","entry":"plugin-status.html","regions":{"root":".fh-status-page"},"designPaths":{"root":[1,0]}},
+    {"id":"detail","component":"联动 · 主体插件详情","designSource":"插件详情 · 独立窗口导航","page":"plugin-detail","entry":"plugin-detail.html","regions":{"root":".fh-detail-page","header":".fh-detail-toolbar"},"designPaths":{"root":[0],"header":[0,0]}},
+    {"id":"script","component":"联动 · 主体脚本提示","designSource":"脚本认证 · 合成来源","page":"script-alert","entry":"script-alert.html","regions":{"root":".fh-script-alert","header":".fh-script-alert > header"},"designPaths":{"root":[0],"header":[0,0]}}
+  ]
+}

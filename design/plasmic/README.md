@@ -34,6 +34,23 @@ node design/plasmic/sync.mjs --library "$HOME/.local/state/flowhub-plasmic/libra
 
 默认追加时跳过已有名称，保留 Studio 的修改。确需替换已有组件正文时加 `--update-existing`，并先核对导出与 Studio 差异；工具要求远端 revision 与上次 Git 外回执一致。检测到其他 Studio 修改后应先导出并合并，不应改写回执绕过保护。没有自动双向同步。
 
+## 主体布局自动预览
+
+运行时联动使用单独的“联动 · 主体…”组件，原 110 个设计视图保留。联动组件以原来的公开夹具作为底图，HTML ID 为 `flowhub-layout-root`、`flowhub-layout-header` 等的区域对应实际页面；完整映射见 [layouts.json](./layouts.json)。设置的十二个分类共用设置壳，启动器各分类共用搜索壳。文字、数据、事件和动态显隐仍由原组件负责。
+
+在 `app/` 执行：
+
+```sh
+export PLASMIC_AUTH_FILE=/absolute/path/to/private/.plasmic.auth
+pnpm plasmic:dev
+```
+
+主体预览使用 `http://127.0.0.1:5200/search.html?preview=demo`，其他入口如 `settings.html?preview=demo`、`plugin-market.html?preview=demo`。每三秒检查保存版本，有变化时仅将已绑定区域的样式差异生成到本地 `app/ui/shared/plasmic-layouts.css`，通过 Vite 更新 CSS；角落显示同步状态。无需发布 Plasmic，也不会构建或更新安装版。
+
+在 Plasmic 修改带上述 ID 的区域的间距、颜色、字号、尺寸或布局属性后保存。新增节点、修改文案、未绑定区域、变体或业务结构会提示需要代码适配，并保留上次预览；不能将设计示例误当业务数据。初始样式基线不覆盖现有响应式布局，恢复设计基线会撤回本次覆盖。带 URL 的资源与可执行内容不参与同步。
+
+`pnpm plasmic:sync --check` 离线核对文件，`pnpm plasmic:sync --apply` 单次拉取。源文件有手改时停止自动覆盖。普通 `dev:web`、构建与安装版不启动监听；独立预览不能替代原生窗口、焦点、IME 与双屏验收。按模块进度和证据入口见 [接入清单](../../docs/tasks/plasmic-auto-modules.md)。
+
 每批写入后读回项目，核对组件名称并原子保存回执到 `~/.local/state/flowhub-plasmic/import-receipt.json`。请求失败或超时后，先读取远端实际内容，再判断是否继续；工具不自动重放写入。
 
 录入验收包含本地结构检查、远端名称 / 路径和节点读回、Plasmic codegen、独立浏览器渲染及关键字段核对。合成页面与设计导出不能替代安装版的鼠标命中、系统焦点、中文输入法、双屏、硬件或危险操作验收。
