@@ -38,6 +38,8 @@ node design/plasmic/sync.mjs --library "$HOME/.local/state/flowhub-plasmic/libra
 
 运行时联动使用单独的“联动 · 主体…”组件，原 110 个设计视图保留。联动组件以原来的公开夹具作为底图，HTML ID 为 `flowhub-layout-root`、`flowhub-layout-header` 等的区域对应实际页面；完整映射见 [layouts.json](./layouts.json)。设置的十二个分类共用设置壳，启动器各分类共用搜索壳。文字、数据、事件和动态显隐仍由原组件负责。
 
+在 Studio 的组件列表搜索“联动”，打开与映射表同名的组件，再选择带上述 HTML ID 的区域编辑样式。各插件的外层布局自动预览也按这个命名约定组织，启动方式与具体范围见插件仓库的 `scripts/plasmic/README.md`。
+
 在 `app/` 执行：
 
 ```sh
