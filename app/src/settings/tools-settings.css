@@ -1,0 +1,82 @@
+.settings-tool-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.settings-tools-card {
+  min-width: 0;
+  padding: 14px 16px 4px;
+  border: 1px solid var(--fh-border);
+  border-radius: 12px;
+  background: var(--fh-surface-raised);
+}
+
+.settings-tools-card .settings-section > legend {
+  color: var(--fh-text);
+  font-weight: 600;
+}
+
+.settings-tool-sections .settings-tools-grid .settings-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding-block: 10px;
+}
+
+.settings-tools-grid .settings-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-tools-grid .settings-row > [data-setting-control] {
+  width: auto;
+  justify-self: end;
+}
+
+.settings-tools-grid .settings-row [role="status"]:focus-visible {
+  outline: 2px solid var(--fh-accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.settings-tools-clear-note {
+  display: block;
+  margin-top: 4px;
+  text-align: center;
+}
+
+@container settings-workspace (max-width: 625px) {
+  .settings-tool-sections {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
+@container settings-workspace (max-width: 390px) {
+  .settings-tools-card {
+    padding-inline: 12px;
+  }
+
+  .settings-tool-sections .settings-tools-grid [data-setting-label="命令历史与参数模板"] {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+  }
+
+  .settings-tools-grid [data-setting-label="命令历史与参数模板"] > [data-setting-control] {
+    justify-self: start;
+    text-align: start;
+  }
+}
+
+@media (pointer: coarse) {
+  .settings-tools-grid .settings-row {
+    min-height: 44px;
+  }
+
+  .settings-tools-grid .settings-row .fh-button {
+    min-height: 44px;
+  }
+}

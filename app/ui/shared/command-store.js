@@ -110,7 +110,12 @@
     }
     return { total: stored.length, templates: read(TEMPLATE_KEY).length, byTool };
   };
-  const clearAll = () => { write(HISTORY_KEY, []); write(TEMPLATE_KEY, []); };
+  const clearAll = () => {
+    if (!storage()) return false;
+    const historyCleared = write(HISTORY_KEY, []);
+    const templatesCleared = write(TEMPLATE_KEY, []);
+    return historyCleared && templatesCleared;
+  };
 
   function formatAge(at, now = Date.now()) {
     const elapsed = Math.max(0, now - (Number(at) || 0));

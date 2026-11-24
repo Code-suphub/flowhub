@@ -3,7 +3,7 @@ export interface InstalledPlugin { enabled: boolean; directory?: string; manifes
 export type SettingsHost = Window & {
   weborg: Record<string, (...args: any[]) => any>;
   FlowHubMemoCatalog?: { cloneDefaults: () => import('./model').Memo[] };
-  FlowHubCommandStore?: { counts: () => Bag; clearAll: () => void };
+  FlowHubCommandStore?: { counts: () => Bag; clearAll: () => boolean | void };
   flowhubPerformance?: { enable: (enabled: boolean) => void; report: () => unknown; reset: () => void };
   FlowHubPluginIntegration?: { refresh: () => Promise<void>; subscribe: (fn: () => void) => () => void; getSnapshot: () => InstalledPlugin[]; attach: (frame: HTMLIFrameElement) => () => void; show: (module: string) => void };
   runMenuUpdate?: () => Promise<void>;

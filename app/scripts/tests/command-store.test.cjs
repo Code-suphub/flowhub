@@ -111,7 +111,7 @@ function harness() {
     assert.equal(counts.templates, 1);
     assert.equal(JSON.stringify(counts.byTool), '{"ping":2,"port":1}');
 
-    h.store.clearAll();
+    assert.equal(h.store.clearAll(), true);
     assert.equal(JSON.stringify(h.store.counts()), '{"total":0,"templates":0,"byTool":{}}');
   }
 
@@ -154,6 +154,7 @@ function harness() {
     assert.equal(store.history.record('ping', 'ping example.com').recorded, true, '写入失败仍返回已记录，界面不报错');
     assert.equal(store.history.list().length, 0);
     assert.equal(JSON.stringify(store.counts()), '{"total":0,"templates":0,"byTool":{}}');
+    assert.equal(store.clearAll(), false);
   }
 
   console.log('PASS: command history and parameter templates are bounded, clearable and skip credentials');

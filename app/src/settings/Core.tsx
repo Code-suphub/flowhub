@@ -5,7 +5,7 @@ import { Button, Dialog } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
 import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
 import { host, readonly, write } from './api';
-import { tools, clipboardLimit, hasExclusions } from './model';
+import { clipboardLimit, hasExclusions } from './model';
 import { SettingsStore, useSettings } from './store';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { MenuBar } from './MenuBar';
@@ -212,19 +212,6 @@ function Updates({ store }: { store: SettingsStore }) {
     </section>
     <section className="settings-core-group" aria-labelledby="update-preferences"><h2 id="update-preferences" className="settings-core-group-title">自动更新</h2><Toggle label="自动检查正式版" checked={core.autoUpdateCheck !== false} onChange={v => store.edit(c => { c.core.autoUpdateCheck = v; })} help="每 10 分钟检查正式版。" /><Toggle label="自动下载并重启安装" checked={core.autoUpdateInstall === true} onChange={v => store.edit(c => { c.core.autoUpdateInstall = v; })} /></section>
   </div>;
-}
-const toolSections: {title:string;keys:(keyof typeof tools)[]}[] = [
-  {title:'网络与连接',keys:['ping','curl','dns','dnsIpGeo','cloudflare','ip']},
-  {title:'转换与解析',keys:['calculator','timestamp','jwt','json','url']},
-  {title:'本机与进程',keys:['port','localIp','proxy']},
-  {title:'历史与模板',keys:['commandHistory']},
-];
-export function Tools({ store }: { store: SettingsStore }) {
-  const s=useSettings(store),[counts,setCounts]=useState(()=>host().FlowHubCommandStore?.counts()),[clearHistory,setClearHistory]=useState(false);
-  return <><div className="settings-tool-sections grid gap-7">{toolSections.map(section=><SettingsSection key={section.title} title={section.title}>
-    <div className="settings-tools-grid">{section.keys.map(key=><Toggle key={key} label={tools[key]} checked={s.config!.plugins.tools.settings[key]!==false} onChange={value=>store.edit(config=>{config.plugins.tools.settings[key]=value;})} />)}</div>
-    {section.keys.includes('commandHistory')?<Row label="命令历史与参数模板" help="ping、curl、端口历史共用此开关；包含凭据的查询不会写入历史。"><p>{counts?`${counts.total} 条历史 · ${counts.templates} 个模板`:'暂无历史'}</p><Button onClick={()=>setClearHistory(true)}>清空历史与模板</Button></Row>:null}
-  </SettingsSection>)}</div>{clearHistory?<Dialog title="清空命令历史与模板" busy={false} onClose={()=>setClearHistory(false)}><p>此操作不能撤销。历史和参数模板将同时清空。</p><Button onClick={()=>{if(readonly())return;host().FlowHubCommandStore?.clearAll();setCounts(host().FlowHubCommandStore?.counts());setClearHistory(false);}}>确认清空</Button></Dialog>:null}</>;
 }
 const retentionFields = [
   { key: 'retentionDays', label: '留存天数', defaultValue: 30, max: 3650, help: undefined },

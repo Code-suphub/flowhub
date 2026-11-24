@@ -266,7 +266,8 @@ test('clipboard and tool groups retain every setting, drafts and explicit histor
 test('tools use a compact grid and memos keep navigation separate from details', async () => {
   const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
   await h.click(h.button(view.container,'工具'));
-  assert.equal(view.container.querySelectorAll('.settings-tools-grid .settings-row').length,Object.keys(h.model.tools).length);
+  assert.equal(view.container.querySelectorAll('.settings-tools-card').length,4);
+  assert.equal(view.container.querySelectorAll('.settings-tools-grid [role=switch]').length,Object.keys(h.model.tools).length);
   await h.click(h.button(view.container,'备忘录'));
   assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-nav .settings-memo-tree'));
   assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-detail'));
@@ -520,9 +521,9 @@ test('navigation retains lookup, scroll and focus across breakpoints without ste
     assert.ok(view.container.querySelector('.settings-compact-workspace [aria-label="搜索设置"]'));
     await resize(true);assert.equal(document.activeElement,input);await resize(false);assert.equal(document.activeElement,input);assert.equal(store.dirty,true);assert.equal(writes.length,0);
     await h.click(view.container.querySelector('[data-page="core"]'));
-    await h.input(lookup(),'备份');lookup().focus();await resize(true);await h.act(async()=>window.switchModule('tools'));
+    await h.input(lookup(),'备份');lookup().focus();await resize(true);await h.act(async()=>window.switchModule('updates'));
     await h.act(async()=>{const selector=view.container.querySelector('[aria-label="切换页面"]');selector.blur();selector.focus();});await resize(false);
-    assert.equal(view.container.querySelector('h1').textContent,'工具');assert.equal(lookup().value,'备份');assert.equal(document.activeElement===lookup(),true,'a filtered-out current page falls back to lookup focus');
+    assert.equal(view.container.querySelector('h1').textContent,'版本与更新');assert.equal(lookup().value,'备份');assert.equal(document.activeElement===lookup(),true,'a filtered-out current page falls back to lookup focus');
     await h.act(async()=>store.patch({configPath:{resolvedPath:'/config/B'}}));assert.equal(lookup().value,'');
     await view.unmount();store.dispose();
   } finally {window.matchMedia=previous;}

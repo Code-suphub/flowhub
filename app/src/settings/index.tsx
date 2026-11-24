@@ -12,7 +12,8 @@ import { SettingsFooter } from './SettingsFooter';
 import { useSettingLocation } from './useSettingLocation';
 import { shortcutKeys } from '../shared/shortcuts';
 import { useMediaQuery } from '../shared/useMediaQuery';
-import { Core, Clipboard, Tools } from './Core';
+import { Core, Clipboard } from './Core';
+import { Tools } from './Tools';
 import { CanvasSettings } from './CanvasSettings';
 import { WebCatalog, Memos } from './Collections';
 import { Applications } from './Applications';
@@ -36,7 +37,7 @@ const emptyPlugins: InstalledPlugin[] = [];
 export function Settings({ store }: { store: SettingsStore }) {
   const s = useSettings(store), [journey,setJourney]=useState<{pages:PageId[];index:number}>(()=>{const params=new URLSearchParams(window.location.search),requested=params.get('module') || '';return {pages:[params.get('update')==='1'?'updates':isPage(requested)?requested:'core'],index:0};}), [json, setJson] = useState(false), [reset, setReset] = useState(false), [close, setClose] = useState(false), [review,setReview] = useState(false), [searchOpen,setSearchOpen] = useState(false);
   const module=journey.pages[journey.index], narrow=useMediaQuery('(max-width: 699px)');
-  const compactWorkspace = module === 'search' || module === 'menubar' || module === 'canvas' || module === 'web' || module === 'clipboard';
+  const compactWorkspace = module === 'search' || module === 'menubar' || module === 'canvas' || module === 'web' || module === 'clipboard' || module === 'tools';
   const journeyRef=useRef(journey), main=useRef<HTMLElement>(null);
   const navigationFocus=useRef<'lookup'|'page'|null>(null), transferringNavigation=useRef(false);
   useLayoutEffect(()=>{
@@ -166,7 +167,7 @@ export function Settings({ store }: { store: SettingsStore }) {
       <main ref={main} id="settings-content" aria-labelledby="settings-page-title" tabIndex={-1} className="settings-main min-w-0" onScroll={()=>{if(main.current)positions.set(journeyRef.current.pages[journeyRef.current.index],main.current.scrollTop);}}><div key={`${sourceKey}:${module}`} className={`settings-page${module==='web' || module==='memo'?' settings-page-wide':''}`}>
         {!s.config ? <EmptyState error={!s.busy}>{s.busy ? '正在读取配置…' : '配置未能加载'}<Button disabled={s.busy} onClick={() => void store.run(() => store.load())}>重试</Button></EmptyState> : <>
           {module === 'canvas' ? <CanvasSettings /> : module === 'appearance' ? <div className="settings-appearance"><div className="settings-material-sample"><FlowHubLogo/><strong>轻雾玻璃</strong><span>鼠尾草绿 · 暖沙色</span></div><div className="settings-appearance-choice" data-setting-label="外观主题" tabIndex={-1}><span>外观主题</span><div data-setting-control><Theme /></div></div><p className="fh-muted">{readonly() ? '浏览器使用玻璃效果演示背景；Mac 版叠加原生窗口材质。' : '原生窗口材质随桌面光色变化，并尊重系统的降低透明度设置。'}</p></div> : <>
-            {['core', 'data', 'updates', 'search', 'menubar'].includes(module) ? <Core store={store} section={module === 'core' ? 'general' : module} /> : <fieldset disabled={s.busy || s.conflict || (readonly() && module !== 'web' && module !== 'memo')} className="settings-fieldset">{module === 'web' ? <WebCatalog store={store} /> : module === 'memo' ? <Memos store={store} /> : module === 'clipboard' ? <Clipboard store={store} /> : module === 'tools' ? <Tools store={store} /> : <Applications store={store} />}</fieldset>}
+            {['core', 'data', 'updates', 'search', 'menubar'].includes(module) ? <Core store={store} section={module === 'core' ? 'general' : module} /> : <fieldset disabled={s.busy || s.conflict || (readonly() && module !== 'web' && module !== 'memo' && module !== 'tools')} className="settings-fieldset">{module === 'web' ? <WebCatalog store={store} /> : module === 'memo' ? <Memos store={store} /> : module === 'clipboard' ? <Clipboard store={store} /> : module === 'tools' ? <Tools store={store} /> : <Applications store={store} />}</fieldset>}
           </>}
         </>}
       </div></main></div>
