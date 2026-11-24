@@ -297,15 +297,16 @@ test('settings sidebar separates built-ins from plugins and preview keeps canvas
   assert.ok(h.button(view.container.querySelector('.settings-sidebar'),'插件市场'));
   await h.click(h.button(groups[1],'桌面组件'));
   assert.equal(view.container.querySelector('.settings-canvas [role=switch]').getAttribute('aria-disabled'),'true');
-  assert.equal(h.button(view.container,'打开桌面组件').disabled,true);
+  assert.equal(view.container.querySelector('[role=switch][aria-label="显示桌面组件"]').getAttribute('aria-disabled'),'true');
   await view.unmount();store.dispose();
 });
-test('native canvas setting saves view-only immediately and opens the widget surface', async () => {
+test('native canvas settings apply view-only and show or hide the widget surface independently', async () => {
   const {store}=await h.loaded();
   const calls=[];
   window.__TAURI__.core.invoke=async (command,args)=>{
     calls.push({command,...args});
-    if(args.action==='get') return {layout:{viewOnly:false}};
+    if(args.action==='get') return {layout:{viewOnly:false},visible:false};
+    if(args.action==='setVisible') return {visible:args.payload.enabled};
     return {};
   };
   const view=await h.mount(Settings,{store});
@@ -317,8 +318,13 @@ test('native canvas setting saves view-only immediately and opens the widget sur
   assert.equal(toggle.getAttribute('aria-checked'),'true');
   await h.act(async () => window.dispatchEvent(new window.CustomEvent('flowhub:canvas-view-only',{detail:false})));
   assert.equal(toggle.getAttribute('aria-checked'),'false');
-  await h.click(h.button(view.container,'打开桌面组件'));
-  assert.ok(calls.some(call=>call.action==='open'));
+  const visibility=view.container.querySelector('[role=switch][aria-label="显示桌面组件"]');
+  await h.click(visibility);
+  assert.equal(visibility.getAttribute('aria-checked'),'true');
+  assert.equal(toggle.getAttribute('aria-checked'),'false');
+  await h.click(visibility);
+  assert.equal(visibility.getAttribute('aria-checked'),'false');
+  assert.deepEqual(calls.filter(call=>call.action==='setVisible').map(call=>call.payload),[{enabled:true},{enabled:false}]);
   await view.unmount();store.dispose();
 });
 test('read-only general keeps adapter options inspectable while shortcuts and notifications stay disabled', async () => {

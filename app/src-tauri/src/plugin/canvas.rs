@@ -210,6 +210,41 @@ fn restore_canvas_position(window:&tauri::WebviewWindow,layout:Layout)->Result<(
 pub fn open(app:&tauri::AppHandle,plugin:&str)->Result<(),String>{
     open_with_source(app,plugin,None)
 }
+
+fn set_visible_on_main(app: &tauri::AppHandle, enabled: bool) -> Result<Value, String> {
+    let state = app.state::<State>();
+    state.startup.cancel();
+    let restore_on_startup = state.layout.lock().unwrap().desktop;
+    let result = if enabled {
+        if let Some(window) = app.get_webview_window("plugin-canvas") {
+            if window.is_minimized().map_err(|error| error.to_string())? {
+                window.unminimize().map_err(|error| error.to_string())?;
+            }
+        }
+        open_on_main(app, "", None, true)
+    } else {
+        if restore_on_startup {
+            state.update(|layout| layout.desktop = false)?;
+        }
+        match app.get_webview_window("plugin-canvas") {
+            Some(window) => window.hide().map_err(|error| error.to_string()).map(|()| {
+                lifecycle::sample(app, &window);
+            }),
+            None => Ok(()),
+        }
+    };
+    if let Err(error) = result {
+        let changed = state.layout.lock().unwrap().desktop != restore_on_startup;
+        if changed {
+            if let Err(rollback) = state.update(|layout| layout.desktop = restore_on_startup) {
+                return Err(format!("{error}；恢复组件设置失败：{rollback}"));
+            }
+        }
+        return Err(error);
+    }
+    Ok(json!({"visible": lifecycle::visible(app)?}))
+}
+
 fn open_with_source(app:&tauri::AppHandle,plugin:&str,source:Option<detail::ReturnTarget>)->Result<(),String>{
     app.state::<State>().startup.cancel();
     let plugin=plugin.to_string();
@@ -319,6 +354,11 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         return Ok(Value::Null);
     }
     if !["settings","plugin-canvas"].contains(&window.label()){return Err("画布来源无效".into());}
+    if action=="setVisible" {
+        if window.label()!="settings" {return Err("仅可从设置切换桌面组件显示状态".into());}
+        let enabled=payload["enabled"].as_bool().ok_or("显示状态无效")?;
+        return compact::on_main(&app,move|app|set_visible_on_main(app,enabled));
+    }
     if action=="lifecycle" {return Ok(json!({"lifecycle":lifecycle::read(&app,&window)?}));}
     if ["configureCompact","setCompact","snapCompact"].contains(&action.as_str()) {
         let origin=window.label().to_string();
@@ -373,6 +413,7 @@ pub async fn plugin_canvas_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
     let layout=state.layout.lock().unwrap().clone();let presentation=state.compact.presentation(&layout);
     let mut result=json!({"layout":layout,"sources":sources,"returnTarget":return_target,"presentation":presentation,"windowGeometryRestored":state.compact.window_geometry_restored()});
     if action=="get" && window.label()=="plugin-canvas" {result["lifecycle"]=json!(lifecycle::read(&app,&window)?);}
+    if action=="get" && window.label()=="settings" {result["visible"]=json!(compact::on_main(&app,lifecycle::visible)?);}
     Ok(result)
 }
 #[cfg(test)]mod tests{use super::*;#[test]fn layouts_validate_and_persist(){let root=std::env::temp_dir().join(format!("canvas-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap()));std::fs::create_dir_all(&root).unwrap();let s=State::new(&root).unwrap();let mut l=Layout::default();l.boards[0].cards.push(Card{id:"a".into(),plugin:"example".into(),title:"CPU".into(),view:"overview".into(),size:"large".into(),row:None,width:None,height:None,break_before:false,x:None,y:None,metrics:None,config:Value::Null});l.boards[0].cards[0].width=Some(413);l.boards[0].cards[0].height=Some(257);s.save(l.clone()).unwrap();assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].width,Some(413));let mut invalid=l.clone();invalid.boards[0].cards[0].width=Some(0);assert!(s.save(invalid).is_err());assert_eq!(State::new(&root).unwrap().layout.lock().unwrap().boards[0].cards[0].size,"large");l.boards.push(l.boards[0].clone());assert!(s.save(l).is_err());std::fs::remove_dir_all(root).unwrap();}}

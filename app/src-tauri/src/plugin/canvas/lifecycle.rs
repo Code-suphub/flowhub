@@ -8,6 +8,7 @@ pub(super) struct Snapshot { pub active:bool, pub revision:u64 }
 #[serde(rename_all="camelCase")]
 struct Observation { visible:bool, minimized:bool, occlusion_visible:Option<bool>, on_active_space:Option<bool>, application_hidden:Option<bool> }
 impl Observation {
+    fn shown(self)->bool {self.visible && !self.minimized}
     fn active(self)->bool {active(self.visible,self.minimized,self.occlusion_visible) && !self.application_hidden.unwrap_or(false)}
     fn reason(self)->&'static str {
         if self.application_hidden==Some(true){"application-hidden"}else if self.minimized{"minimized"}else if !self.visible{"window-hidden"}
@@ -28,10 +29,12 @@ impl Store {
     }
     fn epoch(&self)->Option<u64> {self.0.lock().unwrap().current}
     fn snapshot(&self)->Snapshot {self.0.lock().unwrap().snapshot}
-    fn changed_observation(&self,epoch:u64,observation:Observation)->bool {
+    fn changed_observation(&self,epoch:u64,observation:Observation)->Option<bool> {
         let mut inner=self.0.lock().unwrap();
-        if inner.current!=Some(epoch)||inner.last_observation==Some(observation){return false;}
-        inner.last_observation=Some(observation);true
+        if inner.current!=Some(epoch)||inner.last_observation==Some(observation){return None;}
+        let shown_changed=inner.last_observation.map(Observation::shown)!=Some(observation.shown());
+        inner.last_observation=Some(observation);
+        Some(shown_changed)
     }
     fn observe(&self,epoch:u64,active:Option<bool>)->Option<Snapshot> {
         let mut inner=self.0.lock().unwrap();if inner.current!=Some(epoch){return None;}
@@ -49,6 +52,17 @@ fn publish(app:&tauri::AppHandle,snapshot:Snapshot) {
     if let Some(window)=app.get_webview_window("plugin-canvas") {
         let _=window.eval(&format!("window.dispatchEvent(new CustomEvent('flowhub:canvas-lifecycle',{{detail:{}}}))",serde_json::json!(snapshot)));
     }
+}
+fn publish_visibility(app:&tauri::AppHandle,visible:bool) {
+    if let Some(window)=app.get_webview_window("settings") {
+        let _=window.eval(&format!("window.dispatchEvent(new CustomEvent('flowhub:canvas-visibility',{{detail:{visible}}}))"));
+    }
+}
+
+pub(super) fn visible(app:&tauri::AppHandle)->Result<bool,String> {
+    app.get_webview_window("plugin-canvas")
+        .map(|window| actual(&window).map(Observation::shown))
+        .unwrap_or(Ok(false))
 }
 
 #[cfg(target_os="macos")]
@@ -74,7 +88,10 @@ pub(super) fn sample_epoch(app:&tauri::AppHandle,window:&tauri::WebviewWindow,ep
     if state.lifecycle.epoch()!=Some(epoch){return state.lifecycle.snapshot();}
     let observation=actual(window).ok();
     if let Some(observation)=observation {
-        if state.lifecycle.changed_observation(epoch,observation){crate::diagnostics::record_event(app,"canvas_visibility_changed",serde_json::json!({"reason":observation.reason(),"state":observation}));}
+        if let Some(shown_changed)=state.lifecycle.changed_observation(epoch,observation) {
+            crate::diagnostics::record_event(app,"canvas_visibility_changed",serde_json::json!({"reason":observation.reason(),"state":observation}));
+            if shown_changed {publish_visibility(app,observation.shown());}
+        }
     }
     if let Some(snapshot)=state.lifecycle.observe(epoch,observation.map(Observation::active)) {publish(app,snapshot);}
     state.lifecycle.snapshot()
@@ -144,6 +161,7 @@ pub(super) fn destroy(app:&tauri::AppHandle,epoch:u64)->bool {
     // Invalidate first; a queued main-queue observer can still be delivered after
     // removeObserver, but its captured epoch is already harmless.
     let ended=app.state::<super::State>().lifecycle.end(epoch);
+    if ended {publish_visibility(app,false);}
     #[cfg(target_os="macos")]
     if ended {remove_observers(Some(epoch));}
     #[cfg(not(target_os="macos"))]
@@ -189,9 +207,14 @@ mod tests {
         let minimized=Observation{minimized:true,..hidden};assert_eq!(minimized.reason(),"minimized");
         let application_hidden=Observation{application_hidden:Some(true),..visible};assert_eq!(application_hidden.reason(),"application-hidden");assert!(!application_hidden.active());
         let store=Store::default();let epoch=store.begin();
-        assert!(store.changed_observation(epoch,obscured));assert!(!store.changed_observation(epoch,obscured));
-        assert!(store.changed_observation(epoch,other_space),"record reason changes even when activity remains false");
-        let next=store.begin();assert!(!store.changed_observation(epoch,visible));assert!(store.changed_observation(next,visible));
+        assert_eq!(store.changed_observation(epoch,obscured),Some(true));
+        assert_eq!(store.changed_observation(epoch,obscured),None);
+        assert_eq!(store.changed_observation(epoch,other_space),Some(false),"record reason changes without changing whether the window is shown");
+        let hidden=Observation{visible:false,..other_space};
+        assert_eq!(store.changed_observation(epoch,hidden),Some(true));
+        let next=store.begin();
+        assert_eq!(store.changed_observation(epoch,visible),None);
+        assert_eq!(store.changed_observation(next,visible),Some(true));
     }
     #[test]
     fn actual_visibility_and_occlusion_control_activity_without_focus() {

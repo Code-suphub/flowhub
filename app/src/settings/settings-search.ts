@@ -35,6 +35,7 @@ export const settingsSearchEntries: readonly SettingsSearchEntry[] = [
   ...flowHubMenuItems.map(([id, label, aliases])=>field(`menubar:${id}`,'menubar',label,`菜单栏 图标菜单 ${aliases}`,{label},'点开 FlowHub 图标后显示')),
   ...Object.entries({organizerEnabled:'启用菜单栏隐藏分区',collapseOnLaunch:'启动时收起隐藏分区'}).map(([id,label])=>field(`menubar:${id}`,'menubar',label,`菜单栏 状态栏 隐藏 图标 menubar ${id}`)),
   entry('menubar-permission','menubar','菜单栏辅助功能权限',{label:'菜单栏权限',control:'授权辅助功能'},'定位授权按钮，选中不会请求权限','菜单栏权限 辅助功能权限 菜单栏 授权 permission accessibility'),
+  field('canvas-visible','canvas','显示桌面组件','桌面 组件 开关 显隐 隐藏 canvas widget visibility'),
   field('canvas-locked','canvas','锁定布局','桌面 组件 拖动 缩放 canvas widget lock'),
   field('canvas-view-only','canvas','仅查看桌面组件','桌面 组件 只读 点击 canvas widget readonly'),
   field('application-search','app','启用应用搜索','应用 扫描 启动 app application search'),
