@@ -91,7 +91,7 @@ test('compact settings groups sources and data; unsupported updates have no prog
   assert.equal(view.container.querySelectorAll('.settings-search-item .fh-help').length, 0);
   assert.ok(view.container.querySelector('.settings-search-item[data-source=app] [aria-label="应用范围键"]'));
   await select('data');
-  assert.equal(view.container.querySelectorAll('.settings-data-panel > .settings-group').length,4);
+  assert.equal(view.container.querySelectorAll('.settings-data-grid > section[aria-labelledby]').length,4);
   const locations = view.container.querySelectorAll('.settings-storage-control');
   assert.equal(locations.length,2);assert.match(locations[0].textContent,/配置文件位置/);assert.match(locations[1].textContent,/数据库与剪贴板目录/);
   await select('updates');
@@ -454,12 +454,16 @@ test('menu-bar settings expose committed sections, retain failed scans, and pres
 
 test('page lookup matches setting keywords, keeps IME and caret keys, and navigates without configuration writes',async()=>{
   const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  await h.click(view.container.querySelector('[data-page="updates"]'));
   const search=view.container.querySelector('[aria-label="查找页面"]');
   await h.input(search,'备份');assert.equal(view.container.querySelectorAll('.settings-sidebar [data-page]').length,1);
-  await h.key(search,'Enter',{isComposing:true});assert.equal(view.container.querySelector('h1').textContent,'通用设置');
+  await h.key(search,'Enter',{isComposing:true});assert.equal(view.container.querySelector('h1').textContent,'版本与更新');
   let prevented;await h.act(async()=>{const event=new window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true});search.dispatchEvent(event);prevented=event.defaultPrevented;});assert.equal(prevented,false);
-  await h.key(search,'Enter');assert.equal(view.container.querySelector('h1').textContent,'数据与诊断');assert.equal(search.value,'');
-  await h.input(search,'未找到的页面');assert.match(view.container.querySelector('.settings-navigation-empty').textContent,/没有匹配页面/);await h.key(search,'Escape');assert.equal(search.value,'');
+  await h.key(search,'Enter');assert.equal(view.container.querySelector('h1').textContent,'数据与诊断');
+  assert.ok(view.container.querySelector('.settings-compact-workspace [aria-label="搜索设置"]'));
+  await h.click(view.container.querySelector('[aria-label="返回上一页"]'));
+  const restored=view.container.querySelector('[aria-label="查找页面"]');assert.equal(restored.value,'');
+  await h.input(restored,'未找到的页面');assert.match(view.container.querySelector('.settings-navigation-empty').textContent,/没有匹配页面/);await h.key(restored,'Escape');assert.equal(restored.value,'');
   assert.equal(store.dirty,false);assert.equal(writes.length,0);await view.unmount();store.dispose();
 });
 test('back and forward preserve collection filters, selection, scroll and global draft without saving',async()=>{
@@ -510,6 +514,7 @@ test('navigation retains lookup, scroll and focus across breakpoints without ste
   const resize=async narrow=>h.act(async()=>{media.matches=narrow;for(const listener of listeners)listener();});
   try {
     const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+    await h.click(view.container.querySelector('[data-page="appearance"]'));
     const lookup=()=>view.container.querySelector('[aria-label="查找页面"]');
     await h.input(lookup(),'备份');lookup().focus();await resize(true);
     assert.equal(document.activeElement,view.container.querySelector('[aria-label="切换页面"]'));
@@ -520,7 +525,7 @@ test('navigation retains lookup, scroll and focus across breakpoints without ste
     await h.click(view.container.querySelector('[data-page="clipboard"]'));const input=view.container.querySelector('[aria-label="留存天数"]');input.focus();await h.input(input,'21');
     assert.ok(view.container.querySelector('.settings-compact-workspace [aria-label="搜索设置"]'));
     await resize(true);assert.equal(document.activeElement,input);await resize(false);assert.equal(document.activeElement,input);assert.equal(store.dirty,true);assert.equal(writes.length,0);
-    await h.click(view.container.querySelector('[data-page="core"]'));
+    await h.click(view.container.querySelector('[data-page="appearance"]'));
     await h.input(lookup(),'备份');lookup().focus();await resize(true);await h.act(async()=>window.switchModule('updates'));
     await h.act(async()=>{const selector=view.container.querySelector('[aria-label="切换页面"]');selector.blur();selector.focus();});await resize(false);
     assert.equal(view.container.querySelector('h1').textContent,'版本与更新');assert.equal(lookup().value,'备份');assert.equal(document.activeElement===lookup(),true,'a filtered-out current page falls back to lookup focus');

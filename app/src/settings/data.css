@@ -1,23 +1,57 @@
 .settings-data-panel { container:settings-data / inline-size; }
-.settings-data-panel>.settings-group { min-width:0; padding-bottom:24px; border-bottom:1px solid var(--fh-border); }
-.settings-data-panel>.settings-group:last-of-type { border-bottom:0; padding-bottom:0; }
-.settings-data-heading { margin-bottom:16px; }
+.settings-data-grid { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:14px; }
+.settings-data-grid > .settings-group { min-width:0; padding:16px; border:1px solid var(--fh-border); border-radius:12px; background:var(--fh-surface-raised); }
+.settings-data-heading { margin-bottom:12px; }
 .settings-data-heading h2 { margin:0; font-size:15px; font-weight:600; }
-.settings-data-heading svg,.settings-storage-control>header>svg { width:17px; height:17px; flex:none; color:var(--fh-accent); }
+.settings-data-heading svg,.settings-storage-title>svg { width:17px; height:17px; flex:none; color:var(--fh-accent); }
 .settings-storage-control { padding:16px; border:1px solid var(--fh-border); border-radius:10px; background:var(--fh-study-card); }
 .settings-storage-control h3 { margin:0; font-size:13px; font-weight:500; }
+.settings-storage-list { align-items:start; }
+.settings-data-grid .settings-storage-control { padding:12px; background:var(--fh-surface-soft); }
+.settings-data-grid .settings-storage-control>header { justify-content:space-between; }
+.settings-data-grid .settings-storage-control[data-path-changed="true"] { border-color:var(--fh-accent); }
 .settings-storage-path { min-width:0; }
 .settings-storage-path>span,.settings-storage-path>label { display:block; margin-bottom:5px; color:var(--fh-muted); font-size:12px; }
 .settings-storage-path code { display:block; user-select:text; color:var(--fh-text); font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+.settings-data-grid .settings-storage-path { padding:7px 9px; border:1px solid var(--fh-border); border-radius:7px; background:var(--fh-surface-raised); }
+.settings-data-grid .settings-storage-actions { margin-top:auto; }
 .settings-storage-control .fh-button { font-size:12px; min-height:32px; padding-inline:9px; }
 .settings-storage-control [data-slot=input] { width:100%; font-size:12px; }
+.settings-path-details>summary,.settings-data-details>summary { cursor:pointer; color:var(--fh-accent-strong); font-size:12px; }
+.settings-path-details>summary { display:flex; align-items:baseline; gap:8px; justify-content:space-between; }
+.settings-path-details>summary::-webkit-details-marker { display:none; }
+.settings-path-tail { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fh-text); font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.settings-path-caption { flex:none; text-decoration:underline; text-underline-offset:2px; }
+.settings-path-details[open]>code { margin-top:6px; }
+.settings-data-details { margin-top:8px; }
+.settings-data-details[open]>summary { margin-bottom:8px; }
+.settings-data-grid summary:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; border-radius:4px; }
 .settings-history-list { margin:0; padding:0; list-style:none; }
-.settings-history-list>li { padding:14px 0; border-bottom:1px solid var(--fh-border); }
+.settings-history-list>li { padding:8px 0; border-bottom:1px solid var(--fh-border); }
 .settings-history-list>li:first-child { padding-top:0; }
 .settings-history-list>li:last-child { border-bottom:0; padding-bottom:0; }
-.settings-history-list h3 { margin:0 0 4px; font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+.settings-history-list h3 { margin:0 0 2px; font-size:13px; font-weight:500; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .settings-history-list span { color:var(--fh-muted); font-size:12px; }
-.settings-history-empty { min-height:130px; padding:16px; }
-.settings-diagnostic-path,.settings-export-note { margin:12px 0; color:var(--fh-muted); font-size:12px; overflow-wrap:anywhere; }
-.settings-diagnostic-report { margin:14px 0 0; padding:14px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-canvas); font-size:12px; }
-@container settings-data (min-width:720px) { .settings-storage-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.settings-history-empty { min-height:96px; padding:12px; border:1px dashed var(--fh-border); }
+.settings-data-transfer,.settings-data-card { min-width:0; padding:10px 12px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-surface-soft); }
+.settings-data-card h3 { margin:0 0 10px; font-size:13px; font-weight:500; }
+.settings-data-card .settings-row { padding-top:0; }
+.settings-data-action-row { padding-block:8px; }
+.settings-data-action-row+.settings-data-action-row { padding-bottom:0; border-top:1px solid var(--fh-border); }
+.settings-data-note { margin:0; color:var(--fh-muted); font-size:12px; overflow-wrap:anywhere; }
+.settings-diagnostic-path { margin-block:8px 10px; }
+.settings-diagnostic-report { margin:0; padding:10px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-canvas); font-size:12px; }
+@container settings-data (min-width:720px) {
+  .settings-data-grid,.settings-storage-list,.settings-diagnostics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .settings-data-wide { grid-column:1/-1; }
+}
+@media (pointer:coarse) {
+  .settings-data-grid .fh-button,.settings-data-grid [data-slot="select-trigger"],.settings-data-review .fh-button { min-height:44px; }
+  .settings-path-details>summary,.settings-data-details>summary { min-height:44px; align-content:center; }
+  .settings-path-details>summary { align-items:center; }
+}
+.fh-dialog.settings-data-review { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); overflow:hidden; }
+.settings-data-review > :is([data-slot="dialog-header"],.settings-dialog-actions) { flex:none; }
+.settings-data-review-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:3px; }
+.settings-data-review > .settings-dialog-actions { padding-top:12px; margin-top:8px; border-top:1px solid var(--fh-border); }
+@media (max-height:440px) { .fh-dialog.settings-data-review { padding:12px; } }

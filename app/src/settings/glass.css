@@ -75,7 +75,6 @@
 .settings-dock-overflow [role=menuitem] { overflow-wrap:anywhere; }
 .settings-plugin-dock svg { width:19px; height:19px; }
 .settings-dock-divider { width:1px; height:20px; background:var(--fh-study-line); flex:none; }
-.settings-data-panel > .settings-group,.settings-data-panel > .settings-group:last-child { padding:18px 20px; border:1px solid var(--fh-study-rim); border-radius:16px; background:var(--fh-study-card); }
 .settings-updates { display:grid; gap:20px; }
 .settings-update-summary { display:flex; align-items:stretch; flex-direction:column; padding:24px; gap:22px; }
 .settings-update-identity { display:flex; align-items:center; gap:16px; }

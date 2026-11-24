@@ -1,5 +1,5 @@
 .settings-stage .settings-shell.settings-compact-workspace,
-:root:has(.settings-compact-workspace) .fh-select-popup {
+:root:has(.settings-compact-workspace) :is(.fh-select-popup,.settings-data-dialog) {
   --fh-canvas:#121315;
   --fh-surface:#17191c;
   --fh-surface-soft:#25282c;
@@ -30,7 +30,7 @@
   --fh-search-order-hover:#e3efe8;
 }
 :root[data-theme="light"] .settings-stage .settings-shell.settings-compact-workspace,
-:root[data-theme="light"]:has(.settings-compact-workspace) .fh-select-popup {
+:root[data-theme="light"]:has(.settings-compact-workspace) :is(.fh-select-popup,.settings-data-dialog) {
   --fh-canvas:#f5f6f7;
   --fh-surface:#eceeef;
   --fh-surface-soft:#f8f9fa;

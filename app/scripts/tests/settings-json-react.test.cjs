@@ -9,8 +9,8 @@ async function openMenu(view) {
 }
 test('global JSON action stays in the header across pages and cancelling malformed edits preserves the form',async()=>{
  const {store}=await h.loaded(),view=await h.mount(Settings,{store});
- assert.equal(view.container.querySelector('.settings-core-toolbar .fh-help'),null);assert.ok(view.container.querySelector('.settings-footer [aria-label="草稿与保存"] svg'));
- for(const page of ['网页目录','工具']){
+ assert.equal(view.container.querySelector('.settings-core-toolbar .fh-help'),null);
+ for(const page of ['网页目录','工具','数据与诊断']){
   await h.click(h.button(view.container,page));assert.equal(view.container.querySelector('h1').textContent,page);
   await openMenu(view);
   await h.click([...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent==='编辑完整配置 JSON'));
@@ -20,6 +20,7 @@ test('global JSON action stays in the header across pages and cancelling malform
  }
  await openMenu(view);await h.click([...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent==='编辑完整配置 JSON'));
  const config=h.model.clone(store.snapshot().config);config.core.launchAtLogin=true;await h.input(document.querySelector('[aria-label="完整配置 JSON"]'),JSON.stringify(config));await h.click(h.button(document.body,'完成编辑'));assert.equal(store.snapshot().config.core.launchAtLogin,true);assert.equal(store.dirty,true);await settle();
+ assert.ok(view.container.querySelector('.settings-footer[data-save-state="dirty"] [aria-label="撤销"] svg'));
  await openMenu(view);await h.click([...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent==='版本与更新'));assert.equal(view.container.querySelector('.settings-sidebar [data-page="updates"]').getAttribute('aria-current'),'page');
  await view.unmount();await h.act(async()=>new Promise(resolve=>window.requestAnimationFrame(()=>window.requestAnimationFrame(resolve))));store.dispose();
 });

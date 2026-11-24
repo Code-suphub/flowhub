@@ -11,15 +11,16 @@ import { clone, imported, same, type Bag, type Config } from './model';
 import { historyConfiguration } from './config-changes';
 import { ConfigChanges } from './ConfigChanges';
 import { SettingsStore, useSettings } from './store';
-import { useViewState } from './view-state';
+import { ViewDetails, useViewState } from './view-state';
 import './data.css';
 
 const names: Record<string,string> = { all:'全部配置', core:'全局设置', web:'网页目录设置', app:'应用', clipboard:'剪贴板', memo:'备忘录', tools:'工具' };
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
-const stamp = (value: unknown) => { const date=new Date(Number(value));return Number.isFinite(date.getTime()) ? date.toLocaleString() : '未知时间'; };
+const historyDate=new Intl.DateTimeFormat('zh-CN',{dateStyle:'short',timeStyle:'medium',hour12:false});
+const stamp = (value: unknown) => { const date=new Date(Number(value));return Number.isFinite(date.getTime()) ? historyDate.format(date) : '未知时间'; };
 const size = (value: unknown) => { const bytes=Number(value)||0;return bytes<1024?`${bytes} B`:`${(bytes/1024).toFixed(bytes%1024?1:0)} KB`; };
 
-export function PathControl({ store, storage = false }: { store: SettingsStore; storage?: boolean }) {
+export function PathControl({ store, storage = false, compact = false }: { store: SettingsStore; storage?: boolean; compact?: boolean }) {
   const s=useSettings(store), preview=readonly(), info=storage?s.storage:s.configPath;
   const value=String(storage?s.config!.plugins.clipboard.settings.storagePath || '':s.config!.core.configPath || '');
   const savedValue=String(info.configuredPath ?? (storage?s.saved?.plugins.clipboard.settings.storagePath:s.saved?.core.configPath) ?? '');
@@ -39,11 +40,28 @@ export function PathControl({ store, storage = false }: { store: SettingsStore; 
     finally{pending.current=false;if(alive.current)setChoosing(false);}
   }
   const disabled=preview || s.busy || s.conflict || choosing;
-  return <section className="settings-storage-control flex min-w-0 flex-col gap-3" data-setting-label={storage?'数据库与剪贴板目录':'配置文件位置'} tabIndex={-1} data-storage-kind={storage?'database':'config'} aria-label={storage?'数据库与剪贴板目录':'配置文件位置'}>
-    <header className="flex flex-wrap items-center gap-2">{storage?<DatabaseIcon aria-hidden="true" />:<FileCogIcon aria-hidden="true" />}<h3>{storage?'数据库与剪贴板目录':'配置文件位置'}</h3><Badge variant={changed?'secondary':'outline'}>{preview?'只读预览':changed?'待保存':'当前生效'}</Badge></header>
-    <div className="settings-storage-path"><span>当前使用</span><code>{current}</code></div>
-    {changed?<><div className="settings-storage-path"><label htmlFor={storage?'settings-database-target':'settings-config-target'}>保存后使用</label><Input id={storage?'settings-database-target':'settings-config-target'} aria-label={storage?'数据目录目标位置':'配置文件目标位置'} value={value || info.defaultPath || '默认位置（保存时解析）'} readOnly /></div><Alert variant="warning" role="status"><AlertDescription>{storage?'保存后切换数据目录。空目录接收当前全部数据；已有数据库会加载目标数据，源网页草稿不合并。':'保存后切换配置文件，原文件保留。'}</AlertDescription></Alert></>:null}
-    <div className="flex flex-wrap gap-2"><Button disabled={disabled} onClick={()=>void choose()}>{choosing?'正在选择…':'选择位置…'}</Button><Button disabled={preview || s.busy || choosing} onClick={()=>void store.run(async()=>{await write(storage?'openClipboardStorage':'openConfigPath');})}><FolderOpenIcon data-icon="inline-start" />打开当前</Button><Button variant="ghost" disabled={disabled || !value} onClick={()=>store.edit(c=>{
+  const label=storage?'数据库与剪贴板目录':'配置文件位置';
+  const kind=storage?'database':'config';
+  const targetId=`settings-${kind}-target`;
+  return <section className="settings-storage-control flex min-w-0 flex-col gap-3" data-setting-label={label} tabIndex={-1} data-storage-kind={kind} data-path-changed={changed} aria-label={label}>
+    <header className="flex flex-wrap items-center gap-2">
+      <div className="settings-storage-title flex min-w-0 items-center gap-2">
+        {storage?<DatabaseIcon aria-hidden="true" />:<FileCogIcon aria-hidden="true" />}
+        <h3>{label}</h3>
+      </div>
+      <Badge variant={changed?'secondary':'outline'}>{preview?'只读预览':changed?'待保存':'当前生效'}</Badge>
+    </header>
+    <div className="settings-storage-path">
+      <span>当前使用</span>
+      {compact && current.length>52
+        ? <ViewDetails memoryKey={`data:path:${kind}`} className="settings-path-details">
+            <summary><span className="settings-path-tail">{current.split('/').filter(Boolean).at(-1)}</span><span className="settings-path-caption">完整路径</span></summary>
+            <code>{current}</code>
+          </ViewDetails>
+        : <code>{current}</code>}
+    </div>
+    {changed?<><div className="settings-storage-path"><label htmlFor={targetId}>保存后使用</label><Input id={targetId} aria-label={storage?'数据目录目标位置':'配置文件目标位置'} value={value || info.defaultPath || '默认位置（保存时解析）'} readOnly /></div><Alert variant="warning" role="status"><AlertDescription>{storage?'保存后切换数据目录。空目录接收当前全部数据；已有数据库会加载目标数据，源网页草稿不合并。':'保存后切换配置文件，原文件保留。'}</AlertDescription></Alert></>:null}
+    <div className="settings-storage-actions flex flex-wrap gap-2"><Button disabled={disabled} onClick={()=>void choose()}>{choosing?'正在选择…':'选择位置…'}</Button><Button variant={compact?'ghost':undefined} disabled={preview || s.busy || choosing} onClick={()=>void store.run(async()=>{await write(storage?'openClipboardStorage':'openConfigPath');})}><FolderOpenIcon data-icon="inline-start" />打开当前</Button><Button variant="ghost" disabled={disabled || !value} onClick={()=>store.edit(c=>{
       if(storage){if(s.saved?.plugins.clipboard.settings.storagePath===undefined)delete c.plugins.clipboard.settings.storagePath;else c.plugins.clipboard.settings.storagePath='';}
       else if(s.saved?.core.configPath===undefined)delete c.core.configPath;else c.core.configPath='';
     })}>恢复默认</Button></div>
@@ -123,44 +141,108 @@ export function DataPanel({ store }: { store: SettingsStore }) {
     try{await action();}catch(reason){if(alive.current)setDiagnosticError(message(reason));}
     finally{diagnosticRef.current=false;if(alive.current)setDiagnosing(false);}
   }
-  return <div className="settings-data-panel flex min-w-0 flex-col gap-7">
-    <section className="settings-group" aria-labelledby="settings-storage-title">
-      <header className="settings-data-heading flex flex-wrap items-center gap-2"><DatabaseIcon aria-hidden="true" /><h2 id="settings-storage-title">存储位置</h2><Help label="配置备份范围">配置备份不包含网页目录和剪贴板数据库。</Help></header>
-      <p className="fh-copy-note mb-2">存储位置在保存设置后生效。</p>
-      <div className="settings-storage-list grid min-w-0 grid-cols-1 gap-5"><PathControl store={store} /><PathControl store={store} storage /></div>
-    </section>
-    <section className="settings-group" aria-labelledby="settings-history-title" data-setting-label="配置历史" tabIndex={-1}>
-      <header className="settings-data-heading flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><HistoryIcon aria-hidden="true" /><h2 id="settings-history-title">配置历史</h2><Help label="配置历史说明">保存前自动备份上一版，最多保留 20 份。</Help></div><Button disabled={s.busy || refreshing || s.history.available===false} onClick={()=>void refreshHistory()}><RefreshCwIcon data-icon="inline-start" />{refreshing?'正在刷新…':'刷新历史'}</Button></header>
-      {s.history.demo?<p className="settings-review-context">只读示例 · 实际配置历史请在桌面 App 中查看</p>:null}
-      {s.history.error?<Alert variant="destructive"><AlertDescription>{s.history.error}</AlertDescription></Alert>:null}
-      {!s.history.entries?.length?<Empty className="settings-history-empty"><EmptyHeader><EmptyMedia variant="icon"><ArchiveIcon /></EmptyMedia><EmptyTitle>{s.history.available===false?'浏览器预览不提供配置历史':'暂无历史版本'}</EmptyTitle></EmptyHeader></Empty>:<ul className="settings-history-list">{(s.history.entries as Bag[]).map(entry=><li key={entry.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3"><div className="min-w-0"><h3>{stamp(entry.created_at)}</h3><span>{entry.catalog_count || 0} 项网页 · {size(entry.bytes)}</span></div><div className="flex flex-wrap gap-2"><Button disabled={s.busy} onClick={()=>void openHistory(entry)}>查看差异</Button><Button variant="ghost" disabled={preview || s.busy || s.conflict} onClick={()=>void openHistory(entry,true)}>恢复</Button></div></li>)}</ul>}
-    </section>
-    <section className="settings-group" aria-labelledby="settings-transfer-title" data-setting-label="导入与导出" tabIndex={-1}>
-      <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导入与导出仅处理所选范围的设置。网页目录数据继续使用当前数据库。</Help></header>
-      <p className="fh-copy-note mb-2">导入先核对差异，保存后生效。导出使用已保存的配置。</p>
-      <Choice label="导出范围" value={scope} options={[{value:'all',label:'全部配置'},{value:'core',label:'全局设置'},...Object.keys(s.config!.plugins).sort().map(value=>({value,label:names[value] || value}))]} onChange={setScope} />
-      <div className="flex flex-wrap gap-2 pt-3"><Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('export')}>导出配置…</Button><Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('import')}>{transferring?'正在处理…':'导入配置…'}</Button></div>
-      {store.dirty?<p className="settings-export-note" role="status">如需导出当前草稿，请先保存。</p>:null}
-      {transferError && !pending?<Alert className="mt-3" variant="destructive"><AlertDescription>{transferError}</AlertDescription></Alert>:null}
-    </section>
-    <section className="settings-group" aria-labelledby="settings-diagnostics-title" data-setting-label="本地诊断" tabIndex={-1}>
-      <header className="settings-data-heading flex items-center gap-2"><ActivityIcon aria-hidden="true" /><h2 id="settings-diagnostics-title">本地诊断</h2><Badge variant="outline">立即生效</Badge><Help label="本地诊断说明">FlowHub 与 WebKit 的资源采样仅存于本机。</Help></header>
-      <Toggle label="性能采样" checked={s.diagnostics.enabled===true} disabled={preview || diagnosing || s.busy} onChange={enabled=>void diagnose(async()=>{const result=await write('setDiagnosticsEnabled',enabled);store.patch({diagnostics:{...store.snapshot().diagnostics,...result,enabled}});host().flowhubPerformance?.enable(enabled);})} />
-      <p className="settings-diagnostic-path">{s.diagnostics.path || '仅桌面 App 可用'}</p><div className="flex flex-wrap gap-2"><Button disabled={preview || diagnosing || s.busy} onClick={()=>void diagnose(async()=>{const result=await write('sampleDiagnostics');store.notice(result.reason || '已记录性能采样');})}>采样一次</Button><Button disabled={preview || diagnosing || s.busy} onClick={()=>{setDiagnosticError('');setClearSampling(true);}}>清理采样</Button><Button onClick={()=>setReport(JSON.stringify(host().flowhubPerformance?.report() || {},null,2))}>界面测量</Button><Button variant="ghost" onClick={()=>{host().flowhubPerformance?.reset();setReport('');}}>重置测量</Button></div>
-      {diagnosticError && !clearSampling?<Alert className="mt-3" variant="destructive"><AlertDescription>{diagnosticError}</AlertDescription></Alert>:null}{report?<pre className="settings-code settings-diagnostic-report">{report}</pre>:null}
-    </section>
-    {history?<Dialog title={history.restore?'恢复配置历史':'历史差异'} busy={s.busy} onClose={closeHistory} notice={history.error} className="settings-review-dialog">
-      <p className="settings-review-context">{stamp(history.entry.created_at)} · 与当前编辑草稿比较</p>
-      {history.loading?<p role="status">正在读取历史配置…</p>:history.target?<><ConfigChanges before={history.base} after={history.target} />{history.restore?<Alert variant="warning" role="status" className="mt-4"><AlertTitle>恢复会立即替换已保存配置</AlertTitle><AlertDescription>未保存草稿会放弃；当前已保存配置会先备份。网页目录与剪贴板记录保持当前数据，系统集成及备份中的数据位置可能需要重启。</AlertDescription></Alert>:null}</>:null}
+  const entries=(s.history.entries as Bag[] | undefined) || [];
+  const remainingEntries=entries.slice(3);
+  const renderHistoryItem=(entry:Bag)=><li key={entry.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+    <div className="min-w-0">
+      <h3>{stamp(entry.created_at)}</h3>
+      <span>{entry.catalog_count || 0} 项网页 · {size(entry.bytes)}</span>
+    </div>
+    <div className="flex flex-wrap gap-1.5">
+      <Button disabled={s.busy} onClick={()=>void openHistory(entry)}>查看差异</Button>
+      <Button variant="ghost" disabled={preview || s.busy || s.conflict} onClick={()=>void openHistory(entry,true)}>恢复</Button>
+    </div>
+  </li>;
+  return <div className="settings-data-panel">
+    <div className="settings-data-grid">
+      <section className="settings-group settings-data-wide" aria-labelledby="settings-storage-title">
+        <header className="settings-data-heading flex flex-wrap items-center gap-2">
+          <DatabaseIcon aria-hidden="true" /><h2 id="settings-storage-title">存储位置</h2>
+          <Badge variant="outline">保存后生效</Badge>
+          <Help label="配置备份范围">配置备份不包含网页目录和剪贴板数据库。</Help>
+        </header>
+        <div className="settings-storage-list grid min-w-0 grid-cols-1 gap-3"><PathControl store={store} compact /><PathControl store={store} storage compact /></div>
+      </section>
+      <section className="settings-group" aria-labelledby="settings-history-title" data-setting-label="配置历史" tabIndex={-1}>
+        <header className="settings-data-heading flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><HistoryIcon aria-hidden="true" /><h2 id="settings-history-title">配置历史</h2><Help label="配置历史说明">保存前自动备份上一版，最多保留 20 份。</Help></div><Button disabled={s.busy || refreshing || s.history.available===false} onClick={()=>void refreshHistory()}><RefreshCwIcon data-icon="inline-start" />{refreshing?'正在刷新…':'刷新历史'}</Button></header>
+        {s.history.demo?<p className="settings-review-context">只读示例 · 实际配置历史请在桌面 App 中查看</p>:null}
+        {s.history.error?<Alert variant="destructive"><AlertDescription>{s.history.error}</AlertDescription></Alert>:null}
+        {!entries.length
+          ? !s.history.error && <Empty className="settings-history-empty"><EmptyHeader><EmptyMedia variant="icon"><ArchiveIcon /></EmptyMedia><EmptyTitle>{s.history.available===false?'浏览器预览不提供配置历史':'暂无历史版本'}</EmptyTitle></EmptyHeader></Empty>
+          : <>
+              <ul className="settings-history-list">{entries.slice(0,3).map(renderHistoryItem)}</ul>
+              {remainingEntries.length>0 && <ViewDetails memoryKey="data:history-more" className="settings-data-details">
+                <summary>其余 {remainingEntries.length} 份历史版本</summary>
+                <ul className="settings-history-list">{remainingEntries.map(renderHistoryItem)}</ul>
+              </ViewDetails>}
+            </>}
+      </section>
+      <section className="settings-group" aria-labelledby="settings-transfer-title" data-setting-label="导入与导出" tabIndex={-1}>
+        <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导入与导出仅处理所选范围的设置。网页目录数据继续使用当前数据库。</Help></header>
+        <div className="settings-data-transfer">
+          <Choice label="导出范围" value={scope} options={[{value:'all',label:'全部配置'},{value:'core',label:'全局设置'},...Object.keys(s.config!.plugins).sort().map(value=>({value,label:names[value] || value}))]} onChange={setScope} />
+          <div className="settings-data-action-row flex flex-wrap items-center justify-between gap-2">
+            <p className="settings-data-note">{store.dirty?<span role="status">如需导出当前草稿，请先保存。</span>:'导出已保存的配置。'}</p>
+            <Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('export')}>导出配置…</Button>
+          </div>
+          <div className="settings-data-action-row flex flex-wrap items-center justify-between gap-2">
+            <p className="settings-data-note">导入先核对差异，保存后生效。</p>
+            <Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('import')}>{transferring?'正在处理…':'导入配置…'}</Button>
+          </div>
+        </div>
+        {transferError && !pending?<Alert className="mt-3" variant="destructive"><AlertDescription>{transferError}</AlertDescription></Alert>:null}
+      </section>
+      <section className="settings-group settings-data-wide" aria-labelledby="settings-diagnostics-title" data-setting-label="本地诊断" tabIndex={-1}>
+        <header className="settings-data-heading flex items-center gap-2"><ActivityIcon aria-hidden="true" /><h2 id="settings-diagnostics-title">本地诊断</h2><Badge variant="outline">立即生效</Badge><Help label="本地诊断说明">FlowHub 与 WebKit 的资源采样仅存于本机。</Help></header>
+        <div className="settings-diagnostics-grid grid min-w-0 grid-cols-1 gap-3">
+          <div className="settings-data-card">
+            <Toggle label="性能采样" checked={s.diagnostics.enabled===true} disabled={preview || diagnosing || s.busy} onChange={enabled=>void diagnose(async()=>{
+              const result=await write('setDiagnosticsEnabled',enabled);
+              store.patch({diagnostics:{...store.snapshot().diagnostics,...result,enabled}});
+              host().flowhubPerformance?.enable(enabled);
+            })} />
+            <p className="settings-data-note settings-diagnostic-path">{s.diagnostics.path || '仅桌面 App 可用'}</p>
+            <div className="flex flex-wrap gap-1.5">
+              <Button disabled={preview || diagnosing || s.busy} onClick={()=>void diagnose(async()=>{const result=await write('sampleDiagnostics');store.notice(result.reason || '已记录性能采样');})}>采样一次</Button>
+              <Button variant="ghost" disabled={preview || diagnosing || s.busy} onClick={()=>{setDiagnosticError('');setClearSampling(true);}}>清理采样</Button>
+            </div>
+            {diagnosticError && !clearSampling?<Alert className="mt-2" variant="destructive"><AlertDescription>{diagnosticError}</AlertDescription></Alert>:null}
+          </div>
+          <div className="settings-data-card">
+            <h3>界面测量</h3>
+            <div className="flex flex-wrap gap-1.5">
+              <Button onClick={()=>setReport(JSON.stringify(host().flowhubPerformance?.report() || {},null,2))}>读取测量</Button>
+              <Button variant="ghost" onClick={()=>{host().flowhubPerformance?.reset();setReport('');}}>重置测量</Button>
+            </div>
+            {report && <ViewDetails memoryKey="data:diagnostic-report" className="settings-data-details">
+              <summary>查看测量报告</summary>
+              <pre className="settings-code settings-diagnostic-report">{report}</pre>
+            </ViewDetails>}
+          </div>
+        </div>
+      </section>
+    </div>
+    {history?<Dialog title={history.restore?'恢复配置历史':'历史差异'} busy={s.busy} onClose={closeHistory} className="settings-review-dialog settings-data-dialog settings-data-review">
+      <div className="settings-data-review-body">
+        <p className="settings-review-context">{stamp(history.entry.created_at)} · 与当前编辑草稿比较</p>
+        {history.error && <Alert variant="destructive"><AlertDescription>{history.error}</AlertDescription></Alert>}
+        {history.loading?<p role="status">正在读取历史配置…</p>:history.target?<>
+          {history.restore?<Alert variant="warning" role="status" className="mb-4"><AlertTitle>恢复会立即替换已保存配置</AlertTitle><AlertDescription>未保存草稿会放弃；当前已保存配置会先备份。网页目录与剪贴板记录保持当前数据，系统集成及备份中的数据位置可能需要重启。</AlertDescription></Alert>:null}
+          <ConfigChanges before={history.base} after={history.target} />
+        </>:null}
+      </div>
       <div className="settings-dialog-actions"><Button disabled={s.busy} onClick={closeHistory}>取消</Button>{history.error?<Button disabled={s.busy} onClick={()=>void retryHistory()}>{s.conflict?'重新加载当前配置':'重新读取差异'}</Button>:null}{!history.restore?<Button disabled={preview || history.loading || !history.target || Boolean(history.error) || s.busy || s.conflict} onClick={()=>setHistory({...history,restore:true})}>恢复此版本…</Button>:<Button variant="destructive" disabled={preview || history.loading || !history.target || Boolean(history.error) || s.busy || s.conflict} onClick={()=>void restoreHistory()}>确认恢复</Button>}</div>
     </Dialog>:null}
-    {pending?<Dialog title="核对导入差异" busy={s.busy} onClose={()=>{setPending(null);setTransferError('');}} notice={transferError || plan.error} className="settings-review-dialog">
-      <p className="settings-review-context">{pending.payload.path} · 范围 {names[pending.payload.scope || 'all'] || pending.payload.scope}</p>
-      {pending.payload.appVersion && pending.payload.currentAppVersion!==pending.payload.appVersion?<Alert variant="warning" role="status" className="mb-4"><AlertDescription>导出版本 {pending.payload.appVersion} 与当前版本不同，请核对字段。</AlertDescription></Alert>:null}
-      <Choice label="导入方式" value={mode} options={[{value:'merge',label:'递归合并（数组替换）'},{value:'replace',label:'替换所选范围'}]} onChange={setMode} />
-      {plan.config?<ConfigChanges before={pending.base} after={plan.config} />:null}
+    {pending?<Dialog title="核对导入差异" busy={s.busy} onClose={()=>{setPending(null);setTransferError('');}} className="settings-review-dialog settings-data-dialog settings-data-review">
+      <div className="settings-data-review-body">
+        <p className="settings-review-context">{pending.payload.path} · 范围 {names[pending.payload.scope || 'all'] || pending.payload.scope}</p>
+        {pending.payload.appVersion && pending.payload.currentAppVersion!==pending.payload.appVersion?<Alert variant="warning" role="status" className="mb-4"><AlertDescription>导出版本 {pending.payload.appVersion} 与当前版本不同，请核对字段。</AlertDescription></Alert>:null}
+        {(transferError || plan.error) && <Alert variant="destructive"><AlertDescription>{transferError || plan.error}</AlertDescription></Alert>}
+        <Choice label="导入方式" value={mode} options={[{value:'merge',label:'递归合并（数组替换）'},{value:'replace',label:'替换所选范围'}]} onChange={setMode} />
+        {plan.config?<ConfigChanges before={pending.base} after={plan.config} />:null}
+      </div>
       <div className="settings-dialog-actions"><Button disabled={s.busy} onClick={()=>{setPending(null);setTransferError('');}}>取消</Button><Button variant="default" disabled={preview || !plan.config || Boolean(plan.error) || Boolean(transferError) || s.busy || s.conflict || same(pending.base,plan.config)} onClick={applyImport}>应用为草稿</Button></div>
     </Dialog>:null}
-    {clearSampling?<Dialog title="清理性能采样" busy={diagnosing} onClose={()=>setClearSampling(false)} notice={diagnosticError}><p>只清理本机性能记录，不影响网页、剪贴板或备忘录数据。</p><div className="settings-dialog-actions"><Button disabled={diagnosing} onClick={()=>setClearSampling(false)}>取消</Button><Button variant="destructive" disabled={diagnosing} onClick={()=>void diagnose(async()=>{await write('clearDiagnostics');if(alive.current)setClearSampling(false);store.notice('性能数据已清理');})}>确认清理</Button></div></Dialog>:null}
+    {clearSampling?<Dialog title="清理性能采样" busy={diagnosing} onClose={()=>setClearSampling(false)} notice={diagnosticError} className="settings-data-dialog"><p>只清理本机性能记录，不影响网页、剪贴板或备忘录数据。</p><div className="settings-dialog-actions"><Button disabled={diagnosing} onClick={()=>setClearSampling(false)}>取消</Button><Button variant="destructive" disabled={diagnosing} onClick={()=>void diagnose(async()=>{await write('clearDiagnostics');if(alive.current)setClearSampling(false);store.notice('性能数据已清理');})}>确认清理</Button></div></Dialog>:null}
   </div>;
 }
