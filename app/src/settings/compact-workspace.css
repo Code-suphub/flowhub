@@ -1,4 +1,5 @@
-.settings-stage .settings-shell.settings-compact-workspace {
+.settings-stage .settings-shell.settings-compact-workspace,
+:root:has(.settings-compact-workspace) .fh-select-popup {
   --fh-canvas:#121315;
   --fh-surface:#17191c;
   --fh-surface-soft:#25282c;
@@ -14,8 +15,8 @@
   --fh-disabled:#464b52;
   --fh-switch-border:#69727a;
   --fh-switch-track:var(--fh-surface-soft);
-  background:var(--fh-canvas);
 }
+.settings-stage .settings-shell.settings-compact-workspace { background:var(--fh-canvas); }
 :root:has(.settings-compact-workspace) {
   --fh-search-order-surface:#1e2024;
   --fh-search-order-text:#eceeef;
@@ -28,7 +29,8 @@
   --fh-search-order-border:#e1e4e6;
   --fh-search-order-hover:#e3efe8;
 }
-:root[data-theme="light"] .settings-stage .settings-shell.settings-compact-workspace {
+:root[data-theme="light"] .settings-stage .settings-shell.settings-compact-workspace,
+:root[data-theme="light"]:has(.settings-compact-workspace) .fh-select-popup {
   --fh-canvas:#f5f6f7;
   --fh-surface:#eceeef;
   --fh-surface-soft:#f8f9fa;
