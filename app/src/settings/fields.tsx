@@ -3,9 +3,17 @@ import { Button, Input } from '../shared/ui';
 import { Help, Switch, Select } from '../shared/controls';
 import { canonical } from './model';
 import { shortcutKeys } from '../shared/shortcuts';
-export function Row({ label, help, children }: { label: string; help?: string; children: ReactNode }) { return <div className="settings-row grid gap-2 sm:grid-cols-2 items-center" data-setting-label={label} tabIndex={-1}><div className="flex items-center gap-2"><span>{label}</span>{help ? <Help label={`${label}说明`}>{help}</Help> : null}</div><div className="min-w-0" data-setting-control>{children}</div></div>; }
+export function Row({ label, help, note, children }: { label: string; help?: string; note?: string; children: ReactNode }) {
+  return <div className="settings-row grid gap-2 sm:grid-cols-2 items-center" data-setting-label={label} tabIndex={-1}>
+    <div className={note ? 'flex flex-wrap items-center gap-x-2 gap-y-1' : 'flex items-center gap-2'}>
+      <span>{label}</span>{help ? <Help label={`${label}说明`}>{help}</Help> : null}
+      {note ? <small className="fh-copy-note w-full">{note}</small> : null}
+    </div>
+    <div className="min-w-0" data-setting-control>{children}</div>
+  </div>;
+}
 export function TextField({ label, value, onChange, help, type = 'text', min, max, readOnly = false }: { label: string; value: unknown; onChange?: (value: string) => void; help?: string; type?: string; min?: number; max?: number; readOnly?: boolean }) { return <Row label={label} help={help}><Input aria-label={label} value={String(value ?? '')} type={type} min={min} max={max} readOnly={readOnly} onChange={e => onChange?.(e.target.value)} /></Row>; }
-export function Toggle({ label, checked, onChange, disabled, help }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; help?: string }) { return <Row label={label} help={help}><Switch label={label} checked={checked} onChange={onChange} disabled={disabled} /></Row>; }
+export function Toggle({ label, checked, onChange, disabled, help, note }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; help?: string; note?: string }) { return <Row label={label} help={help} note={note}><Switch label={label} checked={checked} onChange={onChange} disabled={disabled} /></Row>; }
 export function Choice({ label, value, options, onChange, help }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; help?: string }) { return <Row label={label} help={help}><Select label={label} value={value} options={options} onChange={onChange} /></Row>; }
 export function Shortcut({ label, value, taken, onChange, allowBare = false, inline = false, disabled = false }: { label: string; value: string; taken: string[]; onChange: (value: string) => void; allowBare?: boolean; inline?: boolean; disabled?: boolean }) {
   const [capturing, setCapturing] = useState(false), [error, setError] = useState('');

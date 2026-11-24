@@ -10,7 +10,6 @@ import { MenuBar } from './MenuBar';
 import { FlowHubLogo } from '../shared/FeatureIcon';
 import { DataPanel, PathControl } from './DataPanel';
 import { SettingsSection } from './SettingsSection';
-import { ViewDetails } from './view-state';
 export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
 const names: Record<string, string> = { all: '全部', app: '应用', web: '网页目录', clipboard: '剪贴板', memo: '备忘录', tools: '工具' };
@@ -115,25 +114,20 @@ export function Core({ store, section }: { store: SettingsStore; section: string
     </div> : null}
     {activeSection === 'search' ? <>
       <Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
-      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">排序应用于有关键词的「全部」结果。智能工具按命令匹配规则展示。</Help></div>
-      <p className="fh-copy-note">{readonly()?'预览中的排序在刷新后复原。':'来源顺序保存后生效。'}</p>
+      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">仅影响有关键词的「全部」结果，智能工具除外。</Help></div>
+      {readonly() && previewOrder && <p className="fh-copy-note">预览排序在刷新后复原。</p>}
       <div className="settings-search-list" role="list" aria-label="搜索来源与顺序" data-setting-label="搜索来源与顺序" tabIndex={-1}>{searchPlugins.map(plugin => {
         const index = displayOrder.indexOf(plugin.id), sortable = index >= 0;
         const label = plugin.settingsName || plugin.name || names[plugin.id] || plugin.id;
         return <div role="listitem" className="settings-search-item" data-setting-label={`${names[plugin.id] || label}搜索来源`} tabIndex={-1} data-source={plugin.id} data-drop-position={dropTarget && dropTarget.id === plugin.id && draggingSource ? dropTarget.position : undefined} key={plugin.id}>
-          <div className="settings-search-rank">{sortable ? <button type="button" className="settings-search-grip" draggable={false} aria-label={`调整${label}顺序`} title="拖动排序；Alt + 上下方向键调整" onPointerDown={e => beginSearchDrag(plugin.id, e)} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); moveOrder(plugin.id, index + (e.key === 'ArrowUp' ? -1 : 1)); } }}><span aria-hidden="true">⠿</span></button> : null}</div>
+          <div className="settings-search-rank">{sortable ? <button type="button" className="settings-search-grip" draggable={false} aria-label={`调整${label}顺序`} aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" title="拖动排序，或按 Alt + ↑/↓" onPointerDown={e => beginSearchDrag(plugin.id, e)} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); moveOrder(plugin.id, index + (e.key === 'ArrowUp' ? -1 : 1)); } }}><span aria-hidden="true">⠿</span></button> : null}</div>
           <div className="settings-search-name"><span>{label}</span>{plugin.available === false ? <small>{plugin.reason || (readonly() ? '浏览器预览不可用' : '当前环境不可用')}</small> : null}</div>
           <div className="settings-search-toggle"><Switch label={`启用${label}`} checked={c.plugins[plugin.id]?.enabled !== false} disabled={readonly() || plugin.available === false} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} /></div>
           <div className="settings-search-shortcut">{plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none" aria-label="无范围快捷键">—</span>}</div>
         </div>;
       })}</div>
-      <ViewDetails memoryKey="search-source-instructions" className="fh-disclosure mt-2">
-        <summary>排序和范围键操作</summary>
-        <p>拖动把手调整顺序，也可聚焦把手后按 Alt + 上下方向键。</p>
-        <p>点击范围键可重新录入，按 Delete 清空。</p>
-      </ViewDetails>
       <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} disabled={readonly()} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
-      <Toggle label="长内容自动预览" checked={core.autoPreviewLongContent !== false} disabled={readonly()} onChange={v => setCore('autoPreviewLongContent', v)} help="默认开启。宽窗口中选中超过 80 个字符或至少 3 行的剪贴板文本、命令备忘时自动展开详情，并保留搜索框焦点。手动收起只影响当前记录；窄窗口仍手动进入详情。" />
+      <Toggle label="长内容自动预览" checked={core.autoPreviewLongContent !== false} disabled={readonly()} onChange={v => setCore('autoPreviewLongContent', v)} help="宽窗口中，选中超过 80 个字符或至少 3 行的剪贴板文本或命令备忘时自动展开。" />
       <Toggle label="记录搜索历史" checked={core.searchHistoryEnabled !== false} disabled={readonly()} onChange={v => setCore('searchHistoryEnabled', v)} help="执行或复制搜索结果时记录查询。疑似凭据、过长查询和 JWT／验证码／JSON 正文不记录。" />
       <p className="fh-copy-note">本机最多保留 100 条。关闭后停止新增，已有记录可在搜索历史中清理。</p>
     </> : null}
@@ -178,11 +172,14 @@ export function Clipboard({ store }: { store: SettingsStore }) {
   const s=useSettings(store),config=s.config!.plugins.clipboard.settings;
   return <div className="settings-section-stack flex flex-col gap-7">
     <SettingsSection title="采集与隐私">
-      <Toggle label="暂停采集" checked={config.capturePaused===true} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.capturePaused=value;})} help="暂停保留历史搜索和粘贴，恢复不会补采暂停期间的内容；请保存成功后再复制敏感内容。" />
-      <Toggle label="敏感标记保护" checked={config.protectSensitive!==false} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.protectSensitive=value;})} help="按 macOS 剪贴板类型标记跳过隐藏、临时和自动生成内容；未标记的密码仍可能被记录，历史不会自动脱敏。" />
-      {hasExclusions(s.config)||hasExclusions(s.saved)?<Row label="旧来源应用排除列表" help="平台无法可靠识别来源应用；旧列表会保守阻止所有新采集。清空列表将连同其他草稿一起保存。"><Button onClick={()=>void store.run(async()=>{store.edit(config=>{config.plugins.clipboard.settings.excludedApps=[];config.plugins.clipboard.settings.excludedBundleIds=[];});await store.save();})}>清空旧列表并保存</Button></Row>:null}
+      <Toggle label="暂停采集" checked={config.capturePaused===true} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.capturePaused=value;})} help="暂停时仍可搜索和粘贴历史记录。恢复后不回补。" note={config.capturePaused===true && s.saved?.plugins.clipboard.settings.capturePaused!==true?'暂停尚未生效。复制敏感内容前请先保存。':undefined} />
+      <Toggle label="敏感标记保护" checked={config.protectSensitive!==false} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.protectSensitive=value;})} help="按 macOS 标记跳过隐藏、临时和自动生成的内容。" note="未标记的密码仍可能被记录，历史不会自动脱敏。" />
+      {hasExclusions(s.config)||hasExclusions(s.saved)?<Row label="旧来源应用排除列表" note="旧列表会阻止新增采集。清空会一并保存其他草稿。"><Button onClick={()=>void store.run(async()=>{store.edit(config=>{config.plugins.clipboard.settings.excludedApps=[];config.plugins.clipboard.settings.excludedBundleIds=[];});await store.save();})}>清空旧列表并保存</Button></Row>:null}
     </SettingsSection>
-    <SettingsSection title="历史保留">{(['retentionDays','maxRecords','maxBytes'] as const).map((key,index)=><TextField key={key} label={['留存天数','最多记录条数','逻辑内容容量（字节）'][index]} type="number" min={0} max={index===0?3650:undefined} value={config[key]??(index===0?30:0)} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings[key]=clipboardLimit(value,key);})} help="0 表示不限制；保存后生效，超限按最近复制时间淘汰。逻辑容量不等于数据库物理大小。" />)}</SettingsSection>
+    <SettingsSection title="历史保留">
+      <p className="fh-copy-note">0 表示不限。超限时优先清理较早复制的记录。</p>
+      {(['retentionDays','maxRecords','maxBytes'] as const).map((key,index)=><TextField key={key} label={['留存天数','最多记录条数','逻辑内容容量（字节）'][index]} type="number" min={0} max={index===0?3650:undefined} value={config[key]??(index===0?30:0)} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings[key]=clipboardLimit(value,key);})} help={key==='maxBytes'?'按记录的内容大小计算，数据库文件大小可能不同。':undefined} />)}
+    </SettingsSection>
     <SettingsSection title="存储位置"><PathControl store={store} storage /></SettingsSection>
   </div>;
 }
