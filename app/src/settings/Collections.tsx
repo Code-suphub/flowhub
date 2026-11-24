@@ -1,5 +1,5 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon, MoreHorizontalIcon, PlusIcon, MoveRightIcon, Trash2Icon, ListChecksIcon } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon, MoreHorizontalIcon, PlusIcon, MoveRightIcon, Trash2Icon, ListChecksIcon, SearchIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
 import { ActionMenu } from '../shared/ActionMenu';
@@ -18,6 +18,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
   const [previewNodes, setPreviewNodes] = useViewState<WebNode[] | null>('web:preview',null);
   const nodes = preview && previewNodes ? previewNodes : sourceNodes;
   const [selected, setSelected] = useViewState<string[]>('web:selected',[]), [expanded, setExpanded] = useViewState<Set<string>>('web:expanded',() => new Set(nodes.map(n => n.id))), [filter, setFilter] = useViewState('web:filter',''), [pending, setPending] = useState<Bag | null>(null), [overwrite, setOverwrite] = useState('skip'), [selectionMode, setSelectionMode] = useViewState('web:selection-mode',false);
+  const [lastFocused, setLastFocused] = useViewState('web:focused', '');
   const deferred = useDeferredValue(filter).trim().toLowerCase(), all = useMemo(() => entries(nodes), [nodes]);
   const byId = useMemo(() => new Map(all.map(entry => [entry.node.id,entry])), [all]);
   const activeIds = useMemo(() => selected.filter(id => byId.has(id)), [byId,selected]);
@@ -122,6 +123,9 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     }); visit(nodes, 0, null); return list;
   }, [all, nodes, deferred, expanded]);
   const view = useTreeView(visible.map(e => e.node.id), selected[0] || '', deferred);
+  const focusId = visible.find(entry => entry.node.id === lastFocused)?.node.id
+    ?? visible.find(entry => entry.node.id === activeIds[0])?.node.id
+    ?? visible[0]?.node.id;
   const pane = useCollectionPane('web',view.ref);
   const dragMotion = useCatalogDragMotion();
   const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem('flowhub:web-tree-width')) || 260; } catch { return 260; } });
@@ -141,27 +145,84 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
     editNodes(next); setFilter('');setSelectionMode(false);setSelected([id]);setExpanded(previous=>new Set([...previous,...entries(next).filter(entry=>entries(entry.node.children || []).some(child=>child.node.id===id)).map(entry=>entry.node.id)]));pane.openDetail(true);
   }
   function select(id: string, multi: boolean) { setSelected(prev => multi || selectionMode ? prev.includes(id) ? prev.filter(v => v !== id) : [id, ...prev] : [id]); if(!multi && !selectionMode) pane.openDetail(); }
+  function setNodeExpanded(id: string, open: boolean) {
+    setExpanded(previous => {
+      const next = new Set(previous);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+  function handleTreeKey(event: ReactKeyboardEvent<HTMLElement>, index: number) {
+    if (event.target !== event.currentTarget || event.altKey || event.nativeEvent.isComposing) return;
+    const { node: item, parent } = visible[index];
+    const open = expanded.has(item.id);
+    let target = -1;
+    switch (event.key) {
+      case 'Enter':
+      case ' ':
+        select(item.id, event.metaKey || event.ctrlKey || event.shiftKey);
+        break;
+      case 'ArrowDown': target = index + 1; break;
+      case 'ArrowUp': target = index - 1; break;
+      case 'Home': target = 0; break;
+      case 'End': target = visible.length - 1; break;
+      case 'ArrowRight':
+        if (item.children?.length && !open && !deferred) setNodeExpanded(item.id, true);
+        else if (visible[index + 1]?.parent?.id === item.id) target = index + 1;
+        break;
+      case 'ArrowLeft':
+        if (item.children?.length && open && !deferred) setNodeExpanded(item.id, false);
+        else if (parent) target = visible.findIndex(entry => entry.node.id === parent.id);
+        break;
+      default: return;
+    }
+    event.preventDefault();
+    if (target >= 0) view.ref.current?.querySelectorAll<HTMLElement>('[role=treeitem]')[target]?.focus();
+  }
   return <div ref={pane.ref} className="settings-catalog settings-collection-page">
-    <div className="settings-collection-toolbar flex flex-wrap items-center justify-between gap-3">
-      <span className="settings-collection-count">{all.length} 个节点{preview ? ' · 只读预览' : ''}</span>
-      <div className="flex items-center gap-2"><Button className="primary" disabled={preview} onClick={() => add('root')}><PlusIcon data-icon="inline-start" />新建节点</Button>
-        <ActionMenu label="目录操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
-          {id:'import',label:'导入目录…',disabled:preview,onSelect:()=>void store.run(async()=>{const result=await write('pickWebImport');if(!result.canceled){if(!result.items?.length)throw new Error('导入文件里没有网页节点');setPending(result);}})},
-          {id:'expand',label:'全部展开',onSelect:()=>setExpanded(new Set(all.map(e=>e.node.id)))},
-          {id:'collapse',label:'全部收起',onSelect:()=>setExpanded(new Set())}
-        ]} />
-      </div>
-    </div>
     <div className="settings-collection grid" data-detail-open={pane.detailOpen} style={{ '--settings-tree-width': `${width}px` } as CSSProperties}>
       <aside className="settings-catalog-nav min-w-0" data-collection-list onFocusCapture={pane.onListFocus}>
-        <div className="settings-catalog-search"><Input aria-label="筛选网页目录" type="search" placeholder="搜索目录或网页…" value={filter} onChange={e => setFilter(e.target.value)} /></div>
-        <div className="settings-collection-list-meta flex flex-wrap items-center justify-between gap-2"><span>{deferred ? `匹配 ${visible.length} 项` : '全部节点'}</span><div className="flex items-center gap-1"><Button variant="ghost" size="sm" aria-pressed={selectionMode} onClick={()=>{setSelectionMode(!selectionMode);if(selectionMode)setSelected(activeIds.slice(0,1));}}>{selectionMode ? '结束多选' : '多选'}</Button><Help label="网页目录拖拽与多选">按住 ⌘、Ctrl 或 Shift 点击可多选。拖到行间排序，拖到目录行中央移入。</Help></div></div>
-        {activeIds.length ? <Button className="settings-selection-review" onClick={()=>pane.openDetail()}>管理所选 {activeIds.length} 项</Button> : null}
-        <div ref={view.ref} onScroll={view.capture} role="tree" aria-label="网页目录" aria-multiselectable="true" className="settings-tree">{visible.map(({ node: item, depth }) => <div key={item.id} role="treeitem" aria-level={depth + 1} aria-selected={selected.includes(item.id)} aria-expanded={item.children?.length ? expanded.has(item.id) : undefined} tabIndex={0} data-node-id={item.id} data-drop-position={dropTarget?.id===item.id?dropTarget.position:undefined} className={`settings-tree-row flex items-center ${depth === 0 ? 'settings-tree-root' : ''}`} style={{ paddingInlineStart: 10 + depth * 16 }} onClick={e => { if (Date.now() >= suppressClickUntil.current) select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); }} onPointerDown={e => { if (!(e.target instanceof Element) || !e.target.closest('button,input,select,textarea')) beginPointerDrag(item.id, e); }} onKeyDown={e => { if(e.target!==e.currentTarget)return; if (['Enter', ' '].includes(e.key)) { e.preventDefault(); select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); } if (e.key === 'ArrowRight') setExpanded(prev => new Set([...prev, item.id])); if (e.key === 'ArrowLeft') setExpanded(prev => { const next = new Set(prev); next.delete(item.id); return next; }); if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); const rows = e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role=treeitem]'); const index = visible.findIndex(n => n.node.id === item.id); rows?.[index + (e.key === 'ArrowDown' ? 1 : -1)]?.focus(); } }}>
-          {item.children?.length ? <Button aria-label={`${expanded.has(item.id) ? '收起' : '展开'} ${item.title}`} className="settings-tree-toggle" onClick={e => { e.stopPropagation(); setExpanded(prev => { const next = new Set(prev); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; }); }}>{expanded.has(item.id) ? <FolderOpenIcon size={15} strokeWidth={1.8} aria-hidden="true" /> : <FolderIcon size={15} strokeWidth={1.8} aria-hidden="true" />}</Button> : <span className="settings-tree-leaf" aria-hidden="true">{item.url ? <Globe2Icon size={15} strokeWidth={1.8} /> : <FolderIcon size={15} strokeWidth={1.8} />}</span>}
+        <div className="settings-catalog-actions flex items-center justify-between gap-2">
+          <Button variant="default" size="default" disabled={preview} onClick={() => add('root')}><PlusIcon data-icon="inline-start" aria-hidden="true" />新建节点</Button>
+          <ActionMenu label="目录操作" icon={<MoreHorizontalIcon aria-hidden="true" />} popupClassName="settings-collection-menu" items={[
+            {id:'import',label:'导入目录…',disabled:preview,onSelect:()=>void store.run(async()=>{const result=await write('pickWebImport');if(!result.canceled){if(!result.items?.length)throw new Error('导入文件里没有网页节点');setPending(result);}})},
+            {id:'expand',label:'全部展开',disabled:Boolean(filter.trim()),onSelect:()=>setExpanded(new Set(all.map(e=>e.node.id)))},
+            {id:'collapse',label:'全部收起',disabled:Boolean(filter.trim()),onSelect:()=>setExpanded(new Set())}
+          ]} />
+        </div>
+        <div className="settings-catalog-search">
+          <SearchIcon aria-hidden="true" />
+          <Input aria-label="筛选网页目录" type="search" placeholder="搜索目录或网页…" value={filter} onChange={e => setFilter(e.target.value)} />
+        </div>
+        <div className="settings-collection-list-meta flex items-center justify-between gap-2">
+          <span role="status">{deferred ? `显示 ${visible.length} 项` : `${all.length} 个节点`}</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" aria-pressed={selectionMode} onClick={()=>{setSelectionMode(!selectionMode);if(selectionMode)setSelected(activeIds.slice(0,1));}}>{selectionMode ? '结束多选' : '多选'}</Button>
+            <Help label="网页目录拖拽与多选">按住 ⌘、Ctrl 或 Shift 点击多选。拖到行间排序，拖到目录中央移入。</Help>
+          </div>
+        </div>
+        {(selectionMode || activeIds.length > 1) && activeIds.length > 0 ? <Button className="settings-selection-review" onClick={()=>pane.openDetail()}>管理所选 {activeIds.length} 项</Button> : null}
+        <div ref={view.ref} onScroll={view.capture} role="tree" aria-label="网页目录" aria-multiselectable="true" className="settings-tree">{visible.map(({ node: item, depth }, index) => {
+          const open = deferred !== '' || expanded.has(item.id);
+          const title = item.title || item.id;
+          return <div
+            key={item.id} role="treeitem" aria-label={title} aria-level={depth + 1}
+            aria-selected={selected.includes(item.id)} aria-expanded={item.children?.length ? open : undefined}
+            tabIndex={item.id === focusId ? 0 : -1} data-node-id={item.id}
+            data-drop-position={dropTarget?.id===item.id?dropTarget.position:undefined}
+            className={`settings-tree-row flex items-center ${depth === 0 ? 'settings-tree-root' : ''}`}
+            style={{ paddingInlineStart: `min(${8 + depth * 14}px, 40%)` }}
+            onFocus={() => setLastFocused(item.id)}
+            onClick={e => { if (Date.now() >= suppressClickUntil.current) select(item.id, e.metaKey || e.ctrlKey || e.shiftKey); }}
+            onPointerDown={e => { if (!(e.target instanceof Element) || !e.target.closest('button,input,select,textarea')) beginPointerDrag(item.id, e); }}
+            onKeyDown={e => handleTreeKey(e, index)}
+          >
+          {item.children?.length && !deferred ? <Button aria-label={`${open ? '收起' : '展开'} ${title}`} tabIndex={-1} className="settings-tree-toggle" onClick={e => { e.stopPropagation(); setNodeExpanded(item.id, !open); }}>{open ? <FolderOpenIcon size={15} strokeWidth={1.8} aria-hidden="true" /> : <FolderIcon size={15} strokeWidth={1.8} aria-hidden="true" />}</Button> : <span className="settings-tree-leaf" aria-hidden="true">{item.children?.length ? <FolderOpenIcon size={15} strokeWidth={1.8} /> : item.url ? <Globe2Icon size={15} strokeWidth={1.8} /> : <FolderIcon size={15} strokeWidth={1.8} />}</span>}
           <span className="settings-tree-title truncate">{item.title || item.id}</span>
-          <Button aria-label={`拖动 ${item.title || item.id}`} className="settings-drag-handle" onClick={e => e.stopPropagation()} onPointerDown={e => { e.preventDefault(); e.stopPropagation(); beginPointerDrag(item.id, e, true); }}>⠿</Button>
-        </div>)}{!visible.length ? <CollectionEmpty title={deferred ? "没有匹配的目录" : "暂无网页目录"} icon={<FolderIcon />}>{deferred ? <Button onClick={()=>setFilter('')}>清除筛选</Button> : <Button disabled={preview} onClick={()=>add('root')}>新建节点</Button>}</CollectionEmpty> : null}</div>
+          <Button aria-label={`拖动 ${title}`} tabIndex={-1} className="settings-drag-handle" onClick={e => e.stopPropagation()} onPointerDown={e => { e.preventDefault(); e.stopPropagation(); beginPointerDrag(item.id, e, true); }}>⠿</Button>
+        </div>;
+        })}{!visible.length ? <CollectionEmpty title={deferred ? "没有匹配的目录" : "暂无网页目录"} icon={<FolderIcon />}>{deferred ? <Button onClick={()=>setFilter('')}>清除筛选</Button> : null}</CollectionEmpty> : null}</div>
       </aside>
       <div className="settings-divider" role="separator" tabIndex={0} aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={380} aria-valuenow={width} onPointerDown={e => { resizing.current = { x: e.clientX, width }; e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (resizing.current) resize(resizing.current.width + e.clientX - resizing.current.x); }} onPointerUp={() => { resizing.current = null; }} onPointerCancel={() => { resizing.current = null; }} onDoubleClick={() => resize(260)} onKeyDown={e => { const value = { ArrowLeft: width - 10, ArrowRight: width + 10, Home: 220, End: 380 }[e.key]; if (value !== undefined) { e.preventDefault(); resize(value); } }} />
       <div className="settings-catalog-detail min-w-0" data-collection-detail onFocusCapture={pane.onDetailFocus}>
@@ -170,7 +231,7 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
           <div className="settings-collection-bulk-actions flex flex-wrap gap-2"><Button disabled={preview} onClick={()=>prepareAction('move')}><MoveRightIcon data-icon="inline-start" />移动所选…</Button><Button variant="destructive" disabled={preview} onClick={()=>prepareAction('delete')}><Trash2Icon data-icon="inline-start" />删除所选…</Button></div>
           <ul className="settings-selection-list">{selection.roots.map(item=><li key={item.id}><FolderIcon aria-hidden="true" /><span>{path(item.id)}</span></li>)}</ul>
         </> : node ? <>
-          <CollectionHeading title={node.title || '未命名节点'} location={`${node.url ? '网页' : '目录'} · ${byId.get(node.id)?.parent ? path(byId.get(node.id)!.parent!.id) : '根目录'}`} icon={node.url ? <Globe2Icon /> : <FolderIcon />} onBack={()=>pane.back(node.id,'data-node-id')} backLabel="返回网页列表">
+          <CollectionHeading title={node.title || '未命名节点'} location={byId.get(node.id)?.parent ? path(byId.get(node.id)!.parent!.id) : '根目录'} icon={node.url ? <Globe2Icon /> : <FolderIcon />} onBack={()=>pane.back(node.id,'data-node-id')} backLabel="返回网页列表">
             <ActionMenu label="节点操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
               {id:'child',label:'添加子节点',disabled:preview,onSelect:()=>add('child')},
               {id:'sibling',label:'添加同级节点',disabled:preview,onSelect:()=>add('sibling')},

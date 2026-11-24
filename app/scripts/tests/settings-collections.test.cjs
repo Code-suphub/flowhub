@@ -11,6 +11,24 @@ async function menu(view,label,item){
 }
 async function selectMany(view,ids){for(const id of ids)await h.key(row(view,id),'Enter',{ctrlKey:true});}
 
+test('web tree has one tab stop and supports keyboard traversal through visible branches',async()=>{
+  const {store}=await h.loaded(),view=await h.mount(WebCatalog,{store});
+  const tree=view.container.querySelector('[role=tree]');
+  assert.deepEqual([...tree.querySelectorAll('[tabindex="0"]')].map(node=>node.dataset.nodeId),['a']);
+  row(view,'a').focus();
+  await h.key(row(view,'a'),'ArrowRight');
+  assert.equal(document.activeElement,row(view,'a1'));
+  await h.key(row(view,'a1'),'ArrowLeft');
+  assert.equal(document.activeElement,row(view,'a'));
+  await h.key(row(view,'a'),'ArrowLeft');
+  assert.equal(row(view,'a').getAttribute('aria-expanded'),'false');
+  assert.equal(row(view,'a1'),null);
+  await h.key(row(view,'a'),'End');
+  assert.equal(document.activeElement,row(view,'p'));
+  assert.equal(tree.querySelector('[tabindex="0"]'),row(view,'p'));
+  await view.unmount();store.dispose();
+});
+
 test('multiple selections get a dedicated editor; deletion counts unique branches, cancels safely and undoes once',async()=>{
   const {store,writes}=await h.loaded(),view=await h.mount(WebCatalog,{store}),before=h.model.clone(items(store));
   await selectMany(view,['a','a1','b']);
