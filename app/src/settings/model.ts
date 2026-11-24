@@ -10,6 +10,13 @@ export function clipboardLimit(value: unknown, key: string) { const number = Num
 export function hasExclusions(config: Config | null) { const value = config?.plugins.clipboard?.settings?.excludedApps; return Array.isArray(value) ? value.some(v => typeof v !== 'string' || v.trim()) : value != null; }
 export const tools = { ping: 'Ping 连通性', curl: 'HTTP 请求', port: '端口与进程', calculator: '计算表达式', timestamp: '时间戳转换', jwt: 'JWT 解析', json: 'JSON 格式化', url: 'URL 解析与编解码', dns: 'DNS 解析', dnsIpGeo: 'DNS 自动查询 IP 归属地', cloudflare: 'Cloudflare 检测', localIp: '本机 IP 查询', proxy: '代理信息检测', ip: 'IP 识别与归属地', commandHistory: '命令历史' };
 export const shortcuts: Record<string, string> = { all: 'Shift+1', clipboard: 'Shift+2', app: 'Shift+3', web: 'Shift+4', memo: 'Shift+5' };
+export const flowHubMenuIconLabel = '在菜单栏显示 FlowHub 图标';
+export const flowHubMenuItems = [
+  ['showOpenLauncher', '打开 FlowHub', '打开启动器 唤出搜索'],
+  ['showOpenSettings', '设置…', '打开设置'],
+  ['showVersion', '版本号', '显示版本'],
+  ['showQuit', '退出 FlowHub', '退出菜单'],
+] as const;
 export const canonical = shortcutKeys.canonical;
 export function normalize(value: unknown): Config {
   const c = clone(value) as Config;

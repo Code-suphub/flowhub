@@ -159,7 +159,7 @@ export class SettingsStore {
   async refreshHistory() { try { this.patch({ history: await call('listConfigHistory') }); } catch (e) { this.patch({ history: { entries: [], error: e instanceof Error ? e.message : String(e) } }); } }
   refreshMenu() {
     if (this.menuRequest) return this.menuRequest;
-    this.menuRequest = (async () => { const management = await call('getMenuBarManagementState'); this.patch({ management }); if (!management.trusted || !this.value.config?.core.menuBar.organizerEnabled) return; const result = await call('listMenuBarItems'); this.patch({ menuItems: Array.isArray(result) ? result : result.items || [] }); })().finally(() => { this.menuRequest = null; });
+    this.menuRequest = (async () => { const management = await call('getMenuBarManagementState'); this.patch({ management }); if (!management.trusted || !this.value.saved?.core.menuBar.organizerEnabled) return; const result = await call('listMenuBarItems'); this.patch({ menuItems: Array.isArray(result) ? result : result.items || [] }); })().finally(() => { this.menuRequest = null; });
     return this.menuRequest;
   }
   dispose() { this.persist(); this.disposed = true; ++this.epoch; clearTimeout(this.timer); this.listeners.clear(); }

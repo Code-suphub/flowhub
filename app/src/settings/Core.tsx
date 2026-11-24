@@ -111,7 +111,8 @@ export function Core({ store, section }: { store: SettingsStore; section: string
     window.addEventListener('keydown', onKey);
     stopPointerDrag.current = cleanup;
   }
-  useEffect(() => { if (activeSection !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [activeSection, store]);
+  const savedOrganizer = s.saved?.core.menuBar.organizerEnabled;
+  useEffect(() => { if (activeSection !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [activeSection, savedOrganizer, store]);
   const previewInspect = readonly() && ['general', 'search', 'menubar', 'data'].includes(activeSection);
   useEffect(() => () => stopPointerDrag.current?.(), []);
   useEffect(() => { stopPointerDrag.current?.(); setDraggingSource(''); updateDropTarget(null); }, [activeSection]);

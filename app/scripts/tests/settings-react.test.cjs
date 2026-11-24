@@ -106,7 +106,7 @@ test('search workspace opens a reorder popover and shows save actions as needed'
   const view = await h.mount(Settings, { store });
   t.after(async () => { await view.unmount(); store.dispose(); });
   await h.click(view.container.querySelector('[data-page="search"]'));
-  assert.ok(view.container.querySelector('.settings-search-workspace'));
+  assert.ok(view.container.querySelector('.settings-compact-workspace'));
   assert.equal(view.container.querySelector('[aria-label="查找页面"]'), null);
   assert.ok(view.container.querySelector('.settings-topbar [aria-label="搜索设置"]'));
   assert.equal(view.container.querySelector('.settings-footer'), null);
@@ -247,7 +247,8 @@ test('settings use one navigation level for general, data and updates with keybo
   await h.key(buttons.at(-1),'Home');assert.equal(document.activeElement,buttons[0]);
   for (const [id,panel] of [['core','general'],['data','data'],['updates','updates']]) {await h.click(view.container.querySelector(`[data-page="${id}"]`));assert.ok(view.container.querySelector(`#panel-${panel}`));}
   for (const label of ['搜索', '菜单栏']) { await h.click(h.button(view.container, label)); assert.equal(view.container.querySelector('[aria-label="通用设置分类"]'),null); }
-  assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存').disabled, true);
+  assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存'), undefined);
+  assert.match(view.container.querySelector('.settings-footer').textContent, /浏览器预览 · 不会保存配置/);
   await view.unmount(); store.dispose();
 });
 test('clipboard and tool groups retain every setting, drafts and explicit history confirmation',async()=>{
@@ -408,8 +409,8 @@ test('theme Select writes shared theme preference and follows host theme events'
   await view.unmount(); delete window.FlowHubTheme;
 });
 
-test('menu-bar settings expose real sections and names, retain failed scans, and preserve item visibility actions', async () => {
-  let failure=false, rejectMove=true;const moves=[];
+test('menu-bar settings expose committed sections, retain failed scans, and preserve immediate item visibility actions', async () => {
+  let failure=false, rejectMove=true, scans=0;const moves=[];
   const items=[
     {windowId:1,displayName:'主图标',ownerName:'进程',section:'visible',hideable:true},
     {windowId:2,accessibilityLabel:'隐藏图标',section:'alwaysHidden',hideable:true},
@@ -418,11 +419,16 @@ test('menu-bar settings expose real sections and names, retain failed scans, and
   ];
   const {store}=await h.loaded({
     getMenuBarManagementState:async()=>({trusted:true,supported:true}),
-    listMenuBarItems:async()=>failure?{ok:false,reason:'扫描失败'}:{ok:true,items},
+    listMenuBarItems:async()=>{scans++;return failure?{ok:false,reason:'扫描失败'}:{ok:true,items};},
     setMenuBarItemHidden:async(id,hidden)=>{moves.push([id,hidden]);if(rejectMove)return {ok:false,reason:'鼠标正在使用中'};items.find(item=>item.windowId===id).section=hidden?'alwaysHidden':'hidden';return {ok:true};},
   });
   store.edit(c=>{c.core.menuBar.organizerEnabled=true;});
   const view=await h.mount(Core,{store,section:'menubar',onSection:()=>{}});
+  await h.act(async()=>store.refreshMenu());
+  assert.match(view.container.textContent,/保存隐藏分区设置后生效/);
+  assert.equal(h.button(view.container,'扫描图标'),undefined);
+  assert.equal(scans,0);
+  await h.act(async()=>store.save());
   await h.act(async()=>store.refreshMenu());
   const row=name=>[...view.container.querySelectorAll('.settings-menu-item')].find(node=>node.textContent.includes(name));
   assert.match(row('主图标').textContent,/常显区/);assert.match(row('隐藏图标').textContent,/始终隐藏区/);

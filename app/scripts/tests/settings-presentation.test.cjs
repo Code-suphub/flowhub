@@ -25,10 +25,30 @@ test('source changes and new settings windows discard previous presentation stat
   await h.act(async()=>store.patch({configPath:{resolvedPath:'/fixture/new-source'}}));await flush();assert.equal(view.container.querySelector('[role=tab][aria-selected=true]').textContent,'全部项目');assert.equal(view.container.querySelector('.settings-menu-options').open,false);
   await h.click(view.container.querySelector('.settings-menu-options summary'));await flush();await view.unmount();view=await h.mount(Settings,{store});await go(view,'menubar');assert.equal(view.container.querySelector('.settings-menu-options').open,false);await view.unmount();store.dispose();
 });
-test('search-driven expansion is remembered without invoking the permission action',async()=>{
-  let permissions=0;const {store,writes}=await h.loaded({requestMenuBarManagementPermission:async()=>permissions++},true),view=await h.mount(Settings,{store});
-  await h.click(view.container.querySelector('[aria-label="搜索设置"]'));await h.input(document.querySelector('[aria-label="搜索设置项"]'),'菜单栏权限');await h.click(document.querySelector('[data-command-id="menubar-permission"]'));await flush();await flush();
-  assert.equal(view.container.querySelector('.settings-menu-options').open,true);await go(view,'core');await go(view,'menubar');assert.equal(view.container.querySelector('.settings-menu-options').open,true);assert.equal(permissions,0);assert.equal(writes.length,0);await view.unmount();store.dispose();
+test('search-driven expansion of menu options is remembered',async()=>{
+  const {store,writes}=await h.loaded({},true),view=await h.mount(Settings,{store});
+  await h.click(view.container.querySelector('[aria-label="搜索设置"]'));await h.input(document.querySelector('[aria-label="搜索设置项"]'),'打开启动器');await h.click(document.querySelector('[data-command-id="menubar:showOpenLauncher"]'));await flush();await flush();
+  assert.equal(view.container.querySelector('.settings-menu-options').open,true);await go(view,'core');await go(view,'menubar');assert.equal(view.container.querySelector('.settings-menu-options').open,true);assert.equal(writes.length,0);await view.unmount();store.dispose();
+});
+test('FlowHub icon visibility and the entries shown in its menu are separate draft settings',async t=>{
+  const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
+  t.after(async()=>{await view.unmount();store.dispose();});
+  await go(view,'menubar');
+  const details=view.container.querySelector('.settings-menu-options');
+  await h.click(details.querySelector('summary'));
+  await flush();
+  const icon=details.querySelector('[aria-label="在菜单栏显示 FlowHub 图标"]');
+  const quit=details.querySelector('[aria-label="在图标菜单中显示「退出 FlowHub」"]');
+  assert.equal(details.querySelector('legend').textContent,'点开图标后显示');
+  await h.click(quit);
+  assert.equal(store.snapshot().config.core.menuBar.showQuit,false);
+  assert.equal(store.snapshot().saved.core.menuBar.showQuit,true);
+  await h.click(icon);
+  assert.equal(quit.getAttribute('aria-disabled'),'true');
+  assert.match(details.textContent,/开启图标后可设置菜单项/);
+  await h.click(icon);
+  assert.equal(quit.getAttribute('aria-checked'),'false');
+  assert.equal(writes.length,0);
 });
 test('export scope persists but a removed plugin scope safely resolves to all configuration',async()=>{
   const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});await h.act(async()=>store.edit(config=>{config.plugins.custom={settings:{}};}));await go(view,'data');

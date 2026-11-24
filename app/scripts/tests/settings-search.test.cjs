@@ -39,9 +39,9 @@ test('keyboard Enter locates an editable control and does not activate it or sav
   const input=view.container.querySelector('[aria-label="留存天数"]');assert.equal(document.activeElement===input,true);assert.equal(input.closest('[data-setting-label]').dataset.settingHighlight,'true');assert.equal(store.dirty,false);assert.equal(writes.length,0);
   await h.input(input,'21');assert.equal(store.snapshot().config.plugins.clipboard.settings.retentionDays,21);assert.equal(document.activeElement===input,true);assert.equal(writes.length,0);await view.unmount();store.dispose();
 });
-test('locating collapsed permission controls opens their section without requesting permission',async t=>{
+test('locating the visible menu-bar permission control focuses it without requesting permission',async t=>{
   layout(t);let permissions=0;const {store}=await h.loaded({requestMenuBarManagementPermission:async()=>{permissions++;return {};}}),view=await h.mount(Settings,{store});await choose(view,'菜单栏权限','menubar-permission');
-  const details=view.container.querySelector('.settings-menu-options');assert.equal(details.open,true);assert.equal(document.activeElement===h.button(details,'授权辅助功能'),true);assert.equal(permissions,0);assert.equal(store.dirty,false);await view.unmount();store.dispose();
+  const permission=view.container.querySelector('.settings-menu-permission');assert.equal(view.container.querySelector('.settings-menu-options').open,false);assert.equal(document.activeElement,h.button(permission,'授权辅助功能'));assert.equal(permissions,0);assert.equal(store.dirty,false);await view.unmount();store.dispose();
 });
 test('locating a distant setting scrolls its content pane without shifting the outer document',async t=>{
   layout(t);const {store}=await h.loaded(),view=await h.mount(Settings,{store});

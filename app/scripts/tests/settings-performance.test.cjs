@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');const h=require('./settings-harness.test.cjs');
 test('menu scans are invisible-page gated and concurrent requests share one native request',async()=>{
- let managementCalls=0,scans=0,resolve;const {store}=await h.loaded();store.edit(c=>{c.core.menuBar.organizerEnabled=true;});
+ let managementCalls=0,scans=0,resolve;const {store}=await h.loaded();store.edit(c=>{c.core.menuBar.organizerEnabled=true;});await store.save();
  window.weborg.getMenuBarManagementState=()=>{managementCalls++;return new Promise(r=>{resolve=r;});};window.weborg.listMenuBarItems=async()=>{scans++;return {items:[]};};
  const {Core}=require('../../src/settings/Core.tsx');const view=await h.mount(Core,{store,section:'general',onSection:()=>{}});window.dispatchEvent(new window.Event('focus'));assert.equal(managementCalls,0);
  let a,b;await h.act(async()=>{a=store.refreshMenu();b=store.refreshMenu();});assert.equal(a,b);assert.equal(managementCalls,1);await h.act(async()=>{resolve({trusted:true});await a;});assert.equal(scans,1);

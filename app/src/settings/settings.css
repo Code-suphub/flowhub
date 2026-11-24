@@ -152,7 +152,6 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-row:is(:has(> :last-child > [data-slot="select-trigger"]),:has(> :last-child > .flex > button)) > :first-child { flex:1 0 140px; }
 .settings-row:is(:has(> :last-child > [data-slot="select-trigger"]),:has(> :last-child > .flex > button)) > :last-child { width:auto; max-width:100%; margin-left:auto; }
 .settings-row > :last-child > .flex:has(> button) { justify-content:flex-end; }
-.settings-menu-permission { color:var(--fh-muted); font-size:12px; line-height:1.5; margin:10px 0; }
 
 .settings-collection-page { container:settings-collection / inline-size; min-width:0; display:grid; gap:12px; font-size:14px; line-height:21px; }
 .settings-collection-count { color:var(--fh-muted); font-size:12px; }

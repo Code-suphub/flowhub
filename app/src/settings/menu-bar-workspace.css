@@ -1,0 +1,56 @@
+.settings-menubar { display:grid; gap:16px; align-items:start; }
+@container settings-workspace (min-width:660px) {
+  .settings-menubar { grid-template-columns:minmax(0,1fr) minmax(250px,35%); }
+}
+.settings-menubar-card,.settings-menu-demo {
+  min-width:0;
+  padding:16px;
+  border:1px solid var(--fh-border);
+  border-radius:12px;
+  background:var(--fh-surface-raised);
+}
+.settings-menubar h2 { margin:0; font-size:15px; font-weight:600; line-height:22px; }
+.settings-menubar-heading { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:32px; }
+.settings-menu-native-actions { display:flex; flex-wrap:wrap; gap:4px; margin-inline-start:auto; }
+.settings-menu-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; margin-top:10px; }
+.settings-menu-toolbar .fh-tabs { width:auto; flex:0 1 auto; margin:0; padding:3px; border:0; border-radius:7px; background:var(--fh-surface-soft); }
+.settings-menu-toolbar .fh-tabs [role=tab] { min-height:30px; padding-inline:9px; border-radius:5px; }
+.settings-menu-toolbar .fh-tabs [aria-selected="true"] { border-color:var(--fh-border); background:var(--fh-surface-raised); color:var(--fh-text); box-shadow:none; }
+.settings-menu-toolbar > span,.settings-menu-status,.settings-menu-copy small,.settings-menu-permission small,.settings-menu-demo small { color:var(--fh-muted); font-size:12px; }
+.settings-menu-status { margin:8px 0 0; }
+.settings-menu-items { margin-top:4px; }
+.settings-menu-item {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-height:54px;
+  padding-block:7px;
+  border-bottom:1px solid var(--fh-border);
+  cursor:pointer;
+}
+.settings-menu-item:last-child { border-bottom:0; }
+.settings-menu-item:has([aria-disabled="true"]) { cursor:default; }
+.settings-menu-icon { display:grid; flex:none; place-items:center; width:30px; height:30px; border-radius:7px; background:var(--fh-surface-soft); color:var(--fh-muted); }
+.settings-menu-icon :is(svg,.flowhub-logo) { width:17px; height:17px; }
+.settings-menu-copy { min-width:0; flex:1; display:grid; gap:2px; overflow-wrap:anywhere; }
+.settings-menu-copy strong,.settings-menu-permission strong { font-size:13px; font-weight:600; }
+.settings-menu-empty { margin:0; padding-block:14px 8px; color:var(--fh-muted); font-size:13px; }
+.settings-menu-permission { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding-block:12px; }
+.settings-menu-permission small { display:block; margin-top:2px; }
+.settings-menu-options { padding-top:8px; border-top:1px solid var(--fh-border); }
+.settings-menu-options summary { width:fit-content; max-width:100%; padding:5px 0; font-size:13px; cursor:pointer; }
+.settings-menu-options summary:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
+.settings-menubar-controls .settings-row { column-gap:8px; }
+.settings-menubar-controls .settings-row > :first-child { min-width:0; overflow-wrap:anywhere; }
+.settings-flowhub-menu-items { margin-top:10px; }
+.settings-flowhub-menu-items legend { padding:0; color:var(--fh-muted); font-size:12px; }
+.settings-flowhub-menu-items > p { margin:5px 0 0; }
+.settings-flowhub-menu-list { margin-top:6px; padding-inline:9px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-surface-soft); }
+.settings-flowhub-menu-list .settings-row { padding-block:9px; }
+.settings-flowhub-menu-list .settings-row:last-child { border-bottom:0; }
+.settings-menu-demo { display:flex; grid-column:1/-1; flex-wrap:wrap; align-items:center; gap:8px 16px; padding-block:10px; }
+.settings-menu-demo-icons { display:flex; flex:1; flex-wrap:wrap; align-items:center; gap:10px; }
+.settings-menu-demo-icons :is(svg,.flowhub-logo) { display:block; width:16px; height:16px; color:var(--fh-muted); }
+@media(max-width:699px) {
+  .settings-menubar-card,.settings-menu-demo { padding-inline:12px; }
+}
