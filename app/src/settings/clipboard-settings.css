@@ -1,0 +1,72 @@
+.fh-clipboard-page {
+  max-width: 720px;
+}
+
+.fh-clipboard-card {
+  padding: 14px 16px 4px;
+  border: 1px solid var(--fh-border);
+  border-radius: 12px;
+  background: var(--fh-surface-raised);
+}
+
+.fh-clipboard-page .settings-section > legend {
+  color: var(--fh-text);
+  font-weight: 600;
+}
+
+.fh-clipboard-card[data-capture-pending="true"] [data-setting-label="暂停采集"] .fh-copy-note {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-inline-start: 2px solid var(--fh-accent);
+  border-radius: 4px;
+  background: var(--fh-accent-soft);
+  color: var(--fh-text);
+}
+
+.fh-clipboard-page [data-setting-label="敏感标记保护"] .fh-copy-note,
+.fh-clipboard-page [data-setting-label="旧来源应用排除列表"] .fh-copy-note {
+  margin-top: 2px;
+  color: var(--fh-text);
+}
+
+.fh-clipboard-retention-note {
+  margin: 8px 0 2px;
+}
+
+.fh-clipboard-retention .settings-row > [data-setting-control] > input[type="number"]:only-child {
+  width: min(104px, 100%);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fh-clipboard-storage .settings-section > legend {
+  border-bottom: 0;
+}
+
+.fh-clipboard-storage .settings-storage-control {
+  gap: 10px;
+  border-radius: 12px;
+  background: var(--fh-surface-soft);
+}
+
+.fh-clipboard-storage .settings-storage-control:has(#settings-database-target, [role="alert"]) {
+  background: var(--fh-surface-raised);
+}
+
+@container settings-workspace (max-width: 480px) {
+  .fh-clipboard-card {
+    padding-inline: 12px;
+  }
+
+  .fh-clipboard-page .settings-section .settings-row[data-setting-label="旧来源应用排除列表"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fh-clipboard-page .settings-section .settings-row[data-setting-label="旧来源应用排除列表"] > [data-setting-control] {
+    justify-self: start;
+  }
+
+  .fh-clipboard-retention .settings-row > [data-setting-control] > input[type="number"]:only-child {
+    width: min(85px, 100%);
+  }
+}

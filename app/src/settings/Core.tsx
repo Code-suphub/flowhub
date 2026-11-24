@@ -12,6 +12,7 @@ import { MenuBar } from './MenuBar';
 import { FlowHubLogo } from '../shared/FeatureIcon';
 import { DataPanel, PathControl } from './DataPanel';
 import { SettingsSection } from './SettingsSection';
+import './clipboard-settings.css';
 export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
 const names: Record<string, string> = { all: '全部', app: '应用', web: '网页目录', clipboard: '剪贴板', memo: '备忘录', tools: '工具' };
@@ -225,18 +226,78 @@ export function Tools({ store }: { store: SettingsStore }) {
     {section.keys.includes('commandHistory')?<Row label="命令历史与参数模板" help="ping、curl、端口历史共用此开关；包含凭据的查询不会写入历史。"><p>{counts?`${counts.total} 条历史 · ${counts.templates} 个模板`:'暂无历史'}</p><Button onClick={()=>setClearHistory(true)}>清空历史与模板</Button></Row>:null}
   </SettingsSection>)}</div>{clearHistory?<Dialog title="清空命令历史与模板" busy={false} onClose={()=>setClearHistory(false)}><p>此操作不能撤销。历史和参数模板将同时清空。</p><Button onClick={()=>{if(readonly())return;host().FlowHubCommandStore?.clearAll();setCounts(host().FlowHubCommandStore?.counts());setClearHistory(false);}}>确认清空</Button></Dialog>:null}</>;
 }
+const retentionFields = [
+  { key: 'retentionDays', label: '留存天数', defaultValue: 30, max: 3650, help: undefined },
+  { key: 'maxRecords', label: '最多记录条数', defaultValue: 0, max: undefined, help: undefined },
+  { key: 'maxBytes', label: '逻辑内容容量（字节）', defaultValue: 0, max: undefined, help: '按记录的内容大小计算，数据库文件大小可能不同。' },
+] as const;
+
 export function Clipboard({ store }: { store: SettingsStore }) {
-  const s=useSettings(store),config=s.config!.plugins.clipboard.settings;
-  return <div className="settings-section-stack flex flex-col gap-7">
-    <SettingsSection title="采集与隐私">
-      <Toggle label="暂停采集" checked={config.capturePaused===true} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.capturePaused=value;})} help="暂停时仍可搜索和粘贴历史记录。恢复后不回补。" note={config.capturePaused===true && s.saved?.plugins.clipboard.settings.capturePaused!==true?'暂停尚未生效。复制敏感内容前请先保存。':undefined} />
-      <Toggle label="敏感标记保护" checked={config.protectSensitive!==false} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings.protectSensitive=value;})} help="按 macOS 标记跳过隐藏、临时和自动生成的内容。" note="未标记的密码仍可能被记录，历史不会自动脱敏。" />
-      {hasExclusions(s.config)||hasExclusions(s.saved)?<Row label="旧来源应用排除列表" note="旧列表会阻止新增采集。清空会一并保存其他草稿。"><Button onClick={()=>void store.run(async()=>{store.edit(config=>{config.plugins.clipboard.settings.excludedApps=[];config.plugins.clipboard.settings.excludedBundleIds=[];});await store.save();})}>清空旧列表并保存</Button></Row>:null}
-    </SettingsSection>
-    <SettingsSection title="历史保留">
-      <p className="fh-copy-note">0 表示不限。超限时优先清理较早复制的记录。</p>
-      {(['retentionDays','maxRecords','maxBytes'] as const).map((key,index)=><TextField key={key} label={['留存天数','最多记录条数','逻辑内容容量（字节）'][index]} type="number" min={0} max={index===0?3650:undefined} value={config[key]??(index===0?30:0)} onChange={value=>store.edit(config=>{config.plugins.clipboard.settings[key]=clipboardLimit(value,key);})} help={key==='maxBytes'?'按记录的内容大小计算，数据库文件大小可能不同。':undefined} />)}
-    </SettingsSection>
-    <SettingsSection title="存储位置"><PathControl store={store} storage /></SettingsSection>
+  const s = useSettings(store);
+  const config = s.config!.plugins.clipboard.settings;
+  const isPaused = config.capturePaused === true;
+  const isSavedPaused = s.saved?.plugins.clipboard.settings.capturePaused === true;
+  const pausePending = isPaused && !isSavedPaused;
+  const resumePending = !isPaused && isSavedPaused;
+  const preview = readonly();
+  const showLegacyExclusions = hasExclusions(s.config) || hasExclusions(s.saved);
+  const pauseNote = pausePending
+    ? '暂停尚未生效。复制敏感内容前请先保存。'
+    : resumePending ? '采集仍处于暂停状态，保存后恢复。' : undefined;
+
+  return <div className="fh-clipboard-page grid min-w-0 gap-4">
+    <div className="fh-clipboard-card" data-capture-pending={pausePending || resumePending}>
+      <SettingsSection title="采集与隐私">
+        <Toggle
+          label="暂停采集"
+          checked={isPaused}
+          disabled={preview}
+          onChange={value => store.edit(next => { next.plugins.clipboard.settings.capturePaused = value; })}
+          help="暂停时仍可搜索和粘贴历史记录。恢复后不回补。"
+          note={pauseNote}
+        />
+        <Toggle
+          label="敏感标记保护"
+          checked={config.protectSensitive !== false}
+          disabled={preview}
+          onChange={value => store.edit(next => { next.plugins.clipboard.settings.protectSensitive = value; })}
+          help="按 macOS 标记跳过隐藏、临时和自动生成的内容。"
+          note="未标记的密码仍可能被记录，历史不会自动脱敏。"
+        />
+        {showLegacyExclusions && <Row
+          label="旧来源应用排除列表"
+          note="旧列表会阻止新增采集。清空会一并保存其他草稿。"
+        >
+          <Button disabled={preview} onClick={() => void store.run(async () => {
+            store.edit(next => {
+              next.plugins.clipboard.settings.excludedApps = [];
+              next.plugins.clipboard.settings.excludedBundleIds = [];
+            });
+            await store.save();
+          })}>清空旧列表并保存</Button>
+        </Row>}
+      </SettingsSection>
+    </div>
+
+    <div className="fh-clipboard-card fh-clipboard-retention">
+      <SettingsSection title="历史保留">
+        <p className="fh-copy-note fh-clipboard-retention-note">0 表示不限。超限时优先清理较早复制的记录。</p>
+        {retentionFields.map(({ key, label, defaultValue, max, help }) => <TextField
+          key={key}
+          label={label}
+          type="number"
+          min={0}
+          max={max}
+          value={config[key] ?? defaultValue}
+          onChange={value => store.edit(next => { next.plugins.clipboard.settings[key] = clipboardLimit(value, key); })}
+          help={help}
+          readOnly={preview}
+        />)}
+      </SettingsSection>
+    </div>
+
+    <div className="fh-clipboard-storage">
+      <SettingsSection title="存储位置"><PathControl store={store} storage /></SettingsSection>
+    </div>
   </div>;
 }
