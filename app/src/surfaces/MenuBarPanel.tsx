@@ -63,7 +63,8 @@ export function MenuBarPanel() {
     finally {changing.current = false;if (alive.current) setBusy(false);}
   }
   return <div className="fh-root fh-menubar-panel">
-    <header><h1>菜单栏图标 <Help>列表从上到下对应菜单栏从左到右。操作期间行位置保持不动，重新打开或刷新后对齐实际位置。开关打开后固定显示，关闭后始终隐藏；跟随分区的图标尚未固定显示。系统固定图标不能隐藏。</Help></h1><Button aria-label="关闭面板" disabled={!available} onClick={close}>×</Button></header>
+    <header><h1>菜单栏图标 <Help label="图标排序说明">列表从上到下对应菜单栏从左到右。刷新顺序时按实际位置重新排列。</Help></h1><Button aria-label="关闭面板" disabled={!available} onClick={close}>×</Button></header>
+    <p className="fh-copy-note">开关即时生效。开启后固定显示，关闭后始终隐藏。系统固定图标不可隐藏。</p>
     <p role="status" className="fh-muted">{notice}</p>
     <main aria-label="逐个图标控制">{items.map(item => {
       const name = item.displayName || item.accessibilityLabel || item.title || item.ownerName || '未命名图标';

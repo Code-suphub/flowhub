@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import { observePopupOwner } from '../../../../common-components/packages/frontend/dom/popup';
 import { cn } from '../lib/utils';
-import { InfoIcon } from 'lucide-react';
+import { Popover } from '@base-ui/react/popover';
+import { CircleHelp } from 'lucide-react';
 import { Switch as ShadcnSwitch } from '../components/ui/switch';
 import { Select as ShadcnSelect, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip as ShadcnTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -22,7 +23,16 @@ export function Tooltip({children, content}: {children: ReactElement; content?: 
   </TooltipProvider>;
 }
 export function Help({label = '说明', children}: {label?: string; children: ReactNode}) {
-  return <span className="fh-help"><Tooltip content={children}><button type="button" aria-label={label}><InfoIcon size={15} strokeWidth={1.6} aria-hidden="true" /></button></Tooltip></span>;
+  return <span className="fh-help"><Popover.Root>
+    <Popover.Trigger openOnHover closeDelay={180} aria-label={label}>
+      <CircleHelp size={15} strokeWidth={1.6} aria-hidden="true" />
+    </Popover.Trigger>
+    <Popover.Portal>
+      <Popover.Positioner className="fh-help-positioner" side="bottom" sideOffset={5} collisionPadding={12}>
+        <Popover.Popup className="fh-help-popup" aria-label={label} initialFocus={false}>{children}</Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
+  </Popover.Root></span>;
 }
 
 export interface SelectOption {value: string; label: string; disabled?: boolean}

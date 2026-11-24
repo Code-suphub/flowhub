@@ -32,8 +32,9 @@ export function CompactSettings({ layout, presentation, busy, notice, onClose, o
   const [enabled, setEnabled] = useState(presentation.enabled), [favorites, setFavorites] = useState<Favorite[]>(() => favoriteCards(layout, presentation.favorites).map(({ boardId, cardId }) => ({ boardId, cardId })));
   return <Dialog title="紧凑状态条" busy={busy} notice={notice} onClose={onClose} className="canvas-compact-settings">
     <label className="compact-option"><span>启用紧凑入口</span><Switch label="启用紧凑入口" checked={enabled} disabled={busy} onChange={setEnabled} /></label>
-    <p>开启后可点击收起或展开。置顶沿用画布设置；隐藏仅影响当前窗口，可从设置中的“打开桌面组件”恢复，重启仍按常驻设置显示。</p>
+    <p className="fh-copy-note">启用后可在画布和状态条之间切换。置顶沿用画布设置。</p>
     <div className="compact-choice-list" role="group" aria-label="选择关注组件">{layout.boards.map(board => <section key={board.id}><h3>{board.title}</h3>{board.cards.map(card => { const favorite = { boardId: board.id, cardId: card.id }, key = favoriteKey(favorite), checked = favorites.some(item => favoriteKey(item) === key); return <label className="compact-option" key={key}><span>{card.title || card.plugin}</span><Checkbox aria-label={`关注${card.title || card.plugin}`} checked={checked} disabled={busy} onCheckedChange={value => setFavorites(current => value === true ? [...current, favorite] : current.filter(item => favoriteKey(item) !== key))} /></label>; })}{!board.cards.length ? <p>此布局暂无组件</p> : null}</section>)}</div>
+    <details className="fh-disclosure"><summary>隐藏后如何恢复</summary><p>隐藏只影响当前窗口。可在设置中选择“打开桌面组件”，重启后仍按常驻设置显示。</p></details>
     <div className="compact-settings-actions"><Button disabled={busy} onClick={onClose}>取消</Button><Button className="primary" disabled={busy} onClick={() => onSave(enabled, favorites)}>{busy ? '保存中…' : '保存'}</Button></div>
   </Dialog>;
 }

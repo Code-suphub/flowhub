@@ -72,8 +72,17 @@
 .fh-help button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
 .fh-help { position:relative; display:inline-flex; vertical-align:middle; }
 .fh-help button { display:grid; place-items:center; border:0; background:none; border-radius:50%; color:var(--fh-muted); width:24px; height:24px; cursor:help; }
-.fh-help button:hover { color:var(--fh-accent); background:var(--fh-accent-soft); }
+.fh-help button:is(:hover,[aria-expanded="true"]) { color:var(--fh-accent); background:var(--fh-accent-soft); }
 .fh-help button:disabled { opacity:.5; cursor:not-allowed; }
+.fh-help-positioner { z-index:60; }
+.fh-help-popup { box-sizing:border-box; max-width:min(300px,var(--available-width)); max-height:min(60vh,var(--available-height)); overflow:auto; overflow-wrap:anywhere; padding:9px 12px; border:1px solid var(--fh-border); border-radius:8px; background:var(--fh-surface); color:var(--fh-text); box-shadow:var(--fh-shadow-popover); font:12px/1.6 -apple-system,sans-serif; }
+.fh-copy-note,.fh-disclosure { color:var(--fh-muted); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.fh-disclosure summary { width:fit-content; max-width:100%; min-height:32px; align-content:center; cursor:pointer; color:var(--fh-text); }
+.fh-disclosure summary:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
+@media (pointer:coarse) {
+  .fh-help button { width:44px; height:44px; }
+  .fh-disclosure summary { min-height:44px; }
+}
 .fh-empty { color:var(--fh-muted); padding:12px 0; }
 .fh-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--fh-border); }
 .fh-row-copy { min-width:0; flex:1; }

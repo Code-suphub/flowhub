@@ -10,6 +10,7 @@ import { MenuBar } from './MenuBar';
 import { FlowHubLogo } from '../shared/FeatureIcon';
 import { DataPanel, PathControl } from './DataPanel';
 import { SettingsSection } from './SettingsSection';
+import { ViewDetails } from './view-state';
 export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
 const names: Record<string, string> = { all: '全部', app: '应用', web: '网页目录', clipboard: '剪贴板', memo: '备忘录', tools: '工具' };
@@ -114,7 +115,8 @@ export function Core({ store, section }: { store: SettingsStore; section: string
     </div> : null}
     {activeSection === 'search' ? <>
       <Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
-      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">拖动把手，或聚焦把手后按 Alt + 上下方向键调整。浏览器预览的排序仅暂存于当前页面，刷新后复原；桌面 App 保存后生效。点击范围键可重新录入，按 Delete 可清空。顺序只影响有关键词时的「全部」结果；智能工具按命令匹配规则展示，不参与来源排序。</Help></div>
+      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">排序应用于有关键词的「全部」结果。智能工具按命令匹配规则展示。</Help></div>
+      <p className="fh-copy-note">{readonly()?'预览中的排序在刷新后复原。':'来源顺序保存后生效。'}</p>
       <div className="settings-search-list" role="list" aria-label="搜索来源与顺序" data-setting-label="搜索来源与顺序" tabIndex={-1}>{searchPlugins.map(plugin => {
         const index = displayOrder.indexOf(plugin.id), sortable = index >= 0;
         const label = plugin.settingsName || plugin.name || names[plugin.id] || plugin.id;
@@ -125,9 +127,15 @@ export function Core({ store, section }: { store: SettingsStore; section: string
           <div className="settings-search-shortcut">{plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none" aria-label="无范围快捷键">—</span>}</div>
         </div>;
       })}</div>
+      <ViewDetails memoryKey="search-source-instructions" className="fh-disclosure mt-2">
+        <summary>排序和范围键操作</summary>
+        <p>拖动把手调整顺序，也可聚焦把手后按 Alt + 上下方向键。</p>
+        <p>点击范围键可重新录入，按 Delete 清空。</p>
+      </ViewDetails>
       <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} disabled={readonly()} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
       <Toggle label="长内容自动预览" checked={core.autoPreviewLongContent !== false} disabled={readonly()} onChange={v => setCore('autoPreviewLongContent', v)} help="默认开启。宽窗口中选中超过 80 个字符或至少 3 行的剪贴板文本、命令备忘时自动展开详情，并保留搜索框焦点。手动收起只影响当前记录；窄窗口仍手动进入详情。" />
-      <Toggle label="记录搜索历史" checked={core.searchHistoryEnabled !== false} disabled={readonly()} onChange={v => setCore('searchHistoryEnabled', v)} help="默认开启。仅在明确执行或复制搜索结果时记录查询，最多在本机保留 100 条；疑似凭据、过长查询和 JWT／验证码／JSON 正文不记录。关闭后停止新增，已有历史可从搜索框右侧的历史入口移除或清空。" />
+      <Toggle label="记录搜索历史" checked={core.searchHistoryEnabled !== false} disabled={readonly()} onChange={v => setCore('searchHistoryEnabled', v)} help="执行或复制搜索结果时记录查询。疑似凭据、过长查询和 JWT／验证码／JSON 正文不记录。" />
+      <p className="fh-copy-note">本机最多保留 100 条。关闭后停止新增，已有记录可在搜索历史中清理。</p>
     </> : null}
     {activeSection === 'menubar' ? <MenuBar store={store} /> : null}
     {activeSection === 'data' ? <DataPanel store={store} /> : null}

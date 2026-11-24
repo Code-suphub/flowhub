@@ -125,7 +125,8 @@ export function DataPanel({ store }: { store: SettingsStore }) {
   }
   return <div className="settings-data-panel flex min-w-0 flex-col gap-7">
     <section className="settings-group" aria-labelledby="settings-storage-title">
-      <header className="settings-data-heading flex flex-wrap items-center gap-2"><DatabaseIcon aria-hidden="true" /><h2 id="settings-storage-title">存储位置</h2><Help label="存储位置说明">位置修改先进入草稿，点击全局保存后生效。配置备份不包含 SQLite 中的网页目录和剪贴板记录。</Help></header>
+      <header className="settings-data-heading flex flex-wrap items-center gap-2"><DatabaseIcon aria-hidden="true" /><h2 id="settings-storage-title">存储位置</h2><Help label="配置备份范围">配置备份不包含网页目录和剪贴板数据库。</Help></header>
+      <p className="fh-copy-note mb-2">存储位置在保存设置后生效。</p>
       <div className="settings-storage-list grid min-w-0 grid-cols-1 gap-5"><PathControl store={store} /><PathControl store={store} storage /></div>
     </section>
     <section className="settings-group" aria-labelledby="settings-history-title" data-setting-label="配置历史" tabIndex={-1}>
@@ -135,10 +136,11 @@ export function DataPanel({ store }: { store: SettingsStore }) {
       {!s.history.entries?.length?<Empty className="settings-history-empty"><EmptyHeader><EmptyMedia variant="icon"><ArchiveIcon /></EmptyMedia><EmptyTitle>{s.history.available===false?'浏览器预览不提供配置历史':'暂无历史版本'}</EmptyTitle></EmptyHeader></Empty>:<ul className="settings-history-list">{(s.history.entries as Bag[]).map(entry=><li key={entry.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3"><div className="min-w-0"><h3>{stamp(entry.created_at)}</h3><span>{entry.catalog_count || 0} 项网页 · {size(entry.bytes)}</span></div><div className="flex flex-wrap gap-2"><Button disabled={s.busy} onClick={()=>void openHistory(entry)}>查看差异</Button><Button variant="ghost" disabled={preview || s.busy || s.conflict} onClick={()=>void openHistory(entry,true)}>恢复</Button></div></li>)}</ul>}
     </section>
     <section className="settings-group" aria-labelledby="settings-transfer-title" data-setting-label="导入与导出" tabIndex={-1}>
-      <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导出当前已保存的配置；导入会先展示差异，应用为草稿后仍需保存。网页目录数据继续使用当前数据库。</Help></header>
+      <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导入与导出仅处理所选范围的设置。网页目录数据继续使用当前数据库。</Help></header>
+      <p className="fh-copy-note mb-2">导入先核对差异，应用为草稿后需保存。导出使用已保存的配置。</p>
       <Choice label="导出范围" value={scope} options={[{value:'all',label:'全部配置'},{value:'core',label:'全局设置'},...Object.keys(s.config!.plugins).sort().map(value=>({value,label:names[value] || value}))]} onChange={setScope} />
       <div className="flex flex-wrap gap-2 pt-3"><Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('export')}>导出配置…</Button><Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('import')}>{transferring?'正在处理…':'导入配置…'}</Button></div>
-      {store.dirty?<p className="settings-export-note" role="status">导出使用已保存配置；当前草稿需先保存。</p>:null}
+      {store.dirty?<p className="settings-export-note" role="status">如需导出当前草稿，请先保存。</p>:null}
       {transferError && !pending?<Alert className="mt-3" variant="destructive"><AlertDescription>{transferError}</AlertDescription></Alert>:null}
     </section>
     <section className="settings-group" aria-labelledby="settings-diagnostics-title" data-setting-label="本地诊断" tabIndex={-1}>
