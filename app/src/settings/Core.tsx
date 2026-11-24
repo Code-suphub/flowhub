@@ -283,7 +283,7 @@ export function Clipboard({ store }: { store: SettingsStore }) {
       </SettingsSection>
     </div>
 
-    <div className="fh-clipboard-storage">
+    <div className="fh-clipboard-card fh-clipboard-storage">
       <SettingsSection title="存储位置"><PathControl store={store} storage /></SettingsSection>
     </div>
   </div>;

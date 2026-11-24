@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArchiveIcon, DatabaseIcon, FileCogIcon, HistoryIcon, ActivityIcon, RefreshCwIcon, FolderOpenIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
-import { Help } from '../shared/controls';
+import { Help, Select } from '../shared/controls';
 import { Badge } from '../components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
@@ -149,8 +149,8 @@ export function DataPanel({ store }: { store: SettingsStore }) {
       <span>{entry.catalog_count || 0} 项网页 · {size(entry.bytes)}</span>
     </div>
     <div className="flex flex-wrap gap-1.5">
-      <Button disabled={s.busy} onClick={()=>void openHistory(entry)}>查看差异</Button>
-      <Button variant="ghost" disabled={preview || s.busy || s.conflict} onClick={()=>void openHistory(entry,true)}>恢复</Button>
+      <Button size="sm" disabled={s.busy} onClick={()=>void openHistory(entry)}>查看差异</Button>
+      <Button size="sm" variant="ghost" className="settings-history-secondary" disabled={preview || s.busy || s.conflict} onClick={()=>void openHistory(entry,true)}>恢复</Button>
     </div>
   </li>;
   return <div className="settings-data-panel">
@@ -164,7 +164,12 @@ export function DataPanel({ store }: { store: SettingsStore }) {
         <div className="settings-storage-list grid min-w-0 grid-cols-1 gap-3"><PathControl store={store} compact /><PathControl store={store} storage compact /></div>
       </section>
       <section className="settings-group" aria-labelledby="settings-history-title" data-setting-label="配置历史" tabIndex={-1}>
-        <header className="settings-data-heading flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><HistoryIcon aria-hidden="true" /><h2 id="settings-history-title">配置历史</h2><Help label="配置历史说明">保存前自动备份上一版，最多保留 20 份。</Help></div><Button disabled={s.busy || refreshing || s.history.available===false} onClick={()=>void refreshHistory()}><RefreshCwIcon data-icon="inline-start" />{refreshing?'正在刷新…':'刷新历史'}</Button></header>
+        <header className="settings-data-heading flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2"><HistoryIcon aria-hidden="true" /><h2 id="settings-history-title">配置历史</h2><Help label="配置历史说明">保存前自动备份上一版，最多保留 20 份。</Help></div>
+          <Button size="sm" variant="ghost" className="settings-history-secondary" disabled={s.busy || refreshing || s.history.available===false} onClick={()=>void refreshHistory()}>
+            <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />{refreshing?'正在刷新…':'刷新历史'}
+          </Button>
+        </header>
         {s.history.demo?<p className="settings-review-context">只读示例 · 实际配置历史请在桌面 App 中查看</p>:null}
         {s.history.error?<Alert variant="destructive"><AlertDescription>{s.history.error}</AlertDescription></Alert>:null}
         {!entries.length
@@ -178,24 +183,25 @@ export function DataPanel({ store }: { store: SettingsStore }) {
             </>}
       </section>
       <section className="settings-group" aria-labelledby="settings-transfer-title" data-setting-label="导入与导出" tabIndex={-1}>
-        <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导入与导出仅处理所选范围的设置。网页目录数据继续使用当前数据库。</Help></header>
-        <div className="settings-data-transfer">
-          <Choice label="导出范围" value={scope} options={[{value:'all',label:'全部配置'},{value:'core',label:'全局设置'},...Object.keys(s.config!.plugins).sort().map(value=>({value,label:names[value] || value}))]} onChange={setScope} />
-          <div className="settings-data-action-row flex flex-wrap items-center justify-between gap-2">
-            <p className="settings-data-note">{store.dirty?<span role="status">如需导出当前草稿，请先保存。</span>:'导出已保存的配置。'}</p>
+        <header className="settings-data-heading flex items-center gap-2"><ArchiveIcon aria-hidden="true" /><h2 id="settings-transfer-title">导入与导出</h2><Help label="配置传输说明">导入和导出仅处理所选范围的设置。导出使用已保存的配置。网页目录数据继续使用当前数据库。</Help></header>
+        <div className="settings-data-action-row flex flex-wrap items-center justify-between gap-2" data-setting-label="导出范围" tabIndex={-1}>
+          <span id="settings-export-scope-label">导出范围</span>
+          <div className="settings-data-export-actions" data-setting-control>
+            <Select label="导出范围" labelledBy="settings-export-scope-label" value={scope} options={[{value:'all',label:'全部配置'},{value:'core',label:'全局设置'},...Object.keys(s.config!.plugins).sort().map(value=>({value,label:names[value] || value}))]} onChange={setScope} />
             <Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('export')}>导出配置…</Button>
           </div>
-          <div className="settings-data-action-row flex flex-wrap items-center justify-between gap-2">
-            <p className="settings-data-note">导入先核对差异，保存后生效。</p>
-            <Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('import')}>{transferring?'正在处理…':'导入配置…'}</Button>
-          </div>
+          {store.dirty && <p className="settings-data-note basis-full" role="status">如需导出当前草稿，请先保存。</p>}
+        </div>
+        <div className="settings-data-action-row flex flex-wrap items-center justify-between gap-2">
+          <p className="settings-data-note">先核对差异，保存后生效。</p>
+          <Button disabled={preview || transferring || s.busy || s.conflict} onClick={()=>void transfer('import')}>{transferring?'正在处理…':'导入配置…'}</Button>
         </div>
         {transferError && !pending?<Alert className="mt-3" variant="destructive"><AlertDescription>{transferError}</AlertDescription></Alert>:null}
       </section>
       <section className="settings-group settings-data-wide" aria-labelledby="settings-diagnostics-title" data-setting-label="本地诊断" tabIndex={-1}>
         <header className="settings-data-heading flex items-center gap-2"><ActivityIcon aria-hidden="true" /><h2 id="settings-diagnostics-title">本地诊断</h2><Badge variant="outline">立即生效</Badge><Help label="本地诊断说明">FlowHub 与 WebKit 的资源采样仅存于本机。</Help></header>
         <div className="settings-diagnostics-grid grid min-w-0 grid-cols-1 gap-3">
-          <div className="settings-data-card">
+          <div className="settings-diagnostic-section">
             <Toggle label="性能采样" checked={s.diagnostics.enabled===true} disabled={preview || diagnosing || s.busy} onChange={enabled=>void diagnose(async()=>{
               const result=await write('setDiagnosticsEnabled',enabled);
               store.patch({diagnostics:{...store.snapshot().diagnostics,...result,enabled}});
@@ -208,7 +214,7 @@ export function DataPanel({ store }: { store: SettingsStore }) {
             </div>
             {diagnosticError && !clearSampling?<Alert className="mt-2" variant="destructive"><AlertDescription>{diagnosticError}</AlertDescription></Alert>:null}
           </div>
-          <div className="settings-data-card">
+          <div className="settings-diagnostic-section">
             <h3>界面测量</h3>
             <div className="flex flex-wrap gap-1.5">
               <Button onClick={()=>setReport(JSON.stringify(host().flowhubPerformance?.report() || {},null,2))}>读取测量</Button>

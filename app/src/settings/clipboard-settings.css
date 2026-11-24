@@ -39,18 +39,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.fh-clipboard-storage .settings-section > legend {
-  border-bottom: 0;
+.fh-clipboard-storage {
+  padding-block-end: 14px;
 }
 
 .fh-clipboard-storage .settings-storage-control {
   gap: 10px;
-  border-radius: 12px;
-  background: var(--fh-surface-soft);
-}
-
-.fh-clipboard-storage .settings-storage-control:has(#settings-database-target, [role="alert"]) {
-  background: var(--fh-surface-raised);
+  padding: 8px 0 0;
+  border: 0;
+  background: transparent;
 }
 
 @container settings-workspace (max-width: 480px) {
