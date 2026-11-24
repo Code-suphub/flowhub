@@ -107,7 +107,6 @@
 .settings-update-icon { display:grid; place-items:center; width:56px; height:56px; border:1px solid var(--fh-study-rim); background:var(--fh-study-selected); border-radius:18px; flex:none; color:var(--fh-accent); }
 .settings-update-icon svg { width:30px; height:30px; }
 .settings-update-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; padding-top:18px; border-top:1px solid var(--fh-border); }
-.settings-core-panel[data-section=search] { padding:16px 20px; border:1px solid var(--fh-study-rim); border-radius:16px; background:var(--fh-study-card); }
 html[data-weborg-runtime="browser"]:has(#settings-root) body::before { display:none; }
 /* AppKit blurs the desktop, not DOM siblings. Soften the in-window washes
    separately; web previews already blur these through the glass shell. */

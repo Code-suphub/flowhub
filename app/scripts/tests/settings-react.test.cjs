@@ -79,9 +79,15 @@ test('compact settings groups sources and data; unsupported updates have no prog
   for (const source of sources) assert.equal(source.querySelectorAll('[role=switch]').length,1);
   assert.deepEqual(sources.slice(0, 4).map(source => source.dataset.source), ['app', 'web', 'clipboard', 'memo']);
   assert.equal(view.container.querySelectorAll('.settings-search-item .settings-search-grip').length, 4);
-  assert.equal(view.container.querySelector('.settings-search-columns'), null);
+  const columns = view.container.querySelector('.settings-search-columns');
+  assert.deepEqual([...columns.children].map(cell => cell.textContent.trim()), ['来源', '启用', '范围键']);
+  assert.ok(view.container.querySelector('.settings-search-toolbar [aria-label="全部结果范围键"]'));
   assert.equal(view.container.querySelector('.settings-search-item[data-source=tools] .settings-search-rank').textContent, '');
-  for (const grip of view.container.querySelectorAll('.settings-search-grip')) assert.equal(grip.textContent.trim(), '⠿');
+  assert.match(view.container.querySelector('.settings-search-item[data-source=tools] .settings-search-name').textContent, /按命令匹配/);
+  for (const grip of view.container.querySelectorAll('.settings-search-grip')) {
+    assert.equal(grip.getAttribute('aria-keyshortcuts'), 'Alt+ArrowUp Alt+ArrowDown');
+    assert.ok(grip.querySelector('svg[aria-hidden="true"]'));
+  }
   assert.equal(view.container.querySelectorAll('.settings-search-item .fh-help').length, 0);
   assert.ok(view.container.querySelector('.settings-search-item[data-source=app] [aria-label="应用范围键"]'));
   await select('data');
@@ -94,6 +100,35 @@ test('compact settings groups sources and data; unsupported updates have no prog
   await h.act(async () => store.patch({update:{status:'downloading',percent:42}}));
   assert.equal(view.container.querySelector('progress').value,42);
   await view.unmount(); store.dispose();
+});
+test('search workspace opens a reorder popover and shows save actions as needed', async t => {
+  const { store, writes } = await h.loaded();
+  const view = await h.mount(Settings, { store });
+  t.after(async () => { await view.unmount(); store.dispose(); });
+  await h.click(view.container.querySelector('[data-page="search"]'));
+  assert.ok(view.container.querySelector('.settings-search-workspace'));
+  assert.equal(view.container.querySelector('[aria-label="查找页面"]'), null);
+  assert.ok(view.container.querySelector('.settings-topbar [aria-label="搜索设置"]'));
+  assert.equal(view.container.querySelector('.settings-footer'), null);
+
+  const app = view.container.querySelector('[data-source="app"]');
+  await h.click(app.querySelector('.settings-search-grip'));
+  const choices = document.querySelector('.settings-order-popup');
+  const up = h.button(choices, '上移');
+  assert.ok(up.disabled || up.getAttribute('aria-disabled') === 'true');
+  await h.click(h.button(choices, '下移'));
+  assert.deepEqual(store.snapshot().config.core.searchResultOrder.slice(0, 2), ['web', 'app']);
+  assert.equal(view.container.querySelector('[role="status"]').textContent, 'app已移至第 2 位');
+  assert.equal(writes.length, 0);
+
+  await h.click(view.container.querySelector('[aria-label="撤销"]'));
+  const redo = view.container.querySelector('[aria-label="重做"]');
+  assert.equal(redo.disabled, false);
+  await h.click(redo);
+  await h.click(h.button(view.container, '保存'));
+  assert.equal(writes.length, 1);
+  assert.equal(h.button(view.container, '保存'), undefined);
+  assert.match(view.container.querySelector('.settings-footer').textContent, /配置已保存/);
 });
 test('search source row keeps priority, toggle, and shortcut together; keyboard reorder updates config', async () => {
   const { store } = await h.loaded(), view = await h.mount(Settings, { store });

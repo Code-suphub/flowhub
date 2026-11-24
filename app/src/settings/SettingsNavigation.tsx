@@ -8,7 +8,7 @@ import { useViewMemory, useViewScroll, useViewState } from './view-state';
 import { scrollElementWithin } from '../shared/scroll';
 const tones:Record<string,IconTone>={search:'sky',menubar:'blue',appearance:'pink',core:'slate',web:'blue',app:'blue',clipboard:'orange',memo:'amber',tools:'teal',extensions:'violet',canvas:'green',data:'teal',updates:'blue'};
 
-export function Navigation({page,busy,preview,onNavigate}: {page:PageId;busy:boolean;preview:boolean;onNavigate:(id:string)=>boolean}) {
+export function Navigation({page,busy,preview,useGlobalSearch=false,onNavigate}: {page:PageId;busy:boolean;preview:boolean;useGlobalSearch?:boolean;onNavigate:(id:string)=>boolean}) {
   const [query,setQuery]=useViewState('navigation:query',''), memory=useViewMemory();
   const scroll=useViewScroll('navigation:scroll');
   useLayoutEffect(()=>{
@@ -16,7 +16,7 @@ export function Navigation({page,busy,preview,onNavigate}: {page:PageId;busy:boo
     if(memory?.get('navigation:page')!==page && pane && current)scrollElementWithin(pane,current);
     memory?.set('navigation:page',page);
   },[page,memory,scroll.ref]);
-  const groups=matchingNavigation(query),matches=groups.flatMap(group=>group.items);
+  const groups=matchingNavigation(useGlobalSearch ? '' : query),matches=groups.flatMap(group=>group.items);
   const go=(id:string)=>{if(onNavigate(id))setQuery('');};
   function move(event:KeyboardEvent<HTMLElement>) {
     if(event.altKey || event.metaKey || event.ctrlKey || event.shiftKey || event.nativeEvent.isComposing)return;
@@ -28,12 +28,12 @@ export function Navigation({page,busy,preview,onNavigate}: {page:PageId;busy:boo
   }
   return <nav className="settings-sidebar flex flex-col" aria-label="设置模块" onKeyDown={move}>
     <div className="settings-brand"><FlowHubLogo/>FlowHub</div>
-    <div className="settings-navigation-search"><SearchIcon aria-hidden="true"/><Input aria-label="查找页面" type="search" placeholder="查找页面…" value={query} disabled={busy} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{
+    {!useGlobalSearch && <div className="settings-navigation-search"><SearchIcon aria-hidden="true"/><Input aria-label="查找页面" type="search" placeholder="查找页面…" value={query} disabled={busy} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{
       if(event.nativeEvent.isComposing || event.nativeEvent.keyCode===229)return;
       if(event.key==='Escape' && query){event.preventDefault();event.stopPropagation();setQuery('');}
       if(event.key==='Enter' && matches.length===1){event.preventDefault();go(matches[0].id);}
-    }}/>{query?<Button size="icon-xs" variant="ghost" aria-label="清除页面查找" onClick={()=>setQuery('')}><XIcon/></Button>:null}</div>
-    <div ref={scroll.ref} onScroll={scroll.onScroll} className="settings-navigation-scroll">{groups.map(group=><div className="settings-nav-group flex flex-col" key={group.label}><span className="settings-nav-heading">{group.label}</span>{group.items.map(({id,label,Icon})=><Button key={id} data-page={id} aria-current={page===id?'page':undefined} disabled={busy} onClick={()=>go(id)}><FeatureIcon icon={Icon} tone={tones[id]} size="small"/>{label}</Button>)}</div>)}{!matches.length?<div className="settings-navigation-empty"><p role="status">没有匹配页面，试试“快捷键”或“备份”。</p><Button variant="ghost" size="sm" onClick={()=>{setQuery('');document.querySelector<HTMLInputElement>('[aria-label="查找页面"]')?.focus();}}>显示全部页面</Button></div>:null}</div>
-    <div className="settings-sidebar-bottom"><Tooltip content="在独立插件工作区打开，当前页面的草稿会保留。"><Button aria-label="打开插件市场" disabled={busy} onClick={()=>go('extensions')}><FeatureIcon icon={PuzzleIcon} tone="violet" size="small"/>插件市场<SquareArrowOutUpRightIcon className="settings-external-icon" aria-hidden="true"/></Button></Tooltip><span className="settings-local-status"><i/>{preview?'浏览器预览 · 不会保存配置':'本地工作空间'}</span></div>
+    }}/>{query?<Button size="icon-xs" variant="ghost" aria-label="清除页面查找" onClick={()=>setQuery('')}><XIcon/></Button>:null}</div>}
+    <div ref={scroll.ref} onScroll={scroll.onScroll} className="settings-navigation-scroll">{groups.map(group=><div className="settings-nav-group flex flex-col" key={group.label}><span className="settings-nav-heading">{group.label}</span>{group.items.map(({id,label,Icon})=><Button key={id} data-page={id} aria-current={page===id?'page':undefined} disabled={busy} onClick={()=>go(id)}>{useGlobalSearch ? <Icon aria-hidden="true" /> : <FeatureIcon icon={Icon} tone={tones[id]} size="small"/>}{label}</Button>)}</div>)}{!matches.length?<div className="settings-navigation-empty"><p role="status">没有匹配页面，试试“快捷键”或“备份”。</p><Button variant="ghost" size="sm" onClick={()=>{setQuery('');document.querySelector<HTMLInputElement>('[aria-label="查找页面"]')?.focus();}}>显示全部页面</Button></div>:null}</div>
+    <div className="settings-sidebar-bottom"><Tooltip content="在独立插件工作区打开，当前页面的草稿会保留。"><Button aria-label="打开插件市场" disabled={busy} onClick={()=>go('extensions')}>{useGlobalSearch ? <PuzzleIcon aria-hidden="true" /> : <FeatureIcon icon={PuzzleIcon} tone="violet" size="small"/>}插件市场<SquareArrowOutUpRightIcon className="settings-external-icon" aria-hidden="true"/></Button></Tooltip>{!useGlobalSearch && <span className="settings-local-status"><i/>{preview?'浏览器预览 · 不会保存配置':'本地工作空间'}</span>}</div>
   </nav>;
 }

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Popover } from '@base-ui/react/popover';
+import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon } from 'lucide-react';
 import { Button, Dialog } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
 import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
@@ -26,14 +28,19 @@ export function Core({ store, section }: { store: SettingsStore; section: string
   const displayOrder = readonly() ? previewOrder ?? order : order;
   const searchPlugins = [...displayOrder.flatMap(id => s.plugins.filter(plugin => plugin.id === id)), ...s.plugins.filter(plugin => !displayOrder.includes(plugin.id))];
   const [draggingSource, setDraggingSource] = useState('');
+  const [orderNotice, setOrderNotice] = useState('');
   const [dropTarget, setDropTarget] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
   const dropTargetRef = useRef<{ id: string; position: 'before' | 'after' } | null>(null);
   const stopPointerDrag = useRef<(() => void) | null>(null);
+  const draggedHandle = useRef(false);
   const dragMotion = useCatalogDragMotion({ rowSelector: '.settings-search-item[data-source]', identityAttribute: 'data-source', previewClassName: 'fh-root settings-search-drag-preview', draggingClassName: 'settings-search-dragging' });
   const moveOrder = (id: string, index: number) => {
-    if (s.busy || s.conflict || index < 0 || index >= displayOrder.length || !displayOrder.includes(id)) return;
+    const from = displayOrder.indexOf(id);
+    if (s.busy || s.conflict || index < 0 || index >= displayOrder.length || from < 0 || from === index) return;
     const next = displayOrder.filter(v => v !== id); next.splice(index, 0, id);
     if (readonly()) setPreviewOrder(next); else setCore('searchResultOrder', next);
+    const plugin = searchPlugins.find(source => source.id === id);
+    setOrderNotice(`${plugin?.settingsName || plugin?.name || names[id] || id}已移至第 ${index + 1} 位`);
   };
   const updateDropTarget = (next: { id: string; position: 'before' | 'after' } | null) => {
     const current = dropTargetRef.current;
@@ -42,6 +49,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
   };
   function beginSearchDrag(source: string, event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || s.busy || s.conflict) return;
+    draggedHandle.current = false;
     const list = event.currentTarget.closest<HTMLElement>('.settings-search-list');
     const sourceRow = event.currentTarget.closest<HTMLElement>('.settings-search-item[data-source]');
     if (!list || !sourceRow) return;
@@ -72,6 +80,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
       if (!moved && Math.hypot(move.clientX - clientX, move.clientY - clientY) < 5) return;
       if (!moved) dragMotion.lift(sourceRow, list, [source], clientX, clientY);
       moved = true;
+      draggedHandle.current = true;
       dragMotion.move(move.clientX, move.clientY);
       move.preventDefault();
       const row = rowAt(move.clientX, move.clientY);
@@ -113,23 +122,70 @@ export function Core({ store, section }: { store: SettingsStore; section: string
       <section className="settings-core-group" aria-labelledby="general-notifications-heading"><h2 id="general-notifications-heading" className="settings-core-group-title">通知</h2><fieldset disabled={readonly()} className="settings-core-subgroup"><Toggle label="允许通知" checked={core.notifications.enabled} disabled={readonly()} onChange={v => setNested('notifications', 'enabled', v)} /><Toggle label="更新通知" checked={core.notifications.updates} disabled={readonly() || !core.notifications.enabled} onChange={v => setNested('notifications', 'updates', v)} /><Row label="系统通知权限" help="权限由 macOS 系统设置 → 通知管理。"><Button disabled={readonly() || !core.notifications.enabled} onClick={() => void store.run(async () => { await write('sendTestNotification'); store.notice('测试通知已发送'); })}>发送测试通知</Button></Row></fieldset></section>
     </div> : null}
     {activeSection === 'search' ? <>
-      <Shortcut label="全部结果范围键" value={core.scopeShortcuts.all} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
-      <div className="settings-search-heading"><span>搜索来源与顺序</span><Help label="搜索来源排序说明">仅影响有关键词的「全部」结果，智能工具除外。</Help></div>
-      {readonly() && previewOrder && <p className="fh-copy-note">预览排序在刷新后复原。</p>}
-      <div className="settings-search-list" role="list" aria-label="搜索来源与顺序" data-setting-label="搜索来源与顺序" tabIndex={-1}>{searchPlugins.map(plugin => {
-        const index = displayOrder.indexOf(plugin.id), sortable = index >= 0;
-        const label = plugin.settingsName || plugin.name || names[plugin.id] || plugin.id;
-        return <div role="listitem" className="settings-search-item" data-setting-label={`${names[plugin.id] || label}搜索来源`} tabIndex={-1} data-source={plugin.id} data-drop-position={dropTarget && dropTarget.id === plugin.id && draggingSource ? dropTarget.position : undefined} key={plugin.id}>
-          <div className="settings-search-rank">{sortable ? <button type="button" className="settings-search-grip" draggable={false} aria-label={`调整${label}顺序`} aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" title="拖动排序，或按 Alt + ↑/↓" onPointerDown={e => beginSearchDrag(plugin.id, e)} onKeyDown={e => { if (e.altKey && ['ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); moveOrder(plugin.id, index + (e.key === 'ArrowUp' ? -1 : 1)); } }}><span aria-hidden="true">⠿</span></button> : null}</div>
-          <div className="settings-search-name"><span>{label}</span>{plugin.available === false ? <small>{plugin.reason || (readonly() ? '浏览器预览不可用' : '当前环境不可用')}</small> : null}</div>
-          <div className="settings-search-toggle"><Switch label={`启用${label}`} checked={c.plugins[plugin.id]?.enabled !== false} disabled={readonly() || plugin.available === false} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} /></div>
-          <div className="settings-search-shortcut">{plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none" aria-label="无范围快捷键">—</span>}</div>
-        </div>;
-      })}</div>
-      <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} disabled={readonly()} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
-      <Toggle label="长内容自动预览" checked={core.autoPreviewLongContent !== false} disabled={readonly()} onChange={v => setCore('autoPreviewLongContent', v)} help="宽窗口中，选中超过 80 个字符或至少 3 行的剪贴板文本或命令备忘时自动展开。" />
-      <Toggle label="记录搜索历史" checked={core.searchHistoryEnabled !== false} disabled={readonly()} onChange={v => setCore('searchHistoryEnabled', v)} help="执行或复制搜索结果时记录查询。疑似凭据、过长查询和 JWT／验证码／JSON 正文不记录。" />
-      <p className="fh-copy-note">本机最多保留 100 条。关闭后停止新增，已有记录可在搜索历史中清理。</p>
+      <section className="settings-search-sources" aria-labelledby="search-sources-heading">
+        <div className="settings-search-toolbar">
+          <div className="settings-search-heading">
+            <h2 id="search-sources-heading">搜索来源与顺序</h2>
+            <Help label="搜索来源排序说明">拖动把手排序，也可点按把手选择上移或下移。仅影响有关键词的「全部」结果。</Help>
+          </div>
+          <div className="settings-search-all" data-setting-label="全部结果范围键" tabIndex={-1}>
+            <span>「全部」范围键</span>
+            <div data-setting-control>
+              <Shortcut inline label="全部结果范围键" value={core.scopeShortcuts.all} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== 'all').map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts.all = v; })} />
+            </div>
+          </div>
+        </div>
+        {readonly() && previewOrder && <p className="fh-copy-note">预览排序在刷新后复原。</p>}
+        <span className="sr-only" role="status">{orderNotice}</span>
+        <div className="settings-search-columns">
+          <span className="settings-search-name">来源</span>
+          <span className="settings-search-toggle">启用</span>
+          <span className="settings-search-shortcut">范围键<Help label="范围键录入说明">点击范围键后录入。录入时按 Delete 清空。</Help></span>
+        </div>
+        <div className="settings-search-list" role="list" aria-label="搜索来源与顺序" data-setting-label="搜索来源与顺序" tabIndex={-1}>
+          {searchPlugins.map(plugin => {
+            const index = displayOrder.indexOf(plugin.id), sortable = index >= 0;
+            const label = plugin.settingsName || plugin.name || names[plugin.id] || plugin.id;
+            const sourceNote = plugin.available === false
+              ? plugin.reason || (readonly() ? '浏览器预览不可用' : '当前环境不可用')
+              : plugin.id === 'tools' ? '按命令匹配' : '';
+            return <div role="listitem" className="settings-search-item" data-setting-label={`${names[plugin.id] || label}搜索来源`} tabIndex={-1} data-source={plugin.id} data-drop-position={dropTarget && dropTarget.id === plugin.id && draggingSource ? dropTarget.position : undefined} key={plugin.id}>
+              <div className="settings-search-rank">
+                {sortable && <Popover.Root onOpenChange={(open, details) => {
+                  // A drag can end back over the handle and emit a pointer click.
+                  if (open && draggedHandle.current && details.event instanceof MouseEvent && details.event.detail > 0) details.cancel();
+                }}>
+                  <Popover.Trigger className="settings-search-grip" draggable={false} disabled={s.busy || s.conflict} aria-label={`调整${label}顺序`} aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" onPointerDown={e => beginSearchDrag(plugin.id, e)} onKeyDown={e => {
+                    if (e.altKey && ['ArrowUp', 'ArrowDown'].includes(e.key)) {
+                      e.preventDefault();
+                      moveOrder(plugin.id, index + (e.key === 'ArrowUp' ? -1 : 1));
+                    }
+                  }}><GripVerticalIcon aria-hidden="true" /></Popover.Trigger>
+                  <Popover.Portal>
+                    <Popover.Positioner sideOffset={5} align="start" className="settings-order-positioner">
+                      <Popover.Popup className="settings-order-popup" aria-label={`调整${label}顺序`}>
+                        <Popover.Close render={<Button size="sm" variant="ghost" />} disabled={index===0} onClick={()=>moveOrder(plugin.id,index-1)}><ArrowUpIcon aria-hidden="true"/>上移</Popover.Close>
+                        <Popover.Close render={<Button size="sm" variant="ghost" />} disabled={index===displayOrder.length-1} onClick={()=>moveOrder(plugin.id,index+1)}><ArrowDownIcon aria-hidden="true"/>下移</Popover.Close>
+                      </Popover.Popup>
+                    </Popover.Positioner>
+                  </Popover.Portal>
+                </Popover.Root>}
+              </div>
+              <div className="settings-search-name"><span>{label}</span>{sourceNote ? <small>{sourceNote}</small> : null}</div>
+              <div className="settings-search-toggle"><Switch label={`启用${label}`} checked={c.plugins[plugin.id]?.enabled !== false} disabled={readonly() || plugin.available === false} onChange={v => store.edit(c => { c.plugins[plugin.id] ||= { settings: {} }; c.plugins[plugin.id].enabled = v; })} /></div>
+              <div className="settings-search-shortcut">
+                {plugin.id in core.scopeShortcuts ? <Shortcut inline label={`${names[plugin.id] || label}范围键`} value={core.scopeShortcuts[plugin.id]} allowBare disabled={readonly()} taken={[core.hotkey, ...Object.entries(core.scopeShortcuts).filter(([k]) => k !== plugin.id).map(([, v]) => String(v))]} onChange={v => store.edit(c => { c.core.scopeShortcuts[plugin.id] = v; })} /> : <span className="settings-search-none"><span aria-hidden="true">—</span><span className="sr-only">无范围快捷键</span></span>}
+              </div>
+            </div>;
+          })}
+        </div>
+      </section>
+      <section className="settings-search-behavior" aria-labelledby="search-behavior-heading">
+        <h2 id="search-behavior-heading">搜索行为</h2>
+        <Toggle label="优先复用浏览器标签页" checked={core.reuseBrowserTabs === true} disabled={readonly()} onChange={v => setCore('reuseBrowserTabs', v)} help="默认浏览器为 Arc 时复用完整链接相同的普通标签页；未找到则新建。" />
+        <Toggle label="长内容自动预览" checked={core.autoPreviewLongContent !== false} disabled={readonly()} onChange={v => setCore('autoPreviewLongContent', v)} help="宽窗口中，选中超过 80 个字符或至少 3 行的剪贴板文本或命令备忘时自动展开。" />
+        <Toggle label="记录搜索历史" checked={core.searchHistoryEnabled !== false} disabled={readonly()} onChange={v => setCore('searchHistoryEnabled', v)} help="执行或复制搜索结果时记录查询。疑似凭据、过长查询和 JWT／验证码／JSON 正文不记录。" note="本机最多保留 100 条。关闭后停止新增，可在搜索历史中清理。" />
+      </section>
     </> : null}
     {activeSection === 'menubar' ? <MenuBar store={store} /> : null}
     {activeSection === 'data' ? <DataPanel store={store} /> : null}

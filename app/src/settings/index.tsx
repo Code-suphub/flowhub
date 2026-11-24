@@ -22,6 +22,7 @@ import { signature } from './model';
 import './settings.css';
 import './glass.css';
 import './layout.css';
+import './search-workspace.css';
 import { PluginDock, PluginFrame } from '../plugin-workspace/controls';
 import { workspaceCall } from '../plugin-workspace/native';
 import { Theme } from './Theme';
@@ -35,14 +36,15 @@ const emptyPlugins: InstalledPlugin[] = [];
 export function Settings({ store }: { store: SettingsStore }) {
   const s = useSettings(store), [journey,setJourney]=useState<{pages:PageId[];index:number}>(()=>{const params=new URLSearchParams(window.location.search),requested=params.get('module') || '';return {pages:[params.get('update')==='1'?'updates':isPage(requested)?requested:'core'],index:0};}), [json, setJson] = useState(false), [reset, setReset] = useState(false), [close, setClose] = useState(false), [review,setReview] = useState(false), [searchOpen,setSearchOpen] = useState(false);
   const module=journey.pages[journey.index], narrow=useMediaQuery('(max-width: 699px)');
+  const searchWorkspace = module === 'search';
   const journeyRef=useRef(journey), main=useRef<HTMLElement>(null);
   const navigationFocus=useRef<'lookup'|'page'|null>(null), transferringNavigation=useRef(false);
   useLayoutEffect(()=>{
     if(!navigationFocus.current || document.activeElement!==document.body)return;
     const selector=narrow?'.settings-mobile-navigation [role=combobox]':navigationFocus.current==='lookup'?'[aria-label="查找页面"]':'.settings-sidebar [aria-current=page]';
-    const target=document.querySelector<HTMLElement>(selector) || (!narrow?document.querySelector<HTMLElement>('[aria-label="查找页面"]'):null);
+    const target=document.querySelector<HTMLElement>(selector) || (!narrow?document.querySelector<HTMLElement>(searchWorkspace ? '[aria-label="搜索设置"]' : '[aria-label="查找页面"]'):null);
     transferringNavigation.current=true;target?.focus({preventScroll:true});transferringNavigation.current=false;
-  },[narrow]);
+  },[narrow,searchWorkspace]);
   const sourceKey=JSON.stringify([s.configPath.resolvedPath || '',s.storage.resolvedPath || '']);
   const viewMemory=useMemo<ViewMemory>(()=>new Map(),[sourceKey]);
   const positions=useMemo(()=>new Map<PageId,number>(),[sourceKey]);
@@ -115,16 +117,52 @@ export function Settings({ store }: { store: SettingsStore }) {
     window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
   },[store]);
   const page=navigationItems.find(item=>item.id===module)!;
+  const pagePicker = narrow ? <div className="settings-mobile-navigation">
+    <Select label="切换页面" value={module} options={[...navigationItems.map(item=>({value:item.id,label:item.label})),{value:'extensions',label:'插件市场（独立工作区）'}]} onChange={id=>{navigationFocus.current='page';navigate(id);}} disabled={s.busy}/>
+  </div> : null;
   const pluginTitle = pluginModule === 'extensions' ? '插件市场' : installed.find(plugin => `plugin:${plugin.manifest.id}` === pluginModule)?.manifest.name || '插件';
-  return <ViewStateContext.Provider value={viewMemory}><div className={`settings-stage${readonly() ? '' : ' settings-detached-workspace'}`}><div className="settings-landscape" aria-hidden="true" /><div className="fh-root settings-shell flex flex-col" aria-busy={s.busy} onFocusCapture={event=>{
+  return <ViewStateContext.Provider value={viewMemory}><div className={`settings-stage${readonly() ? '' : ' settings-detached-workspace'}`}><div className="settings-landscape" aria-hidden="true" /><div className={`fh-root settings-shell flex flex-col${searchWorkspace ? ' settings-search-workspace' : ''}`} aria-busy={s.busy} onFocusCapture={event=>{
     const target=event.target as HTMLElement;
     if(!transferringNavigation.current)navigationFocus.current=target.closest('.settings-sidebar')?(target.matches('input')?'lookup':'page'):target.closest('.settings-mobile-navigation')?'page':null;
   }}>
     <a className="settings-skip-link" href="#settings-content" onClick={event=>{event.preventDefault();main.current?.focus({preventScroll:true});}}>跳到页面内容</a>
-    <header data-tauri-drag-region="deep" className="settings-topbar flex items-center justify-between gap-3"><div className="settings-page-navigation flex items-center gap-3"><div className="settings-history flex items-center gap-1"><Tooltip content="返回上一页"><Button size="icon-sm" variant="ghost" aria-label="返回上一页" disabled={s.busy || journey.index===0} onClick={()=>travel(-1)}><ArrowLeftIcon/></Button></Tooltip><Tooltip content="前进下一页"><Button size="icon-sm" variant="ghost" aria-label="前进下一页" disabled={s.busy || journey.index===journey.pages.length-1} onClick={()=>travel(1)}><ArrowRightIcon/></Button></Tooltip></div><div className="settings-page-heading"><span>{page.group}</span><h1 id="settings-page-title">{page.label}</h1></div></div><div className="settings-global-actions flex items-center gap-2"><Tooltip content={`搜索设置（${shortcutKeys.format('CommandOrControl+K')}）`}><Button aria-label="搜索设置" disabled={s.busy || !s.config} onClick={openSettingsSearch}><SearchIcon aria-hidden="true" /><span className="settings-action-label">搜索设置</span><kbd className="settings-search-key">{shortcutKeys.format('CommandOrControl+K')}</kbd></Button></Tooltip>{!readonly() ? <Button aria-label="显示独立插件栏" disabled={s.busy} onClick={() => void workspaceCall('show').catch(e => store.notice(String(e), true))}><PuzzleIcon aria-hidden="true" /><span className="settings-action-label">插件栏</span></Button> : null}<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} actionsRef={menuActions}><DropdownMenuTrigger ref={menuTrigger} render={<Button aria-label="更多设置操作" disabled={s.busy || !s.config} />}><EllipsisIcon data-icon="inline-start" /><span className="settings-action-label">更多</span></DropdownMenuTrigger><DropdownMenuContent align="end" className="settings-global-menu"><DropdownMenuGroup><DropdownMenuItem onClick={openJson}>{readonly() ? '查看完整配置 JSON' : '编辑完整配置 JSON'}</DropdownMenuItem><DropdownMenuItem onClick={() => navigate('updates')}>版本与更新</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu>{readonly() ? <Button onClick={() => host().requestSettingsClose?.()} disabled={s.busy}>关闭</Button> : null}</div></header>
-    {narrow?<div className="settings-mobile-navigation"><Select label="切换页面" value={module} options={[...navigationItems.map(item=>({value:item.id,label:item.label})),{value:'extensions',label:'插件市场（独立工作区）'}]} onChange={navigate} disabled={s.busy}/></div>:null}
+    <header data-tauri-drag-region="deep" className="settings-topbar flex items-center justify-between gap-3">
+      <div className="settings-page-navigation flex items-center gap-3">
+        <div className="settings-history flex items-center gap-1">
+          <Tooltip content="返回上一页"><Button size="icon-sm" variant="ghost" aria-label="返回上一页" disabled={s.busy || journey.index===0} onClick={()=>travel(-1)}><ArrowLeftIcon/></Button></Tooltip>
+          <Tooltip content="前进下一页"><Button size="icon-sm" variant="ghost" aria-label="前进下一页" disabled={s.busy || journey.index===journey.pages.length-1} onClick={()=>travel(1)}><ArrowRightIcon/></Button></Tooltip>
+        </div>
+        <div className="settings-page-heading">
+          {!searchWorkspace && <span>{page.group}</span>}
+          <h1 id="settings-page-title" className={searchWorkspace && narrow ? 'sr-only' : undefined}>{page.label}</h1>
+        </div>
+        {searchWorkspace && pagePicker}
+      </div>
+      <div className="settings-global-actions flex items-center gap-2">
+        <Tooltip content={`搜索设置（${shortcutKeys.format('CommandOrControl+K')}）`}>
+          <Button className={searchWorkspace ? 'settings-quick-find' : undefined} aria-label="搜索设置" disabled={s.busy || !s.config} onClick={openSettingsSearch}>
+            <SearchIcon aria-hidden="true" /><span className="settings-action-label">搜索设置</span><kbd className="settings-search-key">{shortcutKeys.format('CommandOrControl+K')}</kbd>
+          </Button>
+        </Tooltip>
+        {!readonly() && !searchWorkspace && <Button aria-label="显示独立插件栏" disabled={s.busy} onClick={() => void workspaceCall('show').catch(e => store.notice(String(e), true))}><PuzzleIcon aria-hidden="true" /><span className="settings-action-label">插件栏</span></Button>}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} actionsRef={menuActions}>
+          <DropdownMenuTrigger ref={menuTrigger} render={<Button size={searchWorkspace ? 'icon-sm' : undefined} aria-label="更多设置操作" disabled={s.busy || !s.config} />}>
+            <EllipsisIcon data-icon="inline-start" aria-hidden="true" />{!searchWorkspace && <span className="settings-action-label">更多</span>}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="settings-global-menu">
+            <DropdownMenuGroup>
+              {searchWorkspace && !readonly() && <DropdownMenuItem onClick={() => void workspaceCall('show').catch(e => store.notice(String(e), true))}><PuzzleIcon aria-hidden="true" />显示插件栏</DropdownMenuItem>}
+              <DropdownMenuItem onClick={openJson}>{readonly() ? '查看完整配置 JSON' : '编辑完整配置 JSON'}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('updates')}>版本与更新</DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {readonly() && <Button onClick={() => host().requestSettingsClose?.()} disabled={s.busy}>关闭</Button>}
+      </div>
+    </header>
+    {!searchWorkspace && pagePicker}
     <div className={`settings-workspace grid${narrow?' settings-workspace-narrow':''}`}>
-      {!narrow?<Navigation key={sourceKey} page={module} busy={s.busy} preview={readonly()} onNavigate={navigate}/>:null}
+      {!narrow?<Navigation key={sourceKey} page={module} busy={s.busy} preview={readonly()} useGlobalSearch={searchWorkspace} onNavigate={navigate}/>:null}
       <main ref={main} id="settings-content" aria-labelledby="settings-page-title" tabIndex={-1} className="settings-main min-w-0" onScroll={()=>{if(main.current)positions.set(journeyRef.current.pages[journeyRef.current.index],main.current.scrollTop);}}><div key={`${sourceKey}:${module}`} className={`settings-page${module==='web' || module==='memo'?' settings-page-wide':''}`}>
         {!s.config ? <EmptyState error={!s.busy}>{s.busy ? '正在读取配置…' : '配置未能加载'}<Button disabled={s.busy} onClick={() => void store.run(() => store.load())}>重试</Button></EmptyState> : <>
           {module === 'canvas' ? <CanvasSettings /> : module === 'appearance' ? <div className="settings-appearance"><div className="settings-material-sample"><FlowHubLogo/><strong>轻雾玻璃</strong><span>鼠尾草绿 · 暖沙色</span></div><div className="settings-appearance-choice" data-setting-label="外观主题" tabIndex={-1}><span>外观主题</span><div data-setting-control><Theme /></div></div><p className="fh-muted">{readonly() ? '浏览器使用玻璃效果演示背景；Mac 版叠加原生窗口材质。' : '原生窗口材质随桌面光色变化，并尊重系统的降低透明度设置。'}</p></div> : <>
@@ -133,7 +171,7 @@ export function Settings({ store }: { store: SettingsStore }) {
         </>}
       </div></main></div>
     {readonly() && pluginsOpen ? <Dialog title={pluginTitle} busy={s.busy} modal={false} onClose={() => setPluginsOpen(false)} className="settings-plugin-drawer"><div className="settings-drawer-handle" aria-hidden="true" /><PluginFrame module={pluginModule} onManage={() => setPluginModule('extensions')} /><p className="settings-plugin-caption">{readonly() ? '浏览器预览 · 插件安装与管理请在桌面 App 中操作' : '本地插件工作区'}</p></Dialog> : null}
-    <SettingsFooter store={store} reviewTrigger={reviewTrigger} onReview={()=>{if(finishJson())setReview(true);}} onReset={()=>setReset(true)} />
+    <SettingsFooter store={store} compact={searchWorkspace} reviewTrigger={reviewTrigger} onReview={()=>{if(finishJson())setReview(true);}} onReset={()=>setReset(true)} />
     {searchOpen ? <SettingsSearch onClose={()=>setSearchOpen(false)} onChoose={entry=>{
       if(!navigate(entry.page))return {ok:false,error:store.snapshot().notice || '当前无法切换，请先处理未完成的配置编辑。'};
       setSearchOpen(false);if(entry.page!=='extensions')requestLocation(entry.page,entry.target);return {ok:true};
