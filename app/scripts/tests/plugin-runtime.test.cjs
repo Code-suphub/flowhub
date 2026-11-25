@@ -85,7 +85,13 @@ test('plugin dock caps direct entries, opens overflow plugins, and has no built-
 });
 test('native settings menu opens independent workspace without mounting a dock or plugin frame',async()=>{
  const {store}=await h.loaded(),calls=[];
- window.__TAURI__.core.invoke=async(command,args)=>{calls.push({command,args});return {module:'extensions',open:false,revision:0};};
+ const installed=[{enabled:true,directory:'/test/example',manifest:{id:'example',name:'Example',version:'1.0',ui:'ui/index.html'}}];
+ window.__TAURI__.core.invoke=async(command,args)=>{
+  calls.push({command,args});
+  if(command==='plugin_api')return args.action==='list'?installed:[];
+  return {module:'extensions',open:false,revision:0};
+ };
+ vm.runInNewContext(source,{window,console});await window.FlowHubPluginIntegration.refresh();
  window.history.replaceState(null,'','/settings.html?module=search');
  const {Settings}=require('../../src/settings/index.tsx'),view=await h.mount(Settings,{store});
  assert.equal(view.container.querySelector('.settings-plugin-dock'),null);
@@ -96,7 +102,16 @@ test('native settings menu opens independent workspace without mounting a dock o
  await h.act(async()=>window.switchModule('plugin:example'));
  assert.equal(calls.at(-1).args.action,'select');assert.equal(calls.at(-1).args.module,'plugin:example');
  assert.equal(document.querySelector('iframe'),null);assert.equal(document.querySelector('[role=dialog]'),null);
- await view.unmount();store.dispose();
+ await h.act(async()=>window.switchModule('extensions'));
+ assert.equal(view.container.querySelector('h1').textContent,'发现');
+ assert.ok(view.container.querySelector('.fh-market-inline'));
+ assert.equal(document.querySelector('iframe'),null);
+ await h.click(view.container.querySelector('[data-page="plugins-installed"]'));
+ assert.equal(view.container.querySelector('h1').textContent,'已安装');
+ assert.equal(view.container.querySelector('[data-page="plugins-installed"] .settings-plugin-count').textContent,'1');
+ assert.ok(view.container.querySelector('.market-installed-row[aria-label="Example"]'));
+ assert.equal(calls.filter(call=>call.command==='plugin_workspace').length,2);
+ await view.unmount();store.dispose();delete window.FlowHubPluginIntegration;
 });
 test('floating workspace handles native selection, overflow, refresh, collapse and stale responses',async()=>{
  h.environment();global.ResizeObserver=class{observe(){}disconnect(){}};

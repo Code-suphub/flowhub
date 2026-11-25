@@ -1,6 +1,6 @@
 //! Launcher deep links only select host pages or enabled plugin workspaces.
 pub(crate) fn valid_module(module: &str) -> bool {
-    matches!(module, "core"|"appearance"|"data"|"updates"|"search"|"menubar"|"canvas"|"web"|"app"|"clipboard"|"memo"|"tools"|"extensions")
+    matches!(module, "core"|"appearance"|"data"|"updates"|"search"|"menubar"|"canvas"|"web"|"app"|"clipboard"|"memo"|"tools"|"extensions"|"plugins-built-in"|"plugins-discover"|"plugins-installed")
         || module.strip_prefix("plugin:").is_some_and(|id| !id.is_empty() && id.len()<=80 && id.bytes().all(|c|c.is_ascii_alphanumeric() || c==b'-' || c==b'_'))
 }
 pub(crate) fn path(module: &str) -> String {
@@ -16,7 +16,7 @@ pub(crate) fn script(module: &str) -> String {
 mod tests {
     use super::*;
     #[test] fn settings_targets_are_fixed_pages_or_safe_plugin_ids() {
-        for module in ["core","appearance","search","extensions","plugin:resource-monitor"] {assert!(valid_module(module));}
+        for module in ["core","appearance","search","extensions","plugins-built-in","plugins-discover","plugins-installed","plugin:resource-monitor"] {assert!(valid_module(module));}
         for module in ["","unknown","plugin:","plugin:../secret","plugin:a');alert(1)//","https://example.com"] {assert!(!valid_module(module));}
         assert!(!valid_module(&format!("plugin:{}","a".repeat(81))));
         assert_eq!(path("plugin:resource-monitor"),"settings.html?module=plugin%3Aresource-monitor");

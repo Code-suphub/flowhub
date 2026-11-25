@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EllipsisIcon, PuzzleIcon, GripVerticalIcon, XIcon } from 'lucide-react';
 import { FeatureIcon, PluginIcon } from '../shared/FeatureIcon';
 import { Button } from '../shared/ui';
@@ -17,9 +17,9 @@ export function PluginPanelHeader({ title, onClose, preview = false, busy = fals
   </header>;
 }
 
-export function PluginPanelPreview({ open, title, module, busy, returnFocus, onClose, onManage }: { open: boolean; title: string; module: string; busy: boolean; returnFocus: RefObject<HTMLElement | null>; onClose: () => void; onManage: () => void }) {
+export function PluginPanelPreview({ open, title, module, busy, onClose, onManage }: { open: boolean; title: string; module: string; busy: boolean; onClose: () => void; onManage: () => void }) {
   return <Dialog open={open} modal={false} disablePointerDismissal onOpenChange={next => { if (!next && !busy) onClose(); }}>
-    <DialogContent className="fh-root workspace-panel workspace-panel-preview" showCloseButton={false} showBackdrop={false} aria-busy={busy} finalFocus={() => returnFocus.current?.isConnected ? returnFocus.current : true}>
+    <DialogContent className="fh-root workspace-panel workspace-panel-preview" showCloseButton={false} showBackdrop={false} aria-busy={busy}>
       <PluginPanelHeader title={title} preview busy={busy} onClose={onClose} />
       <div className="workspace-panel-content"><PluginFrame module={module} onManage={onManage} /></div>
     </DialogContent>

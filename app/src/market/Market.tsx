@@ -14,7 +14,7 @@ import { connectedOfficial, hasOfficialKey, isOfficialSource, officialSource } f
 import { InstallStatus } from './InstallStatus';
 import { availableUpdates, compareVersions } from './versions';
 import { useMarketNavigation } from './useMarketNavigation';
-import { api, available, installCandidate, openPlugin, refreshNavigation, type Candidate, type Installed, type InstallProgress, type Manifest, type Source } from './api';
+import { api, getInvoke, installCandidate, openPlugin, refreshNavigation, type Candidate, type Installed, type InstallProgress, type Manifest, type Source } from './api';
 import './market.css';
 
 type Confirmation = { title:string; detail:string; warning?:string; install?:boolean; action:()=>Promise<void> };
@@ -25,8 +25,14 @@ function MarketEmpty({title,description,children}: {title:string;description:str
   return <Empty className="fh-market-empty"><EmptyHeader><EmptyMedia variant="icon"><SearchIcon aria-hidden="true"/></EmptyMedia><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{description}</EmptyDescription></EmptyHeader>{children?<EmptyContent className="flex-row flex-wrap justify-center">{children}</EmptyContent>:null}</Empty>;
 }
 
-export function Market() {
-  const [view,setView]=useState('discover'), [installed,setInstalled]=useState<Installed[]>([]), [sources,setSources]=useState<Source[]>([]), [found,setFound]=useState<Candidate[]>([]);
+export type MarketView = 'discover' | 'installed';
+type MarketProps = { readOnly?: boolean; section?: { view: MarketView; onChange: (view: MarketView) => void } };
+
+export function Market({ readOnly = false, section }: MarketProps = {}) {
+  const available = !readOnly && Boolean(getInvoke());
+  const [selectedView,setSelectedView]=useState<MarketView>('discover'), [installed,setInstalled]=useState<Installed[]>([]), [sources,setSources]=useState<Source[]>([]), [found,setFound]=useState<Candidate[]>([]);
+  const view = section?.view ?? selectedView;
+  const setView = section?.onChange ?? setSelectedView;
   const [query,setQuery]=useState(''), [notice,setNotice]=useState(''), [noticeError,setNoticeError]=useState(false), [operation,setOperation]=useState('');
   const [loaded,setLoaded]=useState(!available), [sourcesOpen,setSourcesOpen]=useState(false), [sourceStates,setSourceStates]=useState<Record<string,SourceState>>({});
   const [confirmation,setConfirmation]=useState<Confirmation|null>(null), [pages,setPages]=useState<Record<string,{key:string;limit:number}>>({});
@@ -35,7 +41,8 @@ export function Market() {
   const root=useRef<HTMLElement>(null), lock=useRef(false), alive=useRef(true), focusAfterInstall=useRef(false);
   const detailOrigin=useRef<{context:string;key:string}|null>(null), manageTarget=useRef<string|null>(null);
   const busy=Boolean(operation), disabled=busy || !available;
-  const embedded=typeof window!=='undefined' && window.parent!==window;
+  const embedded=Boolean(section) || window.parent!==window;
+  const Container = section ? 'section' : 'main';
 
   async function refresh(notify=true) {
     const [plugins,catalog]=await Promise.all([api<Installed[]>('list'),api<Source[]>('sources')]);
@@ -180,10 +187,11 @@ export function Market() {
     <Button size="sm" disabled={!loaded} onClick={()=>setSourcesOpen(true)}><SlidersHorizontalIcon data-icon="inline-start" aria-hidden="true"/>来源设置</Button>
     {available?<ActionMenu label="插件市场更多操作" icon={<MoreHorizontalIcon/>} disabled={busy} popupClassName="fh-market-menu" items={[{id:'local',label:'安装本地插件',onSelect:installLocal}]}/>:null}
   </div>;
-  return <main ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}`} aria-busy={busy}>
+  return <Container ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}${section?' fh-market-inline':''}`} aria-busy={busy} aria-label={section ? '插件市场' : undefined}>
     {!embedded?<header className="fh-market-toolbar"><div className="market-heading"><h1>插件市场</h1>{!available?<Badge variant="outline">只读预览</Badge>:null}</div>{toolbarActions}</header>:null}
-    <div className="market-navigation"><Tabs items={[{id:'discover',label:'发现'},{id:'installed',label:`已安装 (${installed.length})`}]} value={view} onChange={setView} label="插件市场"/>
+    <div className="market-navigation">{section ? null : <Tabs items={[{id:'discover',label:'发现'},{id:'installed',label:`已安装 (${installed.length})`}]} value={view} onChange={id=>setView(id==='installed'?'installed':'discover')} label="插件市场"/>}
       <div className="market-search"><label className="sr-only" htmlFor="market-query">搜索插件</label><SearchIcon aria-hidden="true"/><Input id="market-query" type="search" aria-label="搜索插件" aria-describedby="market-browse-hint" placeholder={view==='discover'?'搜索插件':'搜索已安装插件'} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={navigation.searchKeyDown}/></div>
+      {section && !available?<Badge variant="outline">只读预览</Badge>:null}
       {embedded?toolbarActions:null}
     </div>
     {notice?<Alert role={noticeError?'alert':'status'} variant={noticeError?'destructive':'default'}><AlertTitle>{noticeError?'操作未完成':'操作完成'}</AlertTitle><AlertDescription>{notice}{completed && installedById.get(completed.id)?.enabled?<Button size="sm" onClick={()=>void run(()=>openPlugin(completed.id),false)}>打开 {completed.name}</Button>:null}{noticeError && !confirmation?<Button size="sm" onClick={()=>void initialize()}>重新加载列表</Button>:null}</AlertDescription></Alert>:null}
@@ -191,7 +199,7 @@ export function Market() {
       <AlertTitle>{issues.length} 个来源需要处理</AlertTitle>
       <Button size="sm" variant="ghost" onClick={()=>setSourcesOpen(true)}>查看来源问题</Button>
     </Alert>:null}
-    <section className="fh-market-panel" id={`panel-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`}>
+    <section className="fh-market-panel" id={`panel-${view}`} role={section?undefined:'tabpanel'} aria-labelledby={section?undefined:`tab-${view}`}>
       {view==='discover' && loaded && !hasOfficial && !searched && !filtered?<OfficialCollection available={available} disabled={disabled} onConnect={connectOfficial}/>:null}
       <div className="market-subbar">
         {view==='discover' && sources.length?<div className="market-filters"><Select label="按功能筛选" value={capability} options={capabilities} onChange={setCapability}/><Select label="按来源筛选" value={selectedSource} options={[{value:'all',label:'全部来源'},...sources.map(source=>({value:source.id,label:source.name}))]} onChange={setSourceFilter}/>{filtered?<Button variant="ghost" size="sm" onClick={()=>{setCapability('all');setSourceFilter('all');}}>重置筛选</Button>:null}</div>:null}
@@ -216,5 +224,5 @@ export function Market() {
     {detailItem?<PluginDetails item={detailItem} source={sourcesById.get(detailItem.source)} installed={installedById.get(detailItem.manifest.id)} disabled={disabled} onClose={()=>setDetails(null)} onManage={()=>manage(detailItem.manifest)} onInstall={()=>{setDetails(null);installFromCatalog(detailItem);}}/>:null}
     {sourcesOpen?<SourceDialog sources={sources} states={sourceStates} available={available} busy={busy} locking={busy && operation!=='scan'} error={noticeError?notice:''} onClose={()=>setSourcesOpen(false)} onScan={source=>void run(()=>scan([source]),false,'scan')} onSave={source=>changeSources('saveSource',{...source},'来源已保存，插件列表已刷新。')} onRemove={source=>changeSources('removeSource',{id:source.id},'来源已移除，已安装插件保留。')} onChoose={async()=>{let selected:string|null=null;await run(async()=>{selected=await api<string|null>('chooseSource');},false);return selected;}}/>:null}
     {confirmation?<Dialog className="fh-market-dialog" notice={noticeError?notice:undefined} title={confirmation.title} busy={busy} onClose={()=>setConfirmation(null)}><p>{confirmation.detail}</p>{confirmation.warning?<Alert variant="warning"><AlertTitle>运行权限提醒</AlertTitle><AlertDescription>{confirmation.warning}</AlertDescription></Alert>:null}{progress?<InstallStatus progress={progress}/>:null}<div className="flex flex-wrap justify-end gap-2 mt-4">{noticeError && confirmation.install?<Button disabled={busy} onClick={()=>void run(async()=>{const catalog=await refresh(false);await scan(catalog);setConfirmation(null);setNotice('目录已重新读取，请再次核对插件版本后安装。');},false,'scan')}>刷新目录</Button>:null}<Button disabled={busy} onClick={()=>setConfirmation(null)}>取消</Button><Button variant={confirmation.install?'default':'destructive'} disabled={busy} onClick={()=>void run(async()=>{await confirmation.action();if(alive.current)setConfirmation(null);})}>{busy && confirmation.install?'正在安装…':noticeError && confirmation.install?'重试安装':'确认'}</Button></div></Dialog>:null}
-  </main>;
+  </Container>;
 }

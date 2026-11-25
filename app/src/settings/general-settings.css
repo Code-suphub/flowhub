@@ -10,14 +10,19 @@
   .settings-core-general {
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
     grid-template-areas:
+      "appearance notifications"
       "startup notifications"
-      "network notifications";
+      "network .";
     column-gap: 16px;
     max-width: 960px;
   }
 
   .settings-core-general [aria-labelledby="general-launch-heading"] {
     grid-area: startup;
+  }
+
+  .settings-core-general [aria-labelledby="general-appearance-heading"] {
+    grid-area: appearance;
   }
 
   .settings-core-general [aria-labelledby="general-network-heading"] {

@@ -311,7 +311,14 @@ test('settings sidebar separates built-ins from plugins and preview keeps canvas
   assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['系统设置','工作空间','目录与工具']);
   assert.ok(h.button(groups[0],'通用设置'));
   assert.ok(view.container.querySelector('.settings-plugin-dock [aria-label="插件市场"]'));
-  assert.ok(h.button(view.container.querySelector('.settings-sidebar'),'插件市场'));
+  const pluginGroup=view.container.querySelector('[data-plugin-group]');
+  assert.equal(pluginGroup.getAttribute('aria-expanded'),'true');
+  await h.click(pluginGroup);assert.equal(pluginGroup.getAttribute('aria-expanded'),'false');
+  await h.click(pluginGroup);await h.click(view.container.querySelector('[data-page="plugins-built-in"]'));
+  assert.equal(view.container.querySelector('main .settings-built-in-plugins').children.length,5);
+  await h.click(view.container.querySelector('[data-page="plugins-discover"]'));
+  assert.ok(view.container.querySelector('main .fh-market-inline'));assert.equal(document.querySelector('iframe'),null);
+  assert.equal(view.container.querySelector('.fh-market-inline [aria-label="插件市场更多操作"]'),null);
   await h.click(h.button(groups[1],'桌面组件'));
   assert.equal(view.container.querySelector('.settings-canvas [role=switch]').getAttribute('aria-disabled'),'true');
   assert.equal(view.container.querySelector('[role=switch][aria-label="显示桌面组件"]').getAttribute('aria-disabled'),'true');
@@ -385,7 +392,7 @@ test('test notification follows saved permission and reports native failure besi
   await h.click(send());
   assert.equal(panel.querySelector('[role="alert"]').textContent.trim(), '模拟发送失败');
   await h.click(send());
-  assert.equal(panel.querySelector('[role="status"]').textContent.trim(), '测试通知已发送');
+  assert.equal(panel.querySelector('.settings-notify-feedback[role="status"]').textContent.trim(), '测试通知已发送');
   assert.equal(writes.length, 1);
   await h.click(panel.querySelector('[aria-label="允许通知"]'));
   assert.equal(send().disabled, true);
@@ -497,19 +504,22 @@ test('menu-bar settings expose committed sections, retain failed scans, and pres
   await view.unmount();store.dispose();
 });
 
-test('appearance uses the global page lookup and navigates without configuration writes',async()=>{
+test('appearance deep links into General and uses the global page lookup without configuration writes',async()=>{
   const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
-  await h.click(view.container.querySelector('[data-page="appearance"]'));
+  await h.click(view.container.querySelector('[data-page="data"]'));
+  await h.act(async()=>window.switchModule('appearance'));
+  assert.ok(view.container.querySelector('[data-section="general"] [aria-label="外观主题"]'));
+  assert.equal(view.container.querySelector('[data-page="appearance"]'),null);
   assert.equal(view.container.querySelector('[aria-label="查找页面"]'),null);
   await h.click(view.container.querySelector('[aria-label="搜索设置"]'));
   const search=document.querySelector('[aria-label="搜索设置项"]');
   await h.input(search,'数据与诊断');assert.ok(document.querySelector('[data-command-id="page:data"]'));
-  await h.key(search,'Enter',{isComposing:true});assert.equal(view.container.querySelector('h1').textContent,'外观');
+  await h.key(search,'Enter',{isComposing:true});assert.equal(view.container.querySelector('h1').textContent,'通用设置');
   let prevented;await h.act(async()=>{const event=new window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true});search.dispatchEvent(event);prevented=event.defaultPrevented;});assert.equal(prevented,false);
   await h.key(search,'Enter');assert.equal(view.container.querySelector('h1').textContent,'数据与诊断');
   assert.equal(document.querySelector('[aria-label="搜索设置项"]'),null);
   await h.click(view.container.querySelector('[aria-label="返回上一页"]'));
-  assert.equal(view.container.querySelector('h1').textContent,'外观');
+  assert.equal(view.container.querySelector('h1').textContent,'通用设置');
   assert.equal(store.dirty,false);assert.equal(writes.length,0);await view.unmount();store.dispose();
 });
 test('back and forward preserve collection filters, selection, scroll and global draft without saving',async()=>{
@@ -560,18 +570,17 @@ test('navigation retains scroll and focus across breakpoints without stealing fi
   const resize=async narrow=>h.act(async()=>{media.matches=narrow;for(const listener of listeners)listener();});
   try {
     const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});
-    await h.click(view.container.querySelector('[data-page="appearance"]'));
-    const appearance=()=>view.container.querySelector('.settings-sidebar [data-page="appearance"]');
-    appearance().focus();await resize(true);
+    const general=()=>view.container.querySelector('.settings-sidebar [data-page="core"]');
+    general().focus();await resize(true);
     assert.equal(document.activeElement,view.container.querySelector('[aria-label="切换页面"]'));
-    await resize(false);assert.equal(document.activeElement,appearance());
+    await resize(false);assert.equal(document.activeElement,general());
     const scroll=view.container.querySelector('.settings-navigation-scroll');await h.act(async()=>{scroll.scrollTop=180;scroll.dispatchEvent(new window.Event('scroll'));});
     await resize(true);await resize(false);assert.equal(view.container.querySelector('.settings-navigation-scroll').scrollTop,180);
     await h.click(view.container.querySelector('[data-page="clipboard"]'));const input=view.container.querySelector('[aria-label="留存天数"]');input.focus();await h.input(input,'21');
     assert.ok(view.container.querySelector('.settings-compact-workspace [aria-label="搜索设置"]'));
     await resize(true);assert.equal(document.activeElement,input);await resize(false);assert.equal(document.activeElement,input);assert.equal(store.dirty,true);assert.equal(writes.length,0);
-    await h.click(view.container.querySelector('[data-page="appearance"]'));
-    appearance().focus();await resize(true);await h.act(async()=>window.switchModule('updates'));
+    await h.click(general());
+    general().focus();await resize(true);await h.act(async()=>window.switchModule('updates'));
     await h.act(async()=>{const selector=view.container.querySelector('[aria-label="切换页面"]');selector.blur();selector.focus();});await resize(false);
     assert.equal(view.container.querySelector('h1').textContent,'版本与更新');
     assert.equal(document.activeElement,view.container.querySelector('.settings-sidebar [data-page="updates"]'));

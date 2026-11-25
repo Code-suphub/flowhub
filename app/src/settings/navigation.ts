@@ -1,9 +1,8 @@
-import { AppWindowIcon, ArchiveIcon, ClipboardIcon, Globe2Icon, LayoutDashboardIcon, NotebookPenIcon, PaletteIcon, PanelTopIcon, RefreshCwIcon, SearchIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
+import { AppWindowIcon, ArchiveIcon, BoxIcon, ClipboardIcon, CompassIcon, DownloadIcon, Globe2Icon, LayoutDashboardIcon, NotebookPenIcon, PanelTopIcon, RefreshCwIcon, SearchIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
 
 export const navigationGroups = [
   {label:'系统设置',items:[
     {id:'core',label:'通用设置',Icon:Settings2Icon,keywords:'通用 常规 快捷键 启动 开机 热键 通知 代理 general hotkey'},
-    {id:'appearance',label:'外观',Icon:PaletteIcon,keywords:'外观 主题 深色 浅色 透明 theme'},
     {id:'data',label:'数据与诊断',Icon:ArchiveIcon,keywords:'数据 诊断 导入 导出 备份 恢复 配置 文件 位置 性能 database'},
     {id:'updates',label:'版本与更新',Icon:RefreshCwIcon,keywords:'版本 更新 升级 下载 关于 update version'},
   ]},
@@ -20,7 +19,16 @@ export const navigationGroups = [
     {id:'tools',label:'工具',Icon:WrenchIcon,keywords:'工具 计算 时间 网络 JSON URL tool'},
   ]},
 ] as const;
-export const navigationItems=navigationGroups.flatMap(group=>group.items.map(item=>({...item,group:group.label})));
+export const pluginNavigationItems = [
+  {id:'plugins-built-in',label:'内置',Icon:BoxIcon,keywords:'内置插件 应用 网页目录 剪贴板 备忘录 工具 built-in'},
+  {id:'plugins-discover',label:'发现',Icon:CompassIcon,keywords:'插件市场 安装 扩展 来源 marketplace plugin'},
+  {id:'plugins-installed',label:'已安装',Icon:DownloadIcon,keywords:'已安装插件 更新 卸载 启用 停用 installed plugin'},
+] as const;
+export const navigationItems=[
+  ...navigationGroups.flatMap(group=>group.items.map(item=>({...item,group:group.label}))),
+  ...pluginNavigationItems.map(item=>({...item,group:'插件'})),
+];
+export const builtInNavigationItems = navigationGroups[2].items;
 export type PageId=(typeof navigationItems)[number]['id'];
 export function isPage(id:string):id is PageId {return navigationItems.some(item=>item.id===id);}
 export function matchingNavigation(query:string) {

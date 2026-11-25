@@ -1,9 +1,4 @@
-.settings-appearance-panel { max-width: 560px; padding: 14px 16px; border: 1px solid var(--fh-border); border-radius: 12px; background: var(--fh-surface-raised); }
-.settings-appearance-choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.settings-appearance-heading { display: flex; align-items: center; gap: 6px; }
-.settings-appearance-heading h2 { margin: 0; font-size: 15px; font-weight: 600; }
-.settings-appearance-note { margin: 4px 0 0; color: var(--fh-muted); font-size: 12px; }
-.settings-theme-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-inline-start: auto; }
+.settings-theme-picker { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 8px; }
 .settings-theme-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--fh-border); border-radius: 999px; background: var(--fh-surface-soft); color: var(--fh-muted); font-size: 12px; white-space: nowrap; }
 .settings-theme-swatch { display: inline-grid; grid-template-columns: 1fr 1fr; width: 22px; height: 14px; padding: 1px; border: 1px solid var(--fh-border); border-radius: 999px; }
 .settings-theme-swatch i { border-radius: 999px; background: Canvas; }
@@ -11,6 +6,3 @@
 .settings-theme-swatch [data-tone="dark"] { color-scheme: dark; }
 .settings-theme-status[data-resolved="light"] [data-tone="light"],
 .settings-theme-status[data-resolved="dark"] [data-tone="dark"] { box-shadow: inset 0 0 0 1.5px var(--fh-accent); }
-@media (pointer: coarse) {
-  .settings-appearance-panel .settings-appearance-choice [data-slot="select-trigger"] { min-height: 44px; }
-}

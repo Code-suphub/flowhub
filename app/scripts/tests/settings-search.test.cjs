@@ -15,7 +15,7 @@ async function choose(view,query,id){await h.click(view.container.querySelector(
 test('host settings index supports Chinese aliases, English terms, exact ranking and bounded results',()=>{
   assert.equal(new Set(settingsSearchEntries.map(item=>item.id)).size,settingsSearchEntries.length);
   for(const [query,id] of [['开机启动','launch-at-login'],['保留天数','clipboard-retention'],['菜单栏权限','menubar-permission'],['max records','clipboard-records'],['主题','theme'],['应用范围键','scope-key:app'],['长文本','long-content-preview'],['自动预览','long-content-preview'],['搜索历史','search-history'],['补全','search-history']])assert.equal(findSettings(query)[0].id,id,query);
-  assert.equal(findSettings('ＭＡＸ records')[0].id,'clipboard-records');assert.deepEqual(findSettings('不存在的随机字段'),[]);assert.ok(findSettings('').some(item=>item.id==='page:extensions'));assert.ok(findSettings('设置').length<=60);
+  assert.equal(findSettings('ＭＡＸ records')[0].id,'clipboard-records');assert.deepEqual(findSettings('不存在的随机字段'),[]);assert.ok(findSettings('').some(item=>item.id==='page:plugins-discover'));assert.equal(findSettings('外观主题')[0].page,'core');assert.ok(findSettings('设置').length<=60);
 });
 test('every indexed target resolves on its host page, including collapsed menu options',async()=>{
   const {store}=await h.loaded({listConfigHistory:async()=>({entries:[{id:'one',created_at:1}]})}),view=await h.mount(Settings,{store});
@@ -82,7 +82,8 @@ test('composition Enter does not select a setting, and a failed navigation keeps
 test('another dialog blocks the search shortcut, and dirty state survives locating another page',async t=>{
   platform(t,'MacIntel');layout(t);const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[aria-label="开机自动启动"]'));await h.click(view.container.querySelector('[aria-label="查看未保存修改"]'));
   await press(document.body,'k',{metaKey:true});assert.equal(document.querySelector('[aria-label="搜索设置项"]'),null);assert.equal(document.querySelectorAll('[role=dialog]').length,1);await h.click(h.button(dialog(),'继续编辑'));await flush();
-  await choose(view,'主题','theme');assert.equal(view.container.querySelector('h1').textContent,'外观');assert.equal(store.dirty,true);assert.equal(store.snapshot().config.core.launchAtLogin,true);assert.equal(writes.length,0);await view.unmount();store.dispose();
+  await h.click(view.container.querySelector('[data-page="data"]'));
+  await choose(view,'主题','theme');assert.equal(view.container.querySelector('h1').textContent,'通用设置');assert.equal(document.activeElement.getAttribute('aria-label'),'外观主题');assert.equal(store.dirty,true);assert.equal(store.snapshot().config.core.launchAtLogin,true);assert.equal(writes.length,0);await view.unmount();store.dispose();
 });
 test('ordinary input after a location request cancels queued focus transfer',async t=>{
   layout(t);const {store}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[aria-label="搜索设置"]'));await h.input(search(),'开机启动');await h.click(document.querySelector('[data-command-id="launch-at-login"]'));

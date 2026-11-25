@@ -147,9 +147,9 @@
 .fh-market h2 { font-size:14px; margin:0; }
 .fh-market p { margin:4px 0; }
 .fh-muted { color:var(--fh-muted); }
-.fh-help button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:2px; }
+.fh-help button:focus-visible { outline:2px solid var(--fh-accent); outline-offset:0; }
 .fh-help { position:relative; display:inline-flex; vertical-align:middle; }
-.fh-help button { display:grid; place-items:center; border:0; background:none; border-radius:50%; color:var(--fh-muted); width:24px; height:24px; cursor:help; }
+.fh-help button { display:grid; place-items:center; padding:0; border:0; background:none; border-radius:6px; color:var(--fh-muted); width:24px; height:24px; cursor:pointer; }
 .fh-help button:is(:hover,[aria-expanded="true"]) { color:var(--fh-accent); background:var(--fh-accent-soft); }
 .fh-help button:disabled { opacity:.5; cursor:not-allowed; }
 .fh-help-positioner { z-index:60; }

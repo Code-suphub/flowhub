@@ -3,7 +3,7 @@ import { navigationItems, type PageId } from './navigation';
 
 export interface SettingTarget { label: string; control?: string }
 export interface SettingsSearchEntry {
-  id: string; label: string; page: PageId | 'extensions'; kind: '页面' | '设置' | '入口';
+  id: string; label: string; page: PageId; kind: '页面' | '设置' | '入口';
   description: string; keywords: string; target?: SettingTarget;
 }
 const field = (id: string, page: PageId, label: string, keywords: string, target: SettingTarget = {label}, description = ''): SettingsSearchEntry => ({id,page,label,keywords,target,description,kind:'设置'});
@@ -14,14 +14,13 @@ const pageEntries: SettingsSearchEntry[] = navigationItems.map(item=>({id:`page:
 // filesystem data. Selecting an entry only navigates and locates its control.
 export const settingsSearchEntries: readonly SettingsSearchEntry[] = [
   ...pageEntries,
-  {id:'page:extensions',label:'插件市场',page:'extensions',kind:'页面',description:'打开独立插件工作区',keywords:'插件 安装 扩展 更新 卸载 marketplace plugin extension'},
   field('launcher-hotkey','core','唤出 FlowHub','快捷键 热键 召唤 启动器 hotkey shortcut launcher'),
   field('launch-at-login','core','开机自动启动','登录 开机启动 自动启动 自启动 自启 launch login startup'),
   field('proxy-adapter','core','代理检测适配器','网络 代理 clash mihomo system proxy adapter'),
   field('notifications','core','允许通知','系统 消息 提醒 notification'),
   field('update-notifications','core','更新通知','通知 升级 消息 update notification'),
   entry('notification-permission','core','系统通知权限',{label:'系统通知权限'},'前往测试通知入口，选中不会发送通知','授权 系统 测试 通知 permission notification'),
-  field('theme','appearance','外观主题','浅色 深色 跟随系统 夜间 颜色 theme dark light system'),
+  field('theme','core','外观主题','浅色 深色 跟随系统 夜间 颜色 theme dark light system'),
   field('all-scope-key','search','全部结果范围键','搜索 全部 快捷键 范围键 scope shortcut'),
   field('source-order','search','搜索来源与顺序','排序 优先 拖拽 调整 source order ranking'),
   ...(['app','web','clipboard','memo'] as const).map((id,index)=>{
@@ -58,7 +57,7 @@ export const settingsSearchEntries: readonly SettingsSearchEntry[] = [
   ...Object.entries(tools).map(([id,label])=>field(`tool:${id}`,'tools',label,`工具 启用 关闭 ${id}`)),
   entry('clear-command-history','tools','清空命令历史与模板',{label:'命令历史与参数模板',control:'清空历史与模板'},'定位清空按钮，仍需单独确认','清空历史 清除历史 删除历史 清除 删除 历史 模板 command history templates clear'),
 ];
-const recommended = ['launcher-hotkey','theme','launch-at-login','clipboard-retention','database-location','config-history','page:extensions'];
+const recommended = ['launcher-hotkey','theme','launch-at-login','clipboard-retention','database-location','config-history'];
 const normalize = (value: string) => value.normalize('NFKC').toLocaleLowerCase().trim();
 const prepared = settingsSearchEntries.map(item=>{
   const page=navigationItems.find(page=>page.id===item.page);

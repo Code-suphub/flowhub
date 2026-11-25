@@ -12,7 +12,6 @@ function host(): Host | undefined {
 export function getInvoke(): Invoke | undefined {
   try { return host()?.__TAURI__?.core?.invoke; } catch { return undefined; }
 }
-export const available = Boolean(getInvoke());
 export function api<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const invoke = getInvoke();
   if (!invoke) return Promise.reject(new Error('浏览器预览只读，请在 FlowHub 中操作。'));

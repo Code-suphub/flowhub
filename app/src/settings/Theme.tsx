@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Help, Select } from '../shared/controls';
+import { Select } from '../shared/controls';
+import { Row } from './fields';
 import { host, readonly } from './api';
 import './appearance.css';
 
@@ -26,16 +27,8 @@ export function Theme() {
   }, []);
 
   const preview = readonly();
-  return <section className="settings-appearance-panel" aria-labelledby="appearance-theme-heading">
-    <div className="settings-appearance-choice" data-setting-label="外观主题" tabIndex={-1}>
-      <div>
-        <div className="settings-appearance-heading">
-          <h2 id="appearance-theme-heading">外观主题</h2>
-          {!preview && <Help label="窗口材质说明">macOS 窗口材质随桌面变化，并遵循系统的「降低透明度」设置。</Help>}
-        </div>
-        <p className="settings-appearance-note">{preview ? '仅在此浏览器生效' : '即时生效'}</p>
-      </div>
-      <div className="settings-theme-picker" data-setting-control>
+  return <Row label="外观主题" note={preview ? '仅在此浏览器生效' : undefined}>
+      <div className="settings-theme-picker">
         {value === 'system' && <span className="settings-theme-status" data-resolved={resolved} role="status">
           <span className="settings-theme-swatch" aria-hidden="true"><i data-tone="light" /><i data-tone="dark" /></span>
           当前{resolved === 'dark' ? '深色' : '浅色'}
@@ -45,6 +38,5 @@ export function Theme() {
           setTheme(readTheme(next));
         }} />
       </div>
-    </div>
-  </section>;
+  </Row>;
 }

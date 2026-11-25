@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowLeftIcon, ArrowRightIcon, EllipsisIcon, PuzzleIcon, SearchIcon } from 'lucide-react';
+import { ArrowLeftIcon, ArrowRightIcon, ChevronRightIcon, EllipsisIcon, PuzzleIcon, SearchIcon } from 'lucide-react';
 import { Button, Dialog } from '../shared/ui';
 import { Textarea } from '../components/ui/textarea';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
@@ -24,27 +24,27 @@ import './glass.css';
 import './layout.css';
 import './compact-workspace.css';
 import { PluginDock, PluginPanelPreview } from '../plugin-workspace/controls';
+import { Market } from '../market/Market';
 import { workspaceCall } from '../plugin-workspace/native';
-import { Theme } from './Theme';
 import { bindNativeSettings } from './native';
 import { bindSettingsClose } from './close';
 import { observePopupOwner } from '../../../../common-components/packages/frontend/dom/popup';
 import { Navigation } from './SettingsNavigation';
-import { corePage, isPage, navigationItems, type PageId } from './navigation';
+import { builtInNavigationItems, corePage, isPage, navigationItems, type PageId } from './navigation';
 import { ViewStateContext, type ViewMemory } from './view-state';
 const emptyPlugins: InstalledPlugin[] = [];
 export function Settings({ store }: { store: SettingsStore }) {
   const s = useSettings(store), [journey,setJourney]=useState<{pages:PageId[];index:number}>(()=>{const params=new URLSearchParams(window.location.search),requested=params.get('module') || '';return {pages:[params.get('update')==='1'?'updates':isPage(requested)?requested:'core'],index:0};}), [json, setJson] = useState(false), [reset, setReset] = useState(false), [close, setClose] = useState(false), [review,setReview] = useState(false), [searchOpen,setSearchOpen] = useState(false);
   const module=journey.pages[journey.index], narrow=useMediaQuery('(max-width: 699px)');
-  const compactWorkspace = module === 'search' || module === 'menubar' || module === 'canvas' || module === 'web' || module === 'app' || module === 'clipboard' || module === 'memo' || module === 'tools' || module === 'core' || module === 'data' || module === 'updates' || module === 'appearance';
+  const marketView = module === 'plugins-discover' ? 'discover' : module === 'plugins-installed' ? 'installed' : null;
   const journeyRef=useRef(journey), main=useRef<HTMLElement>(null);
   const navigationFocus=useRef<'lookup'|'page'|null>(null), transferringNavigation=useRef(false);
   useLayoutEffect(()=>{
     if(!navigationFocus.current || document.activeElement!==document.body)return;
     const selector=narrow?'.settings-mobile-navigation [role=combobox]':navigationFocus.current==='lookup'?'[aria-label="查找页面"]':'.settings-sidebar [aria-current=page]';
-    const target=document.querySelector<HTMLElement>(selector) || (!narrow?document.querySelector<HTMLElement>(compactWorkspace ? '[aria-label="搜索设置"]' : '[aria-label="查找页面"]'):null);
+    const target=document.querySelector<HTMLElement>(selector) || (!narrow?document.querySelector<HTMLElement>('[aria-label="搜索设置"]'):null);
     transferringNavigation.current=true;target?.focus({preventScroll:true});transferringNavigation.current=false;
-  },[narrow,compactWorkspace]);
+  },[narrow]);
   const sourceKey=JSON.stringify([s.configPath.resolvedPath || '',s.storage.resolvedPath || '']);
   const viewMemory=useMemo<ViewMemory>(()=>new Map(),[sourceKey]);
   const positions=useMemo(()=>new Map<PageId,number>(),[sourceKey]);
@@ -53,8 +53,7 @@ export function Settings({ store }: { store: SettingsStore }) {
   const jsonBefore = useRef<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false), [pluginModule, setPluginModule] = useState('extensions');
-  const previewReturnFocus = useRef<HTMLElement | null>(null);
-  const menuTrigger = useRef<HTMLButtonElement>(null), reviewTrigger = useRef<HTMLButtonElement>(null), searchTrigger = useRef<HTMLButtonElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null), reviewTrigger = useRef<HTMLButtonElement>(null);
   const menuActions = useRef<{ unmount(): void; close(): void } | null>(null);
   useLayoutEffect(() => { if (!menuOpen) menuActions.current?.unmount(); }, [menuOpen]);
   useEffect(() => {
@@ -78,16 +77,16 @@ export function Settings({ store }: { store: SettingsStore }) {
   }
   function openJson() { jsonBefore.current = store.snapshot().jsonText; setJson(true); }
   function cancelJson() { if (!store.snapshot().busy) { store.restoreJson(jsonBefore.current); setJson(false); } }
-  function navigate(id: string, previewOrigin?: HTMLElement | null) {
-    if(!isPage(id) && id!=='extensions' && !id.startsWith('plugin:'))return false;
+  function showPluginPreview(id: string) { setPluginModule(id); setPluginsOpen(true); }
+  function navigate(requested: string) {
+    const id = requested === 'appearance' ? 'core' : requested === 'extensions' ? 'plugins-discover' : requested;
+    if(!isPage(id) && !id.startsWith('plugin:'))return false;
     if (store.snapshot().busy || !finishJson()) return false;
-    if (id === 'extensions' || id.startsWith('plugin:')) {
+    if (id.startsWith('plugin:')) {
       if (!readonly()) {
         void workspaceCall('select', id).catch(e => store.notice(String(e), true));
       } else {
-        previewReturnFocus.current = previewOrigin ?? null;
-        setPluginModule(id);
-        setPluginsOpen(true);
+        showPluginPreview(id);
       }
     }
     else if(isPage(id)) {
@@ -97,6 +96,7 @@ export function Settings({ store }: { store: SettingsStore }) {
         const pages=[...current.pages.slice(0,current.index+1),id].slice(-40),next={pages,index:pages.length-1};journeyRef.current=next;setJourney(next);
       }
       setPluginsOpen(false);
+      if(requested==='appearance')requestLocation('core',{label:'外观主题'});
     }return true;
   }
   function travel(delta:number) {
@@ -127,10 +127,10 @@ export function Settings({ store }: { store: SettingsStore }) {
   },[store]);
   const page=navigationItems.find(item=>item.id===module)!;
   const pagePicker = narrow ? <div className="settings-mobile-navigation">
-    <Select id="settings-page-picker" label="切换页面" value={module} options={[...navigationItems.map(item=>({value:item.id,label:item.label})),{value:'extensions',label:'插件市场（独立工作区）'}]} onChange={id=>{navigationFocus.current='page';navigate(id,document.getElementById('settings-page-picker'));}} disabled={s.busy}/>
+    <Select label="切换页面" value={module} options={navigationItems.map(item=>({value:item.id,label:item.group==='插件'?`插件 · ${item.label}`:item.label}))} onChange={id=>{navigationFocus.current='page';navigate(id);}} disabled={s.busy}/>
   </div> : null;
   const pluginTitle = pluginModule === 'extensions' ? '插件市场' : installed.find(plugin => `plugin:${plugin.manifest.id}` === pluginModule)?.manifest.name || '插件';
-  return <ViewStateContext.Provider value={viewMemory}><div className={`settings-stage${readonly() ? '' : ' settings-detached-workspace'}`}><div className="settings-landscape" aria-hidden="true" /><div className={`fh-root settings-shell flex flex-col${compactWorkspace ? ' settings-compact-workspace' : ''}`} aria-busy={s.busy} onFocusCapture={event=>{
+  return <ViewStateContext.Provider value={viewMemory}><div className={`settings-stage${readonly() ? '' : ' settings-detached-workspace'}`}><div className="settings-landscape" aria-hidden="true" /><div className="fh-root settings-shell settings-compact-workspace flex flex-col" aria-busy={s.busy} onFocusCapture={event=>{
     const target=event.target as HTMLElement;
     if(!transferringNavigation.current)navigationFocus.current=target.closest('.settings-sidebar')?(target.matches('input')?'lookup':'page'):target.closest('.settings-mobile-navigation')?'page':null;
   }}>
@@ -142,25 +142,23 @@ export function Settings({ store }: { store: SettingsStore }) {
           <Tooltip content="前进下一页"><Button size="icon-sm" variant="ghost" aria-label="前进下一页" disabled={s.busy || journey.index===journey.pages.length-1} onClick={()=>travel(1)}><ArrowRightIcon/></Button></Tooltip>
         </div>
         <div className="settings-page-heading">
-          {!compactWorkspace && <span>{page.group}</span>}
-          <h1 id="settings-page-title" className={compactWorkspace && narrow ? 'sr-only' : undefined}>{page.label}</h1>
+          <h1 id="settings-page-title" className={narrow ? 'sr-only' : undefined}>{page.label}</h1>
         </div>
-        {compactWorkspace && pagePicker}
+        {pagePicker}
       </div>
       <div className="settings-global-actions flex items-center gap-2">
         <Tooltip content={`搜索设置（${shortcutKeys.format('CommandOrControl+K')}）`}>
-          <Button ref={searchTrigger} className={compactWorkspace ? 'settings-quick-find' : undefined} aria-label="搜索设置" disabled={s.busy || !s.config} onClick={openSettingsSearch}>
+          <Button className="settings-quick-find" aria-label="搜索设置" disabled={s.busy || !s.config} onClick={openSettingsSearch}>
             <SearchIcon aria-hidden="true" /><span className="settings-action-label">搜索设置</span><kbd className="settings-search-key">{shortcutKeys.format('CommandOrControl+K')}</kbd>
           </Button>
         </Tooltip>
-        {!readonly() && !compactWorkspace && <Button aria-label="显示独立插件栏" disabled={s.busy} onClick={() => void workspaceCall('show').catch(e => store.notice(String(e), true))}><PuzzleIcon aria-hidden="true" /><span className="settings-action-label">插件栏</span></Button>}
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} actionsRef={menuActions}>
-          <DropdownMenuTrigger ref={menuTrigger} render={<Button size={compactWorkspace ? 'icon-sm' : undefined} aria-label="更多设置操作" disabled={s.busy || !s.config} />}>
-            <EllipsisIcon data-icon="inline-start" aria-hidden="true" />{!compactWorkspace && <span className="settings-action-label">更多</span>}
+          <DropdownMenuTrigger ref={menuTrigger} render={<Button size="icon-sm" aria-label="更多设置操作" disabled={s.busy || !s.config} />}>
+            <EllipsisIcon data-icon="inline-start" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="settings-global-menu">
             <DropdownMenuGroup>
-              {compactWorkspace && !readonly() && <DropdownMenuItem onClick={() => void workspaceCall('show').catch(e => store.notice(String(e), true))}><PuzzleIcon aria-hidden="true" />显示插件栏</DropdownMenuItem>}
+              {!readonly() && <DropdownMenuItem onClick={() => void workspaceCall('show').catch(e => store.notice(String(e), true))}><PuzzleIcon aria-hidden="true" />显示插件栏</DropdownMenuItem>}
               <DropdownMenuItem onClick={openJson}>{readonly() ? '查看完整配置 JSON' : '编辑完整配置 JSON'}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('updates')}>版本与更新</DropdownMenuItem>
             </DropdownMenuGroup>
@@ -169,21 +167,22 @@ export function Settings({ store }: { store: SettingsStore }) {
         {readonly() && <Button onClick={() => host().requestSettingsClose?.()} disabled={s.busy}>关闭</Button>}
       </div>
     </header>
-    {!compactWorkspace && pagePicker}
     <div className={`settings-workspace grid${narrow?' settings-workspace-narrow':''}`}>
-      {!narrow?<Navigation key={sourceKey} page={module} busy={s.busy} preview={readonly()} useGlobalSearch={compactWorkspace} onNavigate={navigate}/>:null}
-      <main ref={main} id="settings-content" aria-labelledby="settings-page-title" tabIndex={-1} className="settings-main min-w-0" onScroll={()=>{if(main.current)positions.set(journeyRef.current.pages[journeyRef.current.index],main.current.scrollTop);}}><div key={`${sourceKey}:${module}`} className={`settings-page${module==='web' || module==='memo'?' settings-page-wide':''}`}>
+      {!narrow?<Navigation key={sourceKey} page={module} busy={s.busy} preview={readonly()} installedCount={installed.length} useGlobalSearch onNavigate={navigate}/>:null}
+      <main ref={main} id="settings-content" aria-labelledby="settings-page-title" tabIndex={-1} className="settings-main min-w-0" onScroll={()=>{if(main.current)positions.set(journeyRef.current.pages[journeyRef.current.index],main.current.scrollTop);}}><div key={`${sourceKey}:${marketView ? 'plugin-market' : module}`} className={`settings-page${marketView || module==='web' || module==='memo'?' settings-page-wide':''}`}>
         {!s.config ? <EmptyState error={!s.busy}>{s.busy ? '正在读取配置…' : '配置未能加载'}<Button disabled={s.busy} onClick={() => void store.run(() => store.load())}>重试</Button></EmptyState> : <>
-          {module === 'canvas' ? <CanvasSettings /> : module === 'appearance' ? <Theme /> : <>
+          {marketView ? <Market readOnly={readonly()} section={{view:marketView,onChange:view=>navigate(view==='installed'?'plugins-installed':'plugins-discover')}}/> : module === 'plugins-built-in' ? <ul className="settings-built-in-plugins">
+            {builtInNavigationItems.map(({id,label,Icon})=><li key={id}><Button variant="ghost" disabled={s.busy} onClick={()=>navigate(id)}><Icon aria-hidden="true"/>{label}<ChevronRightIcon aria-hidden="true"/></Button></li>)}
+          </ul> : module === 'canvas' ? <CanvasSettings /> : <>
             {['core', 'data', 'updates', 'search', 'menubar'].includes(module) ? <Core store={store} section={module === 'core' ? 'general' : module} /> : <fieldset disabled={s.busy || s.conflict || (readonly() && module !== 'web' && module !== 'memo' && module !== 'tools')} className="settings-fieldset">{module === 'web' ? <WebCatalog store={store} /> : module === 'memo' ? <Memos store={store} /> : module === 'clipboard' ? <Clipboard store={store} /> : module === 'tools' ? <Tools store={store} /> : <Applications store={store} />}</fieldset>}
           </>}
         </>}
       </div></main></div>
-    {readonly() ? <PluginPanelPreview open={pluginsOpen} title={pluginTitle} module={pluginModule} busy={s.busy} returnFocus={previewReturnFocus} onClose={() => setPluginsOpen(false)} onManage={() => setPluginModule('extensions')} /> : null}
-    <SettingsFooter store={store} compact={compactWorkspace} reviewTrigger={reviewTrigger} onReview={()=>{if(finishJson())setReview(true);}} onReset={()=>setReset(true)} />
+    {readonly() ? <PluginPanelPreview open={pluginsOpen} title={pluginTitle} module={pluginModule} busy={s.busy} onClose={() => setPluginsOpen(false)} onManage={() => setPluginModule('extensions')} /> : null}
+    <SettingsFooter store={store} compact reviewTrigger={reviewTrigger} onReview={()=>{if(finishJson())setReview(true);}} onReset={()=>setReset(true)} />
     {searchOpen ? <SettingsSearch onClose={()=>setSearchOpen(false)} onChoose={entry=>{
-      if(!navigate(entry.page,searchTrigger.current))return {ok:false,error:store.snapshot().notice || '当前无法切换，请先处理未完成的配置编辑。'};
-      setSearchOpen(false);if(entry.page!=='extensions')requestLocation(entry.page,entry.target);return {ok:true};
+      if(!navigate(entry.page))return {ok:false,error:store.snapshot().notice || '当前无法切换，请先处理未完成的配置编辑。'};
+      setSearchOpen(false);requestLocation(entry.page,entry.target);return {ok:true};
     }} />:null}
     {review && s.config ? <DraftReview store={store} onClose={()=>setReview(false)} onNavigate={id=>{
       if(s.busy || !navigate(id))return;setReview(false);
@@ -193,6 +192,6 @@ export function Settings({ store }: { store: SettingsStore }) {
     {reset ? <Dialog title="重置未保存修改" busy={s.busy} onClose={() => setReset(false)}><p>{s.conflict ? '保留源草稿并加载当前目标配置？' : '放弃当前编辑，重新加载已保存配置？'}</p><Button onClick={() => void store.run(async () => { await store.reset(); setReset(false); })}>确认重置</Button></Dialog> : null}
     {close ? <Dialog title="关闭设置" busy={s.busy} onClose={() => setClose(false)} notice={s.error ? s.notice : undefined}><p>尚有未保存修改，关闭前请选择如何处理。</p><div className="settings-dialog-actions"><Button disabled={s.busy} onClick={() => setClose(false)}>取消</Button><Button disabled={s.busy} onClick={() => void store.run(async () => { store.persist(); await call('closeSettings'); })}>保留草稿并关闭</Button><Button className="primary" disabled={s.busy || s.conflict} onClick={() => void store.run(async () => { await store.save(); if (!store.dirty) await call('closeSettings'); })}>保存并关闭</Button></div></Dialog> : null}
     {s.recovery ? <Dialog title="发现本地草稿" busy={false} onClose={() => store.patch({ recovery: null })}><p>{new Date(s.recovery.savedAt).toLocaleString()} 保存的草稿。{s.recovery.baseSignature !== signature(s.saved) ? '磁盘配置已发生变化，请核对后恢复。' : ''}</p><pre className="settings-code">{s.recovery.jsonDirty ? s.recovery.jsonText : JSON.stringify(s.recovery.config, null, 2)}</pre><Button disabled={!s.recovery.origin} onClick={() => void store.run(async () => store.recoverDraft())}>恢复同源草稿</Button><Button onClick={() => store.patch({ recovery: null })}>暂不恢复</Button></Dialog> : null}
-  </div>{readonly() ? <PluginDock installed={installed} busy={s.busy} open={pluginsOpen} active={pluginModule} onSelect={id => { if (pluginsOpen && pluginModule === id) setPluginsOpen(false); else navigate(id); }} /> : null}</div></ViewStateContext.Provider>;
+  </div>{readonly() ? <PluginDock installed={installed} busy={s.busy} open={pluginsOpen} active={pluginModule} onSelect={id => { if (pluginsOpen && pluginModule === id) setPluginsOpen(false); else if (finishJson()) showPluginPreview(id); }} /> : null}</div></ViewStateContext.Provider>;
 }
 export function mountSettings(element: HTMLElement) { const store = new SettingsStore(), root = createRoot(element); root.render(<Settings store={store} />); return () => { store.dispose(); root.unmount(); }; }

@@ -3,6 +3,7 @@ import { Button } from '../shared/ui';
 import { readonly, write } from './api';
 import { Choice, Row, Shortcut, Toggle } from './fields';
 import { SettingsStore, useSettings } from './store';
+import { Theme } from './Theme';
 import './general-settings.css';
 
 const proxyAdapters = [
@@ -40,6 +41,10 @@ export function GeneralSettings({ store }: { store: SettingsStore }) {
   }
 
   return <div className="settings-core-general">
+    <section className="settings-core-group" aria-labelledby="general-appearance-heading">
+      <h2 id="general-appearance-heading" className="settings-core-group-title">外观</h2>
+      <Theme />
+    </section>
     <section className="settings-core-group" aria-labelledby="general-launch-heading">
       <h2 id="general-launch-heading" className="settings-core-group-title">启动与快捷键</h2>
       <Shortcut label="唤出 FlowHub" value={core.hotkey || 'Alt+Space'} taken={Object.values(core.scopeShortcuts)} disabled={locked}
