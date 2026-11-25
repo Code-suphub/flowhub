@@ -23,7 +23,7 @@ import './settings.css';
 import './glass.css';
 import './layout.css';
 import './compact-workspace.css';
-import { PluginDock, PluginFrame } from '../plugin-workspace/controls';
+import { PluginDock, PluginPanelPreview } from '../plugin-workspace/controls';
 import { workspaceCall } from '../plugin-workspace/native';
 import { Theme } from './Theme';
 import { bindNativeSettings } from './native';
@@ -53,7 +53,8 @@ export function Settings({ store }: { store: SettingsStore }) {
   const jsonBefore = useRef<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false), [pluginModule, setPluginModule] = useState('extensions');
-  const menuTrigger = useRef<HTMLButtonElement>(null), reviewTrigger = useRef<HTMLButtonElement>(null);
+  const previewReturnFocus = useRef<HTMLElement | null>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null), reviewTrigger = useRef<HTMLButtonElement>(null), searchTrigger = useRef<HTMLButtonElement>(null);
   const menuActions = useRef<{ unmount(): void; close(): void } | null>(null);
   useLayoutEffect(() => { if (!menuOpen) menuActions.current?.unmount(); }, [menuOpen]);
   useEffect(() => {
@@ -77,10 +78,18 @@ export function Settings({ store }: { store: SettingsStore }) {
   }
   function openJson() { jsonBefore.current = store.snapshot().jsonText; setJson(true); }
   function cancelJson() { if (!store.snapshot().busy) { store.restoreJson(jsonBefore.current); setJson(false); } }
-  function navigate(id: string) {
+  function navigate(id: string, previewOrigin?: HTMLElement | null) {
     if(!isPage(id) && id!=='extensions' && !id.startsWith('plugin:'))return false;
     if (store.snapshot().busy || !finishJson()) return false;
-    if (id === 'extensions' || id.startsWith('plugin:')) { if (!readonly()) { void workspaceCall('select', id).catch(e => store.notice(String(e), true)); } else { setPluginModule(id); setPluginsOpen(true); } }
+    if (id === 'extensions' || id.startsWith('plugin:')) {
+      if (!readonly()) {
+        void workspaceCall('select', id).catch(e => store.notice(String(e), true));
+      } else {
+        previewReturnFocus.current = previewOrigin ?? null;
+        setPluginModule(id);
+        setPluginsOpen(true);
+      }
+    }
     else if(isPage(id)) {
       const current=journeyRef.current;
       if(current.pages[current.index]!==id){
@@ -118,7 +127,7 @@ export function Settings({ store }: { store: SettingsStore }) {
   },[store]);
   const page=navigationItems.find(item=>item.id===module)!;
   const pagePicker = narrow ? <div className="settings-mobile-navigation">
-    <Select label="切换页面" value={module} options={[...navigationItems.map(item=>({value:item.id,label:item.label})),{value:'extensions',label:'插件市场（独立工作区）'}]} onChange={id=>{navigationFocus.current='page';navigate(id);}} disabled={s.busy}/>
+    <Select id="settings-page-picker" label="切换页面" value={module} options={[...navigationItems.map(item=>({value:item.id,label:item.label})),{value:'extensions',label:'插件市场（独立工作区）'}]} onChange={id=>{navigationFocus.current='page';navigate(id,document.getElementById('settings-page-picker'));}} disabled={s.busy}/>
   </div> : null;
   const pluginTitle = pluginModule === 'extensions' ? '插件市场' : installed.find(plugin => `plugin:${plugin.manifest.id}` === pluginModule)?.manifest.name || '插件';
   return <ViewStateContext.Provider value={viewMemory}><div className={`settings-stage${readonly() ? '' : ' settings-detached-workspace'}`}><div className="settings-landscape" aria-hidden="true" /><div className={`fh-root settings-shell flex flex-col${compactWorkspace ? ' settings-compact-workspace' : ''}`} aria-busy={s.busy} onFocusCapture={event=>{
@@ -140,7 +149,7 @@ export function Settings({ store }: { store: SettingsStore }) {
       </div>
       <div className="settings-global-actions flex items-center gap-2">
         <Tooltip content={`搜索设置（${shortcutKeys.format('CommandOrControl+K')}）`}>
-          <Button className={compactWorkspace ? 'settings-quick-find' : undefined} aria-label="搜索设置" disabled={s.busy || !s.config} onClick={openSettingsSearch}>
+          <Button ref={searchTrigger} className={compactWorkspace ? 'settings-quick-find' : undefined} aria-label="搜索设置" disabled={s.busy || !s.config} onClick={openSettingsSearch}>
             <SearchIcon aria-hidden="true" /><span className="settings-action-label">搜索设置</span><kbd className="settings-search-key">{shortcutKeys.format('CommandOrControl+K')}</kbd>
           </Button>
         </Tooltip>
@@ -170,10 +179,10 @@ export function Settings({ store }: { store: SettingsStore }) {
           </>}
         </>}
       </div></main></div>
-    {readonly() && pluginsOpen ? <Dialog title={pluginTitle} busy={s.busy} modal={false} onClose={() => setPluginsOpen(false)} className="settings-plugin-drawer"><div className="settings-drawer-handle" aria-hidden="true" /><PluginFrame module={pluginModule} onManage={() => setPluginModule('extensions')} /><p className="settings-plugin-caption">{readonly() ? '浏览器预览 · 插件安装与管理请在桌面 App 中操作' : '本地插件工作区'}</p></Dialog> : null}
+    {readonly() ? <PluginPanelPreview open={pluginsOpen} title={pluginTitle} module={pluginModule} busy={s.busy} returnFocus={previewReturnFocus} onClose={() => setPluginsOpen(false)} onManage={() => setPluginModule('extensions')} /> : null}
     <SettingsFooter store={store} compact={compactWorkspace} reviewTrigger={reviewTrigger} onReview={()=>{if(finishJson())setReview(true);}} onReset={()=>setReset(true)} />
     {searchOpen ? <SettingsSearch onClose={()=>setSearchOpen(false)} onChoose={entry=>{
-      if(!navigate(entry.page))return {ok:false,error:store.snapshot().notice || '当前无法切换，请先处理未完成的配置编辑。'};
+      if(!navigate(entry.page,searchTrigger.current))return {ok:false,error:store.snapshot().notice || '当前无法切换，请先处理未完成的配置编辑。'};
       setSearchOpen(false);if(entry.page!=='extensions')requestLocation(entry.page,entry.target);return {ok:true};
     }} />:null}
     {review && s.config ? <DraftReview store={store} onClose={()=>setReview(false)} onNavigate={id=>{

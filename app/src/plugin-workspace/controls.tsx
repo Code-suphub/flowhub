@@ -1,11 +1,31 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { EllipsisIcon, PuzzleIcon, GripVerticalIcon, XIcon } from 'lucide-react';
 import { FeatureIcon, PluginIcon } from '../shared/FeatureIcon';
 import { Button } from '../shared/ui';
+import { Badge } from '../components/ui/badge';
+import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { dragWorkspace, inspectPlugin } from './native';
 import { host, readonly, type InstalledPlugin } from '../settings/api';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
+
+export function PluginPanelHeader({ title, onClose, preview = false, busy = false }: { title: string; onClose: () => void; preview?: boolean; busy?: boolean }) {
+  return <header>
+    {preview ? <DialogTitle render={<h1 title={title} />}>{title}</DialogTitle> : <h1 title={title}>{title}</h1>}
+    {preview ? <Badge variant="outline">只读预览</Badge> : null}
+    <Button variant="ghost" size="icon-sm" aria-label="收起插件面板" title="收起插件面板" disabled={busy} onClick={onClose}><XIcon aria-hidden="true" /></Button>
+  </header>;
+}
+
+export function PluginPanelPreview({ open, title, module, busy, returnFocus, onClose, onManage }: { open: boolean; title: string; module: string; busy: boolean; returnFocus: RefObject<HTMLElement | null>; onClose: () => void; onManage: () => void }) {
+  return <Dialog open={open} modal={false} disablePointerDismissal onOpenChange={next => { if (!next && !busy) onClose(); }}>
+    <DialogContent className="fh-root workspace-panel workspace-panel-preview" showCloseButton={false} showBackdrop={false} aria-busy={busy} finalFocus={() => returnFocus.current?.isConnected ? returnFocus.current : true}>
+      <PluginPanelHeader title={title} preview busy={busy} onClose={onClose} />
+      <div className="workspace-panel-content"><PluginFrame module={module} onManage={onManage} /></div>
+    </DialogContent>
+  </Dialog>;
+}
+
 type PluginFrameProps = { module: string; onManage?: () => void };
 
 export function PluginFrame(props: PluginFrameProps) {
@@ -54,7 +74,7 @@ function PluginFrameContent({ module, onManage }: PluginFrameProps) {
       </EmptyContent>
     </Empty>;
   }
-  return <iframe ref={frame} id="pluginFrame" title="插件工作区" className="settings-plugin-frame" sandbox={module === 'extensions' ? undefined : 'allow-scripts'} referrerPolicy="no-referrer" />;
+  return <iframe ref={frame} id="pluginFrame" title="插件工作区" className="workspace-plugin-frame" sandbox={module === 'extensions' ? undefined : 'allow-scripts'} referrerPolicy="no-referrer" />;
 }
 export function PluginDock({ installed, busy, open, active, onSelect, floating = false, onHide }: { installed: InstalledPlugin[]; busy: boolean; open: boolean; active: string; onSelect: (id: string) => void; floating?: boolean; onHide?: () => void }) {
   const enabled = installed.filter(plugin => plugin.enabled);

@@ -40,14 +40,6 @@
 .settings-core-group-title { margin-bottom:8px; font-size:12px; }
 .settings-core-group .settings-row:last-child { border-bottom:0; }
 .settings-core-group .settings-row { min-height:54px; }
-.fh-dialog.settings-plugin-drawer { top:auto; bottom:92px; left:50%; transform:translateX(-50%); translate:none; width:min(900px,calc(100vw - 64px)); max-width:none; max-height:calc(100dvh - 120px); border:1px solid var(--fh-glass-edge); border-radius:26px; padding:26px 24px 12px; background:linear-gradient(135deg,var(--fh-glass-highlight),transparent 75%),color-mix(in srgb,var(--fh-surface) 76%,transparent); -webkit-backdrop-filter:blur(40px) saturate(130%); backdrop-filter:blur(40px) saturate(130%); box-shadow:var(--fh-shadow-popover),inset 0 1px 0 var(--fh-glass-edge); overflow:auto; }
-.fh-dialog.settings-plugin-drawer { --fh-text:var(--fh-study-ink); --fh-muted:var(--fh-study-muted); background:linear-gradient(135deg,var(--fh-study-selected),transparent 75%),color-mix(in srgb,var(--fh-surface) 94%,transparent); }
-.settings-drawer-handle { position:absolute; top:10px; left:calc(50% - 18px); width:36px; height:4px; border-radius:4px; background:var(--fh-border); }
-.settings-plugin-drawer[data-open] { animation:settings-drawer-enter .2s cubic-bezier(.2,.8,.2,1); }
-@keyframes settings-drawer-enter { from { opacity:0; transform:translate(-50%,24px); } to { opacity:1; transform:translate(-50%,0); } }
-@media(prefers-reduced-motion:reduce) { .settings-plugin-drawer[data-open] { animation:none; } }
-.settings-plugin-drawer .settings-plugin-frame { display:block; width:100%; height:min(440px,50dvh); min-height:180px; border:0; border-radius:16px; background:transparent; }
-.settings-plugin-caption { margin:12px 0 0; color:var(--fh-muted); font-size:11px; text-align:center; }
 .settings-plugin-dock { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; width:max-content; max-width:min(640px,calc(100vw - 48px)); box-sizing:border-box; padding:7px; border:1px solid var(--fh-study-rim); border-radius:30px; background:var(--fh-study-selected); color:var(--fh-study-ink); backdrop-filter:blur(32px) saturate(130%); -webkit-backdrop-filter:blur(32px) saturate(130%); box-shadow:0 10px 28px var(--fh-study-shadow),inset 0 1px 0 var(--fh-study-rim); z-index:20; }
 .settings-plugin-dock .fh-button { border:0; border-radius:22px; height:38px; background:transparent; color:inherit; font-weight:500; gap:9px; padding:8px 12px; flex:none; }
 .settings-plugin-dock .fh-button:hover { background:var(--fh-study-card); }
@@ -65,13 +57,12 @@ html[data-native-glass="true"] .settings-landscape { opacity:.72; filter:blur(44
 html[data-native-glass="true"] .settings-shell { background:var(--fh-study-reading-pane); -webkit-backdrop-filter:none; backdrop-filter:none; }
 @media(max-width:767px) {
   .settings-core-group,.settings-core-group:last-child { padding:14px; }
-  .fh-dialog.settings-plugin-drawer { bottom:84px; width:calc(100vw - 24px); padding:26px 14px 12px; max-height:calc(100dvh - 100px); }
   .settings-plugin-dock { max-width:calc(100vw - 24px); bottom:14px; }
   .settings-dock-label { display:none; }
   .settings-plugin-dock .fh-button { padding-inline:9px; font-size:12px; gap:6px; }
 }
-@media(prefers-reduced-transparency:reduce) { .settings-stage .settings-shell,html[data-native-glass="true"] .settings-shell { background:var(--fh-surface); backdrop-filter:none; -webkit-backdrop-filter:none; } .settings-landscape { display:none; } .fh-dialog.settings-plugin-drawer { background:var(--fh-surface); backdrop-filter:none; -webkit-backdrop-filter:none; } }
+@media(prefers-reduced-transparency:reduce) { .settings-stage .settings-shell,html[data-native-glass="true"] .settings-shell { background:var(--fh-surface); backdrop-filter:none; -webkit-backdrop-filter:none; } .settings-landscape { display:none; } }
 @media(prefers-contrast:more) {
-  .settings-stage .settings-shell,html[data-native-glass="true"] .settings-shell,.fh-dialog.settings-plugin-drawer {background:var(--fh-surface);backdrop-filter:none;-webkit-backdrop-filter:none;--fh-muted:var(--fh-text);--fh-border:color-mix(in srgb,var(--fh-text) 55%,var(--fh-surface));}
+  .settings-stage .settings-shell,html[data-native-glass="true"] .settings-shell {background:var(--fh-surface);backdrop-filter:none;-webkit-backdrop-filter:none;--fh-muted:var(--fh-text);--fh-border:color-mix(in srgb,var(--fh-text) 55%,var(--fh-surface));}
   .settings-landscape {display:none;}
 }

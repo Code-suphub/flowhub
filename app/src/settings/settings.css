@@ -74,7 +74,6 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-tree-row[aria-selected=true] { background:var(--fh-selected-bg); color:var(--fh-selected-text); box-shadow:inset 3px 0 var(--fh-selected-border); }
 .settings-tree-row:focus-visible { outline:2px solid var(--fh-selection-focus); outline-offset:-2px; }
 .settings-tree-row .fh-button { border:0; padding:0 4px; min-height:26px; }
-.settings-plugin-frame { width:100%; min-height:70vh; border:0; background:var(--fh-surface); }
 .settings-error { color:var(--fh-danger); }
 .settings-main :is(p,summary,[data-slot=alert-title],[data-slot=alert-description]) {min-width:0;overflow-wrap:anywhere;}
 .settings-main [data-slot=alert] {min-width:0;}

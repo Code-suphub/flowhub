@@ -6,7 +6,7 @@ import { Button } from '../shared/ui';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { host, readonly, type InstalledPlugin } from '../settings/api';
-import { PluginDock, PluginFrame } from './controls';
+import { PluginDock, PluginFrame, PluginPanelHeader } from './controls';
 import { workspaceCall, type WorkspaceSnapshot } from './native';
 import '../settings/glass.css';
 import './workspace.css';
@@ -69,10 +69,7 @@ export function PluginWorkspace({ view }: { view: 'dock' | 'panel' }) {
     if((event.target as HTMLElement).closest('[role=dialog],[role=menu],[role=listbox]')!==event.currentTarget)return;
     event.preventDefault();run('close');
   }}>
-    <header>
-      <h1 title={title}>{title}</h1>
-      <Button variant="ghost" size="icon-sm" aria-label="收起插件面板" title="收起插件面板" onClick={() => run('close')}><XIcon aria-hidden="true" /></Button>
-    </header>
+    <PluginPanelHeader title={title} onClose={() => run('close')} />
     {error ? <Alert variant="destructive" className="workspace-connection-error"><AlertDescription>{error}</AlertDescription><Button size="sm" disabled={loading} onClick={()=>setAttempt(value=>value+1)}>重新连接</Button></Alert> : null}
     <div className="workspace-panel-content">{state.open && loaded && state.module === 'overflow' ? <div className="workspace-plugin-grid">{enabled.slice(3).map(p => <Button key={p.manifest.id} title={p.manifest.name} onClick={() => run('select', `plugin:${p.manifest.id}`)}><PluginIcon id={p.manifest.id}/><span>{p.manifest.name}</span></Button>)}{enabled.length<=3?<Empty><EmptyHeader><EmptyMedia variant="icon"><PuzzleIcon /></EmptyMedia><EmptyTitle>没有更多插件</EmptyTitle><EmptyDescription>已启用的插件都在插件栏中，也可以浏览插件市场。</EmptyDescription></EmptyHeader><Button onClick={()=>run('select','extensions')}>浏览插件市场</Button></Empty>:null}</div> : state.open && loaded ? <PluginFrame module={state.module} onManage={() => run('select', 'extensions')} /> : <Empty className="workspace-pending" role="status"><EmptyHeader><EmptyMedia variant="icon">{loading?<LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />:<PuzzleIcon />}</EmptyMedia><EmptyTitle>{loading?'正在准备插件工作区…':!loaded?'尚未连接插件工作区':'从插件栏选择一个插件'}</EmptyTitle><EmptyDescription>{loading?'正在读取本机插件与窗口状态。':!loaded?'通过上方“重新连接”重试。':'可以打开已有插件或浏览插件市场。'}</EmptyDescription></EmptyHeader>{loaded&&!loading?<Button onClick={()=>run('select','extensions')}>浏览插件市场</Button>:null}</Empty>}</div>
   </section>;

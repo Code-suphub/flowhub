@@ -43,6 +43,8 @@ test('browser preview navigation keeps selected market/plugin highlighted after 
  const selected=()=>[...view.container.querySelectorAll('.settings-plugin-dock [aria-pressed=true]')].map(b=>b.textContent);
  const trigger=view.container.querySelector('.settings-plugin-dock [aria-label="插件市场"]');
  await h.click(trigger);assert.deepEqual(selected(),['插件市场']);
+ assert.equal(document.querySelector('.workspace-panel > header h1').textContent,'插件市场');
+ assert.match(document.querySelector('.workspace-panel > header').textContent,/只读预览/);
  await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['插件市场']);
  assert.equal(document.querySelector('nav[aria-label="插件设置"]'),null);
  assert.equal(document.querySelector('[data-slot="dialog-overlay"]'),null,'dock remains interactive while the plugin panel is open');
@@ -52,7 +54,7 @@ test('browser preview navigation keeps selected market/plugin highlighted after 
  assert.equal(document.querySelector('[data-slot="dialog-title"]').textContent,'Example');
  await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['Example']);
  enabled=false;await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['插件市场']);
- await h.key(document.querySelector('[role=dialog] [aria-label="关闭"]'),'Escape');
+ await h.key(document.querySelector('[role=dialog] [aria-label="收起插件面板"]'),'Escape');
  assert.equal(document.querySelector('iframe'),null);
  await h.act(async()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  assert.equal(document.activeElement,trigger);
