@@ -60,7 +60,9 @@ test('memo browser preview can fold and temporarily drag categories without edit
  const {store,writes}=await h.loaded({},true),{Memos}=require('../../src/settings/Collections.tsx'),view=await h.mount(Memos,{store});
  const group=path=>view.container.querySelector('[data-memo-category="'+path+'"]');
  assert.equal(h.button(view.container,'新增备忘').disabled,true);
- assert.equal(view.container.querySelector('[aria-label="标题"]').readOnly,true);
+ assert.ok(view.container.querySelector('.settings-memo-reader [data-collection-heading]'));
+ assert.equal(view.container.querySelector('[aria-label="标题"]'),null);
+ assert.equal(view.container.querySelector('[aria-label="命令或备忘内容"]').readOnly,true);
  await h.click(group('编程 / 数据库 / MySQL'));
  assert.equal(group('编程 / 数据库 / MySQL').getAttribute('aria-expanded'),'false');
  const source=group('编程 / 数据库 / PostgreSQL'),target=group('编程 / 数据库 / MySQL');

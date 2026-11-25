@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon, MoreHorizontalIcon, PlusIcon, MoveRightIcon, Trash2Icon, ListChecksIcon, SearchIcon } from 'lucide-react';
+import { FolderIcon, FolderOpenIcon, Globe2Icon, TerminalSquareIcon, MoreHorizontalIcon, PlusIcon, MoveRightIcon, Trash2Icon, ListChecksIcon, SearchIcon, ChevronRightIcon, XIcon } from 'lucide-react';
 import { Button, Dialog, Input } from '../shared/ui';
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
 import { ActionMenu } from '../shared/ActionMenu';
@@ -12,6 +12,7 @@ import { useTreeView } from './useTreeView';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { SettingsStore, useSettings } from './store';
 import { ViewDetails, useViewScroll, useViewState } from './view-state';
+import './memo-settings.css';
 
 export function WebCatalog({ store }: { store: SettingsStore }) {
   const s = useSettings(store), preview = readonly(), sourceNodes: WebNode[] = s.config!.plugins.web.settings.items;
@@ -298,7 +299,7 @@ function MemoTreeRow({ entry, depth, label, count, expanded, selected, onActivat
   }} onDragStart={event => drag.start(entry, event.dataTransfer)} onDragEnd={drag.end} onDragOver={event => { if (drag.over(event.currentTarget, event.clientY)) event.preventDefault(); }} onDrop={event => { event.preventDefault(); drag.drop(event.currentTarget, event.clientY); }}>
     {category ? <Button className="settings-memo-toggle" aria-label={(expanded ? '收起 ' : '展开 ') + label} onClick={event => { event.stopPropagation(); onActivate(); }}>{expanded ? <FolderOpenIcon size={15} strokeWidth={1.8} aria-hidden="true" /> : <FolderIcon size={15} strokeWidth={1.8} aria-hidden="true" />}</Button> : <span className="settings-memo-leaf" aria-hidden="true"><TerminalSquareIcon size={14} strokeWidth={1.8} /></span>}
     <span className="settings-memo-label">{label}</span>
-    {category ? <span className="settings-memo-count">{count}</span> : null}
+    {category ? <span className="settings-memo-count">{count}</span> : <ChevronRightIcon className="settings-memo-disclosure" aria-hidden="true" />}
     <MemoDragHandle entry={entry} drag={drag} />
   </div>;
 }
@@ -309,9 +310,9 @@ function MemoTreeView({ branch, depth, collapsed, forceOpen, selected, onSelect,
   return <>
     {branch.children.map(child => {
       const open = forceOpen || !collapsed.has(child.path);
-      return <div key={child.path} className="settings-memo-branch">
+      return <div key={child.path} className="settings-memo-branch" style={{ '--memo-guide-inset': `${20 + (depth - 1) * 16}px` } as CSSProperties}>
         <MemoTreeRow entry={{ kind: 'category', id: child.path }} depth={depth} label={child.name} count={child.count} expanded={open} onActivate={() => onToggle(child.path)} onSetOpen={value => onSetOpen(child.path, value)} drag={drag} />
-        {open ? <div role="group"><MemoTreeView branch={child} depth={depth + 1} collapsed={collapsed} forceOpen={forceOpen} selected={selected} onSelect={onSelect} onToggle={onToggle} onSetOpen={onSetOpen} drag={drag} /></div> : null}
+        {open ? <div role="group" className="settings-memo-group"><MemoTreeView branch={child} depth={depth + 1} collapsed={collapsed} forceOpen={forceOpen} selected={selected} onSelect={onSelect} onToggle={onToggle} onSetOpen={onSetOpen} drag={drag} /></div> : null}
       </div>;
     })}
     {branch.items.map(item => <MemoTreeRow key={item.id} entry={{ kind: 'item', id: item.id }} depth={depth} label={item.title} selected={selected === item.id} onActivate={() => onSelect(item.id)} drag={drag} />)}
@@ -337,6 +338,8 @@ export function Memos({ store }: { store: SettingsStore }) {
     return paths;
   }, [allTree]);
   const current = items.find(item => item.id === selected) || items[0];
+  const tagCount = Array.isArray(current?.tags) ? current.tags.length : current?.tags ? 1 : 0;
+  const advancedSummary = [current?.description?.trim() && '含说明', tagCount && `${tagCount} 个标签`].filter(Boolean).join(' · ');
   function selectMemo(id: string) { setSelected(id); setCategory(null); setTags(null);pane.openDetail(); }
   function edit(action: (items: Memo[]) => void, key?: string) { store.edit(c => { c.plugins.memo.settings.items ||= clone(defaults); action(c.plugins.memo.settings.items); }, key); }
   function finishDrag() { dragging.current = null; setDropTarget(null); }
@@ -380,29 +383,49 @@ export function Memos({ store }: { store: SettingsStore }) {
     setFilter('');setSelected(id);setCategory(null);setTags(null);setCollapsed(previous=>{const next=new Set(previous);next.delete('其他');return next;});pane.openDetail(true);
   }
   return <div ref={pane.ref} className="settings-collection-page settings-memos">
-    <div className="settings-collection-toolbar flex flex-wrap items-center justify-between gap-3"><span className="settings-collection-count">{items.length} 条 · {previewItems ? '临时预览' : configured ? '自定义库' : '内置命令库'}</span><div className="flex items-center gap-2"><Button className="primary" disabled={preview} onClick={addMemo}><PlusIcon data-icon="inline-start" />新增备忘</Button><ActionMenu label="备忘录操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
-      {id:'expand',label:'全部展开',onSelect:()=>setCollapsed(new Set())},
-      {id:'collapse',label:'全部收起',onSelect:()=>setCollapsed(new Set(tree.children.map(child=>child.path)))},
-      {id:'reset',label:'恢复内置备忘录…',disabled:preview,onSelect:()=>prepareConfirm('reset')}
-    ]} /></div></div>
     <div className="settings-memo-workspace grid" data-detail-open={pane.detailOpen}>
-      <aside className="settings-memo-nav min-w-0" data-collection-list onFocusCapture={pane.onListFocus}>
-        <div className="settings-memo-search"><Input aria-label="筛选备忘录" type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="搜索标题、分类或内容…" /></div>
-        <div className="settings-collection-list-meta"><span>{deferred ? `匹配 ${tree.count} 条` : '全部分类'}</span></div>
-        <div ref={memoScroll.ref} onScroll={memoScroll.onScroll} className="settings-memo-tree" role="tree" aria-label="备忘录分类">{!tree.children.length && !tree.items.length ? <CollectionEmpty title={deferred ? "没有匹配的备忘" : "暂无备忘录"} icon={<TerminalSquareIcon />}>{deferred ? <Button onClick={()=>setFilter('')}>清除筛选</Button> : null}</CollectionEmpty> : <MemoTreeView branch={tree} depth={1} collapsed={collapsed} forceOpen={Boolean(deferred)} selected={current?.id || ''} onSelect={selectMemo} onToggle={path => setCollapsed(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; })} onSetOpen={(path, open) => setCollapsed(previous => { const next = new Set(previous); if (open) next.delete(path); else next.add(path); return next; })} drag={drag} />}</div>
+      <aside className="settings-memo-nav min-w-0" aria-label="备忘录库" data-collection-list onFocusCapture={pane.onListFocus}>
+        <div className="settings-memo-nav-header flex flex-wrap items-center justify-between gap-2">
+          <span className="settings-memo-library-count" role="status">
+            {deferred ? `匹配 ${tree.count} / ${items.length} 条` : `${items.length} 条 · ${previewItems ? '临时预览' : configured ? '自定义库' : '内置命令库'}`}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button className="primary" disabled={preview} onClick={addMemo}><PlusIcon data-icon="inline-start" />新增备忘</Button>
+            <ActionMenu label="备忘录操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[
+              {id:'expand',label:'全部展开',onSelect:()=>setCollapsed(new Set())},
+              {id:'collapse',label:'全部收起',onSelect:()=>setCollapsed(new Set(tree.children.map(child=>child.path)))},
+              {id:'reset',label:'恢复内置备忘录…',disabled:preview,onSelect:()=>prepareConfirm('reset')}
+            ]} />
+          </div>
+        </div>
+        <div className="settings-memo-search">
+          <SearchIcon aria-hidden="true" />
+          <Input aria-label="筛选备忘录" type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="搜索标题、分类或内容…" />
+          {filter && <Button className="settings-memo-search-clear" variant="ghost" size="icon-sm" aria-label="清除筛选" onClick={() => {
+            pane.ref.current?.querySelector<HTMLInputElement>('.settings-memo-search input')?.focus();
+            setFilter('');
+          }}><XIcon aria-hidden="true" /></Button>}
+        </div>
+        <div ref={memoScroll.ref} onScroll={memoScroll.onScroll} className="settings-memo-tree" role="tree" aria-label="备忘录分类">
+          {tree.count === 0 ? <CollectionEmpty title={deferred ? '没有匹配的备忘' : '暂无备忘录'} icon={<TerminalSquareIcon />} /> : <MemoTreeView branch={tree} depth={1} collapsed={collapsed} forceOpen={Boolean(deferred)} selected={current?.id || ''} onSelect={selectMemo} onToggle={path => setCollapsed(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; })} onSetOpen={(path, open) => setCollapsed(previous => { const next = new Set(previous); if (open) next.delete(path); else next.add(path); return next; })} drag={drag} />}
+        </div>
       </aside>
-      <div className="settings-memo-detail min-w-0" data-collection-detail onFocusCapture={pane.onDetailFocus}>{current ? <>
-        <CollectionHeading title={current.title || '未命名备忘'} location={current.category || '未分类'} icon={<TerminalSquareIcon />} onBack={()=>pane.back(current.id,'data-memo-key')} backLabel="返回备忘列表"><ActionMenu label="备忘操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[{id:'delete',label:'删除备忘…',disabled:preview,onSelect:()=>prepareConfirm('delete')}]} /></CollectionHeading>
+      <div className="settings-memo-detail min-w-0" data-collection-detail onFocusCapture={pane.onDetailFocus}>{current ? <div className={preview ? 'settings-memo-reader' : 'settings-memo-editor'}>
+        <CollectionHeading title={current.title || '未命名备忘'} location={preview ? current.category || '未分类' : ''} icon={<TerminalSquareIcon />} onBack={()=>pane.back(current.id,'data-memo-key')} backLabel="返回备忘列表"><ActionMenu label="备忘操作" icon={<MoreHorizontalIcon />} popupClassName="settings-collection-menu" items={[{id:'delete',label:'删除备忘…',disabled:preview,onSelect:()=>prepareConfirm('delete')}]} /></CollectionHeading>
         <FieldGroup className="settings-collection-fields" key={current.id}>
-          <CollectionField label="标题" value={current.title} readOnly={preview} onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.title=value;},`memo:${current.id}:title`)} />
-          {!preview ? <div onBlur={event=>{if(event.currentTarget.contains(event.relatedTarget as Node))return;if(category!==null && category!==current.category){const before=current.category || '';edit(list=>{const item=list.find(value=>value.id===current.id);if(!item)return;item.category=category;renameCategory(list,before,category,item.id);},`memo:${current.id}:category`);setCollapsed(previous=>new Set([...previous].map(path=>path===before || path.startsWith(before+' / ')?category+path.slice(before.length):path)));setCategory(null);}}}><CollectionField label="分类路径" value={category ?? current.category} readOnly={preview} onChange={setCategory} help="使用 / 分层；离开输入框时同步修改后代分类路径。" /></div> : null}
+          {!preview && <div className="settings-memo-meta-grid">
+            <CollectionField label="标题" value={current.title} readOnly={false} onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.title=value;},`memo:${current.id}:title`)} />
+            <div className="min-w-0" onBlur={event=>{if(event.currentTarget.contains(event.relatedTarget as Node))return;if(category!==null && category!==current.category){const before=current.category || '';edit(list=>{const item=list.find(value=>value.id===current.id);if(!item)return;item.category=category;renameCategory(list,before,category,item.id);},`memo:${current.id}:category`);setCollapsed(previous=>new Set([...previous].map(path=>path===before || path.startsWith(before+' / ')?category+path.slice(before.length):path)));setCategory(null);}}}>
+              <CollectionField label="分类路径" value={category ?? current.category} readOnly={false} onChange={setCategory} help="使用 / 分层；离开输入框时同步修改后代分类路径。" />
+            </div>
+          </div>}
           <CollectionField label="命令或备忘内容" value={current.content} readOnly={preview} multiline code onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.content=value;},`memo:${current.id}:content`)} />
-          <ViewDetails memoryKey={`memo:advanced:${current.id}`} className="settings-collection-advanced"><summary>说明与搜索标签</summary><FieldGroup className="pt-4">
+          <ViewDetails memoryKey={`memo:advanced:${current.id}`} className="settings-collection-advanced"><summary aria-label="说明与搜索标签">说明与搜索标签{advancedSummary && <span className="settings-memo-advanced-meta"> {advancedSummary}</span>}</summary><FieldGroup className="pt-4">
             <CollectionField label="说明" value={current.description} readOnly={preview} multiline onChange={value=>edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.description=value;},`memo:${current.id}:description`)} />
             <div onBlur={()=>{if(preview || tags===null)return;edit(list=>{const item=list.find(item=>item.id===current.id);if(item)item.tags=tags.split(/[,，]/).map(value=>value.trim()).filter(Boolean);},`memo:${current.id}:tags`);setTags(null);}}><CollectionField label="搜索标签" value={tags ?? (Array.isArray(current.tags)?current.tags.join(', '):current.tags || '')} readOnly={preview} onChange={setTags} help="使用逗号分隔多个标签。" /></div>
           </FieldGroup></ViewDetails>
         </FieldGroup>
-      </> : <CollectionEmpty title="暂无备忘录" icon={<TerminalSquareIcon />} onBack={()=>pane.back('','data-memo-key')} backLabel="返回备忘列表" />}</div>
+      </div> : <CollectionEmpty title="暂无备忘录" icon={<TerminalSquareIcon />} onBack={()=>pane.back('','data-memo-key')} backLabel="返回备忘列表" />}</div>
     </div>
     {confirm ? <Dialog title={confirm.kind==='reset'?'恢复内置备忘录':'删除备忘'} busy={false} onClose={()=>setConfirm(null)} notice={confirmError}>
       <p>{confirm.kind==='reset'?`当前 ${confirm.count} 条自定义备忘将替换为内置库；保存前可撤销。`:`删除“${confirm.title}”？保存前可撤销。`}</p>
