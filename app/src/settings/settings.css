@@ -76,8 +76,8 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-preview { margin:0; padding:8px 20px; color:var(--fh-warning); background:var(--fh-warning-soft); }
 .settings-tree { max-height:65vh; overflow:auto; border:1px solid var(--fh-border); border-radius:8px; }
 .settings-tree-row { min-height:40px; padding:4px 8px; cursor:default; }
-.settings-tree-row[aria-selected=true] { background:var(--fh-surface-soft); color:var(--fh-accent); }
-.settings-tree-row:focus-visible { outline:2px solid var(--fh-accent); outline-offset:-2px; }
+.settings-tree-row[aria-selected=true] { background:var(--fh-selected-bg); color:var(--fh-selected-text); box-shadow:inset 3px 0 var(--fh-selected-border); }
+.settings-tree-row:focus-visible { outline:2px solid var(--fh-selection-focus); outline-offset:-2px; }
 .settings-tree-row .fh-button { border:0; padding:0 4px; min-height:26px; }
 .settings-memo-tree-row { display:flex; align-items:center; gap:6px; min-height:36px; margin:1px 0; padding:5px 6px 5px 8px; border-radius:6px; color:var(--fh-text); cursor:pointer; font-size:14px; line-height:21px; }
 .settings-memo-tree-row:hover { background:var(--fh-surface-soft); }
@@ -103,11 +103,17 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-drag-handle { touch-action:none; cursor:grab; }
 .settings-catalog .settings-tree { max-height:min(65vh,720px); padding:0 4px 0 0; border:0; border-radius:0; }
 .settings-catalog .settings-tree-row { min-height:34px; gap:6px; margin:1px 0; padding-block:3px; padding-inline-end:6px; border-radius:6px; color:var(--fh-text); font-size:13px; line-height:20px; cursor:pointer; user-select:none; }
-.settings-catalog .settings-tree-row:hover { background:var(--fh-surface-soft); }
-.settings-catalog .settings-tree-row[aria-selected=true] { background:var(--fh-accent-soft,var(--fh-surface-soft)); color:var(--fh-accent); box-shadow:inset 2px 0 var(--fh-accent); }
-.settings-catalog .settings-tree-row[aria-selected=true]:hover { background:var(--fh-accent-soft,var(--fh-surface-soft)); color:var(--fh-accent); }
-.settings-catalog .settings-tree-row[aria-selected=true] .settings-tree-toggle,.settings-catalog .settings-tree-row[aria-selected=true] .settings-tree-leaf { color:var(--fh-accent); }
-.settings-catalog .settings-tree-row:focus-visible { outline:2px solid var(--fh-accent); outline-offset:-2px; }
+.settings-catalog .settings-tree-row:not([aria-selected=true]):hover { background:var(--fh-highlight-bg); }
+.settings-catalog .settings-tree-row[aria-selected=true] {
+  background:var(--fh-selected-bg);
+  color:var(--fh-selected-text);
+  box-shadow:inset 3px 0 var(--fh-selected-border), inset 0 0 0 1px var(--fh-selected-border);
+}
+.settings-catalog .settings-tree-row[aria-selected=true] :is(.settings-tree-toggle,.settings-tree-leaf) { color:inherit; }
+@media (forced-colors:active) {
+  .settings-tree-row[aria-selected=true] { outline:1px solid Highlight; outline-offset:-1px; }
+  .settings-tree-row[aria-selected=true]:focus-visible { outline:2px dashed CanvasText; }
+}
 .settings-catalog .settings-tree-row[data-drop-position="inside"] { background:var(--fh-accent-soft,var(--fh-surface-soft)); outline:2px solid var(--fh-accent); outline-offset:-2px; }
 .settings-catalog .settings-tree-row[data-drop-position="before"] { box-shadow:inset 0 3px var(--fh-accent); background:var(--fh-accent-soft,var(--fh-surface-soft)); }
 .settings-catalog .settings-tree-row[data-drop-position="after"] { box-shadow:inset 0 -3px var(--fh-accent); background:var(--fh-accent-soft,var(--fh-surface-soft)); }

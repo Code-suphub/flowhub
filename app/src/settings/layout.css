@@ -28,10 +28,13 @@ html[data-native-window="macos"] .settings-topbar {padding-left:100px;-webkit-ap
 .settings-nav-group+.settings-nav-group {margin-top:18px;}
 .settings-nav-heading {display:block;padding:0 10px 7px;font-size:11px;color:var(--fh-muted);font-weight:500;}
 .settings-sidebar .fh-button {justify-content:flex-start;gap:10px;min-width:0;min-height:34px;height:34px;width:100%;padding-inline:10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fh-muted);font-size:13px;font-weight:400;text-align:left;}
-.settings-sidebar .fh-button:hover:not(:disabled) {background:var(--fh-study-selected);color:var(--fh-text);}
-.settings-sidebar .fh-button[aria-current="page"] {background:var(--fh-study-selected);border-color:var(--fh-study-rim);color:var(--fh-text);font-weight:500;box-shadow:0 1px 3px var(--fh-study-shadow);}
-.settings-sidebar .fh-button[aria-current="page"] svg {color:var(--fh-accent);}
-.settings-sidebar .fh-button:focus-visible {outline:2px solid var(--fh-accent);outline-offset:-1px;}
+.settings-sidebar .fh-button:hover:not(:disabled):not([aria-current="page"]) {background:var(--fh-highlight-bg);color:var(--fh-text);}
+.settings-sidebar .fh-button[aria-current="page"] {background:var(--fh-selected-bg);border-inline-start:3px solid var(--fh-selected-border);color:var(--fh-selected-text);font-weight:600;}
+.settings-sidebar .fh-button[aria-current="page"] svg {color:var(--fh-selected-text);}
+.settings-sidebar .fh-button:focus-visible {outline:2px solid var(--fh-selection-focus);outline-offset:-1px;}
+@media (forced-colors:active) {
+  .settings-sidebar .fh-button[aria-current="page"] { border-inline-start-color:Highlight; }
+}
 .settings-sidebar-bottom {flex:none;border-top:1px solid var(--fh-border);padding:10px 2px 0;}
 .settings-sidebar .settings-external-icon {margin-left:auto;opacity:.65;}
 .settings-local-status {display:flex;align-items:center;gap:7px;padding:10px;color:var(--fh-muted);font-size:10px;}

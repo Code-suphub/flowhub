@@ -13,8 +13,6 @@
   --fh-on-accent:#0e1712;
   --fh-focus-ring:color-mix(in srgb,var(--fh-accent) 38%,transparent);
   --fh-disabled:#464b52;
-  --fh-switch-border:#69727a;
-  --fh-switch-track:var(--fh-surface-soft);
 }
 .settings-stage .settings-shell.settings-compact-workspace { background:var(--fh-canvas); }
 :root:has(.settings-compact-workspace) {
@@ -43,7 +41,6 @@
   --fh-accent-soft:#e3efe8;
   --fh-on-accent:#ffffff;
   --fh-disabled:#b8bfc4;
-  --fh-switch-border:#7d8883;
 }
 .settings-compact-workspace .settings-topbar {
   min-height:54px;
@@ -80,13 +77,6 @@ html[data-native-window="macos"] .settings-compact-workspace .settings-topbar { 
 .settings-compact-workspace .settings-nav-group + .settings-nav-group { margin-top:13px; }
 .settings-compact-workspace .settings-sidebar .fh-button { height:32px; min-height:32px; gap:8px; padding-inline:8px; border-radius:6px; }
 .settings-compact-workspace .settings-sidebar .fh-button > svg { flex:none; width:15px; height:15px; }
-.settings-compact-workspace .settings-sidebar .fh-button:is(:hover:not(:disabled),[aria-current=page]) {
-  background:var(--fh-accent-soft);
-  color:var(--fh-text);
-  border-color:transparent;
-  box-shadow:none;
-}
-.settings-compact-workspace .settings-sidebar .fh-button[aria-current=page] { font-weight:600; box-shadow:inset 2px 0 var(--fh-accent); }
 .settings-compact-workspace .settings-sidebar-bottom { padding:6px 0 0; }
 
 .settings-compact-workspace .settings-main { container:settings-workspace / inline-size; padding:24px 24px 28px; }
@@ -103,18 +93,6 @@ html[data-native-window="macos"] .settings-compact-workspace .settings-topbar { 
 .settings-compact-workspace .settings-search-toolbar { margin-bottom:15px; }
 .settings-compact-workspace .settings-search-columns { background:var(--fh-surface-soft); }
 .settings-compact-workspace .settings-search-item:last-child { border-bottom:0; }
-.settings-compact-workspace [data-slot="switch"] {
-  border-color:var(--fh-switch-border);
-  background:var(--fh-switch-track);
-}
-.settings-compact-workspace [data-slot="switch"][data-checked] {
-  border-color:var(--fh-accent);
-  background:var(--fh-accent);
-}
-.settings-compact-workspace [data-slot="switch-thumb"] { background:var(--fh-muted); }
-.settings-compact-workspace [data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
-  background:var(--fh-on-accent);
-}
 .settings-compact-workspace .settings-search-shortcut .fh-button { justify-self:center; width:auto; min-width:min(100%,68px); }
 .settings-compact-workspace .settings-search-shortcut .settings-shortcut-inline { text-align:center; }
 .settings-compact-workspace .settings-search-behavior .settings-row { column-gap:8px; padding-block:13px; }
