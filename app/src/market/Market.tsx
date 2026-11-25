@@ -183,11 +183,14 @@ export function Market() {
   return <main ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}`} aria-busy={busy}>
     {!embedded?<header className="fh-market-toolbar"><div className="market-heading"><h1>插件市场</h1>{!available?<Badge variant="outline">只读预览</Badge>:null}</div>{toolbarActions}</header>:null}
     <div className="market-navigation"><Tabs items={[{id:'discover',label:'发现'},{id:'installed',label:`已安装 (${installed.length})`}]} value={view} onChange={setView} label="插件市场"/>
-      <div className="market-search"><label className="sr-only" htmlFor="market-query">搜索插件</label><SearchIcon aria-hidden="true"/><Input id="market-query" type="search" aria-label="搜索插件" aria-describedby="market-browse-hint" placeholder={view==='discover'?'搜索插件名称、功能或来源':'搜索已安装插件'} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={navigation.searchKeyDown}/></div>
+      <div className="market-search"><label className="sr-only" htmlFor="market-query">搜索插件</label><SearchIcon aria-hidden="true"/><Input id="market-query" type="search" aria-label="搜索插件" aria-describedby="market-browse-hint" placeholder={view==='discover'?'搜索插件':'搜索已安装插件'} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={navigation.searchKeyDown}/></div>
       {embedded?toolbarActions:null}
     </div>
     {notice?<Alert role={noticeError?'alert':'status'} variant={noticeError?'destructive':'default'}><AlertTitle>{noticeError?'操作未完成':'操作完成'}</AlertTitle><AlertDescription>{notice}{completed && installedById.get(completed.id)?.enabled?<Button size="sm" onClick={()=>void run(()=>openPlugin(completed.id),false)}>打开 {completed.name}</Button>:null}{noticeError && !confirmation?<Button size="sm" onClick={()=>void initialize()}>重新加载列表</Button>:null}</AlertDescription></Alert>:null}
-    {issues.length?<Alert variant="warning"><AlertTitle>{issues.length} 个来源需要处理</AlertTitle><AlertDescription>可用来源的插件仍会显示。<Button size="sm" variant="ghost" onClick={()=>setSourcesOpen(true)}>查看来源问题</Button></AlertDescription></Alert>:null}
+    {issues.length?<Alert variant="warning" role="status" className="market-source-issues">
+      <AlertTitle>{issues.length} 个来源需要处理</AlertTitle>
+      <Button size="sm" variant="ghost" onClick={()=>setSourcesOpen(true)}>查看来源问题</Button>
+    </Alert>:null}
     <section className="fh-market-panel" id={`panel-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`}>
       {view==='discover' && loaded && !hasOfficial && !searched && !filtered?<OfficialCollection available={available} disabled={disabled} onConnect={connectOfficial}/>:null}
       <div className="market-subbar">
