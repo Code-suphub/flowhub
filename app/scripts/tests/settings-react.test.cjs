@@ -335,6 +335,7 @@ test('read-only general keeps adapter options inspectable while shortcuts and no
   const select = view.container.querySelector('[aria-label="代理检测适配器"]');
   assert.equal(select.disabled, false);
   assert.equal(view.container.querySelector('[aria-label="唤出 FlowHub"]').matches(':disabled'), true);
+  assert.equal(view.container.querySelector('[aria-label="开机自动启动"]').getAttribute('aria-disabled'), 'true');
   assert.ok([...view.container.querySelectorAll('.settings-core-group[aria-labelledby="general-notifications-heading"] [role=switch]')].every(control => control.getAttribute('aria-disabled') === 'true'));
   assert.equal(h.button(view.container, '发送测试通知').matches(':disabled'), true);
   await h.click(select);
@@ -345,6 +346,34 @@ test('read-only general keeps adapter options inspectable while shortcuts and no
   assert.equal(store.snapshot().config.plugins.tools.settings.proxyAdapter, before);
   assert.equal(writes.length, 0);
   await view.unmount(); store.dispose();
+});
+test('test notification follows saved permission and reports native failure beside the action', async t => {
+  const initial = h.fixture();
+  initial.core.notifications.enabled = false;
+  let sends = 0;
+  const { store, writes } = await h.loaded({
+    getConfig: async () => initial,
+    sendTestNotification: async () => ++sends === 1 ? { ok: false, reason: '模拟发送失败' } : { ok: true },
+  });
+  const view = await h.mount(Settings, { store });
+  t.after(async () => { await view.unmount(); store.dispose(); });
+  const panel = view.container.querySelector('#panel-general');
+  const send = () => h.button(panel, '发送测试通知');
+  assert.equal(send().disabled, true);
+  await h.click(panel.querySelector('[aria-label="允许通知"]'));
+  assert.equal(send().disabled, true);
+  assert.match(panel.textContent, /保存后可发送测试通知/);
+  assert.equal(sends, 0);
+  await h.click(h.button(view.container, '保存'));
+  assert.equal(send().disabled, false);
+  await h.click(send());
+  assert.equal(panel.querySelector('[role="alert"]').textContent.trim(), '模拟发送失败');
+  await h.click(send());
+  assert.equal(panel.querySelector('[role="status"]').textContent.trim(), '测试通知已发送');
+  assert.equal(writes.length, 1);
+  await h.click(panel.querySelector('[aria-label="允许通知"]'));
+  assert.equal(send().disabled, true);
+  assert.equal(sends, 2);
 });
 test('legacy network and notifications section names resolve to the general page', async () => {
   const { store } = await h.loaded({}, true);

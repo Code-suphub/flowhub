@@ -3,7 +3,7 @@ import { Popover } from '@base-ui/react/popover';
 import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon } from 'lucide-react';
 import { Button, Dialog } from '../shared/ui';
 import { Help, Switch } from '../shared/controls';
-import { Choice, Row, Shortcut, TextField, Toggle } from './fields';
+import { Row, Shortcut, TextField, Toggle } from './fields';
 import { host, readonly, write } from './api';
 import { clipboardLimit, hasExclusions } from './model';
 import { SettingsStore, useSettings } from './store';
@@ -12,6 +12,7 @@ import { MenuBar } from './MenuBar';
 import { FlowHubLogo } from '../shared/FeatureIcon';
 import { DataPanel, PathControl } from './DataPanel';
 import { SettingsSection } from './SettingsSection';
+import { GeneralSettings } from './GeneralSettings';
 import './clipboard-settings.css';
 export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
@@ -20,7 +21,6 @@ export function Core({ store, section }: { store: SettingsStore; section: string
   const s = useSettings(store), c = s.config!, core = c.core;
   const activeSection = section === 'network' || section === 'notifications' ? 'general' : section;
   const setCore = (key: string, value: unknown) => store.edit(c => { c.core[key] = value; });
-  const setNested = (key: string, field: string, value: boolean) => store.edit(c => { c.core[key][field] = value; });
   const savedOrder = Array.isArray(core.searchResultOrder) ? core.searchResultOrder as string[] : [];
   const sortableSources = ['app', 'web', 'clipboard', 'memo', ...(s.plugins.some(plugin => plugin.id === 'twofa') || c.plugins.twofa ? ['twofa'] : [])];
   const defaultOrder = core.webBeforeClipboard === false ? ['app', 'clipboard', 'web', 'memo'] : ['app', 'web', 'clipboard', 'memo'];
@@ -118,11 +118,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
   useEffect(() => () => stopPointerDrag.current?.(), []);
   useEffect(() => { stopPointerDrag.current?.(); setDraggingSource(''); updateDropTarget(null); }, [activeSection]);
   return <><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section className="settings-core-panel" data-section={activeSection} id={`panel-${activeSection}`} aria-label={sectionLabels[activeSection]}>
-    {activeSection === 'general' ? <div className="settings-core-general">
-      <section className="settings-core-group" aria-labelledby="general-launch-heading"><h2 id="general-launch-heading" className="settings-core-group-title">启动与快捷键</h2><fieldset disabled={readonly()} className="settings-core-subgroup"><Shortcut label="唤出 FlowHub" value={core.hotkey || 'Alt+Space'} taken={Object.values(core.scopeShortcuts)} onChange={v => setCore('hotkey', v)} /><Toggle label="开机自动启动" checked={core.launchAtLogin === true} onChange={v => setCore('launchAtLogin', v)} help="登录 macOS 用户账户后自动启动 FlowHub，保存设置后生效。" /></fieldset></section>
-      <section className="settings-core-group" aria-labelledby="general-network-heading"><h2 id="general-network-heading" className="settings-core-group-title">网络</h2><Choice label="代理检测适配器" value={c.plugins.tools.settings.proxyAdapter} options={[{ value: 'auto', label: '自动' }, { value: 'mihomo', label: 'Mihomo' }, { value: 'clash-rest', label: 'Clash REST' }, { value: 'system', label: '系统代理' }]} onChange={v => store.edit(c => { c.plugins.tools.settings.proxyAdapter = v; })} /></section>
-      <section className="settings-core-group" aria-labelledby="general-notifications-heading"><h2 id="general-notifications-heading" className="settings-core-group-title">通知</h2><fieldset disabled={readonly()} className="settings-core-subgroup"><Toggle label="允许通知" checked={core.notifications.enabled} disabled={readonly()} onChange={v => setNested('notifications', 'enabled', v)} /><Toggle label="更新通知" checked={core.notifications.updates} disabled={readonly() || !core.notifications.enabled} onChange={v => setNested('notifications', 'updates', v)} /><Row label="系统通知权限" help="权限由 macOS 系统设置 → 通知管理。"><Button disabled={readonly() || !core.notifications.enabled} onClick={() => void store.run(async () => { await write('sendTestNotification'); store.notice('测试通知已发送'); })}>发送测试通知</Button></Row></fieldset></section>
-    </div> : null}
+    {activeSection === 'general' ? <GeneralSettings store={store} /> : null}
     {activeSection === 'search' ? <>
       <section className="settings-search-sources" aria-labelledby="search-sources-heading">
         <div className="settings-search-toolbar">

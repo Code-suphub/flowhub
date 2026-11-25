@@ -1,0 +1,131 @@
+.settings-core-general {
+  container: general-settings / inline-size;
+  display: grid;
+  align-items: start;
+  gap: 12px;
+  max-width: 680px;
+}
+
+@container settings-workspace (min-width: 720px) {
+  .settings-core-general {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    grid-template-areas:
+      "startup notifications"
+      "network notifications";
+    column-gap: 16px;
+    max-width: 960px;
+  }
+
+  .settings-core-general [aria-labelledby="general-launch-heading"] {
+    grid-area: startup;
+  }
+
+  .settings-core-general [aria-labelledby="general-network-heading"] {
+    grid-area: network;
+  }
+
+  .settings-core-general [aria-labelledby="general-notifications-heading"] {
+    grid-area: notifications;
+  }
+}
+
+.settings-core-panel .settings-core-general .settings-core-group {
+  padding: 13px 16px 4px;
+  border: 1px solid var(--fh-border);
+  border-radius: 12px;
+  background: var(--fh-surface-raised);
+}
+
+.settings-core-general .settings-core-group-title {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--fh-border);
+  color: var(--fh-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+#panel-general .settings-core-group > .settings-row {
+  display: grid;
+  grid-template-columns: minmax(104px, 1fr) minmax(0, max-content);
+  align-items: center;
+  gap: 6px 16px;
+  min-height: 42px;
+  padding-block: 8px;
+}
+
+.settings-core-general .settings-core-group > .settings-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#panel-general .settings-core-group > .settings-row > [data-setting-control] {
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  justify-self: end;
+}
+
+#panel-general [data-setting-label="代理检测适配器"] [data-slot="select-trigger"] {
+  inline-size: 136px;
+  max-inline-size: 100%;
+  padding-inline: 10px;
+}
+
+.settings-core-general [data-setting-label="唤出 FlowHub"] > :first-child {
+  white-space: nowrap;
+}
+
+.settings-core-general .settings-shortcut-control .fh-button {
+  max-width: 100%;
+  min-height: 36px;
+  height: auto;
+  padding-block: 7px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.settings-core-general .settings-shortcut-control small {
+  white-space: normal;
+}
+
+.settings-core-general :is(.settings-shortcut-control [role="alert"], .settings-notify-feedback[role="alert"]) {
+  color: var(--fh-danger);
+}
+
+.settings-notify-control {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.settings-notify-feedback {
+  max-width: 24ch;
+  overflow-wrap: anywhere;
+  color: var(--fh-accent);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@container general-settings (max-width: 440px) {
+  .settings-core-panel .settings-core-general .settings-core-group {
+    padding-inline: 12px;
+  }
+
+  #panel-general .settings-core-group > .settings-row {
+    column-gap: 12px;
+  }
+
+  .settings-core-general .settings-shortcut-control small {
+    order: 2;
+    flex-basis: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  #panel-general .settings-core-group > .settings-row,
+  .settings-core-general [data-setting-control] :is(.fh-button, [role="combobox"]) {
+    min-height: 44px;
+  }
+}

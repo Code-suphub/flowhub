@@ -23,6 +23,7 @@ test('save shortcut respects composition, extra modifiers, dialogs and shortcut 
 });
 test('non-Mac uses Control+S, while preview and clean configurations cannot write',async t=>{
   platform(t,'Win32');const {store,writes}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[aria-label="开机自动启动"]'));
-  await press(document.body,{metaKey:true});assert.equal(writes.length,0);await press(document.body,{ctrlKey:true});assert.equal(writes.length,1);assert.equal(footer().querySelector('[aria-keyshortcuts]').getAttribute('aria-keyshortcuts'),'Control+S');await view.unmount();store.dispose();
+  assert.equal(footer().querySelector('[aria-keyshortcuts]').getAttribute('aria-keyshortcuts'),'Control+S');
+  await press(document.body,{metaKey:true});assert.equal(writes.length,0);await press(document.body,{ctrlKey:true});assert.equal(writes.length,1);assert.equal(h.button(footer(),'保存'),undefined);await view.unmount();store.dispose();
   const preview=await h.loaded({},true),readonlyView=await h.mount(Settings,{store:preview.store});await press(document.body,{ctrlKey:true});assert.equal(preview.writes.length,0);assert.equal(footer().dataset.saveState,'preview');await readonlyView.unmount();preview.store.dispose();
 });

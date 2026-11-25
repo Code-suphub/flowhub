@@ -35,7 +35,6 @@
 .settings-landscape::before { width:135%; height:85%; left:-65%; top:48%; transform:rotate(18deg); background:var(--fh-study-hill); }
 .settings-landscape::after { width:110%; height:80%; right:-65%; top:28%; transform:rotate(-25deg); background:var(--fh-study-deep); }
 .settings-stage .settings-shell { --fh-text:var(--fh-study-ink); --fh-muted:var(--fh-study-muted); --fh-border:var(--fh-study-line); position:relative; color:var(--fh-text); background:var(--fh-study-pane); box-shadow:inset 0 1px 0 var(--fh-study-rim); -webkit-backdrop-filter:blur(36px) saturate(135%); backdrop-filter:blur(36px) saturate(135%); }
-.settings-core-general { gap:20px; }
 .settings-core-group { background:var(--fh-study-card); border:1px solid var(--fh-study-rim); border-radius:16px; padding:16px 20px; }
 .settings-core-group:last-child { border:1px solid var(--fh-study-rim); padding:16px 20px; }
 .settings-core-group-title { margin-bottom:8px; font-size:12px; }

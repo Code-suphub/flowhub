@@ -1,9 +1,7 @@
 html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"] body:has(#settings-root) { background:transparent; }
-.settings-core-general { display:grid; gap:14px; }
 .settings-core-group { min-width:0; padding-bottom:10px; border-bottom:1px solid var(--fh-border); }
 .settings-core-group:last-child { padding-bottom:0; border-bottom:0; }
 .settings-core-group-title { margin:0 0 4px; color:var(--fh-muted); font-size:13px; font-weight:500; line-height:20px; }
-.settings-core-subgroup { min-width:0; margin:0; padding:0; border:0; }
 .settings-global-menu { width:max-content; min-width:190px; font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 .settings-shortcut-control { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
 .settings-shortcut-control small { font-size:11px; white-space:nowrap; }

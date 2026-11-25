@@ -86,7 +86,7 @@ test('another dialog blocks the search shortcut, and dirty state survives locati
 });
 test('ordinary input after a location request cancels queued focus transfer',async t=>{
   layout(t);const {store}=await h.loaded(),view=await h.mount(Settings,{store});await h.click(view.container.querySelector('[aria-label="搜索设置"]'));await h.input(search(),'开机启动');await h.click(document.querySelector('[data-command-id="launch-at-login"]'));
-  const lookup=view.container.querySelector('[aria-label="查找页面"]');await press(lookup,'ArrowLeft');await flush();await flush();assert.equal(document.activeElement===lookup,true);await view.unmount();store.dispose();
+  const trigger=view.container.querySelector('[aria-label="搜索设置"]');await press(trigger,'ArrowLeft');await flush();await flush();assert.equal(document.activeElement===trigger,true);await view.unmount();store.dispose();
 });
 test('non-Mac browsers use Control+K without accepting an extra modifier',async t=>{
   platform(t,'Win32');const {store}=await h.loaded(),view=await h.mount(Settings,{store});await press(document.body,'k',{ctrlKey:true,altKey:true});assert.equal(dialog(),null);
