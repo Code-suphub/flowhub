@@ -36,7 +36,7 @@ const emptyPlugins: InstalledPlugin[] = [];
 export function Settings({ store }: { store: SettingsStore }) {
   const s = useSettings(store), [journey,setJourney]=useState<{pages:PageId[];index:number}>(()=>{const params=new URLSearchParams(window.location.search),requested=params.get('module') || '';return {pages:[params.get('update')==='1'?'updates':isPage(requested)?requested:'core'],index:0};}), [json, setJson] = useState(false), [reset, setReset] = useState(false), [close, setClose] = useState(false), [review,setReview] = useState(false), [searchOpen,setSearchOpen] = useState(false);
   const module=journey.pages[journey.index], narrow=useMediaQuery('(max-width: 699px)');
-  const compactWorkspace = module === 'search' || module === 'menubar' || module === 'canvas' || module === 'web' || module === 'app' || module === 'clipboard' || module === 'memo' || module === 'tools' || module === 'core' || module === 'data' || module === 'appearance';
+  const compactWorkspace = module === 'search' || module === 'menubar' || module === 'canvas' || module === 'web' || module === 'app' || module === 'clipboard' || module === 'memo' || module === 'tools' || module === 'core' || module === 'data' || module === 'updates' || module === 'appearance';
   const journeyRef=useRef(journey), main=useRef<HTMLElement>(null);
   const navigationFocus=useRef<'lookup'|'page'|null>(null), transferringNavigation=useRef(false);
   useLayoutEffect(()=>{

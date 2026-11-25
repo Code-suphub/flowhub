@@ -67,9 +67,6 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 }
 .settings-shortcut-inline { display:block; min-width:0; }
 .settings-shortcut-inline [role=alert] { margin:4px 0 0; font-size:12px; }
-.settings-update-summary { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; padding:4px 0 16px; border-bottom:1px solid var(--fh-border); }
-.settings-update-summary p { margin:4px 0 0; font-size:13px; }
-.settings-update-summary progress { width:100%; accent-color:var(--fh-accent); }
 .settings-code { white-space:pre-wrap; overflow-wrap:anywhere; max-height:60vh; overflow:auto; font-family:ui-monospace,monospace; }
 .settings-preview { margin:0; padding:8px 20px; color:var(--fh-warning); background:var(--fh-warning-soft); }
 .settings-tree { max-height:65vh; overflow:auto; border:1px solid var(--fh-border); border-radius:8px; }

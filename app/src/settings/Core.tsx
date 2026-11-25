@@ -9,10 +9,10 @@ import { clipboardLimit, hasExclusions } from './model';
 import { SettingsStore, useSettings } from './store';
 import { useCatalogDragMotion } from './useCatalogDragMotion';
 import { MenuBar } from './MenuBar';
-import { FlowHubLogo } from '../shared/FeatureIcon';
 import { DataPanel, PathControl } from './DataPanel';
 import { SettingsSection } from './SettingsSection';
 import { GeneralSettings } from './GeneralSettings';
+import { Updates } from './Updates';
 import './clipboard-settings.css';
 export { DataPanel, PathControl } from './DataPanel';
 const sectionLabels:Record<string,string>={general:'通用设置',data:'数据与诊断',updates:'版本与更新',search:'搜索',menubar:'菜单栏'};
@@ -114,7 +114,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
   }
   const savedOrganizer = s.saved?.core.menuBar.organizerEnabled;
   useEffect(() => { if (activeSection !== 'menubar' || readonly()) return; const refresh = () => void store.run(() => store.refreshMenu()); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, [activeSection, savedOrganizer, store]);
-  const previewInspect = readonly() && ['general', 'search', 'menubar', 'data'].includes(activeSection);
+  const previewInspect = readonly() && ['general', 'search', 'menubar', 'data', 'updates'].includes(activeSection);
   useEffect(() => () => stopPointerDrag.current?.(), []);
   useEffect(() => { stopPointerDrag.current?.(); setDraggingSource(''); updateDropTarget(null); }, [activeSection]);
   return <><fieldset disabled={s.busy || s.conflict || (readonly() && !previewInspect)} className="settings-fieldset"><section className="settings-core-panel" data-section={activeSection} id={`panel-${activeSection}`} aria-label={sectionLabels[activeSection]}>
@@ -187,7 +187,7 @@ export function Core({ store, section }: { store: SettingsStore; section: string
     </> : null}
     {activeSection === 'menubar' ? <MenuBar store={store} /> : null}
     {activeSection === 'data' ? <DataPanel store={store} /> : null}
-    {activeSection === 'updates' ? <Updates store={store} /> : null}
+    {activeSection === 'updates' ? <Updates store={store} install={()=>primaryUpdate(store)} /> : null}
   </section></fieldset></>;
 }
 export async function primaryUpdate(store: SettingsStore) {
@@ -196,18 +196,6 @@ export async function primaryUpdate(store: SettingsStore) {
   store.patch({ busy: true });
   try { const result = await write('downloadAndInstallUpdate'); if (result.state) store.patch({ update: result.state }); }
   finally { store.patch({ busy: false }); }
-}
-function Updates({ store }: { store: SettingsStore }) {
-  const s = useSettings(store), core = s.config!.core, update = s.update;
-  const statusNames: Record<string, string> = { unsupported: '当前环境不支持更新', idle: '尚未检查', checking: '正在检查', available: '发现新版本', downloaded: '等待安装', downloading: '正在下载', installing: '正在安装', 'not-available': '暂无可用更新', 'up-to-date': '已是最新版本', error: '更新失败' };
-  return <div className="settings-updates">
-    <section className="settings-core-group settings-update-summary" aria-label="版本状态" data-setting-label="版本状态" tabIndex={-1}>
-      <div className="settings-update-identity"><FlowHubLogo/><div><h2>FlowHub</h2><span className="fh-muted">当前版本 {update.currentVersion || '预览版'}</span></div></div>
-      <div className="settings-update-status"><p role="status">{statusNames[update.status] || '尚未检查'}{update.availableVersion ? ` · ${update.availableVersion}` : ''}</p><div className="flex flex-wrap gap-2"><Button disabled={readonly() || ['checking', 'downloading', 'installing'].includes(update.status)} onClick={() => void store.run(async () => { const result = await write('checkForUpdates'); if (result.state) store.patch({ update: result.state }); })}>检查更新</Button>{['available', 'downloaded'].includes(update.status) ? <Button className="primary" onClick={() => void store.run(() => primaryUpdate(store))}>{update.status === 'downloaded' ? '重启安装' : '下载并安装'}</Button> : null}</div></div>
-      {update.error ? <p role="alert" className="settings-error">{update.error}</p> : null}{['downloading', 'installing'].includes(update.status) && typeof update.percent === 'number' ? <progress aria-label="更新进度" max={100} value={update.percent} /> : null}
-    </section>
-    <section className="settings-core-group" aria-labelledby="update-preferences"><h2 id="update-preferences" className="settings-core-group-title">自动更新</h2><Toggle label="自动检查正式版" checked={core.autoUpdateCheck !== false} onChange={v => store.edit(c => { c.core.autoUpdateCheck = v; })} help="每 10 分钟检查正式版。" /><Toggle label="自动下载并重启安装" checked={core.autoUpdateInstall === true} onChange={v => store.edit(c => { c.core.autoUpdateInstall = v; })} /></section>
-  </div>;
 }
 const retentionFields = [
   { key: 'retentionDays', label: '留存天数', defaultValue: 30, max: 3650, help: undefined },
