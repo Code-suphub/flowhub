@@ -57,7 +57,7 @@ export function PluginWorkspace({ view }: { view: 'dock' | 'panel' }) {
   const title = state.module === 'overflow' ? '更多插件' : state.module === 'extensions' ? '插件市场' : installed.find(p => `plugin:${p.manifest.id}` === state.module)?.manifest.name || '插件';
   if (readonly()) return <div className="fh-root workspace-preview-note">独立悬浮窗口请在 FlowHub App 中使用。<a href="settings.html?module=menubar">返回设置预览</a></div>;
   if (view === 'dock') return <div ref={dock} className="workspace-dock-window">
-    <PluginDock installed={installed} busy={!loaded} open={state.open} active={state.module} floating onSelect={id => run('select', id)} onHide={() => run('hide')} />
+    <PluginDock installed={installed} busy={!loaded} open={state.open} active={state.module} onSelect={id => run('select', id)} onHide={() => run('hide')} />
     {error ? <div className="fh-root workspace-dock-error">
       <div role="alert" className="workspace-dock-error-copy" tabIndex={0}><strong>插件栏连接失败</strong><div>{error}</div></div>
       <Button size="icon-sm" aria-label="重新连接插件栏" disabled={loading} onClick={()=>setAttempt(value=>value+1)}><RefreshCwIcon /></Button>

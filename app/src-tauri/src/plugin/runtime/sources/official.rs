@@ -9,34 +9,33 @@ const PREFIX:&str="https://github.com/Code-suphub/flowhub-plugins/releases/downl
 
 #[derive(Clone)]
 struct Release { id:String,version:semver::Version,catalog:String,notes:String,published:String }
+fn eligible(release:&Value,target:&str)->Option<Release>{
+    if release["draft"]==true || release["prerelease"]==true {return None;}
+    let tag=release["tag_name"].as_str()?;
+    let (id,version)=tag.rsplit_once("-v")?;
+    let version=semver::Version::parse(version).ok()?;
+    if !safe_id(id) || !version.pre.is_empty(){return None;}
+    let assets=release["assets"].as_array()?;
+    let package_name=format!("{id}-{version}-{target}.fhplugin");
+    let expected=format!("{PREFIX}{tag}/catalog.json");
+    if !assets.iter().any(|a|a["name"].as_str()==Some(&package_name)) ||
+        !assets.iter().any(|a|a["name"]=="catalog.json" && a["browser_download_url"].as_str()==Some(&expected)){
+        return None;
+    }
+    Some(Release{id:id.into(),version,catalog:expected,notes:release["body"].as_str().unwrap_or("").chars().take(20_000).collect(),published:release["published_at"].as_str().unwrap_or("").into()})
+}
 fn select(releases:&Value,target:&str)->Result<Vec<Release>,String>{
     let rows=releases.as_array().ok_or("官方发布列表格式无效")?;
     let mut latest:BTreeMap<String,Release>=BTreeMap::new();
     for release in rows {
-        if release["draft"]==true || release["prerelease"]==true {continue;}
-        let Some(tag)=release["tag_name"].as_str() else{continue};
-        let Some((id,version))=tag.rsplit_once("-v") else{continue};
-        let Ok(version)=semver::Version::parse(version) else{continue};
-        if !safe_id(id) || !version.pre.is_empty(){continue;}
-        let Some(assets)=release["assets"].as_array() else{continue};
-        let package_name=format!("{id}-{version}-{target}.fhplugin");
-        if !assets.iter().any(|a|a["name"].as_str()==Some(&package_name)){continue;}
-        let expected=format!("{PREFIX}{tag}/catalog.json");
-        if !assets.iter().any(|a|a["name"]=="catalog.json" && a["browser_download_url"].as_str()==Some(&expected)){continue;}
-        if latest.get(id).is_some_and(|old|old.version>=version){continue;}
-        latest.insert(id.into(),Release{id:id.into(),version,catalog:expected,notes:release["body"].as_str().unwrap_or("").chars().take(20_000).collect(),published:release["published_at"].as_str().unwrap_or("").into()});
+        let Some(release)=eligible(release,target) else{continue};
+        if latest.get(&release.id).is_some_and(|old|old.version>=release.version){continue;}
+        latest.insert(release.id.clone(),release);
     }
     if latest.len()>100{return Err("官方插件数量超过读取上限".into());}
     Ok(latest.into_values().collect())
 }
-pub(super) async fn scan(source:&Source)->Result<(Vec<Candidate>,Vec<String>),String>{
-    // A source with a different key must never gain the official identity.
-    let bare=source.key.trim().lines().find(|line|!line.starts_with("untrusted comment:")).unwrap_or("");
-    let key=minisign_verify::PublicKey::from_base64(bare).map_err(|_|"官方库公钥无效，请重新连接官方库")?;
-    let pinned=minisign_verify::PublicKey::from_base64(KEY).unwrap();
-    // Both native text and bare public-key forms are accepted by verification.
-    if key!=pinned{return Err("官方库公钥与内置公钥不一致，请检查来源设置".into());}
-    let target=format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH);
+async fn releases()->Result<(Vec<Value>,bool),String>{
     let mut all=Vec::new();let mut bounded=false;
     for page in 1..=5 {
         let bytes=download(&format!("{INDEX}&page={page}"),4*1024*1024).await?;
@@ -46,6 +45,35 @@ pub(super) async fn scan(source:&Source)->Result<(Vec<Candidate>,Vec<String>),St
         if count<100 {break;}
         if page==5 {bounded=true;}
     }
+    Ok((all,bounded))
+}
+
+fn history_for(rows:&[Value],id:&str,target:&str)->Vec<Value>{
+    let mut versions:BTreeMap<_,_>=BTreeMap::new();
+    for row in rows {
+        if row["tag_name"].as_str().and_then(|tag|tag.rsplit_once("-v")).map(|(name,_)|name)!=Some(id){continue;}
+        if let Some(release)=eligible(row,target){versions.entry(release.version).or_insert((release.published,release.notes));}
+    }
+    versions.into_iter().rev().take(5).map(|(version,(published,notes))|
+        json!({"version":version.to_string(),"publishedAt":published,"releaseNotes":notes})
+    ).collect()
+}
+
+pub(super) async fn history(id:&str)->Result<Value,String>{
+    let (rows,bounded)=releases().await?;
+    let target=format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH);
+    Ok(json!({"releases":history_for(&rows,id,&target),"bounded":bounded}))
+}
+
+pub(super) async fn scan(source:&Source)->Result<(Vec<Candidate>,Vec<String>),String>{
+    // A source with a different key must never gain the official identity.
+    let bare=source.key.trim().lines().find(|line|!line.starts_with("untrusted comment:")).unwrap_or("");
+    let key=minisign_verify::PublicKey::from_base64(bare).map_err(|_|"官方库公钥无效，请重新连接官方库")?;
+    let pinned=minisign_verify::PublicKey::from_base64(KEY).unwrap();
+    // Both native text and bare public-key forms are accepted by verification.
+    if key!=pinned{return Err("官方库公钥与内置公钥不一致，请检查来源设置".into());}
+    let target=format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH);
+    let (all,bounded)=releases().await?;
     let selected=select(&json!(all),&target)?;
     let mut found=Vec::new();let mut warnings=Vec::new();
     if bounded{warnings.push("仅检查最近 500 个公开发布；更早的版本未读取。".into());}
@@ -90,6 +118,20 @@ mod tests {
         let mut foreign=release("docker-v1.0.0",&["macos-aarch64"]);foreign["assets"][0]["browser_download_url"]=json!("https://example.test/catalog.json");
         assert!(select(&json!([draft,foreign,release("../escape-v1.0.0",&["macos-aarch64"])]),"macos-aarch64").unwrap().is_empty());
         assert!(select(&json!({}),"macos-aarch64").is_err());
+    }
+    #[test]
+    fn history_is_plugin_and_target_scoped_sorted_and_bounded(){
+        let target="macos-aarch64";
+        let mut rows:Vec<_>=(1..=8).map(|minor|release(&format!("machines-v0.{minor}.0"),&[target])).collect();
+        rows.push(release("machines-v1.0.0",&["macos-x86_64"]));
+        rows.push(release("machines-v0.8.0",&[target]));
+        rows.push(release("docker-v2.0.0",&[target]));
+        let result=history_for(&rows,"machines",target);
+        assert_eq!(result.len(),5);
+        assert_eq!(result[0]["version"],"0.8.0");
+        assert_eq!(result[0]["releaseNotes"],"<script>plain text</script>");
+        assert_eq!(result[4]["version"],"0.4.0");
+        assert!(history_for(&rows,"unlisted",target).is_empty());
     }
     #[tokio::test]
     #[ignore = "read-only public registry smoke test; requires GitHub network access"]

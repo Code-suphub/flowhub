@@ -14,6 +14,7 @@ const pageEntries: SettingsSearchEntry[] = navigationItems.map(item=>({id:`page:
 // filesystem data. Selecting an entry only navigates and locates its control.
 export const settingsSearchEntries: readonly SettingsSearchEntry[] = [
   ...pageEntries,
+  {id:'page:plugins-built-in',label:'内置功能',page:'web',kind:'页面',description:'核心模块',keywords:'内置插件 目录与工具 系统内置 built-in'},
   field('launcher-hotkey','core','唤出 FlowHub','快捷键 热键 召唤 启动器 hotkey shortcut launcher'),
   field('launch-at-login','core','开机自动启动','登录 开机启动 自动启动 自启动 自启 launch login startup'),
   field('proxy-adapter','core','代理检测适配器','网络 代理 clash mihomo system proxy adapter'),

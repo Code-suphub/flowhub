@@ -4,7 +4,7 @@ import { cn } from '../lib/utils';
 import { Popover } from '@base-ui/react/popover';
 import { CircleHelp } from 'lucide-react';
 import { Switch as ShadcnSwitch } from '../components/ui/switch';
-import { Select as ShadcnSelect, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Select as ShadcnSelect, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip as ShadcnTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 
 export function Switch({checked, onChange, disabled, label, id, 'aria-describedby': describedBy}: {checked: boolean; onChange: (value: boolean) => void; disabled?: boolean; label: string; id?: string; 'aria-describedby'?: string}) {
@@ -35,8 +35,8 @@ export function Help({label = '说明', children}: {label?: string; children: Re
   </Popover.Root></span>;
 }
 
-export interface SelectOption {value: string; label: string; disabled?: boolean}
-export function Select({value, options, onChange, label, disabled, id, labelledBy, popupClassName,finalFocus}: {value: string; options: readonly SelectOption[]; onChange: (value: string) => void; label: string; disabled?: boolean; id?: string; labelledBy?: string; popupClassName?: string;finalFocus?:ComponentProps<typeof SelectContent>['finalFocus']}) {
+export interface SelectOption {value: string; label: string; disabled?: boolean; group?: string}
+export function Select({value, options, onChange, label, disabled, id, labelledBy, popupClassName,finalFocus,valueLabel}: {value: string; options: readonly SelectOption[]; onChange: (value: string) => void; label: string; disabled?: boolean; id?: string; labelledBy?: string; popupClassName?: string;finalFocus?:ComponentProps<typeof SelectContent>['finalFocus'];valueLabel?:ReactNode}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const actions = useRef<{ unmount(): void } | null>(null);
@@ -49,12 +49,18 @@ export function Select({value, options, onChange, label, disabled, id, labelledB
     if (disabled) { changeOpen(false); return; }
     return trigger.current ? observePopupOwner(trigger.current, () => changeOpen(false)) : undefined;
   }, [open, disabled]);
+  const groups=new Map<string | undefined,SelectOption[]>();
+  for(const option of options){
+    const group=groups.get(option.group);
+    if(group)group.push(option);else groups.set(option.group,[option]);
+  }
   return <ShadcnSelect actionsRef={actions} open={open} onOpenChange={changeOpen} items={options.map(({value, label}) => ({value, label}))} value={value} onValueChange={next => { if (typeof next === 'string') onChange(next); }} disabled={disabled}>
-    <SelectTrigger ref={trigger} id={id} aria-label={label} aria-labelledby={labelledBy}><SelectValue>{() => options.find(option => option.value === value)?.label || '请选择'}</SelectValue></SelectTrigger>
+    <SelectTrigger ref={trigger} id={id} aria-label={label} aria-labelledby={labelledBy}><SelectValue>{() => valueLabel ?? (options.find(option => option.value === value)?.label || '请选择')}</SelectValue></SelectTrigger>
     <SelectContent className={cn('fh-select-popup', popupClassName)} side="bottom" align="start" alignItemWithTrigger={false} aria-label={label} finalFocus={finalFocus}>
-      <SelectGroup>
-        {options.map(option => <SelectItem key={option.value} value={option.value} disabled={option.disabled} title={option.label}>{option.label}</SelectItem>)}
-      </SelectGroup>
+      {[...groups].map(([group,items])=><SelectGroup key={group ?? ''}>
+        {group?<SelectLabel>{group}</SelectLabel>:null}
+        {items.map(option => <SelectItem key={option.value} value={option.value} disabled={option.disabled} title={option.label}>{option.label}</SelectItem>)}
+      </SelectGroup>)}
     </SelectContent>
   </ShadcnSelect>;
 }

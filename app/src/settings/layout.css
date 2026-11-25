@@ -1,5 +1,5 @@
 /* Host navigation owns layout; glass.css supplies the existing window material. */
-.settings-stage {padding:16px 16px 88px;height:100dvh;min-height:0;overflow:hidden;}
+.settings-stage {padding:16px;height:100dvh;min-height:0;overflow:hidden;}
 .settings-stage .settings-shell {height:100%;min-height:0;max-width:1440px;margin:auto;border:1px solid var(--fh-study-rim);border-radius:18px;overflow:hidden;box-shadow:0 18px 48px var(--fh-study-shadow),inset 0 1px 0 var(--fh-study-rim);}
 .settings-stage.settings-detached-workspace {padding:0;}
 .settings-stage.settings-detached-workspace .settings-shell {max-width:none;border:0;border-radius:0;box-shadow:none;}
@@ -24,29 +24,22 @@ html[data-native-window="macos"] .settings-topbar {padding-left:100px;-webkit-ap
 .settings-navigation-search input {width:100%;padding:8px 28px 8px 31px;font-size:12px;}
 .settings-navigation-search>button {position:absolute;right:5px;top:50%;transform:translateY(-50%);}
 .settings-navigation-scroll {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 2px 8px;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--fh-border) transparent;}
-.settings-nav-group {align-items:stretch;gap:3px;}
-.settings-nav-group+.settings-nav-group {margin-top:18px;}
-.settings-nav-heading {display:block;padding:0 10px 7px;font-size:11px;color:var(--fh-muted);font-weight:500;}
+.settings-nav-group+.settings-nav-group {margin-top:7px;padding-top:7px;border-top:1px solid var(--fh-border);}
+.settings-nav-items:not([hidden]) {display:grid;gap:1px;}
 .settings-sidebar .fh-button {justify-content:flex-start;gap:10px;min-width:0;min-height:34px;height:34px;width:100%;padding-inline:10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fh-muted);font-size:13px;font-weight:400;text-align:left;}
-.settings-sidebar .fh-button:hover:not(:disabled):not([aria-current="page"]) {background:var(--fh-highlight-bg);color:var(--fh-text);}
-.settings-sidebar .fh-button[aria-current="page"] {background:var(--fh-selected-bg);border-inline-start:3px solid var(--fh-selected-border);color:var(--fh-selected-text);font-weight:600;}
+.settings-sidebar .fh-button:hover:not(:disabled):not([aria-current="page"],[data-current-group]) {background:var(--fh-highlight-bg);color:var(--fh-text);}
+.settings-sidebar .fh-button:is([aria-current="page"],[data-current-group]) {background:var(--fh-selected-bg);border-inline-start:3px solid var(--fh-selected-border);color:var(--fh-selected-text);font-weight:600;}
 .settings-sidebar .fh-button[aria-current="page"] svg {color:var(--fh-selected-text);}
 .settings-sidebar .fh-button:focus-visible {outline:2px solid var(--fh-selection-focus);outline-offset:-1px;}
 @media (forced-colors:active) {
-  .settings-sidebar .fh-button[aria-current="page"] { border-inline-start-color:Highlight; }
+  .settings-sidebar .fh-button:is([aria-current="page"],[data-current-group]) { border-inline-start-color:Highlight; }
 }
 .settings-sidebar-bottom {flex:none;border-top:1px solid var(--fh-border);padding:10px 2px 0;}
-.settings-sidebar .settings-plugin-navigation {margin-top:12px;padding-top:8px;border-top:1px solid var(--fh-border);}
-.settings-plugin-chevron,.settings-plugin-count {margin-inline-start:auto;}
-.settings-plugin-count {font-size:11px;font-variant-numeric:tabular-nums;}
-.settings-plugin-navigation [aria-expanded="false"] .settings-plugin-chevron {rotate:-90deg;}
-.settings-plugin-nav-items:not([hidden]) {display:grid;gap:2px;margin:2px 0 0 10px;padding-inline-start:5px;border-inline-start:1px solid var(--fh-border);}
-.settings-built-in-plugins {display:grid;gap:0;max-width:680px;margin:0;padding:0;overflow:hidden;list-style:none;border:1px solid var(--fh-border);border-radius:12px;background:var(--fh-surface-raised);}
-.settings-built-in-plugins li + li {border-top:1px solid var(--fh-border);}
-.settings-built-in-plugins .fh-button {width:100%;min-height:44px;justify-content:flex-start;padding:6px 12px;border-radius:0;}
-.settings-built-in-plugins svg:first-child {color:var(--fh-accent);}
-.settings-built-in-plugins svg:last-child {margin-inline-start:auto;color:var(--fh-muted);}
-.settings-built-in-plugins .fh-button:focus-visible {outline-offset:-3px;}
+.settings-sidebar .fh-button[data-nav-group] {min-height:26px;height:26px;justify-content:space-between;font-size:11px;font-weight:500;}
+.settings-sidebar [data-nav-group] > span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.settings-sidebar [data-nav-group] > svg {margin-inline-start:auto;width:12px;height:12px;}
+.settings-sidebar [data-nav-group][aria-expanded="false"] > svg {rotate:-90deg;}
+.settings-plugin-count {margin-inline-start:auto;font-size:11px;font-variant-numeric:tabular-nums;}
 .settings-local-status {display:flex;align-items:center;gap:7px;padding:10px;color:var(--fh-muted);font-size:10px;}
 .settings-local-status i {width:5px;height:5px;flex:none;border-radius:50%;background:var(--fh-accent);}
 .settings-navigation-empty {margin:0;padding:12px 10px;color:var(--fh-muted);font-size:12px;line-height:1.8;}
@@ -75,13 +68,14 @@ html[data-native-window="macos"] .settings-topbar {padding-left:100px;-webkit-ap
 .settings-mobile-navigation {flex:none;padding:10px 16px;border-bottom:1px solid var(--fh-border);}
 .settings-mobile-navigation>[data-slot="select-trigger"] {width:100%;}
 .settings-mobile-navigation [data-slot="select-value"] {min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.settings-mobile-navigation .settings-mobile-group {color:var(--fh-muted);}
 @media(min-width:700px) and (max-width:950px) {
   .settings-workspace {grid-template-columns:190px minmax(0,1fr);}
   .settings-sidebar {padding-inline:8px;}
   .settings-main {padding:24px 20px;}
 }
 @media(max-width:699px) {
-  .settings-stage {padding:8px 8px 80px;}
+  .settings-stage {padding:8px;}
   .settings-stage .settings-shell {border-radius:12px;}
   .settings-stage.settings-detached-workspace .settings-shell {border-radius:0;}
   .settings-topbar {min-height:62px;padding:12px 14px;gap:8px;}
@@ -94,6 +88,7 @@ html[data-native-window="macos"] .settings-topbar {padding-left:100px;-webkit-ap
   .settings-footer-actions .fh-button {padding-inline:8px;font-size:12px;}
 }
 @media(max-width:440px) {
+  .settings-mobile-navigation .settings-mobile-group {display:none;}
   .settings-shell h1 {font-size:16px;}
   .settings-topbar {padding-inline:10px;}
   .settings-global-actions {gap:3px;}

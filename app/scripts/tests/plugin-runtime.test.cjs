@@ -34,54 +34,18 @@ test('React ref attach enables sandboxed plugins; RPC identity is frame-bound an
  bridge.show('extensions');assert.equal(frame.sandbox,undefined);assert.equal(frame.src,'plugin-market.html');gate();await slow;assert.equal(responses.length,2,'no reply delivered after navigation');
  detach();await listeners.message({source:frame.contentWindow,data:{type:'flowhub:request',id:'detached',method:'run'}});assert.equal(calls.length,3);
 });
-test('browser preview navigation keeps selected market/plugin highlighted after refresh and falls back on disable',async()=>{
- const {store}=await h.loaded();let enabled=true;
- document.documentElement.dataset.weborgRuntime='browser';
- window.__TAURI__.core.invoke=async()=>[{enabled,manifest:{id:'example',name:'Example',ui:'ui/index.html'}}];
- vm.runInNewContext(source,{window,console});await window.FlowHubPluginIntegration.refresh();
+test('browser settings use the inline read-only market without a dock or native plugin frame',async()=>{
+ const {store}=await h.loaded({},true),calls=[];
+ window.__TAURI__={core:{invoke:async(command,args)=>{calls.push({command,args});return [];}}};
  const {Settings}=require('../../src/settings/index.tsx'),view=await h.mount(Settings,{store});
- const selected=()=>[...view.container.querySelectorAll('.settings-plugin-dock [aria-pressed=true]')].map(b=>b.textContent);
- const trigger=view.container.querySelector('.settings-plugin-dock [aria-label="插件市场"]');
- await h.click(trigger);assert.deepEqual(selected(),['插件市场']);
- assert.equal(document.querySelector('.workspace-panel > header h1').textContent,'插件市场');
- assert.match(document.querySelector('.workspace-panel > header').textContent,/只读预览/);
- await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['插件市场']);
- assert.equal(document.querySelector('nav[aria-label="插件设置"]'),null);
- assert.equal(document.querySelector('[data-slot="dialog-overlay"]'),null,'dock remains interactive while the plugin panel is open');
- const frame=document.querySelector('iframe');
- await h.click(h.button(view.container.querySelector('.settings-plugin-dock'),'Example'));assert.deepEqual(selected(),['Example']);assert.equal(document.querySelector('iframe').getAttribute('sandbox'),'allow-scripts');
- assert.notEqual(document.querySelector('iframe'),frame,'the plugin gets a separate frame from the market');
- assert.equal(document.querySelector('[data-slot="dialog-title"]').textContent,'Example');
- await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['Example']);
- enabled=false;await h.act(async()=>window.FlowHubPluginIntegration.refresh());assert.deepEqual(selected(),['插件市场']);
- await h.key(document.querySelector('[role=dialog] [aria-label="收起插件面板"]'),'Escape');
- assert.equal(document.querySelector('iframe'),null);
- await h.act(async()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
- assert.equal(document.activeElement,trigger);
- assert.equal(trigger.getAttribute('aria-expanded'),'false');
- await view.unmount();store.dispose();delete window.FlowHubPluginIntegration;
-});
-test('plugin dock caps direct entries, opens overflow plugins, and has no built-in duplicates',async()=>{
- const {store}=await h.loaded();
- document.documentElement.dataset.weborgRuntime='browser';
- const plugins=Array.from({length:7},(_,i)=>({enabled:i!==6,manifest:{id:`plugin${i}`,name:`Plugin ${i}`,ui:'ui/index.html'}}));
- window.__TAURI__.core.invoke=async()=>plugins;
- vm.runInNewContext(source,{window,console});await window.FlowHubPluginIntegration.refresh();
- const {Settings}=require('../../src/settings/index.tsx'),view=await h.mount(Settings,{store});
- const dock=view.container.querySelector('.settings-plugin-dock');
- assert.equal(dock.querySelectorAll('.settings-dock-plugin').length,3);
- for(const label of ['剪贴板','备忘录','桌面组件']) { assert.equal(h.button(dock,label),undefined); assert.equal([...view.container.querySelectorAll('nav[aria-label="设置模块"] button')].filter(b=>b.textContent===label).length,1); }
- await h.click(dock.querySelector('[aria-label="更多插件（3）"]'));
- const items=[...document.querySelectorAll('[role=menuitem]')];
- assert.deepEqual(items.map(item=>item.textContent),['Plugin 3','Plugin 4','Plugin 5']);
- await h.click(items[1]);
- assert.equal(document.querySelector('[data-slot="dialog-title"]').textContent,'Plugin 4');
- assert.match(document.querySelector('iframe').src,/plugin4/);
- await h.click(dock.querySelector('[aria-label="插件市场"]'));
- assert.equal(document.querySelector('[data-slot="dialog-title"]').textContent,'插件市场');
- await h.click(dock.querySelector('[aria-label="插件市场"]'));
- assert.equal(document.querySelector('iframe'),null,'clicking the active entry collapses its panel');
- await view.unmount();store.dispose();delete window.FlowHubPluginIntegration;
+ assert.equal(view.container.querySelector('.settings-plugin-dock'),null);
+ await h.act(async()=>window.switchModule('extensions'));
+ assert.equal(view.container.querySelector('h1').textContent,'发现');
+ assert.match(view.container.querySelector('.fh-market-inline').textContent,/只读预览/);
+ await h.act(async()=>window.switchModule('plugin:example'));
+ assert.equal(view.container.querySelector('h1').textContent,'发现');
+ assert.equal(document.querySelector('iframe'),null);assert.equal(calls.length,0);
+ await view.unmount();store.dispose();
 });
 test('native settings menu opens independent workspace without mounting a dock or plugin frame',async()=>{
  const {store}=await h.loaded(),calls=[];

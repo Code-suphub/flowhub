@@ -2,7 +2,7 @@ import { call, host, readonly, write } from './api';
 import { primaryUpdate } from './Core';
 import { entries } from './model';
 import type { SettingsStore } from './store';
-import { isPage } from './navigation';
+import { settingsLocation } from './navigation';
 // Bind synchronously before configuration loading, so native eval calls can queue.
 export function bindNativeSettings(store: SettingsStore, navigate: (id: string) => boolean|void, section: (id: string) => boolean|void) {
   let disposed = false, updating = false, queuedUpdate = false;
@@ -49,7 +49,7 @@ export function bindNativeSettings(store: SettingsStore, navigate: (id: string) 
   });
   const params = new URLSearchParams(window.location.search);
   const requestedModule = params.get('module');
-  if (requestedModule) switchModule(isPage(requestedModule) || requestedModule==='appearance' || requestedModule==='extensions' || /^plugin:[a-z0-9_-]{1,80}$/i.test(requestedModule)?requestedModule:'core');
+  if (requestedModule) switchModule(settingsLocation(requestedModule) || /^plugin:[a-z0-9_-]{1,80}$/i.test(requestedModule)?requestedModule:'core');
   if (params.get('addUrl')) prepareAddWebUrl(params.get('addUrl')!);
   if (params.get('update') === '1') void runMenuUpdate();
   if (params.has('addUrl') || params.has('update')) window.history.replaceState({}, '', window.location.pathname);

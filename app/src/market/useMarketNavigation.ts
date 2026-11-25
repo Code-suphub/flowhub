@@ -75,7 +75,7 @@ export function useMarketNavigation({view,context,keys,limit,onReveal}: {view:st
     if(['ArrowDown','ArrowUp'].includes(event.key))column.current ??=index%columns;else column.current=next%columns;
     focusAt(next);
   }
-  return {list,activeKey,restore,focusAt,focusActions:(key:string)=>element(key)?.querySelector<HTMLElement>('button:not(:disabled),summary')?.focus({preventScroll:true}),
+  return {list,activeKey,restore,focusAt,
     searchKeyDown:(event:KeyboardEvent<HTMLInputElement>)=>{
       if(event.key!=='ArrowDown' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode===229 || !keys.length)return;
       event.preventDefault();column.current=null;focusAt(Math.max(0,keys.indexOf(activeKey)));

@@ -549,7 +549,7 @@ pub(crate) async fn plugin_api(window:tauri::WebviewWindow,app:tauri::AppHandle,
         Some(channel.channel_on::<_,Value>(window.as_ref().clone()))
     }else{None};
     match action.as_str(){
-        "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"=>sources::api(&rt,&app,&action,&payload,progress.as_ref()).await,
+        "sources"|"saveSource"|"removeSource"|"chooseSource"|"scanSource"|"installCandidate"|"releaseHistory"=>sources::api(&rt,&app,&action,&payload,progress.as_ref()).await,
         "list"=>Ok(rt.list()),
         "choose"=>{let (tx,rx)=tokio::sync::oneshot::channel();app.dialog().file().set_title("选择独立插件目录").pick_folder(move |p|{let _=tx.send(p);});
             match rx.await.map_err(|e|e.to_string())?{Some(p)=>Ok(json!(package(p.into_path().map_err(|e|e.to_string())?)?)),None=>Ok(Value::Null)}},

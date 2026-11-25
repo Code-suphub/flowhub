@@ -716,7 +716,7 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
     });
     if let Some(window) = app.get_webview_window("settings") {
         window.show().map_err(|error| error.to_string())?;
-        plugin_workspace::show_dock(&app)?;
+        plugin_workspace::schedule_follow(&app);
         window.set_focus().map_err(|error| error.to_string())?;
         if update {
             window.eval("(() => { let attempts = 0; const run = () => { if (window.runMenuUpdate) { window.runMenuUpdate(); } else if (++attempts < 200) { setTimeout(run, 100); } }; run(); })();")
@@ -782,9 +782,7 @@ fn open_settings_window_target(app: tauri::AppHandle, initial_url: Option<String
     // Explicitly show before requesting focus: on macOS Tao ignores focus
     // requests for windows that have not become visible yet.
     window.show().map_err(|error| error.to_string())?;
-    plugin_workspace::show_dock(&app)?;
-    // Creating the companion dock must not take the new settings window's
-    // keyboard focus. Match the existing-window path after both are ready.
+    plugin_workspace::schedule_follow(&app);
     window.set_focus().map_err(|error| error.to_string())?;
     Ok(json!({ "ok": true }))
 }

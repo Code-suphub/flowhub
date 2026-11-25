@@ -244,7 +244,8 @@ test('settings use one navigation level for general, data and updates with keybo
   const buttons=[...view.container.querySelectorAll('.settings-sidebar [data-page]')];
   await h.key(buttons[0],'ArrowDown');assert.equal(document.activeElement,buttons[1]);assert.equal(view.container.querySelector('h1').textContent,'通用设置');
   await h.key(buttons[1],'End');assert.equal(document.activeElement,buttons.at(-1));
-  await h.key(buttons.at(-1),'Home');assert.equal(document.activeElement,buttons[0]);
+  await h.key(buttons.at(-1),'Home');assert.equal(document.activeElement.dataset.navGroup,'system');
+  await h.key(document.activeElement,'ArrowDown');assert.equal(document.activeElement.dataset.page,'core');
   for (const [id,panel] of [['core','general'],['data','data'],['updates','updates']]) {await h.click(view.container.querySelector(`[data-page="${id}"]`));assert.ok(view.container.querySelector(`#panel-${panel}`));}
   for (const label of ['搜索', '菜单栏']) { await h.click(h.button(view.container, label)); assert.equal(view.container.querySelector('[aria-label="通用设置分类"]'),null); }
   assert.equal(writes.length, 0); assert.equal(h.button(view.container, '保存'), undefined);
@@ -305,23 +306,46 @@ test('application settings refresh system authorization independently of the dra
   assert.match(readonlyView.container.querySelector('.settings-applications').textContent,/请在 FlowHub App 中查看授权状态/);
   await readonlyView.unmount();preview.store.dispose();
 });
-test('settings sidebar separates built-ins from plugins and preview keeps canvas control read-only', async () => {
+test('settings keeps core and extension items in sibling groups and browser preview read-only', async () => {
   const {store}=await h.loaded({},true),view=await h.mount(Settings,{store});
   const groups=[...view.container.querySelectorAll('.settings-nav-group')];
-  assert.deepEqual(groups.map(group=>group.querySelector('.settings-nav-heading').textContent),['系统设置','工作空间','目录与工具']);
+  assert.deepEqual(groups.map(group=>group.querySelector('[data-nav-group]').textContent),['系统设置','工作空间','核心模块','扩展插件']);
   assert.ok(h.button(groups[0],'通用设置'));
-  assert.ok(view.container.querySelector('.settings-plugin-dock [aria-label="插件市场"]'));
-  const pluginGroup=view.container.querySelector('[data-plugin-group]');
+  assert.equal(view.container.querySelector('.settings-plugin-dock'),null);
+  const builtIn=()=>groups[2].querySelector('[role="group"]');
+  assert.deepEqual([...builtIn().querySelectorAll('button')].map(button=>button.textContent),['网页目录','应用','剪贴板','备忘录','工具']);
+  const pluginGroup=view.container.querySelector('[data-nav-group="extensions"]');
   assert.equal(pluginGroup.getAttribute('aria-expanded'),'true');
-  await h.click(pluginGroup);assert.equal(pluginGroup.getAttribute('aria-expanded'),'false');
-  await h.click(pluginGroup);await h.click(view.container.querySelector('[data-page="plugins-built-in"]'));
-  assert.equal(view.container.querySelector('main .settings-built-in-plugins').children.length,5);
+  await h.click(pluginGroup);assert.equal(pluginGroup.getAttribute('aria-expanded'),'false');assert.equal(builtIn().hidden,false);
+  await h.click(pluginGroup);
+  assert.equal(view.container.querySelector('[data-page="plugins-built-in"]'),null);
+  await h.click(view.container.querySelector('[data-page="plugins-installed"]'));
+  assert.equal(view.container.querySelector('[aria-label="插件范围"]'),null);
+  assert.equal(view.container.querySelector('[data-page="plugins-installed"]').getAttribute('aria-current'),'page');
+  await h.click(pluginGroup);
+  assert.equal(pluginGroup.textContent,'扩展插件 · 已安装');
+  assert.ok(pluginGroup.hasAttribute('data-current-group'));
+  await h.click(pluginGroup);
+  await h.click(h.button(builtIn(),'剪贴板'));
+  assert.equal(view.container.querySelector('h1').textContent,'剪贴板');
+  await h.click(view.container.querySelector('[aria-label="返回上一页"]'));
+  assert.equal(view.container.querySelector('h1').textContent,'已安装');
   await h.click(view.container.querySelector('[data-page="plugins-discover"]'));
   assert.ok(view.container.querySelector('main .fh-market-inline'));assert.equal(document.querySelector('iframe'),null);
   assert.equal(view.container.querySelector('.fh-market-inline [aria-label="插件市场更多操作"]'),null);
   await h.click(h.button(groups[1],'桌面组件'));
   assert.equal(view.container.querySelector('.settings-canvas [role=switch]').getAttribute('aria-disabled'),'true');
   assert.equal(view.container.querySelector('[role=switch][aria-label="显示桌面组件"]').getAttribute('aria-disabled'),'true');
+  await view.unmount();store.dispose();
+});
+test('legacy built-in link opens the first built-in page without a phantom history entry',async()=>{
+  const {store}=await h.loaded({},true);
+  window.history.replaceState(null,'','/settings.html?module=plugins-built-in');
+  const view=await h.mount(Settings,{store});
+  assert.equal(view.container.querySelector('h1').textContent,'网页目录');
+  assert.equal(view.container.querySelector('[data-page="web"]').getAttribute('aria-current'),'page');
+  assert.equal(view.container.querySelector('[aria-label="返回上一页"]').disabled,true);
+  assert.equal(view.container.querySelector('main .fh-market-inline'),null);
   await view.unmount();store.dispose();
 });
 test('native canvas settings apply view-only and show or hide the widget surface independently', async () => {

@@ -18,6 +18,7 @@ function setup(t,{count=80,installed=false,missing=false}={}) {
       case 'list':return structuredClone(state.installed);
       case 'sources':return [{id:'local',name:'测试库',kind:'local',location:'/test',key:''}];
       case 'scanSource':return {plugins:state.catalog.map(manifest=>({manifest:{...manifest},source:'local',token:`${state.epoch}:${manifest.id}`})),warnings:[]};
+      case 'releaseHistory':return {releases:[{version:'1.2.0',publishedAt:'2026-11-20T00:00:00Z',releaseNotes:'测试版本更新说明'}],bounded:false};
       default:throw Error('test does not perform mutations');
     }
   }}};
@@ -79,11 +80,19 @@ test('source changes preserve surviving identity and recover a removed target wi
   assert.ok(s.active().matches('[data-market-key]'),'removed focused item falls back to a card');
   s.search().focus();s.state.catalog=s.state.catalog.filter(item=>item.id!=='tool-6');s.button('刷新插件').click();await wait(()=>s.cards().length===9 && !s.button('刷新插件').disabled);assert.equal(s.active(),s.search());
 });
-test('installed rows use vertical navigation; Enter without a catalog only enters controls',async t=>{
+test('installed rows without a catalog open local metadata and load official notes on demand',async t=>{
   const s=setup(t,{count:3,installed:true,missing:true});await s.ready();s.w.document.getElementById('tab-installed').click();await wait(()=>s.cards().length===4);
   s.search().focus();s.key(s.search(),'ArrowDown');s.key(s.active(),'ArrowDown');assert.equal(s.active(),s.cards()[1]);s.key(s.active(),'Enter');await wait(()=>s.button('返回浏览'));s.button('返回浏览').click();await wait(()=>s.active()===s.cards()[1]);
-  s.key(s.active(),'End');s.key(s.active(),'Enter');assert.equal(s.active().tagName,'SUMMARY');assert.equal(s.w.document.querySelector('[role="dialog"]'),null);
-  assert.equal(s.calls.some(call=>!['list','sources','scanSource'].includes(call.action)),false);
+  s.key(s.active(),'End');const local=s.active();s.key(local,'Enter');await wait(()=>s.button('查看官方发布记录'));
+  const detail=s.w.document.querySelector('[role="dialog"]');
+  assert.match(detail.textContent,/离线插件详情.*本机版本v1.0.*当前来源未提供更新日志/s);
+  assert.equal(s.calls.some(call=>call.action==='releaseHistory'),false);
+  s.button('查看官方发布记录').click();
+  await wait(()=>detail.textContent.includes('测试版本更新说明'));
+  assert.match(detail.textContent,/FlowHub 官方发布记录.*v1.2.0/s);
+  assert.deepEqual(s.calls.filter(call=>call.action==='releaseHistory').map(call=>call.payload.id),['offline']);
+  s.button('返回浏览').click();await wait(()=>s.active()===local);
+  assert.equal(s.calls.some(call=>!['list','sources','scanSource','releaseHistory'].includes(call.action)),false);
 });
 test('available updates do not hide whether installed plugins are enabled',async t=>{
   const s=setup(t,{count:2,installed:true});

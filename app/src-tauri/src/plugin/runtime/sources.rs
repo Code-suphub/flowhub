@@ -104,6 +104,12 @@ fn unpack(bytes:&[u8],directory:&Path)->Result<(),String>{
 pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value,progress:Option<&tauri::ipc::Channel<Value>>)->Result<Value,String>{
     match action{
         "sources"=>Ok(json!(rt.sources.lock().unwrap().clone())),
+        "releaseHistory"=>{
+            let id=p["id"].as_str().ok_or("缺少插件 ID")?;
+            rt.registered(id)?;
+            tokio::time::timeout(std::time::Duration::from_secs(30),official::history(id)).await
+                .map_err(|_|"官方发布记录读取超时，请稍后重试".to_string())?
+        }
         "chooseSource"=>{let(tx,rx)=tokio::sync::oneshot::channel();app.dialog().file().set_title("选择插件来源目录").pick_folder(move|path|{let _=tx.send(path);});Ok(match rx.await.map_err(|e|e.to_string())?{Some(path)=>json!(path.into_path().map_err(|e|e.to_string())?),None=>Value::Null})},
         "saveSource"|"removeSource"=>{
             let mut sources=rt.sources.lock().unwrap();let mut next=sources.clone();let id=p["id"].as_str().unwrap_or("");

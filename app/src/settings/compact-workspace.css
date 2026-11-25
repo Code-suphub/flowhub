@@ -72,9 +72,6 @@ html[data-native-window="macos"] .settings-compact-workspace .settings-topbar { 
 .settings-compact-workspace .settings-brand { gap:8px; padding:0 8px 15px; font-size:15px; }
 .settings-compact-workspace .settings-brand .flowhub-logo { width:24px; height:24px; }
 .settings-compact-workspace .settings-navigation-scroll { padding-inline:0; }
-.settings-compact-workspace .settings-nav-heading { padding:0 9px 4px; }
-.settings-compact-workspace .settings-nav-group { gap:1px; }
-.settings-compact-workspace .settings-nav-group + .settings-nav-group { margin-top:13px; }
 .settings-compact-workspace .settings-sidebar .fh-button { height:32px; min-height:32px; gap:8px; padding-inline:8px; border-radius:6px; }
 .settings-compact-workspace .settings-sidebar .fh-button > svg { flex:none; width:15px; height:15px; }
 .settings-compact-workspace .settings-sidebar-bottom { padding:6px 0 0; }
