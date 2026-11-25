@@ -85,6 +85,19 @@ test('installed rows use vertical navigation; Enter without a catalog only enter
   s.key(s.active(),'End');s.key(s.active(),'Enter');assert.equal(s.active().tagName,'SUMMARY');assert.equal(s.w.document.querySelector('[role="dialog"]'),null);
   assert.equal(s.calls.some(call=>!['list','sources','scanSource'].includes(call.action)),false);
 });
+test('available updates do not hide whether installed plugins are enabled',async t=>{
+  const s=setup(t,{count:2,installed:true});
+  s.state.installed[1].enabled=false;
+  s.state.catalog=s.state.catalog.map(manifest=>({...manifest,version:'2.0'}));
+  await s.ready();
+  const installed=s.w.document.getElementById('tab-installed');
+  installed.click();
+  await wait(()=>s.cards().length===2 && s.cards()[0].classList.contains('market-installed-row'));
+  assert.match(s.cards()[0].textContent,/已启用.*可更新至 v2\.0/);
+  assert.match(s.cards()[1].textContent,/已停用.*可更新至 v2\.0/);
+  assert.ok(s.button('打开',s.cards()[0]));
+  assert.equal(s.button('打开',s.cards()[1]),undefined);
+});
 test('manage from details focuses the matching installed row and no-result search stays usable',async t=>{
   const s=setup(t,{count:4,installed:true});await s.ready();s.cards()[2].focus();s.key(s.active(),'Enter');await wait(()=>s.button('管理插件'));s.button('管理插件').click();await wait(()=>s.cards().length===1 && s.active()===s.cards()[0]);
   assert.equal(s.active().getAttribute('aria-label'),'工具 02');s.key(s.active(),'Escape');s.fill('不存在');await wait(()=>s.cards().length===0);s.key(s.search(),'ArrowDown');assert.equal(s.active(),s.search());

@@ -1,4 +1,4 @@
-import { ActivityIcon, BoxIcon, KeyRoundIcon, LayoutDashboardIcon, MessagesSquareIcon, MoreHorizontalIcon, PuzzleIcon, SearchIcon, ServerIcon, UsbIcon } from 'lucide-react';
+import { ActivityIcon, BoxIcon, ChevronRightIcon, KeyRoundIcon, LayoutDashboardIcon, MessagesSquareIcon, MoreHorizontalIcon, PuzzleIcon, SearchIcon, ServerIcon, UsbIcon } from 'lucide-react';
 import { FeatureIcon, type IconTone } from '../shared/FeatureIcon';
 import { Button } from '../shared/ui';
 import { ActionMenu } from '../shared/ActionMenu';
@@ -21,10 +21,18 @@ export function CatalogCard({item, sourceName, official, installed, disabled, on
   const action=installLabel(item,installed), same=action==='管理';
   const tabIndex=navigation.tabIndex===-1?-1:undefined;
   return <article className="market-catalog-card" aria-label={item.manifest.name} {...navigation}>
-    <div className="market-plugin-identity"><PluginIcon manifest={item.manifest}/><div className="min-w-0"><h2><button tabIndex={tabIndex} type="button" className="market-name-button" onClick={onDetails} aria-label={`查看${item.manifest.name}详情`}>{item.manifest.name}</button></h2><span className="market-meta">v{item.manifest.version}</span></div>{installed?<Badge variant="secondary" className="market-installed-badge">已安装</Badge>:null}</div>
+    <div className="market-plugin-identity">
+      <PluginIcon manifest={item.manifest}/>
+      <div className="min-w-0">
+        <h2><button tabIndex={tabIndex} type="button" className="market-name-button" onClick={onDetails} aria-label={`查看${item.manifest.name}详情`}>{item.manifest.name}<ChevronRightIcon aria-hidden="true"/></button></h2>
+        <div className="market-catalog-version">
+          <span className="market-meta">v{item.manifest.version}</span>
+          {installed?<Badge variant="secondary">{action==='更新'?`已安装 v${installed.manifest.version}`:'已安装'}</Badge>:null}
+        </div>
+      </div>
+    </div>
     <p className="market-description">{item.manifest.description || '此插件尚未提供功能介绍。'}</p>
-    <Features manifest={item.manifest}/>
-    <div className="market-card-footer"><div className="min-w-0"><p className="market-source-name" title={sourceName}>{official?'FlowHub 官方':sourceName}</p><Button tabIndex={tabIndex} variant="link" size="sm" onClick={onDetails} aria-label={`${item.manifest.name}详情`}>查看详情</Button></div>
+    <div className="market-card-footer"><div className="min-w-0"><p className="market-source-name" title={sourceName}>{official?'FlowHub 官方':sourceName}</p><Features manifest={item.manifest}/></div>
       <div className="market-card-actions flex items-center gap-1"><Button tabIndex={tabIndex} variant={same?'outline':'default'} size="sm" disabled={same?false:disabled} onClick={same?onManage:onInstall}>{action}</Button>{same?<ActionMenu tabIndex={tabIndex} label={`更多${item.manifest.name}操作`} icon={<MoreHorizontalIcon/>} disabled={disabled} popupClassName="fh-market-menu" items={[{id:'reinstall',label:'重新安装此版本',disabled,onSelect:onInstall}]}/>:null}</div>
     </div>
   </article>;
@@ -32,10 +40,19 @@ export function CatalogCard({item, sourceName, official, installed, disabled, on
 export function InstalledRow({item,update,sourceName,canUpdate,disabled,onToggle,onChooseDirectory,onUninstall,onUpdate,onOpen,onDetails,navigation}: {item:Installed;update?:Candidate;sourceName?:string;canUpdate:boolean;disabled:boolean;onToggle:()=>void;onChooseDirectory:()=>void;onUninstall:()=>void;onUpdate:()=>void;onOpen:()=>void;onDetails?:()=>void;navigation:MarketItemNavigation}) {
   const tabIndex=navigation.tabIndex===-1?-1:undefined;
   return <article className="market-installed-row" aria-label={item.manifest.name} {...navigation}>
-    <div className="market-installed-copy"><PluginIcon manifest={item.manifest}/><div className="market-installed-info"><div className="market-installed-title"><h2>{item.manifest.name}</h2><span className="market-meta">v{item.manifest.version}</span></div><p className="market-description">{item.manifest.description || '此插件尚未提供功能介绍。'}</p><div className="market-installed-details"><Features manifest={item.manifest}/>
-      <details className="market-location"><summary tabIndex={tabIndex}>本机信息</summary><dl>{item.manifest.description?<><dt>功能说明</dt><dd>{item.manifest.description}</dd></>:null}<dt>更新来源</dt><dd>{item.origin?.kind==='directory'?'本地目录':sourceName || (item.origin?.source?'原市场来源已移除':'插件市场')}</dd><dt>安装目录</dt><dd><code>{item.directory}</code></dd><dt>最近加载</dt><dd>{item.lastLoadedAt?new Date(item.lastLoadedAt).toLocaleString():'暂无记录'}</dd></dl></details>
+    <div className="market-installed-copy"><PluginIcon manifest={item.manifest}/><div className="market-installed-info">
+      <div className="market-installed-title">
+        <h2>{onDetails?<button tabIndex={tabIndex} type="button" className="market-name-button" onClick={onDetails} aria-label={`查看${item.manifest.name}详情`}>{item.manifest.name}<ChevronRightIcon aria-hidden="true"/></button>:item.manifest.name}</h2>
+        <span className="market-meta">v{item.manifest.version}</span>
+      </div>
+      <div className="market-installed-states">
+        <Badge variant={item.enabled?'secondary':'outline'} className="market-state-badge" data-enabled={item.enabled}>{item.enabled?'已启用':'已停用'}</Badge>
+        {update?<Badge variant="outline">可更新至 v{update.manifest.version}</Badge>:null}
+      </div>
+      <p className="market-description">{item.manifest.description || '此插件尚未提供功能介绍。'}</p><div className="market-installed-details"><Features manifest={item.manifest}/>
+      <details className="market-location"><summary tabIndex={tabIndex}>本机信息</summary><dl><dt>更新来源</dt><dd>{item.origin?.kind==='directory'?'本地目录':sourceName || (item.origin?.source?'原市场来源已移除':'插件市场')}</dd><dt>安装目录</dt><dd><code>{item.directory}</code></dd><dt>最近加载</dt><dd>{item.lastLoadedAt?new Date(item.lastLoadedAt).toLocaleString():'暂无记录'}</dd></dl></details>
     </div></div></div>
-    <div className="market-installed-actions">{update?<Badge variant="secondary">可更新至 v{update.manifest.version}</Badge>:<Badge variant={item.enabled?'secondary':'outline'}>{item.enabled?'已启用':'已停用'}</Badge>}{item.enabled?<Button tabIndex={tabIndex} size="sm" disabled={disabled} onClick={onOpen}>打开</Button>:null}{canUpdate?<Button tabIndex={tabIndex} size="sm" variant={update?'default':'outline'} disabled={disabled} onClick={onUpdate}>更新</Button>:null}<Button tabIndex={tabIndex} size="sm" disabled={disabled} onClick={onToggle}>{item.enabled?'停用':'启用'}</Button>
+    <div className="market-installed-actions">{item.enabled?<Button tabIndex={tabIndex} size="sm" variant={update?'outline':'default'} disabled={disabled} onClick={onOpen}>打开</Button>:null}{canUpdate?<Button tabIndex={tabIndex} size="sm" variant={update?'default':'outline'} disabled={disabled} onClick={onUpdate}>更新</Button>:null}<Button tabIndex={tabIndex} size="sm" variant={item.enabled?'ghost':update?'outline':'default'} disabled={disabled} onClick={onToggle}>{item.enabled?'停用':'启用'}</Button>
       <ActionMenu tabIndex={tabIndex} label={`管理${item.manifest.name}`} icon={<MoreHorizontalIcon/>} disabled={disabled} popupClassName="fh-market-menu" items={[
         ...(onDetails?[{id:'details',label:'版本详情',onSelect:onDetails}]:[]),
         {id:'directory',label:'更换安装目录…',disabled,onSelect:onChooseDirectory},
