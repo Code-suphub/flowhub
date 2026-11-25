@@ -273,20 +273,36 @@ test('tools use a compact grid and memos keep navigation separate from details',
   assert.ok(view.container.querySelector('.settings-memo-workspace .settings-memo-detail'));
   await view.unmount();store.dispose();
 });
-test('application options group the draft toggle and system permission action without saving implicitly', async () => {
-  let permissions=0;
-  const {store,writes}=await h.loaded({openAccessibilitySettings:async()=>{permissions++;return {ok:true};}});
+test('application settings refresh system authorization independently of the draft and menu bar organizer', async () => {
+  let permissions=0, trusted=false, readError=false;
+  const {store,writes}=await h.loaded({
+    getMenuBarManagementState:async()=>{if(readError) throw Error('查询失败');return {supported:true,trusted};},
+    openAccessibilitySettings:async()=>{permissions++;return {ok:true};}
+  });
   const view=await h.mount(Settings,{store});
   await h.click(h.button(view.container,'应用'));
   const card=view.container.querySelector('.settings-applications');
   assert.ok(card);assert.equal(card.querySelectorAll('.settings-row').length,2);
+  const status=card.querySelector('[role=status]');
+  assert.equal(status.textContent,'未授权');
+  assert.notEqual(store.snapshot().saved.core.menuBar.organizerEnabled,true);
   await h.click(card.querySelector('[role=switch]'));
   assert.equal(store.snapshot().config.plugins.app.enabled,false);assert.equal(writes.length,0);
   await h.click(h.button(card,'打开系统设置'));assert.equal(permissions,1);assert.equal(writes.length,0);
+  trusted=true;
+  await h.act(async()=>window.dispatchEvent(new window.Event('focus')));
+  assert.equal(status.textContent,'已授权');assert.equal(writes.length,0);
+  readError=true;
+  await h.act(async()=>document.dispatchEvent(new window.Event('visibilitychange')));
+  assert.equal(status.textContent,'授权状态读取失败');
+  readError=false;trusted=false;
+  await h.act(async()=>window.dispatchEvent(new window.Event('focus')));
+  assert.equal(status.textContent,'未授权');assert.equal(writes.length,0);
   await view.unmount();store.dispose();
   const preview=await h.loaded({},true),readonlyView=await h.mount(Settings,{store:preview.store});
   await h.click(h.button(readonlyView.container,'应用'));
   assert.equal(readonlyView.container.querySelector('.settings-applications').closest('fieldset').disabled,true);
+  assert.match(readonlyView.container.querySelector('.settings-applications').textContent,/请在 FlowHub App 中查看授权状态/);
   await readonlyView.unmount();preview.store.dispose();
 });
 test('settings sidebar separates built-ins from plugins and preview keeps canvas control read-only', async () => {
