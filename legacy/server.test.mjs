@@ -122,7 +122,7 @@ test("legacy server boundaries in an isolated checkout", { timeout: 30000 }, asy
       try {
         result = await call("/api/config", { hostname: host, headers: { "x-flowhub-test-probe": id }, timeout: 1000 });
       } catch (error) {
-        assert.ok(["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "ETIMEDOUT", "ECONNRESET"].includes(error.code), `unexpected probe failure: ${error.code}`);
+        assert.ok(["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EADDRNOTAVAIL", "ETIMEDOUT", "ECONNRESET"].includes(error.code), `unexpected probe failure: ${error.code}`);
         continue;
       }
       // TUN/proxy stacks can relay an interface address to loopback. Do not

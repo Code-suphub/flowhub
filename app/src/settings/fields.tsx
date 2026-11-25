@@ -3,11 +3,12 @@ import { Button, Input } from '../shared/ui';
 import { Help, Switch, Select } from '../shared/controls';
 import { canonical } from './model';
 import { shortcutKeys } from '../shared/shortcuts';
-export function Row({ label, help, note, noteId, children }: { label: string; help?: string; note?: string; noteId?: string; children: ReactNode }) {
+export function Row({ label, help, note, noteId, children }: { label: string; help?: string; note?: ReactNode; noteId?: string; children: ReactNode }) {
+  const hasNote = note != null && note !== '' && typeof note !== 'boolean';
   return <div className="settings-row grid gap-2 sm:grid-cols-2 items-center" data-setting-label={label} tabIndex={-1}>
-    <div className={note ? 'flex flex-wrap items-center gap-x-2 gap-y-1' : 'flex items-center gap-2'}>
+    <div className={hasNote ? 'flex flex-wrap items-center gap-x-2 gap-y-1' : 'flex items-center gap-2'}>
       <span>{label}</span>{help ? <Help label={`${label}说明`}>{help}</Help> : null}
-      {note ? <small id={noteId} className="fh-copy-note w-full">{note}</small> : null}
+      {hasNote ? <small id={noteId} className="fh-copy-note w-full">{note}</small> : null}
     </div>
     <div className="min-w-0" data-setting-control>{children}</div>
   </div>;

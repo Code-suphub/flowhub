@@ -81,12 +81,15 @@ test('plugin dock caps direct entries, opens overflow plugins, and has no built-
  assert.equal(document.querySelector('iframe'),null,'clicking the active entry collapses its panel');
  await view.unmount();store.dispose();delete window.FlowHubPluginIntegration;
 });
-test('native settings opens independent workspace without mounting a dock or plugin frame',async()=>{
+test('native settings menu opens independent workspace without mounting a dock or plugin frame',async()=>{
  const {store}=await h.loaded(),calls=[];
  window.__TAURI__.core.invoke=async(command,args)=>{calls.push({command,args});return {module:'extensions',open:false,revision:0};};
+ window.history.replaceState(null,'','/settings.html?module=search');
  const {Settings}=require('../../src/settings/index.tsx'),view=await h.mount(Settings,{store});
  assert.equal(view.container.querySelector('.settings-plugin-dock'),null);
- await h.click(view.container.querySelector('[aria-label="显示独立插件栏"]'));
+ await h.click(view.container.querySelector('[aria-label="更多设置操作"]'));
+ const showPluginBar=[...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent.trim()==='显示插件栏');
+ await h.click(showPluginBar);
  assert.equal(calls.at(-1).command,'plugin_workspace');assert.equal(calls.at(-1).args.action,'show');
  await h.act(async()=>window.switchModule('plugin:example'));
  assert.equal(calls.at(-1).args.action,'select');assert.equal(calls.at(-1).args.module,'plugin:example');
