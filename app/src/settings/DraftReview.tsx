@@ -14,9 +14,9 @@ export function DraftReview({ store, onClose, onNavigate }: { store: SettingsSto
     catch(reason){const text=reason instanceof Error?reason.message:String(reason);setError(text);store.notice(text,true);}
     finally{saving.current=false;}
   }
-  return <Dialog title="未保存的修改" onClose={onClose} busy={s.busy} notice={error || (s.conflict?s.notice:undefined)} className="settings-review-dialog">
+  return <Dialog title="未保存的修改" onClose={onClose} busy={s.busy} notice={error || (s.conflict?s.notice:undefined)} className="settings-review-dialog" fixedHeight
+    footer={<div className="settings-dialog-actions"><Button disabled={s.busy} onClick={onClose}>继续编辑</Button><Button variant="default" disabled={s.busy || !store.dirty || s.conflict} onClick={()=>void save()}>{s.busy?'正在保存…':'保存全部修改'}</Button></div>}>
     <ConfigChanges before={s.saved} after={s.config} disabled={s.busy} onNavigate={onNavigate} />
     <Alert className="mt-4" role="status"><AlertDescription>修改保留在当前草稿中，保存后生效；关闭审阅可以继续编辑。</AlertDescription></Alert>
-    <div className="settings-dialog-actions"><Button disabled={s.busy} onClick={onClose}>继续编辑</Button><Button variant="default" disabled={s.busy || !store.dirty || s.conflict} onClick={()=>void save()}>{s.busy?'正在保存…':'保存全部修改'}</Button></div>
   </Dialog>;
 }

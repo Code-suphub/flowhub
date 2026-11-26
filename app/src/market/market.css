@@ -82,14 +82,15 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .fh-market .market-collection-copy h2 {font-size:13px;}
 .market-official-collection>.fh-button {margin-inline-start:auto;flex:none;}
 .market-custom-source {display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;padding:24px 0;}
-.fh-dialog.market-detail-dialog {display:flex;flex-direction:column;width:min(640px,calc(100vw - 32px));overflow:hidden;}
-.market-detail-body {min-height:0;overflow:auto;padding-right:4px;}
-.market-detail-dialog>.market-detail-actions {flex-shrink:0;}
+.fh-dialog.market-detail-dialog {width:min(640px,calc(100vw - 32px));}
 .market-detail-identity {display:flex;align-items:flex-start;gap:10px;margin:2px 0 12px;}
 .market-detail-overview {flex:1;min-width:0;}
 .market-detail-overview .market-features {margin-top:6px;}
 .market-detail-identity [data-slot="badge"] {flex:none;}
 .market-detail-description {font-size:14px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;}
+.market-version-picker {display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 12px;font-size:13px;}
+.market-version-picker [data-slot="select-trigger"] {max-width:100%;min-width:0;}
+.market-version-picker [data-slot="select-value"] {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .market-detail-section {margin-top:12px;padding:12px 0;border-top:1px solid var(--fh-border);}
 .market-detail-section h3 {display:flex;align-items:center;gap:6px;margin:0 0 10px;font-size:13px;font-weight:600;}
 .market-detail-section h3 svg {width:16px;height:16px;color:var(--fh-accent);}
@@ -107,7 +108,7 @@ html:has(#market-root .fh-market-embedded),body:has(#market-root .fh-market-embe
 .market-detail-facts>div {display:grid;grid-template-columns:72px minmax(0,1fr);align-items:baseline;gap:6px;}
 .market-detail-facts dt {color:var(--fh-muted);}
 .market-detail-facts dd {margin:0;min-width:0;overflow-wrap:anywhere;}
-.market-detail-actions {display:flex;justify-content:flex-end;gap:8px;padding-top:12px;border-top:1px solid var(--fh-border);}
+.market-detail-actions {display:flex;justify-content:flex-end;gap:8px;}
 .market-installed-switch {display:flex;align-items:center;padding-inline:5px;}
 .market-catalog-version .market-update-label {color:var(--fh-accent-strong);}
 .market-location {color:var(--fh-muted);font-size:12px;line-height:1.7;margin-top:6px;}

@@ -24,7 +24,10 @@ export function Tabs({ items, value, onChange, label }: { items: readonly Tab[];
     </TabsList>
   </ShadcnTabs>;
 }
-export function Dialog({ title, onClose, busy, children, notice, className, modal = true, initialFocus, restoreFocus=true }: { title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string; modal?: boolean; initialFocus?: ComponentProps<typeof DialogContent>['initialFocus'];restoreFocus?:boolean }) {
+export function Dialog({ title, onClose, busy, children, notice, className, modal = true, initialFocus, restoreFocus=true, fixedHeight=false, footer }: {
+  title: string; onClose: () => void; busy: boolean; children: ReactNode; notice?: string; className?: string; modal?: boolean;
+  initialFocus?: ComponentProps<typeof DialogContent>['initialFocus']; restoreFocus?: boolean; fixedHeight?: boolean; footer?: ReactNode;
+}) {
   const previousFocus = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
   useEffect(() => () => {
     if(!restoreFocus)return;
@@ -34,14 +37,17 @@ export function Dialog({ title, onClose, busy, children, notice, className, moda
       if (previous.isConnected && (active === document.body || active === closingFocus || active?.hasAttribute('data-base-ui-focus-guard'))) previous.focus();
     });
   }, [restoreFocus]);
+  const message = notice ? <p role="alert" className="fh-dialog-notice whitespace-pre-wrap">{notice}</p> : null;
   return <ShadcnDialog open modal={modal} onOpenChange={open => { if (!open && !busy) onClose(); }} disablePointerDismissal>
-    <DialogContent className={cn('fh-dialog gap-0', className)} showCloseButton={false} showBackdrop={modal} aria-busy={busy} initialFocus={initialFocus} finalFocus={false}>
+    <DialogContent className={cn('fh-dialog gap-0', fixedHeight && 'fh-dialog-fixed', className)} showCloseButton={false} showBackdrop={modal} aria-busy={busy} initialFocus={initialFocus} finalFocus={false}>
       <DialogHeader className="mb-4 flex-row items-center justify-between gap-4">
         <DialogTitle>{title}</DialogTitle>
         <DialogClose render={<Button disabled={busy} aria-label="关闭" />}>×</DialogClose>
       </DialogHeader>
-      {children}
-      {notice ? <p role="alert" className="whitespace-pre-wrap">{notice}</p> : null}
+      {fixedHeight ? <>
+        <div className="fh-dialog-body" role="region" aria-label="正文" tabIndex={0}>{children}</div>
+        {footer || message ? <div className="fh-dialog-footer">{message}{footer}</div> : null}
+      </> : <>{children}{footer}{message}</>}
     </DialogContent>
   </ShadcnDialog>;
 }

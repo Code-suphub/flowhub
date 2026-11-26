@@ -8,8 +8,12 @@ html[data-native-glass="true"]:has(#settings-root),html[data-native-glass="true"
 .settings-shortcut-control [role=alert] { flex-basis:100%; margin:0; }
 @media(min-width:768px) { .settings-row:has(.settings-shortcut-control) { grid-template-columns:minmax(140px,1fr) auto; } }
 .settings-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:16px; }
+.fh-dialog-footer > .settings-dialog-actions { margin-top:0; }
 .fh-dialog.settings-json-dialog { width:min(880px,calc(100vw - 32px)); max-width:880px; }
-.settings-json-dialog .settings-code { height:min(55vh,560px); resize:vertical; }
+.settings-json-dialog .fh-dialog-body { display:flex; flex-direction:column; gap:8px; }
+.settings-json-dialog .fh-dialog-body > p { margin:0; }
+.settings-json-dialog textarea.settings-code { flex:1; min-height:120px; max-height:none; resize:none; }
+.fh-dialog-body > pre.settings-code { max-height:none; overflow:visible; }
 .settings-fieldset { border:0; margin:0; padding:0; min-width:0; }
 .settings-section { min-inline-size:0; margin:0; padding:0; border:0; }
 .settings-section > legend { width:100%; padding:0 0 8px; border-bottom:1px solid var(--fh-border); color:var(--fh-muted); }

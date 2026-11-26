@@ -54,12 +54,7 @@
   .settings-diagnostic-section + .settings-diagnostic-section { border-block-start:0; padding-block-start:0; border-inline-start:1px solid var(--fh-border); padding-inline-start:12px; }
 }
 @media (pointer:coarse) {
-  .settings-data-grid .fh-button,.settings-data-grid .settings-data-export-actions [data-slot="select-trigger"],.settings-data-review .fh-button { min-height:44px; }
+  .settings-data-grid .fh-button,.settings-data-grid .settings-data-export-actions [data-slot="select-trigger"],.settings-data-dialog.fh-dialog-fixed .fh-button { min-height:44px; }
   .settings-path-details>summary,.settings-data-details>summary { min-height:44px; align-content:center; }
   .settings-path-details>summary { align-items:center; }
 }
-.fh-dialog.settings-data-review { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); overflow:hidden; }
-.settings-data-review > :is([data-slot="dialog-header"],.settings-dialog-actions) { flex:none; }
-.settings-data-review-body { min-height:0; overflow:auto; overscroll-behavior:contain; padding:3px; }
-.settings-data-review > .settings-dialog-actions { padding-top:12px; margin-top:8px; border-top:1px solid var(--fh-border); }
-@media (max-height:440px) { .fh-dialog.settings-data-review { padding:12px; } }

@@ -256,7 +256,12 @@ export function WebCatalog({ store }: { store: SettingsStore }) {
       {action.kind==='move'?<FieldGroup><Field><FieldLabel>目标目录</FieldLabel><Select label="目标目录" value={moveTarget} onChange={setMoveTarget} options={[{value:'root',label:'根目录'},...all.filter(entry=>!action.blocked.has(entry.node.id)&&(!entry.node.url || entry.node.children?.length)).map(entry=>({value:`node:${entry.node.id}`,label:path(entry.node.id)}))]} /></Field></FieldGroup>:null}
       <div className="settings-dialog-actions"><Button onClick={()=>setAction(null)}>取消</Button><Button variant={action.kind==='delete'?'destructive':'default'} disabled={Boolean(actionError)} onClick={applyAction}>{action.kind==='delete'?'确认删除':'确认移动'}</Button></div>
     </Dialog> : null}
-    {pending && plan ? <Dialog title="核对目录导入" busy={false} onClose={() => setPending(null)}><p>{pending.path}</p><Choice label="重复 ID" value={overwrite} options={[{ value: 'skip', label: '跳过' }, { value: 'overwrite', label: '覆盖属性并合并子节点' }]} onChange={setOverwrite} /><pre className="settings-code">{plan.changes.join('\n')}</pre><Button onClick={() => { editNodes(plan.nodes); setPending(null); }}>应用为草稿</Button></Dialog> : null}
+    {pending && plan ? <Dialog title="核对目录导入" busy={false} onClose={() => setPending(null)} fixedHeight
+      footer={<div className="settings-dialog-actions"><Button onClick={() => { editNodes(plan.nodes); setPending(null); }}>应用为草稿</Button></div>}>
+      <p>{pending.path}</p>
+      <Choice label="重复 ID" value={overwrite} options={[{ value: 'skip', label: '跳过' }, { value: 'overwrite', label: '覆盖属性并合并子节点' }]} onChange={setOverwrite} />
+      <pre className="settings-code">{plan.changes.join('\n')}</pre>
+    </Dialog> : null}
   </div>;
 }
 interface MemoDropTarget extends MemoMoveRef { position: MemoDropPosition }

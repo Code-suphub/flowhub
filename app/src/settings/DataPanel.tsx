@@ -228,26 +228,22 @@ export function DataPanel({ store }: { store: SettingsStore }) {
         </div>
       </section>
     </div>
-    {history?<Dialog title={history.restore?'恢复配置历史':'历史差异'} busy={s.busy} onClose={closeHistory} className="settings-review-dialog settings-data-dialog settings-data-review">
-      <div className="settings-data-review-body">
+    {history?<Dialog title={history.restore?'恢复配置历史':'历史差异'} busy={s.busy} onClose={closeHistory} className="settings-review-dialog settings-data-dialog" fixedHeight
+      footer={<div className="settings-dialog-actions"><Button disabled={s.busy} onClick={closeHistory}>取消</Button>{history.error?<Button disabled={s.busy} onClick={()=>void retryHistory()}>{s.conflict?'重新加载当前配置':'重新读取差异'}</Button>:null}{!history.restore?<Button disabled={preview || history.loading || !history.target || Boolean(history.error) || s.busy || s.conflict} onClick={()=>setHistory({...history,restore:true})}>恢复此版本…</Button>:<Button variant="destructive" disabled={preview || history.loading || !history.target || Boolean(history.error) || s.busy || s.conflict} onClick={()=>void restoreHistory()}>确认恢复</Button>}</div>}>
         <p className="settings-review-context">{stamp(history.entry.created_at)} · 与当前编辑草稿比较</p>
         {history.error && <Alert variant="destructive"><AlertDescription>{history.error}</AlertDescription></Alert>}
         {history.loading?<p role="status">正在读取历史配置…</p>:history.target?<>
           {history.restore?<Alert variant="warning" role="status" className="mb-4"><AlertTitle>恢复会立即替换已保存配置</AlertTitle><AlertDescription>未保存草稿会放弃；当前已保存配置会先备份。网页目录与剪贴板记录保持当前数据，系统集成及备份中的数据位置可能需要重启。</AlertDescription></Alert>:null}
           <ConfigChanges before={history.base} after={history.target} />
         </>:null}
-      </div>
-      <div className="settings-dialog-actions"><Button disabled={s.busy} onClick={closeHistory}>取消</Button>{history.error?<Button disabled={s.busy} onClick={()=>void retryHistory()}>{s.conflict?'重新加载当前配置':'重新读取差异'}</Button>:null}{!history.restore?<Button disabled={preview || history.loading || !history.target || Boolean(history.error) || s.busy || s.conflict} onClick={()=>setHistory({...history,restore:true})}>恢复此版本…</Button>:<Button variant="destructive" disabled={preview || history.loading || !history.target || Boolean(history.error) || s.busy || s.conflict} onClick={()=>void restoreHistory()}>确认恢复</Button>}</div>
     </Dialog>:null}
-    {pending?<Dialog title="核对导入差异" busy={s.busy} onClose={()=>{setPending(null);setTransferError('');}} className="settings-review-dialog settings-data-dialog settings-data-review">
-      <div className="settings-data-review-body">
+    {pending?<Dialog title="核对导入差异" busy={s.busy} onClose={()=>{setPending(null);setTransferError('');}} className="settings-review-dialog settings-data-dialog" fixedHeight
+      footer={<div className="settings-dialog-actions"><Button disabled={s.busy} onClick={()=>{setPending(null);setTransferError('');}}>取消</Button><Button variant="default" disabled={preview || !plan.config || Boolean(plan.error) || Boolean(transferError) || s.busy || s.conflict || same(pending.base,plan.config)} onClick={applyImport}>应用为草稿</Button></div>}>
         <p className="settings-review-context">{pending.payload.path} · 范围 {names[pending.payload.scope || 'all'] || pending.payload.scope}</p>
         {pending.payload.appVersion && pending.payload.currentAppVersion!==pending.payload.appVersion?<Alert variant="warning" role="status" className="mb-4"><AlertDescription>导出版本 {pending.payload.appVersion} 与当前版本不同，请核对字段。</AlertDescription></Alert>:null}
         {(transferError || plan.error) && <Alert variant="destructive"><AlertDescription>{transferError || plan.error}</AlertDescription></Alert>}
         <Choice label="导入方式" value={mode} options={[{value:'merge',label:'递归合并（数组替换）'},{value:'replace',label:'替换所选范围'}]} onChange={setMode} />
         {plan.config?<ConfigChanges before={pending.base} after={plan.config} />:null}
-      </div>
-      <div className="settings-dialog-actions"><Button disabled={s.busy} onClick={()=>{setPending(null);setTransferError('');}}>取消</Button><Button variant="default" disabled={preview || !plan.config || Boolean(plan.error) || Boolean(transferError) || s.busy || s.conflict || same(pending.base,plan.config)} onClick={applyImport}>应用为草稿</Button></div>
     </Dialog>:null}
     {clearSampling?<Dialog title="清理性能采样" busy={diagnosing} onClose={()=>setClearSampling(false)} notice={diagnosticError} className="settings-data-dialog"><p>只清理本机性能记录，不影响网页、剪贴板或备忘录数据。</p><div className="settings-dialog-actions"><Button disabled={diagnosing} onClick={()=>setClearSampling(false)}>取消</Button><Button variant="destructive" disabled={diagnosing} onClick={()=>void diagnose(async()=>{await write('clearDiagnostics');if(alive.current)setClearSampling(false);store.notice('性能数据已清理');})}>确认清理</Button></div></Dialog>:null}
   </div>;

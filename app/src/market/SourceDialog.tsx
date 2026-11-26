@@ -18,7 +18,8 @@ export function SourceDialog({sources,states,available,busy,locking,error,onClos
   const origin=useRef<HTMLElement|null>(null), section=useRef<HTMLDivElement>(null);
   const edit=(source:Source,trigger:HTMLElement)=>{origin.current=trigger;setRemoving(null);setEditing({...source});};
   const closeEditor=()=>{setEditing(null);requestAnimationFrame(()=>{if(origin.current?.isConnected && document.hasFocus())origin.current.focus();});};
-  return <Dialog title="插件来源" className="fh-market-dialog market-sources-dialog" busy={locking} onClose={onClose}>
+  return <Dialog title="插件来源" className="fh-market-dialog market-sources-dialog" busy={locking} onClose={onClose} fixedHeight
+    footer={editing?<div className="flex flex-wrap justify-end gap-2"><Button disabled={busy} onClick={closeEditor}>取消</Button><Button variant="default" type="submit" form="market-source-form" disabled={busy}>保存来源</Button></div>:null}>
     <div ref={section} className="market-sources-content">
       {error && !editing?<Alert variant="destructive"><AlertTitle>操作未完成</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>:null}
       {available?<div className="market-source-heading"><Button size="sm" disabled={busy || Boolean(editing)} onClick={e=>edit(blank(),e.currentTarget)}>添加来源</Button></div>:null}
@@ -34,7 +35,7 @@ export function SourceDialog({sources,states,available,busy,locking,error,onClos
         </article>;
       })}</div>
       {!sources.length && !editing?<Empty><EmptyHeader><EmptyTitle>还没有插件来源</EmptyTitle><EmptyDescription>{available?'添加本地目录或 HTTPS 插件库。':'请在桌面 App 添加来源。'}</EmptyDescription></EmptyHeader></Empty>:null}
-      {editing?<form className="market-source-form" aria-label={editing.id?'编辑来源':'添加来源'} onSubmit={async e=>{e.preventDefault();if(await onSave({...editing,name:editing.name.trim(),location:editing.location.trim(),key:editing.kind==='https'?editing.key.trim():''}))closeEditor();}}>
+      {editing?<form id="market-source-form" className="market-source-form" aria-label={editing.id?'编辑来源':'添加来源'} onSubmit={async e=>{e.preventDefault();if(await onSave({...editing,name:editing.name.trim(),location:editing.location.trim(),key:editing.kind==='https'?editing.key.trim():''}))closeEditor();}}>
         <h3>{editing.id?'编辑来源':'添加来源'}</h3>{error?<Alert variant="destructive"><AlertTitle>来源未保存</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>:null}<FieldGroup className="gap-4">
           <Field data-disabled={busy}><FieldLabel htmlFor="source-name">名称</FieldLabel><Input id="source-name" autoFocus required maxLength={100} disabled={busy} value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></Field>
           <FieldSet className="border-0 p-0 m-0 gap-0"><FieldLegend variant="label">来源类型</FieldLegend><RadioGroup className="flex gap-4" value={editing.kind} disabled={busy} onValueChange={kind=>setEditing({...editing,kind:kind as Source['kind']})}>{(['local','https'] as const).map(kind=><div key={kind} className="flex items-center gap-2"><RadioGroupItem id={`source-kind-${kind}`} value={kind}/><FieldLabel htmlFor={`source-kind-${kind}`}>{kind==='local'?'本地目录':'HTTPS 仓库'}</FieldLabel></div>)}</RadioGroup></FieldSet>
@@ -43,7 +44,7 @@ export function SourceDialog({sources,states,available,busy,locking,error,onClos
             <div className="flex items-center gap-2"><FieldLabel htmlFor="source-key">仓库签名公钥</FieldLabel><Help label="仓库签名公钥说明">用于验证此仓库的签名。请使用发布者通过可信渠道提供的公钥。</Help></div>
             <Input id="source-key" required disabled={busy} value={editing.key} onChange={e=>setEditing({...editing,key:e.target.value})} placeholder="minisign 公钥"/>
           </Field>}
-        </FieldGroup><div className="flex justify-end gap-2 mt-4"><Button disabled={busy} onClick={closeEditor}>取消</Button><Button variant="default" type="submit" disabled={busy}>保存来源</Button></div>
+        </FieldGroup>
       </form>:null}
     </div>
   </Dialog>;

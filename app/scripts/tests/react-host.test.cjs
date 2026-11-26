@@ -208,6 +208,39 @@ test('one failed source preserves successful results and explains the issue in s
   await ready(ui);assert.equal(ui.w.document.querySelectorAll('.market-catalog-card').length,1);assert.match(ui.w.document.body.textContent,/1 个来源需要处理/);
   ui.button('查看来源问题').click();await wait(()=>ui.w.document.querySelector('.market-source-error'));assert.match(ui.w.document.querySelector('.market-source-error').textContent,/无法连接插件库/);
 });
+test('one discovery card keeps versions and sources selectable and installs only the confirmed candidate',async t=>{
+  const official={id:'official',name:'FlowHub 官方库',kind:'https',location:'https://api.github.com/repos/Code-suphub/flowhub-plugins/releases?per_page=100',key:'RWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne'};
+  const current={...manifest,version:'2.0'};
+  const mock=backend({
+    scanSource:({id})=>({
+      plugins:(id==='official'?[manifest]:[manifest,current]).map(item=>({manifest:item,source:id,token:`${id}:${item.version}`,releaseNotes:`${id} ${item.version} 日志`})),
+      warnings:[],
+    }),
+    installCandidate:()=>null,
+  },{sources:[source,official],plugins:[{manifest:current,directory:'/test/plugin',enabled:true,origin:{kind:'directory'}}]});
+  const ui=setup(t,mock.invoke);await ready(ui);
+  const card=ui.article(manifest.name);
+  assert.equal(ui.w.document.querySelectorAll('.market-catalog-card').length,1);
+  assert.match(card.textContent,/本机 v2\.0.*官方 v1\.0/);
+  await choose(ui,'按来源筛选','测试来源');
+  assert.match(card.textContent,/本地源 v2\.0/);
+  assert.doesNotMatch(card.textContent,/官方 v1\.0/);
+  await choose(ui,'按来源筛选','全部来源');
+  ui.button('查看版本',card).click();
+  await wait(()=>ui.button('管理插件'));
+  assert.match(ui.w.document.querySelector('[aria-label="版本与来源"]').textContent,/v2\.0 · 测试来源/);
+  await choose(ui,'版本与来源','v1.0 · 测试来源');
+  assert.match(ui.w.document.querySelector('.market-release-notes').textContent,/local 1\.0 日志/);
+  await choose(ui,'版本与来源','v1.0 · FlowHub 官方库');
+  assert.match(ui.w.document.querySelector('.market-release-notes').textContent,/official 1\.0 日志/);
+  ui.button('回退版本').click();
+  await wait(()=>ui.button('确认'));
+  assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/v1\.0.*当前已安装 v2\.0.*来源：FlowHub 官方库/);
+  assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
+  ui.button('确认').click();
+  await wait(()=>mock.calls.some(call=>call.action==='installCandidate'));
+  assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'official:1.0');
+});
 test('a late source response keeps the selected view and search query',async t=>{
   let resolve;const mock=backend({scanSource:()=>new Promise(done=>{resolve=done;})}),ui=setup(t,mock.invoke);
   await wait(()=>resolve);ui.tab('installed').click();await wait(()=>ui.tab('installed').getAttribute('aria-selected')==='true');
@@ -280,6 +313,7 @@ test('a conflicting aggregate URL never replaces a custom key and existing sourc
   await wait(()=>ui.w.document.querySelector('[role="alert"]')?.textContent.includes('不同公钥') && !ui.button('刷新插件').disabled);
   assert.deepEqual(mock.state.sources.find(item=>item.id==='conflict'),conflict);assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,0);
   assert.equal(mock.state.sources.length,2);assert.ok(ui.article(fresh.name));
+  await choose(ui,'按来源筛选','测试来源');
   ui.button('安装',ui.article(fresh.name)).click();await wait(()=>ui.button('确认'));ui.button('确认').click();await wait(()=>mock.calls.some(call=>call.action==='installCandidate'));
   assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'local:0:fresh');
 });

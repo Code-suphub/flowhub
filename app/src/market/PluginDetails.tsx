@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { ChevronDownIcon, ShieldCheckIcon } from 'lucide-react';
 import { Button, Dialog } from '../shared/ui';
+import { Select, type SelectOption } from '../shared/controls';
 import { Badge } from '../components/ui/badge';
 import { Features, PluginIcon } from './PluginItems';
 import { isOfficialSource } from './official';
@@ -8,6 +10,7 @@ import { installLabel } from './versions';
 
 type Release = {version:string;publishedAt:string;releaseNotes:string};
 type ReleaseHistory = {releases:Release[];bounded:boolean};
+type VersionPicker = {value:string;options:SelectOption[];onChange:(value:string)=>void};
 
 function ReleaseDate({value}: {value?:string}) {
   return value && Number.isFinite(Date.parse(value))?<time dateTime={value}>{new Date(value).toLocaleDateString()}</time>:null;
@@ -36,7 +39,10 @@ function OfficialHistory({id}: {id:string}) {
   </section>;
 }
 
-export function PluginDetails({item,source,installed,installedView,officialHistory,disabled,onClose,onInstall,onManage,onReinstall}: {item?:Candidate;source?:Source;installed?:Installed;installedView:boolean;officialHistory:boolean;disabled:boolean;onClose:()=>void;onInstall:()=>void;onManage:()=>void;onReinstall?:()=>void}) {
+export function PluginDetails({item,source,installed,installedView,officialHistory,disabled,versionPicker,onClose,onInstall,onManage,onReinstall}: {
+  item?:Candidate;source?:Source;installed?:Installed;installedView:boolean;officialHistory:boolean;disabled:boolean;versionPicker?:VersionPicker;
+  onClose:()=>void;onInstall:()=>void;onManage:()=>void;onReinstall?:()=>void;
+}) {
   const manifest=installedView?installed?.manifest:item?.manifest;
   if(!manifest)return null;
   const action=item?installLabel(item,installed):null, same=action==='管理', official=isOfficialSource(source);
@@ -44,8 +50,8 @@ export function PluginDetails({item,source,installed,installedView,officialHisto
   const published=item?.publishedAt;
   const notes=item?.releaseNotes?.trim();
   const sourceName=installedView && installed?.origin?.kind==='directory'?'本地目录':official?'FlowHub 官方':source?.name || (installedView && installed?.origin?.source?'原市场来源已移除':'未知来源');
-  return <Dialog title={`${manifest.name}详情`} className="fh-market-dialog market-detail-dialog" busy={false} restoreFocus={false} onClose={onClose}>
-    <div className="market-detail-body">
+  return <Dialog title={`${manifest.name}详情`} className="fh-market-dialog market-detail-dialog" busy={false} restoreFocus={false} onClose={onClose} fixedHeight
+    footer={<div className="market-detail-actions"><Button onClick={onClose}>返回浏览</Button>{same && onReinstall?<Button disabled={disabled} onClick={onReinstall}>重新安装此版本</Button>:null}{action && !(installedView && same)?<Button variant="default" disabled={!same && disabled} onClick={same?onManage:onInstall}>{same?'管理插件':action==='安装'?'安装插件':action==='更新'?'更新插件':action}</Button>:null}</div>}>
     <div className="market-detail-identity">
       <PluginIcon manifest={manifest}/>
       <div className="market-detail-overview">
@@ -54,13 +60,17 @@ export function PluginDetails({item,source,installed,installedView,officialHisto
       </div>
       {installed?<Badge variant="secondary">已安装</Badge>:null}
     </div>
+    {versionPicker?<div className="market-version-picker">
+      <label htmlFor="market-plugin-version">版本与来源</label>
+      <Select id="market-plugin-version" label="版本与来源" {...versionPicker}/>
+    </div>:null}
     <dl className="market-detail-facts">
-      {item?<div><dt>来源版本</dt><dd>v{item.manifest.version}</dd></div>:null}
+      {item && !versionPicker?<div><dt>来源版本</dt><dd>v{item.manifest.version}</dd></div>:null}
       {installed?<div><dt>本机版本</dt><dd>v{installed.manifest.version} · {installed.enabled?'已启用':'已停用'}</dd></div>:null}
       {target?<div><dt>适用平台</dt><dd>{target}</dd></div>:null}
       {published && Number.isFinite(Date.parse(published))?<div><dt>发布时间</dt><dd><ReleaseDate value={published}/></dd></div>:null}
       <div><dt>插件 ID</dt><dd><code>{manifest.id}</code></dd></div>
-      <div><dt>来源</dt><dd>{sourceName}</dd></div>
+      {!versionPicker?<div><dt>来源</dt><dd>{sourceName}</dd></div>:null}
       <div><dt>打开方式</dt><dd>从插件栏打开</dd></div>
     </dl>
     {installedView && installed?<details className="market-location">
@@ -77,8 +87,5 @@ export function PluginDetails({item,source,installed,installedView,officialHisto
     {officialHistory?<OfficialHistory id={manifest.id}/>:null}
     {source?.location?<details className="market-location"><summary>查看来源地址</summary><code>{source.location}</code></details>:null}
     <section className="market-detail-section"><h3><ShieldCheckIcon aria-hidden="true"/>安装与权限</h3><p className="market-meta">{source?.kind==='https'?'下载后由 FlowHub 校验包的签名与完整性。':''}插件将在本机运行独立进程，可访问当前用户文件和网络。</p>{manifest.permissions?.length?<p className="market-meta">清单声明：<code>{manifest.permissions.join('、')}</code></p>:null}</section>
-    </div>
-    <div className="market-detail-actions"><Button onClick={onClose}>返回浏览</Button>{same && onReinstall?<Button disabled={disabled} onClick={onReinstall}>重新安装此版本</Button>:null}{action && !(installedView && same)?<Button variant="default" disabled={!same && disabled} onClick={same?onManage:onInstall}>{same?'管理插件':action==='安装'?'安装插件':action==='更新'?'更新插件':action}</Button>:null}</div>
   </Dialog>;
 }
-import { useState } from 'react';

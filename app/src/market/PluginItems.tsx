@@ -50,14 +50,30 @@ export function Features({manifest}: {manifest: Manifest}) {
   const features = [manifest.searchable && {label:'搜索入口',Icon:SearchIcon}, manifest.widget && {label:'桌面组件',Icon:LayoutDashboardIcon}, manifest.statusSurface && {label:'状态面板',Icon:ActivityIcon}].filter(Boolean) as {label:string;Icon:typeof SearchIcon}[];
   return features.length ? <div className="market-features">{features.map(({label,Icon})=><span key={label}><Icon aria-hidden="true"/>{label}</span>)}</div> : null;
 }
-export function CatalogCard({item, sourceName, official, installed, disabled, compact, onInstall, onManage, onDetails,navigation}: {item:Candidate;sourceName:string;official:boolean;installed?:Installed;disabled:boolean;compact:boolean;onInstall:()=>void;onManage:()=>void;onDetails:()=>void;navigation:MarketItemNavigation}) {
+export function CatalogCard({item, sourceName, official, officialVersion, localVersion, multiple, installed, disabled, compact, onInstall, onManage, onDetails,navigation}: {
+  item:Candidate;sourceName:string;official:boolean;officialVersion?:string;localVersion?:string;multiple:boolean;installed?:Installed;
+  disabled:boolean;compact:boolean;onInstall:()=>void;onManage:()=>void;onDetails:()=>void;navigation:MarketItemNavigation;
+}) {
   const action=installLabel(item,installed), same=action==='管理';
   const tabIndex=navigation.tabIndex===-1?-1:undefined;
   const source=official?'FlowHub 官方':sourceName;
-  const actions=<div className="market-card-actions flex items-center gap-1"><Button tabIndex={tabIndex} variant={same?'outline':'default'} size="sm" disabled={same?false:disabled} onClick={same?onManage:onInstall}>{compact && same?'已安装 · 管理':action}</Button>{same && !compact?<ActionMenu tabIndex={tabIndex} label={`更多${item.manifest.name}操作`} icon={<MoreHorizontalIcon/>} disabled={disabled} popupClassName="fh-market-menu" items={[{id:'reinstall',label:'重新安装此版本',disabled,onSelect:onInstall}]}/>:null}</div>;
+  const actions=<div className="market-card-actions flex items-center gap-1">
+    {multiple?<Button tabIndex={tabIndex} variant="outline" size="sm" onClick={onDetails}>查看版本</Button>:<>
+      <Button tabIndex={tabIndex} variant={same?'outline':'default'} size="sm" disabled={!same && disabled} onClick={same?onManage:onInstall}>{compact && same?'已安装 · 管理':action}</Button>
+      {same && !compact?<ActionMenu tabIndex={tabIndex} label={`更多${item.manifest.name}操作`} icon={<MoreHorizontalIcon/>} disabled={disabled} popupClassName="fh-market-menu" items={[{id:'reinstall',label:'重新安装此版本',disabled,onSelect:onInstall}]}/>:null}
+    </>}
+  </div>;
+  const summarize=multiple || Boolean(officialVersion);
+  const currentVersion=installed?`本机 v${installed.manifest.version}`:officialVersion && localVersion?`本地源 v${localVersion}`:undefined;
+  const catalogVersion=officialVersion?`官方 v${officialVersion}`:localVersion?`本地源 v${localVersion}`:`${source} · v${item.manifest.version}`;
   return <PluginCard manifest={item.manifest} compact={compact} source={compact?undefined:source} navigation={navigation} onDetails={onDetails} actions={actions} metadata={<>
-    <span className="market-meta">{compact?`${source} · `:null}v{item.manifest.version}</span>
-    {installed && (!compact || !same)?<Badge variant="secondary">{action==='更新'?`已安装 v${installed.manifest.version}`:'已安装'}</Badge>:null}
+    {summarize?<>
+      {currentVersion?<span className="market-meta">{currentVersion}</span>:null}
+      <span className="market-meta">{catalogVersion}</span>
+    </>:<>
+      <span className="market-meta">{compact?`${source} · `:null}v{item.manifest.version}</span>
+      {installed && (!compact || !same)?<Badge variant="secondary">{action==='更新'?`已安装 v${installed.manifest.version}`:'已安装'}</Badge>:null}
+    </>}
   </>}/>;
 }
 export function InstalledCard({item,update,canUpdate,disabled,onToggle,onChooseDirectory,onUninstall,onUpdate,onOpen,onDetails,navigation}: {item:Installed;update?:Candidate;canUpdate:boolean;disabled:boolean;onToggle:()=>void;onChooseDirectory:()=>void;onUninstall:()=>void;onUpdate:()=>void;onOpen:()=>void;onDetails:()=>void;navigation:MarketItemNavigation}) {

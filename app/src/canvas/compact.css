@@ -25,7 +25,7 @@ body.canvas-compact-mode:has(#canvas-root) { padding: 4px; overflow: hidden; }
 .compact-notice { margin: 0; font-size: 11px; line-height: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .canvas-compact-settings .compact-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
 .canvas-compact-settings p { font-size: 13px; color: var(--fh-muted); }
-.compact-choice-list { max-height: 45vh; overflow: auto; margin: 12px 0; }
+.compact-choice-list { margin: 12px 0; }
 .compact-choice-list h3 { font-size: 13px; margin: 10px 0 2px; font-weight: 500; }
 .compact-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .canvas-demo-card { display: grid; gap: 8px; padding: 16px; font-size: 13px; color: var(--fh-muted); }
