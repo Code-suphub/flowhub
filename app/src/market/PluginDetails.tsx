@@ -43,7 +43,7 @@ export function PluginDetails({item,source,installed,installedView,officialHisto
   const target=item?.target==='macos-aarch64'?'macOS · Apple Silicon':item?.target==='macos-x86_64'?'macOS · Intel':item?.target;
   const published=item?.publishedAt;
   const notes=item?.releaseNotes?.trim();
-  const sourceName=installedView && installed?.origin?.kind==='directory'?'本地目录':official?'FlowHub 官方':source?.name || '未知来源';
+  const sourceName=installedView && installed?.origin?.kind==='directory'?'本地目录':official?'FlowHub 官方':source?.name || (installedView && installed?.origin?.source?'原市场来源已移除':'未知来源');
   return <Dialog title={`${manifest.name}详情`} className="fh-market-dialog market-detail-dialog" busy={false} restoreFocus={false} onClose={onClose}>
     <div className="market-detail-body">
     <div className="market-detail-identity">
@@ -63,6 +63,13 @@ export function PluginDetails({item,source,installed,installedView,officialHisto
       <div><dt>来源</dt><dd>{sourceName}</dd></div>
       <div><dt>打开方式</dt><dd>从插件栏打开</dd></div>
     </dl>
+    {installedView && installed?<details className="market-location">
+      <summary>本机信息</summary>
+      <dl>
+        <dt>安装目录</dt><dd><code>{installed.directory}</code></dd>
+        <dt>最近加载</dt><dd>{installed.lastLoadedAt?new Date(installed.lastLoadedAt).toLocaleString():'暂无记录'}</dd>
+      </dl>
+    </details>:null}
     <details className="market-current-release" open>
       <summary>更新日志{notes && item?` · v${item.manifest.version}`:''}<ChevronDownIcon aria-hidden="true"/></summary>
       <p className="market-release-notes">{notes || '当前来源未提供更新日志。'}</p>

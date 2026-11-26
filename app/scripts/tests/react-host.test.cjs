@@ -39,11 +39,19 @@ function backend(extra={},initial={}) {
 }
 async function ready(ui){await wait(()=>ui.w.document.querySelectorAll('.market-catalog-card').length && ui.button('刷新插件') && !ui.button('刷新插件').disabled);}
 async function choose(ui,label,value){ui.w.document.querySelector(`[aria-label="${label}"]`).click();await wait(()=>[...ui.w.document.querySelectorAll('[role="option"]')].some(item=>item.textContent===value));[...ui.w.document.querySelectorAll('[role="option"]')].find(item=>item.textContent===value).click();await delay(10);}
+async function installedAction(ui,label){
+  const card=ui.article(manifest.name);
+  const direct=ui.button(label,card);
+  if(direct)return direct;
+  card.querySelector('[aria-haspopup="menu"]').click();
+  await wait(()=>ui.w.document.querySelector('[role="menu"]') && ui.button(label));
+  return ui.button(label);
+}
 
 test('original directory updates are visible, avoid the chooser and suppress duplicate clicks',async t=>{
   let finish;const next={...manifest,version:'1.1.0'};
   const mock=backend({inspect:payload=>{assert.equal(payload.directory,'/test/plugin');return new Promise(resolve=>{finish=()=>resolve({manifest:next,directory:'/test/plugin'});});},reload:(payload,state)=>{assert.deepEqual(payload.expectedManifest,next);state.plugins[0].manifest=next;return null;}}),ui=setup(t,mock.invoke);await ready(ui);
-  ui.tab('installed').click();await wait(()=>ui.button('更新'));const update=ui.button('更新');update.click();update.click();await wait(()=>finish);finish();
+  ui.tab('installed').click();await wait(()=>ui.article(manifest.name));const update=await installedAction(ui,'更新');update.click();update.click();await wait(()=>finish);finish();
   await wait(()=>ui.w.document.querySelector('[role=status]')?.textContent.includes('已从原安装目录更新'));
   assert.equal(mock.calls.filter(call=>call.action==='inspect').length,1);assert.equal(mock.calls.filter(call=>call.action==='reload').length,1);
   assert.equal(mock.calls.some(call=>call.action==='choose' || call.action==='install'),false);assert.equal(ui.w.document.querySelector('[role=dialog]'),null);assert.match(ui.article(manifest.name).textContent,/v1.1.0/);
@@ -56,28 +64,31 @@ test('same-version directory builds also update; disabled plugins stay disabled'
 });
 test('a missing directory or changed plugin identity cannot trigger a reload or an implicit chooser',async t=>{
   let changed=false;const mock=backend({inspect:()=>{if(!changed)throw Error('目录不存在');return {manifest:fresh,directory:'/test/plugin'};}}),ui=setup(t,mock.invoke);await ready(ui);
-  ui.tab('installed').click();await wait(()=>ui.button('更新'));ui.button('更新').click();await wait(()=>ui.w.document.querySelector('[role=alert]')?.textContent.includes('更换安装目录'));
-  changed=true;ui.button('更新').click();await wait(()=>ui.w.document.querySelector('[role=alert]')?.textContent.includes('ID 已变化'));
+  ui.tab('installed').click();await wait(()=>ui.article(manifest.name));(await installedAction(ui,'更新')).click();await wait(()=>ui.w.document.querySelector('[role=alert]')?.textContent.includes('更换安装目录'));
+  changed=true;(await installedAction(ui,'更新')).click();await wait(()=>ui.w.document.querySelector('[role=alert]')?.textContent.includes('ID 已变化'));
   assert.equal(mock.calls.some(call=>['reload','choose','install'].includes(call.action)),false);
 });
 test('directory downgrades and added permissions require explicit confirmation of the inspected manifest',async t=>{
   let candidate={...manifest,version:'0.9.0',permissions:['native-process']};
   const mock=backend({inspect:()=>({manifest:candidate,directory:'/test/plugin'}),reload:payload=>{assert.deepEqual(payload.expectedManifest,candidate);assert.deepEqual(payload.confirmedPermissions,candidate.permissions);return null;}}),ui=setup(t,mock.invoke);await ready(ui);
-  ui.tab('installed').click();await wait(()=>ui.button('更新'));ui.button('更新').click();await wait(()=>ui.button('确认'));assert.match(ui.w.document.querySelector('[role=dialog]').textContent,/回退插件版本/);ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role=dialog]'));
-  candidate={...manifest,version:'1.1.0',permissions:['native-process','system-process-monitor']};ui.button('更新').click();await wait(()=>ui.button('确认'));
+  ui.tab('installed').click();await wait(()=>ui.article(manifest.name));(await installedAction(ui,'更新')).click();await wait(()=>ui.button('确认'));assert.match(ui.w.document.querySelector('[role=dialog]').textContent,/回退插件版本/);ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role=dialog]'));
+  candidate={...manifest,version:'1.1.0',permissions:['native-process','system-process-monitor']};(await installedAction(ui,'更新')).click();await wait(()=>ui.button('确认'));
   assert.match(ui.w.document.querySelector('[role=dialog]').textContent,/root 身份/);assert.equal(mock.calls.some(call=>call.action==='reload'),false);ui.button('确认').click();await wait(()=>!ui.w.document.querySelector('[role=dialog]'));
   assert.equal(mock.calls.filter(call=>call.action==='reload').length,1);assert.equal(mock.calls.some(call=>call.action==='choose'),false);
 });
 test('failed startup after directory update reads back the applied version without replaying the operation',async t=>{
  const next={...manifest,version:'1.1.0'};
  const mock=backend({inspect:()=>({manifest:next,directory:'/test/plugin'}),reload:(_,state)=>{state.plugins[0].manifest=next;throw Error('目录已更新，但插件启动检查失败');}}),ui=setup(t,mock.invoke);await ready(ui);
- ui.tab('installed').click();await wait(()=>ui.button('更新'));ui.button('更新').click();await wait(()=>ui.w.document.querySelector('[role=alert]')?.textContent.includes('启动检查失败'));
+ ui.tab('installed').click();await wait(()=>ui.article(manifest.name));(await installedAction(ui,'更新')).click();await wait(()=>ui.w.document.querySelector('[role=alert]')?.textContent.includes('启动检查失败'));
  assert.match(ui.article(manifest.name).textContent,/v1.1.0/);assert.equal(mock.calls.filter(call=>call.action==='reload').length,1);assert.equal(mock.calls.some(call=>call.action==='choose'),false);
 });
 test('one update entry follows explicit directory origin instead of a newer market package',async t=>{
  const next={...manifest,version:'1.1.0'};
  const mock=backend({inspect:()=>({manifest:next,directory:'/test/plugin'}),reload:()=>null},{plugins:[{manifest,directory:'/test/plugin',enabled:true,origin:{kind:'directory'}}],catalog:[{...manifest,version:'2.0.0'},fresh]}),ui=setup(t,mock.invoke);await ready(ui);
- ui.tab('installed').click();await wait(()=>ui.button('更新'));assert.equal([...ui.article(manifest.name).querySelectorAll('button')].filter(button=>button.textContent==='更新').length,1);assert.equal(ui.button('从目录更新'),undefined);ui.button('更新').click();await wait(()=>mock.calls.some(call=>call.action==='reload'));
+ ui.tab('installed').click();await wait(()=>ui.article(manifest.name));const card=ui.article(manifest.name);
+ assert.ok(ui.button('打开',card));assert.equal(ui.button('更新',card),undefined);
+ const update=await installedAction(ui,'更新');assert.equal(update.getAttribute('role'),'menuitem');assert.equal(ui.button('从目录更新'),undefined);update.click();
+ await wait(()=>mock.calls.some(call=>call.action==='reload'));
  assert.equal(mock.calls.some(call=>call.action==='installCandidate' || call.action==='choose'),false);
 });
 test('market updates stay with their recorded source and never reload a cached local directory',async t=>{
@@ -101,7 +112,7 @@ test('first visit reads configured sources automatically and distinguishes insta
   assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,1);
   assert.ok(ui.button('管理',ui.article(manifest.name)));assert.ok(ui.button('安装',ui.article(fresh.name)));
   ui.button('管理',ui.article(manifest.name)).click();await wait(()=>ui.tab('installed').getAttribute('aria-selected')==='true');
-  assert.equal(ui.w.document.querySelector('#market-query').value,manifest.name);assert.equal(ui.w.document.querySelectorAll('.market-installed-row').length,1);
+  assert.equal(ui.w.document.querySelector('#market-query').value,manifest.name);assert.equal(ui.w.document.querySelectorAll('.market-installed-list article').length,1);
   assert.match(ui.w.document.querySelector('.market-results-heading').textContent,/1 个插件 · 1 个已启用/,'filtered counts describe the visible plugins');
 });
 test('empty native market opens the source form in one action',async t=>{
@@ -116,7 +127,7 @@ test('install is explicit, cancellation makes no call and confirmation installs 
   ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
   assert.equal(mock.calls.some(call=>call.action==='installCandidate'),false);
   ui.button('安装',ui.article(fresh.name)).click();await wait(()=>ui.button('确认'));ui.button('确认').click();ui.button('确认').click();
-  await wait(()=>ui.w.document.querySelectorAll('.market-installed-row').length===2);
+  await wait(()=>ui.w.document.querySelectorAll('.market-installed-list article').length===2);
   assert.equal(mock.calls.filter(call=>call.action==='installCandidate').length,1);assert.equal(mock.calls.find(call=>call.action==='installCandidate').payload.token,'local:0:fresh');
 });
 test('system monitor install confirmation discloses the privileged read-only service before any installation',async t=>{
@@ -301,11 +312,11 @@ test('semantic versions distinguish updates, downgrades, build metadata and prer
 test('installed updates choose the highest stable version, preserve disabled state and require confirmation',async t=>{
   const mock=backend({}, {plugins:[{manifest:{...manifest,version:'0.9.0'},directory:'/test/old',enabled:false}],catalog:[{...manifest,version:'0.10.0'},fresh]}),ui=setup(t,mock.invoke);await ready(ui);
   ui.tab('installed').click();await wait(()=>ui.button('更新'));await choose(ui,'安装状态筛选','可更新 (1)');
-  assert.equal(ui.w.document.querySelectorAll('.market-installed-row').length,1);ui.button('更新').click();await wait(()=>ui.button('确认'));
+  assert.equal(ui.w.document.querySelectorAll('.market-installed-list article').length,1);ui.button('更新').click();await wait(()=>ui.button('确认'));
   assert.match(ui.w.document.querySelector('[role="dialog"]').textContent,/更新插件.*当前已安装 v0.9.0/s);ui.button('取消').click();await wait(()=>!ui.w.document.querySelector('[role="dialog"]'));
   assert.equal(mock.state.plugins[0].manifest.version,'0.9.0');ui.button('更新').click();await wait(()=>ui.button('确认'));ui.button('确认').click();
   await wait(()=>mock.state.plugins[0].manifest.version==='0.10.0' && !ui.w.document.querySelector('[role="dialog"]'));
-  assert.equal(mock.state.plugins[0].enabled,false);assert.ok(ui.button('启用'));assert.equal(ui.button('打开 测试插件'),undefined);
+  assert.equal(mock.state.plugins[0].enabled,false);assert.equal(ui.w.document.querySelector('[role="switch"]').getAttribute('aria-checked'),'false');assert.equal(ui.button('打开 测试插件'),undefined);
 });
 test('native progress is visible, failed downloads retain the old installation and retry has no late progress listener',async t=>{
   let attempt=0,finish,channel;

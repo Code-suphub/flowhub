@@ -73,7 +73,7 @@ test('native settings menu opens independent workspace without mounting a dock o
  await h.click(view.container.querySelector('[data-page="plugins-installed"]'));
  assert.equal(view.container.querySelector('h1').textContent,'已安装');
  assert.equal(view.container.querySelector('[data-page="plugins-installed"] .settings-plugin-count').textContent,'1');
- assert.ok(view.container.querySelector('.market-installed-row[aria-label="Example"]'));
+ assert.ok(view.container.querySelector('.market-installed-list article[aria-label="Example"]'));
  assert.equal(calls.filter(call=>call.command==='plugin_workspace').length,2);
  await view.unmount();store.dispose();delete window.FlowHubPluginIntegration;
 });

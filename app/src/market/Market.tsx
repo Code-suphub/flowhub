@@ -6,7 +6,7 @@ import { ActionMenu } from '../shared/ActionMenu';
 import { Badge } from '../components/ui/badge';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
-import { CatalogCard, InstalledRow } from './PluginItems';
+import { CatalogCard, InstalledCard } from './PluginItems';
 import { SourceDialog, type SourceState } from './SourceDialog';
 import { OfficialCollection } from './OfficialCollection';
 import { PluginDetails } from './PluginDetails';
@@ -169,12 +169,15 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
     }
     return result;
   },[installed,catalogIndex]);
-  const plugins=installedIndex.filter(entry=>entry.text.includes(needle) && (installedFilter!=='updates' || updates.has(entry.item.manifest.id))).map(entry=>entry.item);
+  const plugins=installedIndex.filter(({item,text})=>text.includes(needle) && (
+    installedFilter==='updates'?updates.has(item.manifest.id):installedFilter!=='enabled' || item.enabled
+  )).map(entry=>entry.item);
   const issues=sources.filter(source=>sourceStates[source.id]?.error || sourceStates[source.id]?.warnings?.length);
   const items=view==='discover'?candidates:plugins, pageKey=JSON.stringify([view,query,view==='discover'?selectedSource:null,view==='discover'?capability:installedFilter]), limit=pages[view]?.key===pageKey?pages[view].limit:24;
   const reveal=(limit:number)=>setPages(old=>({...old,[view]:{key:pageKey,limit}}));
   const navigation=useMarketNavigation({view,context:pageKey,keys:view==='discover'?candidates.map(candidateKey):plugins.map(item=>item.manifest.id),limit,onReveal:reveal});
   const noResults=loaded && !items.length, searched=Boolean(query.trim()), filtered=capability!=='all' || selectedSource!=='all';
+  const noFilterMatches=searched || (view==='discover'?filtered:installedFilter==='enabled');
   const hasOfficial=connectedOfficial(sources);
   const localDetail=details?.kind==='installed'?installedById.get(details.key):undefined;
   const detailSourceId=localDetail?.origin?.source;
@@ -192,8 +195,8 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
   useEffect(()=>{if(view==='installed' && manageTarget.current){const index=plugins.findIndex(item=>item.manifest.id===manageTarget.current);if(index>=0){manageTarget.current=null;navigation.focusAt(index,false);}}},[view,query,plugins.map(item=>item.manifest.id).join('\0')]);
   const manage=(manifest:Manifest)=>{manageTarget.current=manifest.id;setDetails(null);setView('installed');setInstalledFilter('all');setQuery(manifest.name);};
   const keyboardDescription = '↓ 进入结果，方向键浏览，Enter 查看详情，Esc 返回搜索。Tab 访问当前插件操作，Home／End 跳到当前页首尾，Page Up／Down 翻页。';
-  const compactDiscovery=Boolean(section && view==='discover');
-  const compactSources=compactDiscovery && found.length>0;
+  const compact=Boolean(section), compactDiscovery=compact && view==='discover';
+  const compactSources=compact && (view==='installed' || found.length>0);
   const refreshLabel=operation==='scan'?'刷新中…':view==='installed'?(sources.length?'检查更新':'连接官方库'):'刷新插件';
   const toolbarActions = <div className="market-toolbar-actions">
     {compactDiscovery && available?<Button size="sm" onClick={()=>{clearSearch();setView('installed');}}>已安装 ({installed.length})</Button>:null}
@@ -201,12 +204,12 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
       <SlidersHorizontalIcon data-icon="inline-start" aria-hidden="true"/>来源设置
       {compactSources && issues.length?<span className="market-source-warning" aria-hidden="true" title={`${issues.length} 个来源需要处理`}>{issues.length}</span>:null}
     </Button>
-    {available?<ActionMenu label="插件市场更多操作" icon={<MoreHorizontalIcon/>} disabled={busy} triggerClassName={compactDiscovery?'market-more-trigger':undefined} popupClassName="fh-market-menu" items={[
+    {available?<ActionMenu label="插件市场更多操作" icon={<MoreHorizontalIcon/>} disabled={busy} triggerClassName={compact?'market-more-trigger':undefined} popupClassName="fh-market-menu" items={[
       ...(compactSources && !hasOfficial?[{id:'official',label:'连接官方库',onSelect:connectOfficial}]:[]),
       {id:'local',label:'安装本地插件',onSelect:installLocal}
     ]}/>:null}
   </div>;
-  return <Container ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}${section?' fh-market-inline':''}${compactDiscovery?' fh-market-discovery':''}`} aria-busy={busy} aria-label={section ? '插件市场' : undefined}>
+  return <Container ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}${compact?' fh-market-inline fh-market-compact':''}`} aria-busy={busy} aria-label={section ? '插件市场' : undefined}>
     {!embedded?<header className="fh-market-toolbar"><div className="market-heading"><h1>插件市场</h1>{!available?<Badge variant="outline">只读预览</Badge>:null}</div>{toolbarActions}</header>:null}
     <div className="market-navigation">{section ? null : <Tabs items={[{id:'discover',label:'发现'},{id:'installed',label:`已安装 (${installed.length})`}]} value={view} onChange={id=>setView(id==='installed'?'installed':'discover')} label="插件市场"/>}
       <div className="market-search"><label className="sr-only" htmlFor="market-query">搜索插件</label><SearchIcon aria-hidden="true"/><Input id="market-query" type="search" aria-label="搜索插件" aria-describedby="market-browse-hint" placeholder={view==='discover'?'搜索插件':'搜索已安装插件'} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={navigation.searchKeyDown}/></div>
@@ -223,11 +226,11 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
       <div className="market-subbar">
         {compactDiscovery && sources.length?<Button size="sm" variant="outline" className="market-filter-toggle" aria-expanded={discoveryFiltersOpen} aria-controls="market-discovery-filters" onClick={()=>setDiscoveryFiltersOpen(!discoveryFiltersOpen)}><ListFilterIcon data-icon="inline-start" aria-hidden="true"/>{filtered?'筛选已生效':'筛选'}</Button>:null}
         {!compactDiscovery && view==='discover' && sources.length?discoveryFilters():null}
-        {view==='installed'?<div className="market-filters"><Select label="安装状态筛选" value={installedFilter} options={[{value:'all',label:'全部已安装'},{value:'updates',label:`可更新 (${updates.size})`}]} onChange={setInstalledFilter}/>{checkedAt?<p className="market-meta">{issues.length?'部分来源未完成检查':'最近检查'} · {new Date(checkedAt).toLocaleTimeString()}</p>:null}</div>:null}
+        {view==='installed'?<div className="market-filters"><Select label="安装状态筛选" value={installedFilter} options={[{value:'all',label:'全部已安装'},{value:'enabled',label:'仅显示已启用'},{value:'updates',label:`可更新 (${updates.size})`}]} onChange={setInstalledFilter}/>{checkedAt?<p className="market-meta">{issues.length?'部分来源未完成检查':'最近检查'} · {new Date(checkedAt).toLocaleTimeString()}</p>:null}</div>:null}
         <div className="market-results-heading">
           <p className="market-meta" role={busy?'status':undefined}>{!loaded?'正在读取插件…':view==='discover'?`${candidates.length} 个插件 · ${sources.length} 个来源${operation==='scan'?' · 正在刷新…':''}`:`${plugins.length} 个插件 · ${plugins.filter(item=>item.enabled).length} 个已启用${updates.size?` · ${updates.size} 个可更新`:''}`}</p>
-          {available && loaded && (sources.length || view==='installed')?<Button size={compactDiscovery?'icon-sm':'sm'} variant={compactDiscovery?'outline':'ghost'} aria-label={compactDiscovery?refreshLabel:undefined} title={compactDiscovery?refreshLabel:undefined} disabled={disabled} onClick={()=>sources.length?void run(()=>scan(sources),false,'scan'):connectOfficial()}><RefreshCwIcon data-icon="inline-start" aria-hidden="true" className={operation==='scan'?'motion-safe:animate-spin':undefined}/>{compactDiscovery?null:refreshLabel}</Button>:null}
-          {items.length && !compactDiscovery?<Help label="插件列表键盘操作">{keyboardDescription}</Help>:null}
+          {available && loaded && (sources.length || view==='installed')?<Button size={compactDiscovery?'icon-sm':'sm'} variant={compact?'outline':'ghost'} aria-label={compactDiscovery?refreshLabel:undefined} title={compactDiscovery?refreshLabel:undefined} disabled={disabled} onClick={()=>sources.length?void run(()=>scan(sources),false,'scan'):connectOfficial()}><RefreshCwIcon data-icon="inline-start" aria-hidden="true" className={operation==='scan'?'motion-safe:animate-spin':undefined}/>{compactDiscovery?null:refreshLabel}</Button>:null}
+          {items.length && !compact?<Help label="插件列表键盘操作">{keyboardDescription}</Help>:null}
         </div>
       </div>
       {compactDiscovery && sources.length?<div id="market-discovery-filters" hidden={!discoveryFiltersOpen}>{discoveryFilters()}</div>:null}
@@ -237,12 +240,12 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
       {view==='discover'?<div ref={navigation.list} onBlurCapture={navigation.blur} className="market-catalog-grid">{candidates.slice(0,limit).map(item=>{
         const key=candidateKey(item), openDetails=()=>showDetails({kind:'catalog',key});
         return <CatalogCard key={key} compact={compactDiscovery} navigation={navigation.item(key,openDetails)} item={item} sourceName={sourcesById.get(item.source)?.name || '未知来源'} official={isOfficialSource(sourcesById.get(item.source))} installed={installedById.get(item.manifest.id)} disabled={disabled} onDetails={openDetails} onInstall={()=>installFromCatalog(item)} onManage={()=>manage(item.manifest)}/>;
-      })}</div>:<div ref={navigation.list} onBlurCapture={navigation.blur} className="market-installed-list">{plugins.slice(0,limit).map(item=>{
+      })}</div>:<div ref={navigation.list} onBlurCapture={navigation.blur} className="market-catalog-grid market-installed-list">{plugins.slice(0,limit).map(item=>{
         const key=item.manifest.id, update=updates.get(key), openDetails=()=>showDetails({kind:'installed',key});
         const directoryUpdate=item.origin?.kind==='directory' || (!item.origin && !update);
-        return <InstalledRow key={key} navigation={navigation.item(key,openDetails)} item={item} update={update} sourceName={item.origin?.source?sourcesById.get(item.origin.source)?.name:undefined} canUpdate={directoryUpdate || Boolean(update)} disabled={disabled} onOpen={()=>void run(()=>openPlugin(key),false)} onDetails={openDetails} onUpdate={()=>{if(directoryUpdate)updateFromDirectory(item);else if(update)installFromCatalog(update);}} onToggle={()=>void run(async()=>{await api('enable',{id:key,enabled:!item.enabled});setNotice(item.enabled?`已停用 ${item.manifest.name}`:`已启用 ${item.manifest.name}`);})} onChooseDirectory={()=>installLocal(key)} onUninstall={()=>{setNotice('');setNoticeError(false);setConfirmation({title:'卸载插件',detail:`确认卸载 ${item.manifest.name}？将停止插件进程并移除入口，插件配置与历史数据保留。`,action:async()=>{await api('uninstall',{id:key});setNotice(`已卸载 ${item.manifest.name}，配置与历史数据保留。`);}});}}/>;
+        return <InstalledCard key={key} navigation={navigation.item(key,openDetails)} item={item} update={update} canUpdate={directoryUpdate || Boolean(update)} disabled={disabled} onOpen={()=>void run(()=>openPlugin(key),false)} onDetails={openDetails} onUpdate={()=>{if(directoryUpdate)updateFromDirectory(item);else if(update)installFromCatalog(update);}} onToggle={()=>void run(async()=>{await api('enable',{id:key,enabled:!item.enabled});setNotice(item.enabled?`已停用 ${item.manifest.name}`:`已启用 ${item.manifest.name}`);})} onChooseDirectory={()=>installLocal(key)} onUninstall={()=>{setNotice('');setNoticeError(false);setConfirmation({title:'卸载插件',detail:`确认卸载 ${item.manifest.name}？将停止插件进程并移除入口，插件配置与历史数据保留。`,action:async()=>{await api('uninstall',{id:key});setNotice(`已卸载 ${item.manifest.name}，配置与历史数据保留。`);}});}}/>;
       })}</div>}
-      {noResults ? operation==='scan' && view==='discover'?<MarketEmpty title="正在查找插件…" description="正在读取已配置的插件来源。"/>:searched || (view==='discover' && filtered)?<MarketEmpty title="没有匹配的插件" description="试试其他关键词，或放宽筛选条件。"><Button size="sm" onClick={()=>{setCapability('all');setSourceFilter('all');setInstalledFilter('all');clearSearch();}}>清除搜索与筛选</Button></MarketEmpty>:view==='installed' && installedFilter==='updates'?<MarketEmpty title={busy?'正在检查更新…':issues.length?'部分来源未完成检查':'暂无可用更新'} description={issues.length?'修复来源问题后重试，当前检查尚不完整。':'仅比较已连接来源中适用于当前设备的版本。'}><Button size="sm" onClick={()=>setInstalledFilter('all')}>查看全部已安装</Button></MarketEmpty>:view==='installed'?<MarketEmpty title="尚未安装插件" description="在发现中选择需要的插件，安装后会显示在这里。"><Button size="sm" onClick={()=>setView('discover')}>发现插件</Button></MarketEmpty>:!sources.length?<div className="market-custom-source"><p className="market-meta">{available?'已有其他插件库或本地开发插件？':'在桌面 App 中连接插件库后，即可浏览和安装。'}</p>{available?<><Button size="sm" onClick={()=>setSourcesOpen(true)}>添加来源</Button><Button size="sm" variant="ghost" onClick={()=>installLocal()}><FolderPlusIcon data-icon="inline-start"/>安装本地插件</Button></>:null}</div>:<MarketEmpty title={issues.length?'暂时没有可用插件':'来源中暂无可安装插件'} description={issues.length?'查看来源问题，处理后可以重新刷新。':'检查来源是否包含适用于当前设备的插件。'}><Button size="sm" onClick={()=>setSourcesOpen(true)}>检查来源</Button></MarketEmpty>:null}
+      {noResults ? operation==='scan' && view==='discover'?<MarketEmpty title="正在查找插件…" description="正在读取已配置的插件来源。"/>:noFilterMatches?<MarketEmpty title="没有匹配的插件" description="试试其他关键词，或放宽筛选条件。"><Button size="sm" onClick={()=>{setCapability('all');setSourceFilter('all');setInstalledFilter('all');clearSearch();}}>清除搜索与筛选</Button></MarketEmpty>:view==='installed' && installedFilter==='updates'?<MarketEmpty title={busy?'正在检查更新…':issues.length?'部分来源未完成检查':'暂无可用更新'} description={issues.length?'修复来源问题后重试，当前检查尚不完整。':'仅比较已连接来源中适用于当前设备的版本。'}><Button size="sm" onClick={()=>setInstalledFilter('all')}>查看全部已安装</Button></MarketEmpty>:view==='installed'?<MarketEmpty title="尚未安装插件" description="在发现中选择需要的插件，安装后会显示在这里。"><Button size="sm" onClick={()=>setView('discover')}>发现插件</Button></MarketEmpty>:!sources.length?<div className="market-custom-source"><p className="market-meta">{available?'已有其他插件库或本地开发插件？':'在桌面 App 中连接插件库后，即可浏览和安装。'}</p>{available?<><Button size="sm" onClick={()=>setSourcesOpen(true)}>添加来源</Button><Button size="sm" variant="ghost" onClick={()=>installLocal()}><FolderPlusIcon data-icon="inline-start"/>安装本地插件</Button></>:null}</div>:<MarketEmpty title={issues.length?'暂时没有可用插件':'来源中暂无可安装插件'} description={issues.length?'查看来源问题，处理后可以重新刷新。':'检查来源是否包含适用于当前设备的插件。'}><Button size="sm" onClick={()=>setSourcesOpen(true)}>检查来源</Button></MarketEmpty>:null}
       {items.length>limit?<div className="market-more-results"><span className="market-meta">已显示 {limit} / {items.length}</span><Button size="sm" onClick={()=>navigation.focusAt(limit)}>显示更多</Button></div>:null}
     </section>
     {details && (localDetail || detailItem)?<PluginDetails key={details.key} item={detailItem} source={detailSource}

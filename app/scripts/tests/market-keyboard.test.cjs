@@ -80,12 +80,14 @@ test('source changes preserve surviving identity and recover a removed target wi
   assert.ok(s.active().matches('[data-market-key]'),'removed focused item falls back to a card');
   s.search().focus();s.state.catalog=s.state.catalog.filter(item=>item.id!=='tool-6');s.button('刷新插件').click();await wait(()=>s.cards().length===9 && !s.button('刷新插件').disabled);assert.equal(s.active(),s.search());
 });
-test('installed rows without a catalog open local metadata and load official notes on demand',async t=>{
+test('installed cards without a catalog open local metadata and load official notes on demand',async t=>{
   const s=setup(t,{count:3,installed:true,missing:true});await s.ready();s.w.document.getElementById('tab-installed').click();await wait(()=>s.cards().length===4);
-  s.search().focus();s.key(s.search(),'ArrowDown');s.key(s.active(),'ArrowDown');assert.equal(s.active(),s.cards()[1]);s.key(s.active(),'Enter');await wait(()=>s.button('返回浏览'));s.button('返回浏览').click();await wait(()=>s.active()===s.cards()[1]);
+  s.w.document.querySelector('.market-installed-list').style.gridTemplateColumns='1fr 1fr';
+  s.search().focus();s.key(s.search(),'ArrowDown');s.key(s.active(),'ArrowDown');assert.equal(s.active(),s.cards()[2]);s.key(s.active(),'Enter');await wait(()=>s.button('返回浏览'));s.button('返回浏览').click();await wait(()=>s.active()===s.cards()[2]);
   s.key(s.active(),'End');const local=s.active();s.key(local,'Enter');await wait(()=>s.button('查看官方发布记录'));
   const detail=s.w.document.querySelector('[role="dialog"]');
   assert.match(detail.textContent,/离线插件详情.*本机版本v1.0.*当前来源未提供更新日志/s);
+  assert.equal(detail.querySelector('.market-location code').textContent,'/test/offline');
   assert.equal(s.calls.some(call=>call.action==='releaseHistory'),false);
   s.button('查看官方发布记录').click();
   await wait(()=>detail.textContent.includes('测试版本更新说明'));
@@ -101,11 +103,16 @@ test('available updates do not hide whether installed plugins are enabled',async
   await s.ready();
   const installed=s.w.document.getElementById('tab-installed');
   installed.click();
-  await wait(()=>s.cards().length===2 && s.cards()[0].classList.contains('market-installed-row'));
+  await wait(()=>s.cards().length===2 && s.cards()[0].closest('.market-installed-list'));
+  assert.equal(s.cards()[0].querySelector('[role="switch"]').getAttribute('aria-checked'),'true');
+  assert.equal(s.cards()[1].querySelector('[role="switch"]').getAttribute('aria-checked'),'false');
   assert.match(s.cards()[0].textContent,/已启用.*可更新至 v2\.0/);
   assert.match(s.cards()[1].textContent,/已停用.*可更新至 v2\.0/);
-  assert.ok(s.button('打开',s.cards()[0]));
-  assert.equal(s.button('打开',s.cards()[1]),undefined);
+  assert.ok(s.button('更新',s.cards()[0]));
+  assert.ok(s.button('更新',s.cards()[1]));
+  assert.equal(s.button('打开',s.cards()[0]),undefined);
+  s.cards()[0].querySelector('[aria-haspopup="menu"]').click();
+  await wait(()=>s.button('打开',s.w.document.querySelector('[role="menu"]') || s.w.document));
 });
 test('manage from details focuses the matching installed row and no-result search stays usable',async t=>{
   const s=setup(t,{count:4,installed:true});await s.ready();s.cards()[2].focus();s.key(s.active(),'Enter');await wait(()=>s.button('管理插件'));s.button('管理插件').click();await wait(()=>s.cards().length===1 && s.active()===s.cards()[0]);

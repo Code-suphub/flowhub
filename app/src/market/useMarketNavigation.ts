@@ -61,7 +61,7 @@ export function useMarketNavigation({view,context,keys,limit,onReveal}: {view:st
     if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key))return;
     event.preventDefault();event.stopPropagation();
     // Layout is read only for an explicit navigation key, never while typing.
-    const columns=view==='discover'?Math.max(1,(getComputedStyle(list.current!).gridTemplateColumns || '').split(/\s+/).filter(value=>value && value!=='none').length):1;
+    const columns=Math.max(1,(getComputedStyle(list.current!).gridTemplateColumns || '').split(/\s+/).filter(value=>value && value!=='none').length);
     const row=Math.floor(index/columns), lastRow=Math.floor((keys.length-1)/columns), preferred=Math.min(columns-1,column.current ?? index%columns);
     let next=index;
     if(event.key==='Home')next=0;

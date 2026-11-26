@@ -7,8 +7,8 @@ import { Switch as ShadcnSwitch } from '../components/ui/switch';
 import { Select as ShadcnSelect, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip as ShadcnTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 
-export function Switch({checked, onChange, disabled, label, id, 'aria-describedby': describedBy}: {checked: boolean; onChange: (value: boolean) => void; disabled?: boolean; label: string; id?: string; 'aria-describedby'?: string}) {
-  return <ShadcnSwitch id={id} checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} aria-describedby={describedBy} />;
+export function Switch({checked, onChange, disabled, label, id, tabIndex, 'aria-describedby': describedBy}: {checked: boolean; onChange: (value: boolean) => void; disabled?: boolean; label: string; id?: string; tabIndex?: number; 'aria-describedby'?: string}) {
+  return <ShadcnSwitch id={id} checked={checked} onCheckedChange={onChange} disabled={disabled} {...(tabIndex===undefined?{}:{tabIndex})} aria-label={label} aria-describedby={describedBy} />;
 }
 
 export function Tooltip({children, content}: {children: ReactElement; content?: ReactNode}) {
