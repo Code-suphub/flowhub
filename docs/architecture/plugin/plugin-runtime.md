@@ -48,7 +48,7 @@ macOS 使用 AppKit 原生父子窗口关系连接设置、胶囊和展开面板
 
 卡片按来源／ID／版本标识，刷新安装凭据不会替换同一插件 DOM；详情始终使用重新查得的候选凭据，匹配完整版本，不会误取同 ID 的其他版本。关闭详情或取消其后续安装确认时回到原卡片，查询、已展开批次与打开详情时的列表滚动保持。目标消失时回到邻近记录或搜索框；用户已聚焦其他输入框或切换条件时不抢回焦点。从详情进入管理则聚焦对应已安装项。浏览器预览继续只读，原生权限与安装确认没有变化。
 
-“连接官方库”添加一个使用固定 minisign 公钥的聚合来源（`app/src/market/official.ts`）。原生层直接读取 [flowhub-plugins 的公开 Releases](https://github.com/Code-suphub/flowhub-plugins/releases)，最多读取最近 500 个发布、100 个插件，总读取时间限制 120 秒；排除草稿和预发布，按当前宿主 target 及 SemVer 选择每个插件的最高兼容版本，再读取对应 catalog.json。单个插件目录失败保留其他成功项并提示；发布标签、目录清单及下载地址必须互相对应。Intel 可选择仍保留 Intel 包的较旧兼容发布。密钥维护对照插件仓库的[发布说明](https://github.com/Code-suphub/flowhub-plugins/blob/main/docs/releases.md)，不从网络替换已固定公钥。
+“连接官方库”添加一个使用固定 minisign 公钥的聚合来源（`app/src/market/official.ts`）。原生层直接读取 [flowhub-plugins 的公开 Releases](https://github.com/Code-suphub/flowhub-plugins/releases)，最多读取最近 500 个发布、100 个插件。发布列表限时 12 秒，按当前宿主 target 及 SemVer 选出各插件最高兼容稳定版，再并发读取最多四个 catalog.json，单目录限时 8 秒，目录阶段共 15 秒。目录失败或超时保留其他成功项，并在来源设置显示可重试的原因。发布标签、目录清单及下载地址必须互相对应。Intel 可选择仍保留 Intel 包的较旧兼容发布。密钥维护对照插件仓库的[发布说明](https://github.com/Code-suphub/flowhub-plugins/blob/main/docs/releases.md)，不从网络替换已固定公钥。
 
 已安装详情的「查看官方发布记录」由用户按需触发，从同一公开列表读取当前插件最近 5 个兼容稳定版的日期和更新日志。记录以纯文本和官方来源标示，独立于本机安装版本和该安装的更新来源。读取限制 30 秒，不变更插件来源或触发安装。
 

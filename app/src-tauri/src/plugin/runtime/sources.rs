@@ -34,10 +34,16 @@ fn validate_url(value:&str)->Result<(),String>{let url=reqwest::Url::parse(value
 async fn download(url:&str,limit:usize)->Result<Vec<u8>,String>{
     download_progress(url,limit,|_,_|{}).await
 }
-async fn download_progress(url:&str,limit:usize,mut progress:impl FnMut(usize,Option<u64>))->Result<Vec<u8>,String>{
-    validate_url(url)?;
+async fn download_progress(url:&str,limit:usize,progress:impl FnMut(usize,Option<u64>))->Result<Vec<u8>,String>{
+    let client=download_client()?;
+    download_with_client(&client,url,limit,progress).await
+}
+fn download_client()->Result<reqwest::Client,String>{
     let _=rustls::crypto::ring::default_provider().install_default();
-    let client=reqwest::Client::builder().user_agent("FlowHub/plugin-market").https_only(true).redirect(reqwest::redirect::Policy::limited(5)).timeout(std::time::Duration::from_secs(90)).build().map_err(|e|e.to_string())?;
+    reqwest::Client::builder().user_agent("FlowHub/plugin-market").https_only(true).redirect(reqwest::redirect::Policy::limited(5)).timeout(std::time::Duration::from_secs(90)).build().map_err(|e|e.to_string())
+}
+async fn download_with_client(client:&reqwest::Client,url:&str,limit:usize,mut progress:impl FnMut(usize,Option<u64>))->Result<Vec<u8>,String>{
+    validate_url(url)?;
     let response=client.get(url).send().await.map_err(|e|e.to_string())?;
     if matches!(response.status().as_u16(),403|429){return Err("公开目录或安装包访问受限，请稍后重试（HTTP 403/429）".into());}
     let mut response=response.error_for_status().map_err(|e|e.to_string())?;
@@ -124,7 +130,7 @@ pub(super) async fn api(rt:&Runtime,app:&tauri::AppHandle,action:&str,p:&Value,p
         }
         "scanSource"=>{
             let source=rt.sources.lock().unwrap().iter().find(|s|Some(s.id.as_str())==p["id"].as_str()).cloned().ok_or("来源不存在")?;
-            let (found,warnings)=if source.kind=="local"{scan_local(&source)?}else if source.location==official::INDEX{tokio::time::timeout(std::time::Duration::from_secs(120),official::scan(&source)).await.map_err(|_|"官方库读取超时，请稍后重试")??}else{
+            let (found,warnings)=if source.kind=="local"{scan_local(&source)?}else if source.location==official::INDEX{official::scan(&source).await?}else{
                 let bytes=download(&source.location,2*1024*1024).await?;let catalog:Value=serde_json::from_slice(&bytes).map_err(|_|"仓库索引格式无效")?;
                 parse_catalog(&source,&catalog,&format!("{}-{}",std::env::consts::OS,std::env::consts::ARCH))?
             };

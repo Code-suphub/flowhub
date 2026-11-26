@@ -51,7 +51,7 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
     if(alive.current){setInstalled(plugins);setSources(catalog);setLoaded(true);if(notify)await refreshNavigation();}
     return catalog;
   }
-  async function run(action:()=>Promise<void>,reload=true,kind='mutation') {
+  async function run(action:()=>Promise<unknown>,reload=true,kind='mutation') {
     if(lock.current || !available)return false;
     const origin=document.activeElement as HTMLElement|null;
     lock.current=true;setOperation(kind);setNotice('');setNoticeError(false);setCompleted(null);
@@ -73,6 +73,7 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
   }
   async function scan(list:Source[]) {
     const queue=list.slice();
+    const incomplete=new Set<string>();
     // Read independent sources concurrently, with a small bound. A failed
     // repository cannot hide the successful results from the other sources.
     await Promise.all(Array.from({length:Math.min(3,queue.length)},async()=>{
@@ -84,14 +85,17 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
           if(!alive.current)return;
           setFound(old=>[...old.filter(item=>item.source!==source.id),...result.plugins]);
           setSourceStates(old=>({...old,[source.id]:{count:result.plugins.length,warnings:result.warnings}}));
+          if(result.warnings.length)incomplete.add(source.id);
         } catch(error) {
           if(!alive.current)return;
+          incomplete.add(source.id);
           setFound(old=>old.filter(item=>item.source!==source.id));
           setSourceStates(old=>({...old,[source.id]:{error:String(error)}}));
         }
       }
     }));
     if(alive.current)setCheckedAt(Date.now());
+    return incomplete;
   }
   const initialize=()=>run(async()=>{const catalog=await refresh(false);if(alive.current){setOperation('scan');await scan(catalog);}},false,'load');
   useEffect(()=>{alive.current=true;if(available)void initialize();return()=>{alive.current=false;};},[]);
@@ -135,6 +139,7 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
   const connectOfficial=()=>void run(async()=>{
     // Re-read before adding: another window may have changed the source list.
     let catalog=await api<Source[]>('sources');
+    let officialIncomplete=false;
     setFound([]);setDetails(null);setSourceStates({});
     try {
       const existing=catalog.filter(source=>source.kind==='https' && source.location===officialSource.location);
@@ -143,9 +148,15 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
     } finally {
       // Any successful save invalidates ALL tokens, including custom sources.
       // Recover from partial writes before unlocking install actions.
-      if(alive.current){catalog=await api<Source[]>('sources');setSources(catalog);setOperation('scan');await scan(catalog);}
+      if(alive.current){
+        catalog=await api<Source[]>('sources');
+        setSources(catalog);
+        setOperation('scan');
+        const incomplete=await scan(catalog);
+        officialIncomplete=catalog.some(source=>source.location===officialSource.location && incomplete.has(source.id));
+      }
     }
-    setNotice('统一官方库已连接，已检查适用于当前设备的公开稳定版本。现有来源保留，安装与更新需要单独确认。');
+    if(alive.current)setNotice(officialIncomplete?'官方库已添加，本次检查未完成。可在来源设置查看原因并重试。':'官方库已连接。');
   },false,'connect');
   const sourcesById=useMemo(()=>new Map(sources.map(source=>[source.id,source])),[sources]);
   const installedById=useMemo(()=>new Map(installed.map(plugin=>[plugin.manifest.id,plugin])),[installed]);
@@ -173,6 +184,8 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
     installedFilter==='updates'?updates.has(item.manifest.id):installedFilter!=='enabled' || item.enabled
   )).map(entry=>entry.item);
   const issues=sources.filter(source=>sourceStates[source.id]?.error || sourceStates[source.id]?.warnings?.length);
+  const checking=sources.filter(source=>sourceStates[source.id]?.loading);
+  const checkLabel=checking.length===1?`正在检查 ${checking[0].name}…`:'正在检查插件来源…';
   const items=view==='discover'?candidates:plugins, pageKey=JSON.stringify([view,query,view==='discover'?selectedSource:null,view==='discover'?capability:installedFilter]), limit=pages[view]?.key===pageKey?pages[view].limit:24;
   const reveal=(limit:number)=>setPages(old=>({...old,[view]:{key:pageKey,limit}}));
   const navigation=useMarketNavigation({view,context:pageKey,keys:view==='discover'?candidates.map(candidateKey):plugins.map(item=>item.manifest.id),limit,onReveal:reveal});
@@ -209,7 +222,7 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
       {id:'local',label:'安装本地插件',onSelect:installLocal}
     ]}/>:null}
   </div>;
-  return <Container ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}${compact?' fh-market-inline fh-market-compact':''}`} aria-busy={busy} aria-label={section ? '插件市场' : undefined}>
+  return <Container ref={root} className={`fh-root fh-market${embedded?' fh-market-embedded':''}${compact?' fh-market-inline fh-market-compact':''}`} aria-busy={busy && operation!=='scan'} aria-label={section ? '插件市场' : undefined}>
     {!embedded?<header className="fh-market-toolbar"><div className="market-heading"><h1>插件市场</h1>{!available?<Badge variant="outline">只读预览</Badge>:null}</div>{toolbarActions}</header>:null}
     <div className="market-navigation">{section ? null : <Tabs items={[{id:'discover',label:'发现'},{id:'installed',label:`已安装 (${installed.length})`}]} value={view} onChange={id=>setView(id==='installed'?'installed':'discover')} label="插件市场"/>}
       <div className="market-search"><label className="sr-only" htmlFor="market-query">搜索插件</label><SearchIcon aria-hidden="true"/><Input id="market-query" type="search" aria-label="搜索插件" aria-describedby="market-browse-hint" placeholder={view==='discover'?'搜索插件':'搜索已安装插件'} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={navigation.searchKeyDown}/></div>
@@ -228,7 +241,7 @@ export function Market({ readOnly = false, section }: MarketProps = {}) {
         {!compactDiscovery && view==='discover' && sources.length?discoveryFilters():null}
         {view==='installed'?<div className="market-filters"><Select label="安装状态筛选" value={installedFilter} options={[{value:'all',label:'全部已安装'},{value:'enabled',label:'仅显示已启用'},{value:'updates',label:`可更新 (${updates.size})`}]} onChange={setInstalledFilter}/>{checkedAt?<p className="market-meta">{issues.length?'部分来源未完成检查':'最近检查'} · {new Date(checkedAt).toLocaleTimeString()}</p>:null}</div>:null}
         <div className="market-results-heading">
-          <p className="market-meta" role={busy?'status':undefined}>{!loaded?'正在读取插件…':view==='discover'?`${candidates.length} 个插件 · ${sources.length} 个来源${operation==='scan'?' · 正在刷新…':''}`:`${plugins.length} 个插件 · ${plugins.filter(item=>item.enabled).length} 个已启用${updates.size?` · ${updates.size} 个可更新`:''}`}</p>
+          <p className="market-meta" role={busy?'status':undefined}>{!loaded?'正在读取插件…':operation==='scan'?checkLabel:view==='discover'?`${candidates.length} 个插件 · ${sources.length} 个来源`:`${plugins.length} 个插件 · ${plugins.filter(item=>item.enabled).length} 个已启用${updates.size?` · ${updates.size} 个可更新`:''}`}</p>
           {available && loaded && (sources.length || view==='installed')?<Button size={compactDiscovery?'icon-sm':'sm'} variant={compact?'outline':'ghost'} aria-label={compactDiscovery?refreshLabel:undefined} title={compactDiscovery?refreshLabel:undefined} disabled={disabled} onClick={()=>sources.length?void run(()=>scan(sources),false,'scan'):connectOfficial()}><RefreshCwIcon data-icon="inline-start" aria-hidden="true" className={operation==='scan'?'motion-safe:animate-spin':undefined}/>{compactDiscovery?null:refreshLabel}</Button>:null}
           {items.length && !compact?<Help label="插件列表键盘操作">{keyboardDescription}</Help>:null}
         </div>

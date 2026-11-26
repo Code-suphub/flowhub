@@ -250,6 +250,23 @@ test('official catalog connects only on request, adds one pinned aggregate sourc
   assert.equal(ui.button('连接官方库'),undefined);assert.equal(mock.calls.some(call=>['install','installCandidate'].includes(call.action)),false);
   assert.equal(mock.calls.filter(call=>call.action==='scanSource').length,1);
 });
+test('a slow official check names the active source and distinguishes a saved source from a timed-out scan',async t=>{
+  let timeout;
+  const mock=backend({scanSource:({id})=>id==='local'
+    ? {plugins:[{manifest,source:id,token:'local:test'}],warnings:[]}
+    : new Promise((_,reject)=>{timeout=()=>reject(Error('GitHub 发布列表读取超时'));})});
+  const ui=setup(t,mock.invoke);await ready(ui);
+  ui.button('连接官方库').click();
+  await wait(()=>timeout && /正在检查 FlowHub 官方库/.test(ui.w.document.querySelector('.market-results-heading').textContent));
+  assert.ok(ui.article(manifest.name));
+  timeout();
+  await wait(()=>ui.w.document.querySelector('[role="status"]')?.textContent.includes('官方库已添加，本次检查未完成'));
+  assert.ok(ui.button('刷新插件') && !ui.button('刷新插件').disabled);
+  assert.equal(mock.calls.filter(call=>call.action==='saveSource').length,1);
+  ui.button('来源设置').click();
+  await wait(()=>ui.w.document.querySelector('[role="dialog"]')?.textContent.includes('GitHub 发布列表读取超时'));
+  assert.ok(ui.button('重试'));
+});
 test('connecting the aggregate catalog preserves custom and legacy fixed-version sources',async t=>{
   const existing={id:'official-existing',name:'我的设备来源',kind:'https',location:'https://github.com/Code-suphub/flowhub-plugins/releases/download/device-center-v0.2.7/catalog.json',key:'untrusted comment: public key\nRWQIJOnosHIl5QGJ83XSe/Mx8aIvANKnnSUDpzVVNxCAZjTR+cBm1Jne\n'};
   const mock=backend({}, {sources:[source,existing]}),ui=setup(t,mock.invoke);await ready(ui);
